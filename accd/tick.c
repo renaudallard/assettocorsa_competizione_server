@@ -18,6 +18,7 @@
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
+#include "results.h"
 #include "session.h"
 #include "state.h"
 #include "tick.h"
@@ -262,8 +263,13 @@ tick_run(struct Server *s)
 	if (s->session.phase != last_phase) {
 		if (s->session.phase == PHASE_PRE_RACE)
 			broadcast_grid(s);
-		if (s->session.phase == PHASE_POST_SESSION)
+		if (s->session.phase == PHASE_POST_SESSION) {
 			broadcast_session_results(s);
+			if (!s->session.results_written) {
+				(void)results_write(s);
+				s->session.results_written = 1;
+			}
+		}
 		last_phase = s->session.phase;
 	}
 
