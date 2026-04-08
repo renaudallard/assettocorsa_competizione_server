@@ -1,43 +1,73 @@
 accd -- ACC dedicated server reimplementation (work in progress)
 
-Placeholder name.  Rename to whatever you like.
-
-This is a clean-room reimplementation of the Assetto Corsa Competizione
+Clean-room reimplementation of the Assetto Corsa Competizione
 dedicated server, built so an unmodified ACC game client can connect
 and play a private multiplayer session without any traffic to Kunos's
 backend.  See ../notebook-b/NOTEBOOK_B.md for the protocol
 specification this code is working towards.
 
 STATUS
-    Phase 0 skeleton.  Binds the configured TCP and UDP listening
-    sockets and logs every byte received with a hex dump.  No protocol
-    interpretation yet.
+    Phase 1.  TCP framing layer + handshake parser + handshake response
+    builder + module-level dispatch skeleton for every TCP and UDP
+    message id known to the catalog.  All non-handshake cases are
+    stubs that log the msg id and length but do not yet mutate state.
 
 BUILD
     make
 
-    Tested on Linux (aarch64, Debian sid).  Intended to also build on
-    OpenBSD without changes -- iconv is in libc on both platforms and
-    there are no GNU-isms in the source or the Makefile.
+    Tested on Linux (aarch64, Debian sid, gcc 15) with -Wall -Wextra
+    -Wpedantic.  Intended to also build on OpenBSD without changes:
+    iconv is in libc on both platforms, the Makefile uses no GNU-isms,
+    and the source pledges "stdio inet" on OpenBSD after the ports
+    are bound.
 
 RUN
-    The server expects cfg/configuration.json (UTF-16 LE) in its
-    current working directory, matching the Kunos server layout.
-    Easiest way is to run it from the stock server's directory:
+    The server expects a cfg/ directory containing configuration.json
+    and (optionally) settings.json + event.json, all UTF-16 LE per
+    the Kunos server layout.  Pass the cfg directory as the first
+    argument:
+
+        ./accd ../acc-server/server/cfg
+
+    or run it from the stock server's directory:
 
         cd /path/to/acc-server/server
         /path/to/accd/accd
 
-    It will print the parsed config, bind the configured ports, and
-    log every byte received until interrupted (Ctrl-C).  On OpenBSD
-    the process pledges "stdio inet" after the ports are bound.
+    It prints the parsed config, binds the configured ports, runs a
+    poll loop with a periodic tick, and logs handshake activity until
+    interrupted (Ctrl-C).
 
-    To test without a real client:
+SMOKE TESTS
+    Reject path:
+        printf '\x03\x00\x09\x99\x00' | nc -q 1 127.0.0.1 $tcpPort
+    expects a 9-byte rejection response with reason byte = 1
+    (REJECT_VERSION).
 
-        nc -u 127.0.0.1 $udpPort   # UDP test
-        nc    127.0.0.1 $tcpPort   # TCP test
+    Accept path (empty server password):
+        printf '\x04\x00\x09\x00\x01\x00' | nc -q 1 127.0.0.1 $tcpPort
+    expects a ~41-byte 0x0b response with car id 0 and the welcome
+    trailer skeleton.
+
+MODULES
+    main.c       poll loop, signal handling, server lifecycle
+    config.c/h   UTF-16 LE JSON config reader (flat fields only)
+    state.c/h    per-connection and global server state
+    msg.h        all 31+22 message id constants and enums
+    io.c/h       byte buffer and TCP framing (u16 + 0xFFFF escape)
+    prim.c/h    little-endian primitive readers/writers, Format-A
+                 and Format-B wide-string codecs
+    net.c/h      tcp_listen / udp_bind helpers
+    log.c/h      timestamped stderr logger with hexdump
+    handshake.c/h  parse 0x09 ACP_REQUEST_CONNECTION, build 0x0b
+                 response (accept or reject)
+    dispatch.c/h  TCP framed-message dispatch + UDP datagram dispatch
+                 with all 21 TCP and 7 UDP cases stubbed out
+    chat.c/h     admin chat command parser skeleton
+    tick.c/h     periodic tick stub for future broadcasters
+    lan.c/h      UDP 8999 LAN discovery handler
 
 STYLE
-    Portable C99.  libc only.  KNF-ish with 4-space indents.
-    err(3)/errx(3) for fatal errors, sigaction(2) not signal(3),
-    pledge(2) on OpenBSD.  No dynamic allocation in the hot paths.
+    Portable C99.  libc + iconv only.  KNF-ish with tab indentation.
+    sigaction(2) not signal(3), pledge(2) on OpenBSD.  No dynamic
+    allocation in the hot paths beyond what the byte buffer needs.

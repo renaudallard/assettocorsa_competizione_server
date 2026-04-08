@@ -11,8 +11,9 @@ session — on Linux and OpenBSD, without Wine.
 
 ## Status
 
-**Protocol analysis phase.**  The clean-room specification in
-[`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) now documents:
+**Phase 1 — handshake works end-to-end.**  The clean-room
+specification in [`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md)
+now documents:
 
 - Transport framing for both TCP (variable-width length prefix,
   `u16` short or `0xFFFF + u32` extended) and UDP (datagram = message).
@@ -23,19 +24,27 @@ session — on Linux and OpenBSD, without Wine.
   handshake request body (client version, password, embedded
   `CarInfo` and `DriverInfo`).
 - The complete client → server message ID catalog — 22 TCP IDs,
-  7 UDP IDs, plus LAN discovery — with known wire formats where
-  the bodies have been extracted.
-- 16 server → client message IDs with their wire formats, plus
-  the relay / broadcast pattern used for per-car state updates.
-- The ServerMonitor protobuf protocol (separate, fully recovered
-  from the public SDK distribution).
+  7 UDP IDs, plus LAN discovery — with known wire formats and
+  semantic labels for every case.
+- **31 server → client message IDs** with byte-exact wire formats,
+  including the welcome trailer, per-tick broadcasters, leaderboard
+  / weather / session results / grid positions / ratings, the
+  driver swap state machine, BoP updates, setup data responses,
+  chat broadcasts, and the welcome trailer redelivery.
+- The ServerMonitor protobuf protocol (msg types 1–7), confirmed
+  to be the same data carried by sim-protocol ids `0x01`–`0x07`.
 
-**The `accd/` C implementation is still at phase 0**: it binds the
-configured TCP and UDP sockets, reads the stock Kunos
-`configuration.json` (UTF-16 LE), and hex-dumps every received byte.
-No protocol logic yet.  Phase 1 (TCP length-prefix framing, parse the
-handshake header, reject with the correct protocol version) is the
-next coding milestone.
+**The `accd/` C implementation is at phase 1**: it reads the stock
+Kunos config files, binds the TCP and UDP listeners, accepts
+framed TCP messages, parses `ACP_REQUEST_CONNECTION`, and replies
+with a real `0x0b` handshake response containing either a rejection
+code or a minimum-viable welcome trailer.  Every other TCP and UDP
+message id has a dispatch stub that logs the id and length but
+does not yet mutate state.
+
+The implementation is split into 13 modules totalling about
+2700 lines of portable C99, builds clean under `gcc -Wall -Wextra
+-Wpedantic`, and pledges `stdio inet` on OpenBSD after binding.
 
 ## Scope
 
@@ -79,7 +88,19 @@ interoperability of an independently created program.
 ├── notebook-b/
 │   └── NOTEBOOK_B.md      The public clean-room protocol spec.
 ├── accd/                  The C implementation (work in progress).
-│   ├── main.c
+│   ├── main.c             Poll loop + signal handling + lifecycle.
+│   ├── config.{c,h}       UTF-16 LE JSON config reader.
+│   ├── state.{c,h}        Per-conn / global server state structs.
+│   ├── msg.h              All 53 message id constants + enums.
+│   ├── io.{c,h}           Byte buffer + TCP framing layer.
+│   ├── prim.{c,h}         Primitive readers / writers + strings.
+│   ├── net.{c,h}          tcp_listen / udp_bind helpers.
+│   ├── log.{c,h}          Timestamped logger + hexdump.
+│   ├── handshake.{c,h}    ACP_REQUEST_CONNECTION + 0x0b response.
+│   ├── dispatch.{c,h}     TCP / UDP message dispatchers.
+│   ├── chat.{c,h}         Admin chat command parser skeleton.
+│   ├── tick.{c,h}         Periodic server tick stub.
+│   ├── lan.{c,h}          UDP 8999 LAN discovery handler.
 │   ├── Makefile
 │   └── README
 ├── .gitignore
@@ -109,30 +130,45 @@ listening ports.
 
 ## Running
 
-`accd` expects to find `cfg/configuration.json` (UTF-16 LE, the
-format Kunos uses) in its current working directory, matching the
-Kunos server's layout. The simplest way to run it against a real
-configuration is from inside the Kunos server's `server/` directory,
-which you will need to fetch yourself:
+`accd` expects a `cfg/` directory containing `configuration.json`
+and (optionally) `settings.json` + `event.json`, all UTF-16 LE per
+the Kunos server layout.  Pass the cfg directory as the first
+argument, or run from a directory that contains it:
 
 ```sh
-# One-time fetch of the Kunos ACC dedicated server tool. You need a
-# Steam account that owns Assetto Corsa Competizione.
+./accd ../acc-server/server/cfg
+```
+
+To fetch the stock Kunos cfg files (you need a Steam account that
+owns Assetto Corsa Competizione):
+
+```sh
 steamcmd +@sSteamCmdForcePlatformType windows \
          +force_install_dir /path/to/acc-server \
          +login <your steam username> \
          +app_update 1430110 validate +quit
 ```
 
-Then:
+The server prints the parsed config, binds the configured ports,
+runs a 10 Hz poll/tick loop, accepts TCP connections, parses any
+framed handshake message, and replies with the 0x0b response.
+Every other message is logged but not yet processed.
+
+### Quick smoke test (no real client)
+
+Reject path — wrong protocol version:
 
 ```sh
-cd /path/to/acc-server/server
-/path/to/accd/accd
+printf '\x03\x00\x09\x99\x00' | nc -q 1 127.0.0.1 9232 | xxd
+# expects: 07 00 0b 00 01 00 ff ff 01
 ```
 
-It will print the parsed config, bind the configured ports, and
-log every byte received until interrupted (Ctrl-C).
+Accept path — empty server password:
+
+```sh
+printf '\x04\x00\x09\x00\x01\x00' | nc -q 1 127.0.0.1 9232 | xxd
+# expects: 29 00 0b 00 01 00 00 00 00 00 00 00 ...
+```
 
 ## Contributing
 
