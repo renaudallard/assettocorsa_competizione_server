@@ -18,6 +18,7 @@
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
+#include "session.h"
 #include "state.h"
 #include "tick.h"
 
@@ -110,6 +111,9 @@ void
 tick_run(struct Server *s)
 {
 	s->tick_count++;
+
+	/* Drive the session phase machine. */
+	session_tick(s);
 
 	/* Fast-rate per-car broadcast (every tick). */
 	broadcast_percar(s, SRV_PERCAR_FAST_RATE, 0);

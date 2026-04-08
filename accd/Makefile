@@ -20,6 +20,7 @@ OBJS =		main.o \
 		net.o \
 		pb.o \
 		prim.o \
+		session.o \
 		state.o \
 		tick.o
 
@@ -76,10 +77,13 @@ pb.o: pb.c pb.h io.h
 prim.o: prim.c prim.h io.h
 	${CC} ${CFLAGS} -c prim.c
 
+session.o: session.c session.h log.h msg.h state.h
+	${CC} ${CFLAGS} -c session.c
+
 state.o: state.c state.h bcast.h io.h log.h msg.h prim.h
 	${CC} ${CFLAGS} -c state.c
 
-tick.o: tick.c tick.h log.h msg.h state.h
+tick.o: tick.c tick.h bcast.h io.h log.h msg.h prim.h session.h state.h
 	${CC} ${CFLAGS} -c tick.c
 
 clean:

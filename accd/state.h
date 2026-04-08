@@ -20,6 +20,133 @@
 #define ACC_MAX_DRIVERS_PER_CAR	4
 #define ACC_MAX_NAME_LEN	64
 #define ACC_TRACK_NAME_LEN	48
+#define ACC_MAX_SESSIONS	16
+#define ACC_MAX_PENALTIES	8
+
+/*
+ * Session phase machine.
+ *
+ * Mirrors the per-session lifecycle defined in HB §IV.  Each
+ * configured session in event.json runs through PRE_SESSION ->
+ * STARTING -> SESSION (one of P/Q/R) -> POST_SESSION before the
+ * server advances to the next session, and finally RESULTS at
+ * the end of the weekend.
+ */
+enum session_phase {
+	PHASE_NONE = 0,
+	PHASE_PRE_SESSION,
+	PHASE_STARTING,
+	PHASE_PRACTICE,
+	PHASE_QUALIFYING,
+	PHASE_PRE_RACE,
+	PHASE_RACE,
+	PHASE_POST_SESSION,
+	PHASE_RESULTS
+};
+
+/* Penalty kinds matching the chat command set. */
+enum penalty_kind {
+	PEN_NONE = 0,
+	PEN_TP5, PEN_TP15,
+	PEN_DT, PEN_DTC,
+	PEN_SG10, PEN_SG10C,
+	PEN_SG20, PEN_SG20C,
+	PEN_SG30, PEN_SG30C,
+	PEN_DQ
+};
+
+struct PenaltyEntry {
+	uint8_t		kind;		/* enum penalty_kind */
+	uint8_t		collision;	/* /tp5c vs /tp5 */
+	uint8_t		served;
+	int32_t		laps_remaining;	/* drive-through countdown */
+	uint64_t	issued_ms;
+};
+
+struct PenaltyQueue {
+	struct PenaltyEntry	slots[ACC_MAX_PENALTIES];
+	uint8_t			count;
+};
+
+/*
+ * Per-car race-state runtime info: laps, position, sector splits,
+ * pit status.  Updated by 0x19/0x20/0x21/0x32 handlers and read
+ * by the leaderboard sort + result writer.
+ */
+struct CarRaceState {
+	int16_t		position;		/* 1-based, 0 = unset */
+	int16_t		grid_position;
+	int32_t		lap_count;
+	int32_t		best_lap_ms;
+	int32_t		last_lap_ms;
+	int32_t		current_lap_ms;
+	int32_t		sector_ms[3];
+	int32_t		best_sectors_ms[3];
+	int32_t		race_time_ms;
+	uint8_t		in_pit;
+	uint8_t		pit_crossing_latched;
+	uint8_t		mandatory_pit_served;
+	uint8_t		current_tyres;
+	uint8_t		out_of_track_latched;
+	struct PenaltyQueue	pen;
+};
+
+/*
+ * One configured session as parsed from event.json sessions[].
+ */
+struct SessionDef {
+	uint8_t		session_type;	/* HB IX.6: P=0 Q=4 R=10 */
+	uint16_t	duration_min;
+	uint8_t		hour_of_day;
+	uint8_t		day_of_weekend;
+	uint8_t		time_multiplier;
+};
+
+/*
+ * Current session runtime state.
+ */
+struct SessionState {
+	uint8_t		phase;		/* enum session_phase */
+	uint8_t		session_index;	/* into Server.sessions[] */
+	uint64_t	phase_started_ms;
+	uint32_t	weekend_time_s;
+	int32_t		time_remaining_ms;
+	uint8_t		ambient_temp;
+	uint8_t		track_temp;
+	float		grip_level;
+	uint16_t	standings_seq;	/* bumps on leaderboard change */
+	int		results_written;	/* one-shot guard */
+	int		grid_announced;		/* one-shot guard */
+};
+
+/*
+ * Per-server weather snapshot.
+ */
+struct WeatherStatus {
+	float		clouds;		/* 0..1 */
+	float		current_rain;	/* 0..1 */
+	float		target_rain;	/* 0..1 */
+	float		wetness;	/* 0..1 */
+	float		dry_line_wetness;
+	float		puddles;
+	float		forecast_10m;
+	float		forecast_30m;
+	uint64_t	last_step_ms;
+};
+
+/*
+ * Assist rules from assistRules.json (subset of fields actually
+ * carried in the wire protocol; everything else is server-side
+ * enforcement only).
+ */
+struct AssistRules {
+	uint8_t		stability_control_max;
+	uint8_t		disable_autosteer;
+	uint8_t		disable_auto_pit_limiter;
+	uint8_t		disable_auto_gear;
+	uint8_t		disable_auto_clutch;
+	uint8_t		disable_ideal_line;
+};
 
 /*
  * Per-driver record loaded from entrylist.json (and / or sent by
@@ -89,6 +216,10 @@ struct CarEntry {
 
 	/* Runtime state updated every tick by ACP_CAR_UPDATE. */
 	struct CarRuntime rt;
+
+	/* Race state updated by lap/sector handlers and the
+	 * leaderboard sort. */
+	struct CarRaceState race;
 };
 
 /*
@@ -132,6 +263,14 @@ struct Server {
 	int		nconns;
 
 	struct CarEntry	cars[ACC_MAX_CARS];
+
+	/* sessions parsed from event.json */
+	struct SessionDef	sessions[ACC_MAX_SESSIONS];
+	uint8_t			session_count;
+	struct SessionState	session;
+	struct WeatherStatus	weather;
+	struct AssistRules	assist;
+	uint8_t			bop_version;
 
 	/* timing */
 	uint64_t	tick_count;

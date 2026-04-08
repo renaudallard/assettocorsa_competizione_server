@@ -208,8 +208,40 @@ config_load(struct Server *s, const char *cfg_dir)
 
 	event = load_json(cfg_dir, "event.json");
 	if (event != NULL) {
+		const struct json_node *sessions;
+		size_t i, n;
+
 		copy_str(s->track, sizeof(s->track),
 		    json_obj_get_str(event, "track"));
+
+		sessions = json_obj_get(event, "sessions");
+		n = json_arr_len(sessions);
+		if (n > ACC_MAX_SESSIONS)
+			n = ACC_MAX_SESSIONS;
+		s->session_count = (uint8_t)n;
+		for (i = 0; i < n; i++) {
+			const struct json_node *sn = json_arr_at(sessions, i);
+			const char *type;
+			struct SessionDef *d = &s->sessions[i];
+
+			d->duration_min = (uint16_t)json_obj_get_int(sn,
+			    "sessionDurationMinutes", 10);
+			d->hour_of_day = (uint8_t)json_obj_get_int(sn,
+			    "hourOfDay", 12);
+			d->day_of_weekend = (uint8_t)json_obj_get_int(sn,
+			    "dayOfWeekend", 0);
+			d->time_multiplier = (uint8_t)json_obj_get_int(sn,
+			    "timeMultiplier", 1);
+			type = json_obj_get_str(sn, "sessionType");
+			if (type != NULL && type[0] == 'P')
+				d->session_type = 0;
+			else if (type != NULL && type[0] == 'Q')
+				d->session_type = 4;
+			else if (type != NULL && type[0] == 'R')
+				d->session_type = 10;
+			else
+				d->session_type = 0;
+		}
 		json_free(event);
 	}
 
