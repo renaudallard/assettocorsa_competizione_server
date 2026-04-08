@@ -820,6 +820,7 @@ h_load_setup(struct Server *s, struct Conn *c,
 	uint8_t msg_id, setup_index;
 	uint16_t car_id;
 	uint32_t revision;
+	struct ByteBuf out;
 
 	(void)s;
 
@@ -831,9 +832,25 @@ h_load_setup(struct Server *s, struct Conn *c,
 		log_warn("h_load_setup: short body");
 		return 0;
 	}
-	log_info("load setup: conn=%u car=%u index=%u rev=%u (TODO reply 0x56)",
+	log_info("load setup: conn=%u car=%u index=%u rev=%u",
 	    (unsigned)c->conn_id, (unsigned)car_id,
 	    (unsigned)setup_index, (unsigned)revision);
+
+	/*
+	 * Phase 11 minimum-viable 0x56 reply: setup_index + carId
+	 * + lap_count = 0 + an empty per-car leaderboard record
+	 * stub.  We don't actually have a setup file library on
+	 * disk yet so the response is empty.
+	 */
+	bb_init(&out);
+	if (wr_u8(&out, SRV_SETUP_DATA_RESPONSE) < 0 ||
+	    wr_u8(&out, setup_index) < 0 ||
+	    wr_u16(&out, car_id) < 0 ||
+	    wr_i16(&out, 0) < 0)
+		goto done;
+	(void)bcast_send_one(c, out.data, out.wpos);
+done:
+	bb_free(&out);
 	return 0;
 }
 

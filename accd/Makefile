@@ -11,6 +11,7 @@ OBJS =		main.o \
 		chat.o \
 		config.o \
 		dispatch.o \
+		entrylist.o \
 		handlers.o \
 		handshake.o \
 		io.o \
@@ -49,11 +50,14 @@ bcast.o: bcast.c bcast.h io.h log.h msg.h state.h
 chat.o: chat.c chat.h bcast.h io.h log.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${CFLAGS} -c chat.c
 
-config.o: config.c config.h json.h log.h state.h
+config.o: config.c config.h entrylist.h json.h log.h state.h
 	${CC} ${CFLAGS} -c config.c
 
 dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c dispatch.c
+
+entrylist.o: entrylist.c entrylist.h json.h log.h state.h
+	${CC} ${CFLAGS} -c entrylist.c
 
 handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${CFLAGS} -c handlers.c

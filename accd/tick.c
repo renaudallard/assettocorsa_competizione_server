@@ -256,6 +256,40 @@ tick_run(struct Server *s)
 	if (s->session.standings_seq != last_standings_seq) {
 		last_standings_seq = s->session.standings_seq;
 		broadcast_leaderboard(s);
+		/*
+		 * 0x4e periodic per-connection rating summary
+		 * broadcast: per-row record with conn id, two
+		 * i16 ratings * 10, sentinel u32, format-A name.
+		 */
+		{
+			struct ByteBuf bb;
+			int j, n = 0;
+			int ok = 1;
+
+			for (j = 0; j < ACC_MAX_CARS; j++)
+				if (s->conns[j] != NULL &&
+				    s->conns[j]->state == CONN_AUTH)
+					n++;
+			bb_init(&bb);
+			ok = wr_u8(&bb, SRV_RATING_SUMMARY) == 0;
+			ok = ok && wr_u8(&bb, (uint8_t)n) == 0;
+			for (j = 0; j < ACC_MAX_CARS && ok; j++) {
+				struct Conn *cn = s->conns[j];
+				if (cn == NULL ||
+				    cn->state != CONN_AUTH)
+					continue;
+				ok = ok && wr_u16(&bb, cn->conn_id) == 0;
+				ok = ok && wr_u8(&bb, 0) == 0;
+				ok = ok && wr_i16(&bb, 0) == 0;
+				ok = ok && wr_i16(&bb, 0) == 0;
+				ok = ok && wr_u32(&bb, 0xffffffff) == 0;
+				ok = ok && wr_str_a(&bb, "") == 0;
+			}
+			if (ok)
+				(void)bcast_all(s, bb.data, bb.wpos,
+				    0xFFFF);
+			bb_free(&bb);
+		}
 	}
 
 	/*

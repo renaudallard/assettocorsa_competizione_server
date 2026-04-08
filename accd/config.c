@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "entrylist.h"
 #include "json.h"
 #include "log.h"
 #include "state.h"
@@ -247,5 +248,14 @@ config_load(struct Server *s, const char *cfg_dir)
 
 	if (s->max_connections < 1 || s->max_connections > ACC_MAX_CARS)
 		s->max_connections = ACC_MAX_CARS;
+
+	/*
+	 * Load entrylist.json templates if present.  These are
+	 * applied as defaults to the corresponding car slots when
+	 * a client claims them in the handshake; missing file is
+	 * not fatal (open server with no forced grid).
+	 */
+	(void)entrylist_load(s, cfg_dir);
+
 	return 0;
 }
