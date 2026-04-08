@@ -1,0 +1,26 @@
+# Downloaded ACC dedicated server — do not redistribute.
+# Fetch via: steamcmd +@sSteamCmdForcePlatformType windows \
+#            +force_install_dir ./acc-server +login <user> \
+#            +app_update 1430110 validate +quit
+acc-server/
+
+# Dirty reverse-engineering notes — must never be published.
+# Contains offsets, disassembly excerpts, decompiled pseudocode,
+# strings extracted from accServer.exe, Ghidra project files, etc.
+notebook-a/
+
+# Scratch directory: writable Ghidra install, temp logs, etc.
+# Not part of the project, not redistributable.
+tmp/
+
+# Typical local build / tool artifacts
+target/
+build/
+*.o
+*.obj
+*.pdb
+*.gpr
+*.rep
+*.rep.bak
+.vscode/
+.idea/
