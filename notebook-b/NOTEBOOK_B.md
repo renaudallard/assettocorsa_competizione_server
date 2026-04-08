@@ -493,8 +493,8 @@ Messages carried over the reliable TCP control channel. 22 distinct IDs:
 | `0x09` | 9 | Request connection (handshake); see §5.6.4 |
 | `0x10` | 16 | Client-initiated graceful disconnect |
 | `0x19` | 25 | **Client lap-time report** — body is `u16` `u16` `i32` `u8` (cup position, track position, lap time in ms, and a signed quality byte). The server validates the fields, updates the reporting connection's rating state, then broadcasts a transformed `0x1b` message to every other client (see §5.6.2 row for `0x1b`). This message uses the tier-2 queued-lambda broadcast mechanism, not the direct relay. |
-| `0x20` | 32 | (body TBD) |
-| `0x21` | 33 | (body TBD) |
+| `0x20` | 32 | **Sector splits (bulk)** — client reports multiple sector split times at once. Body: `i32` + `u8` + `i32` + `u16` header, then the server broadcasts a transformed `0x3a` message to all other clients carrying the full split list (`u16 car_id` + `u8 split_count` + `u32[count]` + `i32 clock` + `u16 car_field`). |
+| `0x21` | 33 | **Sector split (single)** — client reports a single sector split. Body: `i32` + `i32` + `u8` + `u16` + `u8` header. The server broadcasts a transformed `0x3b` message (fixed-length: `u16` + `u32` + `u8` + `u32` + `u16`) to all other clients. |
 | `0x2a` | 42 | (body TBD) |
 | `0x2e` | 46 | (body TBD) |
 | `0x2f` | 47 | (body TBD) |
@@ -522,7 +522,7 @@ Messages carried over the unreliable UDP channel on the main `udpPort`. 7 distin
 | `0x13` | 19 | (pre-handshake message; body not decoded) |
 | `0x16` | 22 | **`PONG_PHYSICS`** — physics-side clock-sync ping/pong used to measure per-client latency and adjust simulation timestamps. Body: `u16 conn_id` + `u16 ?` + `i32 ts1` + `i32 ts2`. |
 | `0x17` | 23 | (pre-handshake message; body not decoded) |
-| `0x1e` | 30 | **`ACP_CAR_UPDATE`** — the per-tick car state update, sent by each client at simulation tick rate (~20–30 Hz). Header: `u16 source_conn_id` + `u16 target_car_id` + `u8 flag` + `u32 value`; followed by multiple 12-byte blocks each carrying a `Vector3<float>` of world-space physics state (position, velocity, angular velocity, etc.). Server validates that the source connection owns the target car and rejects the update otherwise. Body size is estimated at 60–120 bytes. |
+| `0x1e` | 30 | **`ACP_CAR_UPDATE`** — the per-tick car state update, sent by each client at simulation tick rate. Body layout: `u16 source_conn_id` + `u16 target_car_id` + `u8 flag` + `u32 value` (9-byte header) followed by 3 × `Vector3<float>` (36 bytes for position, velocity, and either angular velocity or forward direction), then a 4-byte input array (throttle / brake / clutch / handbrake or similar), several scalar state bytes, a `u16`, a 4 × `u32` array (sector / lap timing data), and more scalars. Total body ~60–80 bytes. Server validates that the source connection owns the target car and rejects the update otherwise. Wire order is **not** the same as the corresponding C++ struct field order — a reimplementation must preserve the observed wire sequence, not derive it from any public struct definition. |
 | `0x22` | 34 | **`CAR_INFO_REQUEST`** — body is `u16 connectionId` + `u16 carIndex`. The server replies with a full `CarInfo` structure for the requested car. Historical ACP name is still current. |
 | `0x5e` | 94 | Four-field record: `u16` + `u16` + `u64` + `u8` (possibly a time-synchronized event) |
 | `0x5f` | 95 | (delegated — body not yet decoded) |
@@ -551,10 +551,50 @@ u16 connection_id       (the server-assigned id for this client; 0xFFFF on rejec
 ... followed by a larger trailer that carries the initial entry list + session state on accept
 ```
 
-On rejection the connection_id is set to a sentinel (`0xFFFF`) and the trailer may be empty. On accept, a substantial trailer follows that enumerates the current connected-car list and session configuration — the exact layout of this trailer is still under analysis, but a reimplementation can be compatible by:
+On rejection the connection_id is set to a sentinel (`0xFFFF`) and the trailer may be empty. On accept, a substantial trailer follows that enumerates the current connected-car list and session configuration.
 
-1. Sending a minimal 6-byte rejection message (`u8=0x0b`, `u16=0x0100`, `u8=0`, `u16=0xFFFF`) for every client that would be refused. The client should process this cleanly and disconnect.
-2. Leaving the accept path as "not yet implemented" until the trailer format is fully decoded.
+**Trailer structure** (observed field-by-field sequence):
+
+```
+u32 carId                          (the assigned car, or 0xFFFFFFFF on reject)
+string trackName                   (Format A, matches event.json "track")
+string eventId                     (Format A)
+u8  = 1                            (separator / version byte)
+u8  session_count                  (number of configured sessions)
+repeated {per-session record}      (session_count × variable-length records)
+u8  = 1                            (separator)
+<SeasonEntity record>              (appended via a virtual serializer)
+u8  = 1                            (separator)
+<SessionManager state record>      (appended via a sub-builder)
+u8  = 1                            (separator)
+<AssistRules record>               (appended via another sub-builder)
+u8  = 1                            (separator)
+<ServerConfiguration snapshot>     (appended via another virtual)
+u8  = 1                            (separator)
+<additional state>                 (appended via a final sub-builder)
+u8  = 1                            (separator)
+u8  connected_car_count
+repeated {per-connected-car record}    (typically 20+ bytes per car)
+    u8  field_a       (from car+? offset)
+    u8  field_b
+    u8  field_c       (adjusted by -1 on write)
+    u32 field_d
+    u16 field_e
+    u32 field_f
+    u32 field_g
+    u8  field_h
+    u8  field_i
+    ... several more fields per car ...
+... trailing state scalars ...
+```
+
+The sub-records enumerated above (the SeasonEntity, session manager state, assist rules, and server configuration snapshots) are serialized by dedicated per-type builders. Their exact inner formats require further analysis — the top-level welcome-trailer structure is known but the body of each sub-record is not yet decoded.
+
+**Practical recommendations**:
+
+1. **Minimum viable rejection**: send the 6-byte header alone with `connection_id = 0xFFFF` and no trailer. The client should disconnect cleanly.
+2. **Minimum viable accept**: build a 6-byte header with `connection_id = <some value>`, followed by the carId + trackName + eventId + a session count of 0 + separators + an empty car list + trailing zeros. This may or may not be accepted by the client depending on how strictly it validates the sub-records — to be determined by testing.
+3. **Full fidelity**: requires decoding each of the four sub-builders, each of which is probably 500–2000 bytes of decompilation. Pass 2.10 did not attempt this.
 
 #### 5.6.4a Server → client message ID catalog
 
@@ -572,8 +612,8 @@ On rejection the connection_id is set to a sentinel (`0xFFFF`) and the trailer m
 | `0x2b` | 43 | `u32` `u8` | 6-byte record; emitted from two distinct call sites |
 | `0x2e` | 46 | `u16` `u64` | 11-byte record with a u64 (probably a timestamp) |
 | `0x37` | 55 | (body is empty — just the id byte) | Probable keepalive |
-| `0x3a` | 58 | `u8=0xc9` `u32` `u32` `u8=0x00` `u32` | 15-byte record with hardcoded bytes (0xc9 subtype, 0x00 padding) |
-| `0x3b` | 59 | `u16` `u32` `u8` `u32` `u16` | 14-byte record |
+| `0x3a` | 58 | `u16 car_id` + `u8 split_count` + `u32[count]` + `i32 clock` + `u16 car_field` | **Sector splits broadcast (game protocol)** — server-transformed relay of client `0x20` messages. Variable-length body (depends on split count). **Note**: a separate message with the same first byte `0x3a` exists on the lobby backend connection with a completely different fixed-15-byte body (`u8=0xc9 + u32 + u32 + u8=0x00 + u32`) — that's the lobby registration request. The two messages are distinguishable only by which TCP channel they flow on. |
+| `0x3b` | 59 | `u16 car_id` + `u32 split_time` + `u8` + `u32 lap_time` + `u16 flags` | **Single sector split broadcast** — server-transformed relay of client `0x21` messages. Fixed 14-byte body. |
 | `0x3c` | 60 | `u16` `u16` `u32` | 9-byte record |
 | `0x3e` | 62 | (body is empty — just the id byte) | Probable keepalive |
 | `0x44` | 68 | *not part of game-client protocol* | Lobby registration request to Kunos's `kson` backend — only sent when `registerToLobby: 1`, irrelevant for private MP |
