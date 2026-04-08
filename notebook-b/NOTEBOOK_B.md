@@ -498,20 +498,20 @@ Messages carried over the reliable TCP control channel. 22 distinct IDs:
 | `0x2a` | 42 | (body TBD) |
 | `0x2e` | 46 | (body TBD) |
 | `0x2f` | 47 | (body TBD) |
-| `0x32` | 50 | Car location update (historical name in shipped SDK log: `ACP_CAR_LOCATION_UPDATE`; matches field semantic of the 5-value `CarLocation` enum from §7.9) |
-| `0x3d` | 61 | (body TBD) |
-| `0x41` | 65 | (body TBD) |
-| `0x42` | 66 | (body TBD) |
-| `0x43` | 67 | (body TBD) |
-| `0x45` | 69 | (body TBD) |
-| `0x47` | 71 | (body TBD) |
-| `0x48` | 72 | (body TBD, distinct from the UDP `0x48` LAN discovery below) |
-| `0x4a` | 74 | (body TBD) |
-| `0x4f` | 79 | (body TBD) |
-| `0x51` | 81 | (body TBD) |
-| `0x54` | 84 | (body TBD) |
-| `0x55` | 85 | (body TBD) |
-| `0x5b` | 91 | (body TBD) |
+| `0x32` | 50 | **`ACP_CAR_LOCATION_UPDATE`** — body is `u16 carIndex` + `u8 carLocation` (5-value enum: NONE/Track/Pitlane/PitEntry/PitExit, see §7.9). Historical ACP name is still current. |
+| `0x3d` | 61 | `u8` + `i32` (2 fields) |
+| `0x41` | 65 | `u8` + `u8` + `u64` + `i32` (4 fields; u64 likely timestamp) |
+| `0x42` | 66 | Single `u64`. **Probable clock synchronization** — client sends its timestamp, server uses it to compute offsets. |
+| `0x43` | 67 | (body delegated, not directly read) |
+| `0x45` | 69 | Five `u8` fields (likely flag/enum bitmap) |
+| `0x47` | 71 | (body delegated; server sends a response immediately) |
+| `0x48` | 72 | `u16` + `u8` (distinct from the UDP `0x48` LAN discovery below; server sends a response) |
+| `0x4a` | 74 | `u16` + `u8` + `u8` (server sends a response) |
+| `0x4f` | 79 | `u8` + `u64` |
+| `0x51` | 81 | Two `u16` fields (probably a small command, e.g. "focus car X, camera Y") |
+| `0x54` | 84 | Single `u16` (car index?) |
+| `0x55` | 85 | `u8` + `u16` + `i32` followed by a full embedded **CarInfo** (via `CarInfo::readFromPacket`). Carries the client's updated car state. |
+| `0x5b` | 91 | (body delegated, not directly read) |
 
 #### 5.6.2 UDP message IDs
 
@@ -519,13 +519,13 @@ Messages carried over the unreliable UDP channel on the main `udpPort`. 7 distin
 
 | ID (hex) | ID (dec) | Name / meaning |
 |---|---|---|
-| `0x13` | 19 | (body TBD) |
-| `0x16` | 22 | (body TBD) |
-| `0x17` | 23 | (body TBD) |
-| `0x1e` | 30 | (body TBD) |
-| `0x22` | 34 | (body TBD — very likely the per-tick car-state update based on structural analysis) |
-| `0x5e` | 94 | (body TBD) |
-| `0x5f` | 95 | (body TBD) |
+| `0x13` | 19 | (pre-handshake message; body not decoded) |
+| `0x16` | 22 | Three-field record: `u16` + `i32` + `i32` (possibly ping/timing reply) |
+| `0x17` | 23 | (pre-handshake message; body not decoded) |
+| `0x1e` | 30 | (delegated — body not yet decoded) |
+| `0x22` | 34 | **`CAR_INFO_REQUEST`** — body is `u16 connectionId` + `u16 carIndex`. The server replies with a full `CarInfo` structure for the requested car. Historical ACP name is still current. |
+| `0x5e` | 94 | Four-field record: `u16` + `u16` + `u64` + `u8` (possibly a time-synchronized event) |
+| `0x5f` | 95 | (delegated — body not yet decoded) |
 
 #### 5.6.3 LAN discovery (UDP 8999)
 
