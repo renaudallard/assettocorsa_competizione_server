@@ -613,22 +613,29 @@ A reimplementation aiming for wire-level compatibility with the accept path will
 | `0x04` | 4 | (body is empty — just the id byte) | Probable ack / keepalive |
 | `0x0b` | 11 | `u16 version` + `u8 flags` + `u16 conn_id` + trailer | **Handshake response** — see §5.6.4c. Used for both accept and reject outcomes. |
 | `0x0c` | 12 | `u8` `u32` `u32` `u32` | 14-byte record, semantics TBD |
+| `0x14` | 20 | (body ~trivial) | Probable ack or keepalive — builder is 275 bytes with a single literal byte write. |
 | `0x1b` | 27 | `u16 pos_a` `u16 pos_b` `i32 lap_time_ms` `u8 quality` | **Lap time broadcast** — the server forwards a client's lap-time report to all other clients. Triggered by a client sending TCP id `0x19` (see §5.6.1). The `quality` byte is `0xFF` for invalid, otherwise a normalized 0..255 value derived from a float. |
+| `0x1e` | 30 | `u16 car_id` + `u8 car_location` + `u32 timing` + `u16` + `u64 timestamp` + `u32` + ... (~21 fields total) | **Per-car periodic state broadcast** — pushed from the main server tick at the "fast" update rate. Carries compact per-car state (position class, lap timing, split info). Note: the same id byte is used by client→server `ACP_CAR_UPDATE` — the two directions have entirely separate wire formats and meanings. |
 | `0x24` | 36 | `u16 carIndex` | **`CAR_DISCONNECT_NOTIFY`** — the server tells every other client that this car has disconnected |
-| `0x2b` | 43 | `u32` `u8` | 6-byte record; emitted from two distinct call sites |
+| `0x2b` | 43 | `u32` `u8` | 6-byte record; emitted from two distinct call sites plus from the session-transition multi-message builders |
 | `0x2e` | 46 | `u16` `u64` | **New-client-joined notify** — 11-byte record with a u64 timestamp. Pushed by the server to every existing client during a new client's handshake-accept sequence (called from the handshake handler with each other client's TCP socket as the target). A reimplementation joining a second client will need to emit this to the first client at the right moment. |
 | `0x37` | 55 | (body is empty — just the id byte) | Probable keepalive |
+| `0x39` | 57 | `u8` + `u16 car_id` + `u8 car_location` + `u32` + `u16` + `u64` + `u32` + ... (~22 fields total) | **Per-car periodic state broadcast** (sibling of `0x1e`) — pushed from the main server tick at a different cadence than `0x1e`. Wire format is very similar; the two together comprise the server's tier-2 state push pipeline. Likely one is the "fast" update (position/lap) and the other is the "slow" update (rating/history). |
 | `0x3a` | 58 | `u16 car_id` + `u8 split_count` + `u32[count]` + `i32 clock` + `u16 car_field` | **Sector splits broadcast (game protocol)** — server-transformed relay of client `0x20` messages. Variable-length body (depends on split count). **Note**: a separate message with the same first byte `0x3a` exists on the lobby backend connection with a completely different fixed-15-byte body (`u8=0xc9 + u32 + u32 + u8=0x00 + u32`) — that's the lobby registration request. The two messages are distinguishable only by which TCP channel they flow on. |
 | `0x3b` | 59 | `u16 car_id` + `u32 split_time` + `u8` + `u32 lap_time` + `u16 flags` | **Single sector split broadcast** — server-transformed relay of client `0x21` messages. Fixed 14-byte body. |
-| `0x3c` | 60 | `u16` `u16` `u32` | 9-byte record |
+| `0x3c` | 60 | `u16` `u16` `u32` | 9-byte record, triggered by client case `0x3d` |
 | `0x3e` | 62 | (body is empty — just the id byte) | Probable keepalive |
+| `0x40` | 64 | (body TBD) | Multi-message builder — the enclosing function contains two `vec_init` calls and writes at least `0x40` as a first byte. Body details need further decoding. |
 | `0x44` | 68 | *not part of game-client protocol* | Lobby registration request to Kunos's `kson` backend — only sent when `registerToLobby: 1`, irrelevant for private MP |
 | `0x47` | 71 | `u16` `u8` `u8` | 5-byte record |
 | `0x4f` (sub 0x00) | 79 | `u16` `u8=0x00` | 4-byte variant A |
 | `0x4f` (sub 0x01) | 79 | `u16` `u8=0x01` `u64` | 12-byte variant B — same ID byte, distinguished by a sub-opcode byte at offset 3 |
+| `0x53` | 83 | (body TBD) | Emitted from at least **two** distinct builders: the driver-swap forwarder and the larger session-transition multi-message builder. Likely two unrelated uses of the same id byte, distinguished by context. |
 | `0x59` | 89 | `u16` `u8` | 4-byte record |
+| `0x5b` | 91 | (body TBD) | **Note**: client → server TCP also has a `0x5b` message with a different meaning. This server → client `0x5b` is one of the three ids emitted by the session-transition multi-message builder and is likely a session-state notification. |
+| `0x5d` | 93 | (body TBD) | Emitted by the session-transition multi-message builder alongside `0x5b` and `0x2b`. |
 
-This list is **not exhaustive**. Several senders emit messages by `memcpy`-ing larger blocks (strings, embedded structures), and their wire formats were not captured by the inline-write extraction. Missing IDs are tracked in Notebook A's pass 2.8 notes.
+A comprehensive sweep has found **23 distinct server → client message IDs**. This list should be ≥90% complete for messages that use the standard `build-and-send` pattern. Messages built by generic serializers (where the msg id is a parameter, not a literal) or by virtual methods that don't initialize their own output vector may still be missing — most likely one or two additional ids at most.
 
 #### 5.6.4b Relay / broadcast architecture (two-tier)
 
