@@ -1,0 +1,43 @@
+accd -- ACC dedicated server reimplementation (work in progress)
+
+Placeholder name.  Rename to whatever you like.
+
+This is a clean-room reimplementation of the Assetto Corsa Competizione
+dedicated server, built so an unmodified ACC game client can connect
+and play a private multiplayer session without any traffic to Kunos's
+backend.  See ../notebook-b/NOTEBOOK_B.md for the protocol
+specification this code is working towards.
+
+STATUS
+    Phase 0 skeleton.  Binds the configured TCP and UDP listening
+    sockets and logs every byte received with a hex dump.  No protocol
+    interpretation yet.
+
+BUILD
+    make
+
+    Tested on Linux (aarch64, Debian sid).  Intended to also build on
+    OpenBSD without changes -- iconv is in libc on both platforms and
+    there are no GNU-isms in the source or the Makefile.
+
+RUN
+    The server expects cfg/configuration.json (UTF-16 LE) in its
+    current working directory, matching the Kunos server layout.
+    Easiest way is to run it from the stock server's directory:
+
+        cd /path/to/acc-server/server
+        /path/to/accd/accd
+
+    It will print the parsed config, bind the configured ports, and
+    log every byte received until interrupted (Ctrl-C).  On OpenBSD
+    the process pledges "stdio inet" after the ports are bound.
+
+    To test without a real client:
+
+        nc -u 127.0.0.1 $udpPort   # UDP test
+        nc    127.0.0.1 $tcpPort   # TCP test
+
+STYLE
+    Portable C99.  libc only.  KNF-ish with 4-space indents.
+    err(3)/errx(3) for fatal errors, sigaction(2) not signal(3),
+    pledge(2) on OpenBSD.  No dynamic allocation in the hot paths.
