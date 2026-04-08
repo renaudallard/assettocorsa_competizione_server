@@ -53,13 +53,13 @@ parse_int_arg(const char *s, int *out)
 	return 0;
 }
 
-void
+int
 chat_process(struct Server *s, struct Conn *c, const char *text)
 {
 	int car_num;
 
 	if (text == NULL || *text == '\0')
-		return;
+		return 1;
 
 	log_info("CHAT conn=%u: %s", (unsigned)c->conn_id, text);
 
@@ -75,7 +75,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			arg++;
 		if (*arg == '\0') {
 			log_info("admin: missing password");
-			return;
+			return 1;
 		}
 		if (strcmp(arg, s->admin_password) == 0) {
 			c->is_admin = 1;
@@ -85,7 +85,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			log_info("admin: wrong password from conn=%u",
 			    (unsigned)c->conn_id);
 		}
-		return;
+		return 1;
 	}
 
 	/*
@@ -95,21 +95,20 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		log_info("swap: conn=%u requested driver swap",
 		    (unsigned)c->conn_id);
 		/* TODO: validate session phase, locate driver, etc. */
-		return;
+		return 1;
 	}
 
 	/*
 	 * Everything else from here on is admin-only.
 	 */
 	if (text[0] != '/') {
-		log_info("chat broadcast (TODO): conn=%u: %s",
-		    (unsigned)c->conn_id, text);
-		return;
+		/* Regular chat: caller broadcasts a 0x2b. */
+		return 0;
 	}
 	if (!c->is_admin) {
 		log_info("admin command rejected (not admin) from conn=%u",
 		    (unsigned)c->conn_id);
-		return;
+		return 1;
 	}
 
 	if (prefix(text, "/next")) {
@@ -199,4 +198,5 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else {
 		log_info("admin: unknown command: %s", text);
 	}
+	return 1;
 }

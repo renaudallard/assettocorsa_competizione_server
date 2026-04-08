@@ -96,10 +96,61 @@ int
 h_sector_split_bulk(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
-	(void)s;
-	log_info("sector split (bulk): conn=%u len=%zu — relay TODO",
-	    (unsigned)c->conn_id, len);
-	(void)body;
+	struct Reader r;
+	uint8_t msg_id;
+	int32_t field_a, clock_ms;
+	uint8_t split_count;
+	uint16_t car_field;
+	uint32_t splits[16];
+	int i;
+	struct ByteBuf out;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_i32(&r, &field_a) < 0 ||
+	    rd_u8(&r, &split_count) < 0 ||
+	    rd_i32(&r, &clock_ms) < 0 ||
+	    rd_u16(&r, &car_field) < 0) {
+		log_warn("h_sector_split_bulk: short header from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	if (c->car_id < 0)
+		return 0;
+	if (split_count > 16) {
+		log_warn("Received split with unreasonable count %u "
+		    "from conn=%u",
+		    (unsigned)split_count, (unsigned)c->conn_id);
+		return 0;
+	}
+	for (i = 0; i < split_count; i++) {
+		if (rd_u32(&r, &splits[i]) < 0) {
+			log_warn("ACP_SECTOR_SPLIT: short split data");
+			return 0;
+		}
+	}
+	log_info("sector split bulk: car=%d field_a=%d count=%u "
+	    "clock=%d car_field=%u",
+	    c->car_id, (int)field_a, (unsigned)split_count,
+	    (int)clock_ms, (unsigned)car_field);
+
+	/* Build the transformed 0x3a broadcast. Body:
+	 *   u16 car_id + u8 split_count + u32[count] + i32 clock +
+	 *   u16 car_field. */
+	bb_init(&out);
+	if (wr_u8(&out, SRV_SECTOR_SPLITS_RELAY) < 0 ||
+	    wr_u16(&out, (uint16_t)c->car_id) < 0 ||
+	    wr_u8(&out, split_count) < 0)
+		goto done;
+	for (i = 0; i < split_count; i++)
+		if (wr_u32(&out, splits[i]) < 0)
+			goto done;
+	if (wr_i32(&out, clock_ms) < 0 ||
+	    wr_u16(&out, car_field) < 0)
+		goto done;
+	(void)bcast_all(s, out.data, out.wpos, c->conn_id);
+done:
+	bb_free(&out);
 	return 0;
 }
 
@@ -109,10 +160,42 @@ int
 h_sector_split_single(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
-	(void)s;
-	log_info("sector split (single): conn=%u len=%zu — relay TODO",
-	    (unsigned)c->conn_id, len);
-	(void)body;
+	struct Reader r;
+	uint8_t msg_id, flag_b, flag_d;
+	int32_t split_time, lap_time;
+	uint16_t car_field;
+	struct ByteBuf out;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_i32(&r, &split_time) < 0 ||
+	    rd_i32(&r, &lap_time) < 0 ||
+	    rd_u8(&r, &flag_b) < 0 ||
+	    rd_u16(&r, &car_field) < 0 ||
+	    rd_u8(&r, &flag_d) < 0) {
+		log_warn("h_sector_split_single: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	if (c->car_id < 0)
+		return 0;
+	log_info("sector split single: car=%d split=%d lap=%d",
+	    c->car_id, (int)split_time, (int)lap_time);
+
+	/* Build the transformed 0x3b broadcast. Body:
+	 *   u16 car_id + u32 split_time + u8 flag + u32 lap_time +
+	 *   u16 flags. */
+	bb_init(&out);
+	if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
+	    wr_u16(&out, (uint16_t)c->car_id) < 0 ||
+	    wr_u32(&out, (uint32_t)split_time) < 0 ||
+	    wr_u8(&out, flag_b) < 0 ||
+	    wr_u32(&out, (uint32_t)lap_time) < 0 ||
+	    wr_u16(&out, car_field) < 0)
+		goto done;
+	(void)bcast_all(s, out.data, out.wpos, c->conn_id);
+done:
+	bb_free(&out);
 	return 0;
 }
 
@@ -125,6 +208,8 @@ h_chat(struct Server *s, struct Conn *c,
 	struct Reader r;
 	uint8_t msg_id;
 	char *sender = NULL, *text = NULL;
+	int handled;
+	struct ByteBuf out;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0)
@@ -137,8 +222,7 @@ h_chat(struct Server *s, struct Conn *c,
 		free(text);
 		return 0;
 	}
-	log_info("chat: conn=%u %s: %s",
-	    (unsigned)c->conn_id, sender, text);
+	log_info("CHAT %s: %s", sender, text);
 	/*
 	 * Sanitize against printf format specifiers: the binary
 	 * refuses messages containing "%%".  We don't use printf
@@ -149,9 +233,24 @@ h_chat(struct Server *s, struct Conn *c,
 		    "specifier from conn=%u", (unsigned)c->conn_id);
 		goto out;
 	}
-	chat_process(s, c, text);
-	/* TODO: broadcast 0x2b reply when chat_process does not
-	 * handle the message as a slash command. */
+	handled = chat_process(s, c, text);
+	if (handled == 0) {
+		/*
+		 * Regular chat: broadcast a 0x2b to every other
+		 * client.  Body: sender name + text + i32 chat
+		 * type sub id + u8 = chat type 4 (system info)
+		 * per §5.6.4a.
+		 */
+		bb_init(&out);
+		if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
+		    wr_str_a(&out, sender) == 0 &&
+		    wr_str_a(&out, text) == 0 &&
+		    wr_i32(&out, 0) == 0 &&
+		    wr_u8(&out, 4) == 0)
+			(void)bcast_all(s, out.data, out.wpos,
+			    c->conn_id);
+		bb_free(&out);
+	}
 out:
 	free(sender);
 	free(text);
@@ -790,6 +889,30 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 
 /* ----- UDP 0x22 CAR_INFO_REQUEST -> reply 0x23 ------------------ */
 
+/*
+ * Build a per-car entry list record for the welcome trailer or
+ * for the 0x23 CAR_INFO_RESPONSE.  The 24-byte layout from
+ * §5.6.4c.  Returns 0 on success.
+ */
+static int
+build_per_car_record(struct ByteBuf *bb, struct CarEntry *car)
+{
+	if (wr_u8(bb, car->car_model) < 0 ||
+	    wr_u8(bb, car->cup_category) < 0 ||
+	    wr_u8(bb, (uint8_t)(car->driver_count ? car->driver_count : 1)) < 0 ||
+	    wr_u32(bb, (uint32_t)car->race_number) < 0 ||
+	    wr_u16(bb, car->nationality) < 0 ||
+	    wr_u32(bb, (uint32_t)car->car_id) < 0 ||
+	    wr_u32(bb, (uint32_t)(car->default_grid_position < 0 ?
+		0 : car->default_grid_position)) < 0 ||
+	    wr_u8(bb, car->ballast_kg) < 0 ||
+	    wr_u8(bb, car->current_driver_index) < 0 ||
+	    wr_u32(bb, 0) < 0 ||
+	    wr_u8(bb, 0) < 0)
+		return -1;
+	return 0;
+}
+
 int
 h_udp_car_info_request(struct Server *s,
     const unsigned char *body, size_t len)
@@ -797,6 +920,8 @@ h_udp_car_info_request(struct Server *s,
 	struct Reader r;
 	uint8_t msg_id;
 	uint16_t conn_id, car_index;
+	struct Conn *requester;
+	struct ByteBuf out;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
@@ -805,8 +930,30 @@ h_udp_car_info_request(struct Server *s,
 		log_warn("h_udp_car_info_request: short body");
 		return 0;
 	}
-	log_info("Connection %u asks for carInfo %u (TODO reply 0x23)",
+	log_info("Connection %u asks for carInfo %u",
 	    (unsigned)conn_id, (unsigned)car_index);
-	(void)s;
+
+	requester = server_find_conn(s, conn_id);
+	if (requester == NULL) {
+		log_warn("car info request from unknown conn %u",
+		    (unsigned)conn_id);
+		return 0;
+	}
+	if (car_index >= ACC_MAX_CARS || !s->cars[car_index].used) {
+		log_warn("car info request for unknown car %u",
+		    (unsigned)car_index);
+		return 0;
+	}
+
+	bb_init(&out);
+	if (wr_u8(&out, SRV_CAR_INFO_RESPONSE) < 0)
+		goto done;
+	if (build_per_car_record(&out, &s->cars[car_index]) < 0)
+		goto done;
+	bcast_send_one(requester, out.data, out.wpos);
+	log_info("Car Info Response sent carId=%u to conn=%u",
+	    (unsigned)car_index, (unsigned)conn_id);
+done:
+	bb_free(&out);
 	return 0;
 }

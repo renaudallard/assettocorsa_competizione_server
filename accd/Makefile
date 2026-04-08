@@ -64,7 +64,7 @@ net.o: net.c net.h log.h
 prim.o: prim.c prim.h io.h
 	${CC} ${CFLAGS} -c prim.c
 
-state.o: state.c state.h io.h
+state.o: state.c state.h bcast.h io.h log.h msg.h prim.h
 	${CC} ${CFLAGS} -c state.c
 
 tick.o: tick.c tick.h log.h msg.h state.h

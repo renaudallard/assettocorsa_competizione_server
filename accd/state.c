@@ -8,8 +8,12 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "state.h"
+#include "bcast.h"
 #include "io.h"
+#include "log.h"
+#include "msg.h"
+#include "prim.h"
+#include "state.h"
 
 void
 server_init(struct Server *s)
@@ -67,6 +71,25 @@ conn_drop(struct Server *s, struct Conn *c)
 {
 	if (c == NULL)
 		return;
+
+	/*
+	 * If the connection was authenticated, emit a
+	 * SRV_CAR_DISCONNECT_NOTIFY (0x24) to every remaining
+	 * connected client BEFORE we tear down this one's state.
+	 * The notify body is just the car id (u16).
+	 */
+	if (c->state == CONN_AUTH && c->car_id >= 0) {
+		struct ByteBuf bb;
+
+		bb_init(&bb);
+		if (wr_u8(&bb, SRV_CAR_DISCONNECT_NOTIFY) == 0 &&
+		    wr_u16(&bb, (uint16_t)c->car_id) == 0)
+			(void)bcast_all(s, bb.data, bb.wpos, c->conn_id);
+		bb_free(&bb);
+		log_info("Sent car %d disco to %d clients",
+		    c->car_id, s->nconns - 1);
+	}
+
 	if (c->fd >= 0)
 		close(c->fd);
 	bb_free(&c->rx);

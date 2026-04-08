@@ -15,10 +15,12 @@
 #include "state.h"
 
 /*
- * Process a chat message from c with the given UTF-8 text.  The
- * function may broadcast a 0x2b chat reply to one or more
- * clients, mutate server state, or close the connection (kick).
+ * Process a chat message from c with the given UTF-8 text.
+ * Returns 1 if the message was a command (admin or &swap) and
+ * has been fully handled (no chat broadcast needed).  Returns 0
+ * if it's a regular chat message that the caller should
+ * broadcast via 0x2b.
  */
-void	chat_process(struct Server *s, struct Conn *c, const char *text);
+int	chat_process(struct Server *s, struct Conn *c, const char *text);
 
 #endif /* ACCD_CHAT_H */
