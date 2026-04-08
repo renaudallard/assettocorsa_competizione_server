@@ -537,6 +537,47 @@ One message ID on the fixed LAN discovery port:
 
 **Note the namespace overlap**: `0x48` is used on both the LAN discovery port and the main TCP channel, but with different semantics. A message is disambiguated by the transport / destination port, not just by the ID byte.
 
+#### 5.6.4a Server → client message ID catalog
+
+**The server → client direction uses a separate ID namespace from client → server.** An ID like `0x4f` sent from client to server is not the same message as `0x4f` sent from server to client; the two directions have independent handler tables with independent wire formats.
+
+16 distinct server → client message IDs have been identified:
+
+| ID (hex) | ID (dec) | Body fields | Known semantic |
+|---|---|---|---|
+| `0x04` | 4 | (body is empty — just the id byte) | Probable ack / keepalive |
+| `0x0c` | 12 | `u8` `u32` `u32` `u32` | 14-byte record, semantics TBD |
+| `0x1b` | 27 | `u16` `u16` `u32` `u8` | 10-byte record, semantics TBD |
+| `0x24` | 36 | `u16 carIndex` | **`CAR_DISCONNECT_NOTIFY`** — the server tells every other client that this car has disconnected |
+| `0x2b` | 43 | `u32` `u8` | 6-byte record; emitted from two distinct call sites |
+| `0x2e` | 46 | `u16` `u64` | 11-byte record with a u64 (probably a timestamp) |
+| `0x37` | 55 | (body is empty — just the id byte) | Probable keepalive |
+| `0x3a` | 58 | `u8=0xc9` `u32` `u32` `u8=0x00` `u32` | 15-byte record with hardcoded bytes (0xc9 subtype, 0x00 padding) |
+| `0x3b` | 59 | `u16` `u32` `u8` `u32` `u16` | 14-byte record |
+| `0x3c` | 60 | `u16` `u16` `u32` | 9-byte record |
+| `0x3e` | 62 | (body is empty — just the id byte) | Probable keepalive |
+| `0x44` | 68 | *not part of game-client protocol* | Lobby registration request to Kunos's `kson` backend — only sent when `registerToLobby: 1`, irrelevant for private MP |
+| `0x47` | 71 | `u16` `u8` `u8` | 5-byte record |
+| `0x4f` (sub 0x00) | 79 | `u16` `u8=0x00` | 4-byte variant A |
+| `0x4f` (sub 0x01) | 79 | `u16` `u8=0x01` `u64` | 12-byte variant B — same ID byte, distinguished by a sub-opcode byte at offset 3 |
+| `0x59` | 89 | `u16` `u8` | 4-byte record |
+
+This list is **not exhaustive**. Several senders emit messages by `memcpy`-ing larger blocks (strings, embedded structures), and their wire formats were not captured by the inline-write extraction. Missing IDs are tracked in Notebook A's pass 2.8 notes.
+
+#### 5.6.4b Relay / broadcast pattern
+
+For several client → server message IDs (specifically `0x2a`, `0x2e`, `0x2f`, `0x32`), the server's handling is a **relay**:
+
+1. The server receives the message from client A.
+2. The server reads enough fields to validate and log the event (typically 0–3 scalar fields).
+3. The server then **broadcasts the same payload unchanged to every other connected client**, using the embedded TCP sockets on each client's connection state.
+
+The broadcast helper iterates the list of connected clients, checks each for "ready to receive", and calls `tcp_send_framed(payload, client_socket)` once per recipient. The sending client is excluded from the broadcast.
+
+**This means many messages are not re-serialized by the server** — they are relayed byte-for-byte. A reimplementation can handle these messages with a simple "receive and re-send" loop, without needing to understand the body contents beyond minimal validation.
+
+Messages that are **not** relayed (and must be re-built server-side) include: the handshake response, session state snapshots, entry list pushes, disconnect notifications (`0x24`), and anything the server originates in response to its own state changes rather than to an incoming message.
+
 #### 5.6.4 Handshake (message id `0x09`)
 
 Called when a new TCP client first connects. The body field order is:
