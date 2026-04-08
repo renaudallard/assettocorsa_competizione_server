@@ -704,8 +704,6 @@ h_elo_update(struct Server *s, struct Conn *c,
 	uint8_t msg_id;
 	uint16_t new_elo, reserved;
 
-	(void)s;
-
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u16(&r, &new_elo) < 0 ||
@@ -713,9 +711,12 @@ h_elo_update(struct Server *s, struct Conn *c,
 		log_warn("h_elo_update: short body");
 		return 0;
 	}
-	log_info("Car %d elo update => %u",
-	    c->car_id, (unsigned)new_elo);
-	/* TODO: update per-car rating. */
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
+		log_info("Car %d elo update => %u",
+		    c->car_id, (unsigned)new_elo);
+		/* Phase 3 just logs; nothing persisted to disk yet. */
+	}
+	(void)s;
 	return 0;
 }
 

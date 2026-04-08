@@ -9,6 +9,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <sys/socket.h>
 #include <arpa/inet.h>
 #include <stddef.h>
 
@@ -18,6 +19,7 @@
 #include "io.h"
 #include "log.h"
 #include "msg.h"
+#include "prim.h"
 #include "state.h"
 
 /* ----- one TCP message ------------------------------------------- */
@@ -174,11 +176,33 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		return;
 
 	case ACP_TIME_EVENT:		/* 0x5e */
-	case ACP_ADMIN_QUERY:		/* 0x5f */
-		log_info("udp 0x%02x from %s:%u (%zu bytes) — TODO",
-		    (unsigned)msg_id, inet_ntoa(peer->sin_addr),
-		    ntohs(peer->sin_port), len);
+		log_info("udp 0x5e time event from %s:%u (%zu bytes) — TODO",
+		    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port), len);
 		return;
+
+	case ACP_ADMIN_QUERY: {		/* 0x5f */
+		/*
+		 * Admin / server-identity query.  Client sends a
+		 * Format-B string (the identifier it expects); if it
+		 * matches our configured identifier we reply with a
+		 * Format-A server name.  For phase 2 we just reply
+		 * unconditionally with the server name since we don't
+		 * yet carry a separate query identifier.
+		 */
+		struct ByteBuf reply;
+
+		log_info("udp 0x5f admin query from %s:%u",
+		    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port));
+		bb_init(&reply);
+		if (wr_u8(&reply, ACP_ADMIN_QUERY) == 0 &&
+		    wr_str_a(&reply, s->server_name) == 0) {
+			(void)sendto(s->udp_fd, reply.data, reply.wpos, 0,
+			    (const struct sockaddr *)peer,
+			    (socklen_t)sizeof(*peer));
+		}
+		bb_free(&reply);
+		return;
+	}
 
 	default:
 		log_warn("Received unknown UDP paket %u from %s:%u",

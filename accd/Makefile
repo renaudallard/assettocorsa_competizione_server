@@ -40,7 +40,7 @@ chat.o: chat.c chat.h log.h msg.h state.h
 config.o: config.c config.h log.h state.h
 	${CC} ${CFLAGS} -c config.c
 
-dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h state.h
+dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c dispatch.c
 
 handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h prim.h state.h
