@@ -1,0 +1,749 @@
+/*
+ * handlers.c -- per-msg-id handlers.
+ *
+ * These correspond one-for-one to the 21 TCP dispatcher cases and
+ * the 7 UDP cases in the binary's main message dispatcher.  See
+ * notebook-b/NOTEBOOK_B.md §5.6.1 and §5.6.2.
+ *
+ * Implementation strategy: the relay-path handlers (tier 1) read
+ * the minimum fields they need for validation, then build a fresh
+ * outgoing body and broadcast it via bcast_all.  The transform-
+ * path handlers (tier 2, e.g. lap completed -> 0x1b) do the
+ * per-recipient broadcast the same way since no per-recipient
+ * delta transformation has been implemented yet.
+ *
+ * Car state mutations are TODO-flagged for each handler that
+ * needs a larger per-car state struct than we currently have.
+ */
+
+#define _POSIX_C_SOURCE 200809L
+
+#include <stdlib.h>
+#include <string.h>
+
+#include "bcast.h"
+#include "chat.h"
+#include "handlers.h"
+#include "io.h"
+#include "log.h"
+#include "msg.h"
+#include "prim.h"
+#include "state.h"
+
+/*
+ * Helper: verify that the given carId matches the car slot owned
+ * by this connection.  Returns 0 if valid, -1 if not.
+ */
+static int
+check_car_owner(struct Conn *c, uint16_t car_id)
+{
+	if (c->car_id < 0)
+		return -1;
+	return ((uint16_t)c->car_id == car_id) ? 0 : -1;
+}
+
+/* ----- 0x19 ACP_LAP_COMPLETED -> broadcast 0x1b ------------------ */
+
+int
+h_lap_completed(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	uint16_t pos_a, pos_b;
+	int32_t lap_time_ms;
+	uint8_t quality;
+	struct ByteBuf out;
+	int rc;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0)
+		return -1;
+	if (rd_u16(&r, &pos_a) < 0 ||
+	    rd_u16(&r, &pos_b) < 0 ||
+	    rd_i32(&r, &lap_time_ms) < 0 ||
+	    rd_u8(&r, &quality) < 0) {
+		log_warn("h_lap_completed: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	log_info("lap: conn=%u pos_a=%u pos_b=%u time=%d ms quality=%u",
+	    (unsigned)c->conn_id, (unsigned)pos_a, (unsigned)pos_b,
+	    (int)lap_time_ms, (unsigned)quality);
+
+	/*
+	 * Build the transformed 0x1b broadcast.  For now we just
+	 * forward the same four fields; per-recipient delta
+	 * computations can be layered on later.
+	 */
+	bb_init(&out);
+	if (wr_u8(&out, SRV_LAP_BROADCAST) < 0 ||
+	    wr_u16(&out, pos_a) < 0 ||
+	    wr_u16(&out, pos_b) < 0 ||
+	    wr_i32(&out, lap_time_ms) < 0 ||
+	    wr_u8(&out, quality) < 0)
+		goto out;
+	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	log_info("lap: relayed to %d clients", rc);
+out:
+	bb_free(&out);
+	return 0;
+}
+
+/* ----- 0x20 ACP_SECTOR_SPLIT (bulk) -> broadcast 0x3a ------------ */
+
+int
+h_sector_split_bulk(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	(void)s;
+	log_info("sector split (bulk): conn=%u len=%zu — relay TODO",
+	    (unsigned)c->conn_id, len);
+	(void)body;
+	return 0;
+}
+
+/* ----- 0x21 ACP_SECTOR_SPLIT (single) -> broadcast 0x3b ---------- */
+
+int
+h_sector_split_single(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	(void)s;
+	log_info("sector split (single): conn=%u len=%zu — relay TODO",
+	    (unsigned)c->conn_id, len);
+	(void)body;
+	return 0;
+}
+
+/* ----- 0x2a ACP_CHAT -> chat_process + 0x2b broadcast ----------- */
+
+int
+h_chat(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	char *sender = NULL, *text = NULL;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0)
+		return -1;
+	if (rd_str_a(&r, &sender) < 0 ||
+	    rd_str_a(&r, &text) < 0) {
+		log_warn("h_chat: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		free(sender);
+		free(text);
+		return 0;
+	}
+	log_info("chat: conn=%u %s: %s",
+	    (unsigned)c->conn_id, sender, text);
+	/*
+	 * Sanitize against printf format specifiers: the binary
+	 * refuses messages containing "%%".  We don't use printf
+	 * on the text but the client might.
+	 */
+	if (text != NULL && strstr(text, "%%") != NULL) {
+		log_warn("h_chat: dropping message with format "
+		    "specifier from conn=%u", (unsigned)c->conn_id);
+		goto out;
+	}
+	chat_process(s, c, text);
+	/* TODO: broadcast 0x2b reply when chat_process does not
+	 * handle the message as a slash command. */
+out:
+	free(sender);
+	free(text);
+	return 0;
+}
+
+/* ----- 0x2e ACP_CAR_SYSTEM_UPDATE -> broadcast 0x2e ------------- */
+
+int
+h_car_system_update(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	uint16_t car_id;
+	uint64_t sys_data;
+	struct ByteBuf out;
+	int rc;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &car_id) < 0 ||
+	    rd_u64(&r, &sys_data) < 0) {
+		log_warn("h_car_system_update: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	if (check_car_owner(c, car_id) < 0) {
+		log_warn("Received ACP_CAR_SYSTEM_UPDATE for wrong car "
+		    "- senderId %u, carId %u",
+		    (unsigned)c->conn_id, (unsigned)car_id);
+		return 0;
+	}
+	log_info("car system: car=%u data=%016llx",
+	    (unsigned)car_id, (unsigned long long)sys_data);
+
+	bb_init(&out);
+	if (wr_u8(&out, SRV_CAR_SYSTEM_RELAY) < 0 ||
+	    wr_u16(&out, car_id) < 0 ||
+	    wr_u64(&out, sys_data) < 0)
+		goto out;
+	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	log_info("Updated %d clients with new carSystem for car %u (%llu)",
+	    rc, (unsigned)car_id, (unsigned long long)sys_data);
+out:
+	bb_free(&out);
+	return 0;
+}
+
+/* ----- 0x2f ACP_TYRE_COMPOUND_UPDATE -> broadcast 0x2f ---------- */
+
+int
+h_tyre_compound_update(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	uint16_t car_id;
+	uint8_t compound;
+	struct ByteBuf out;
+	int rc;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &car_id) < 0 ||
+	    rd_u8(&r, &compound) < 0) {
+		log_warn("h_tyre_compound_update: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	if (check_car_owner(c, car_id) < 0) {
+		log_warn("Received ACP_TYRE_COMPOUND_UPDATE for wrong car "
+		    "- senderId %u, carId %u",
+		    (unsigned)c->conn_id, (unsigned)car_id);
+		return 0;
+	}
+	log_info("tyre: car=%u compound=%u",
+	    (unsigned)car_id, (unsigned)compound);
+
+	bb_init(&out);
+	if (wr_u8(&out, SRV_TYRE_COMPOUND_RELAY) < 0 ||
+	    wr_u16(&out, car_id) < 0 ||
+	    wr_u8(&out, compound) < 0)
+		goto out;
+	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	log_info("Updated %d clients with new tyreCompound for car %u",
+	    rc, (unsigned)car_id);
+out:
+	bb_free(&out);
+	return 0;
+}
+
+/* ----- 0x32 ACP_CAR_LOCATION_UPDATE -> broadcast 0x32 ----------- */
+
+int
+h_car_location_update(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, location;
+	uint16_t car_id;
+	struct ByteBuf out;
+	int rc;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &car_id) < 0 ||
+	    rd_u8(&r, &location) < 0) {
+		log_warn("h_car_location_update: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	if (check_car_owner(c, car_id) < 0) {
+		log_warn("Received ACP_CAR_LOCATION_UPDATE for wrong car "
+		    "- senderId %u, carId %u",
+		    (unsigned)c->conn_id, (unsigned)car_id);
+		return 0;
+	}
+	log_info("car location: car=%u loc=%u",
+	    (unsigned)car_id, (unsigned)location);
+
+	bb_init(&out);
+	if (wr_u8(&out, ACP_CAR_LOCATION_UPDATE) < 0 ||
+	    wr_u16(&out, car_id) < 0 ||
+	    wr_u8(&out, location) < 0)
+		goto out;
+	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	(void)rc;
+out:
+	bb_free(&out);
+	return 0;
+}
+
+/* ----- 0x3d ACP_OUT_OF_TRACK -> broadcast 0x3c ------------------ */
+
+int
+h_out_of_track(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, force;
+	int32_t ts_raw;
+	struct ByteBuf out;
+	int rc;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u8(&r, &force) < 0 ||
+	    rd_i32(&r, &ts_raw) < 0) {
+		log_warn("h_out_of_track: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	if (c->car_id < 0) {
+		log_warn("received ACP_OUT_OF_TRACK, but no car %d found",
+		    c->car_id);
+		return 0;
+	}
+	log_info("out-of-track: car=%d force=%u ts=%d",
+	    c->car_id, (unsigned)force, (int)ts_raw);
+
+	bb_init(&out);
+	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
+	    wr_u16(&out, (uint16_t)c->car_id) < 0 ||
+	    wr_u16(&out, 0) < 0 ||
+	    wr_u32(&out, (uint32_t)ts_raw) < 0)
+		goto out;
+	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	(void)rc;
+out:
+	bb_free(&out);
+	return 0;
+}
+
+/* ----- 0x41 ACP_REPORT_PENALTY ---------------------------------- */
+
+int
+h_report_penalty(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, force, ptype;
+	uint64_t ts_raw;
+	int32_t value;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u8(&r, &force) < 0 ||
+	    rd_u8(&r, &ptype) < 0 ||
+	    rd_u64(&r, &ts_raw) < 0 ||
+	    rd_i32(&r, &value) < 0) {
+		log_warn("h_report_penalty: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	log_info("report penalty: conn=%u force=%u type=%u ts=%llu value=%d",
+	    (unsigned)c->conn_id, (unsigned)force, (unsigned)ptype,
+	    (unsigned long long)ts_raw, (int)value);
+	/* TODO: store in per-car penalty queue. */
+	return 0;
+}
+
+/* ----- 0x42 ACP_LAP_TICK ---------------------------------------- */
+
+int
+h_lap_tick(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	uint64_t ts_raw;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u64(&r, &ts_raw) < 0) {
+		log_warn("h_lap_tick: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	log_info("lap tick: conn=%u ts=%llu",
+	    (unsigned)c->conn_id, (unsigned long long)ts_raw);
+	return 0;
+}
+
+/* ----- 0x43 ACP_DAMAGE_ZONES_UPDATE -> broadcast 0x44 ----------- */
+
+int
+h_damage_zones(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, zones[5];
+	int i;
+	struct ByteBuf out;
+	int rc;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0)
+		return -1;
+	for (i = 0; i < 5; i++) {
+		if (rd_u8(&r, &zones[i]) < 0) {
+			log_warn("h_damage_zones: short body "
+			    "from conn=%u", (unsigned)c->conn_id);
+			return 0;
+		}
+	}
+	if (c->car_id < 0)
+		return 0;
+	log_info("damage zones: car=%d [%u,%u,%u,%u,%u]",
+	    c->car_id, zones[0], zones[1], zones[2], zones[3], zones[4]);
+
+	bb_init(&out);
+	if (wr_u8(&out, SRV_DAMAGE_ZONES_RELAY) < 0 ||
+	    wr_u16(&out, (uint16_t)c->car_id) < 0)
+		goto out;
+	for (i = 0; i < 5; i++)
+		if (wr_u8(&out, zones[i]) < 0)
+			goto out;
+	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	log_info("Updated %d clients with new damage zones for car %d",
+	    rc, c->car_id);
+out:
+	bb_free(&out);
+	return 0;
+}
+
+/* ----- 0x45 ACP_CAR_DIRT_UPDATE -> broadcast 0x46 --------------- */
+
+int
+h_car_dirt(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, dirt[5];
+	int i;
+	struct ByteBuf out;
+	int rc;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0)
+		return -1;
+	for (i = 0; i < 5; i++) {
+		if (rd_u8(&r, &dirt[i]) < 0) {
+			log_warn("h_car_dirt: short body from conn=%u",
+			    (unsigned)c->conn_id);
+			return 0;
+		}
+	}
+	if (c->car_id < 0)
+		return 0;
+	log_info("car dirt: car=%d [%u,%u,%u,%u,%u]",
+	    c->car_id, dirt[0], dirt[1], dirt[2], dirt[3], dirt[4]);
+
+	bb_init(&out);
+	if (wr_u8(&out, SRV_CAR_DIRT_RELAY) < 0 ||
+	    wr_u16(&out, (uint16_t)c->car_id) < 0)
+		goto out;
+	for (i = 0; i < 5; i++)
+		if (wr_u8(&out, dirt[i]) < 0)
+			goto out;
+	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	(void)rc;
+out:
+	bb_free(&out);
+	return 0;
+}
+
+/* ----- 0x47 ACP_UPDATE_DRIVER_SWAP_STATE ------------------------ */
+
+int
+h_update_driver_swap_state(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	uint16_t car_id;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 || rd_u16(&r, &car_id) < 0) {
+		log_warn("h_update_driver_swap_state: short body");
+		return 0;
+	}
+	if (check_car_owner(c, car_id) < 0) {
+		log_warn("Received ACP_UPDATE_DRIVER_SWAP_STATE for alien "
+		    "car: %u (receiver car %d, connection %u)",
+		    (unsigned)car_id, c->car_id, (unsigned)c->conn_id);
+		return 0;
+	}
+	log_info("driver swap state update: car=%u (TODO)",
+	    (unsigned)car_id);
+	return 0;
+}
+
+/* ----- 0x48 ACP_EXECUTE_DRIVER_SWAP -> reply 0x49, maybe 0x58 --- */
+
+int
+h_execute_driver_swap(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, swap_code, result;
+	uint16_t car_id;
+	struct ByteBuf out;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &car_id) < 0 ||
+	    rd_u8(&r, &swap_code) < 0) {
+		log_warn("h_execute_driver_swap: short body");
+		return 0;
+	}
+	if (c->car_id < 0) {
+		log_warn("ACP_EXECUTE_DRIVER_SWAP, but no car controlled "
+		    "for connection %u", (unsigned)c->conn_id);
+		result = 1;
+	} else if ((uint16_t)c->car_id != car_id) {
+		log_warn("ACP_EXECUTE_DRIVER_SWAP, but carId mismatch: %u "
+		    "(car controlled %d for connection %u)",
+		    (unsigned)car_id, c->car_id, (unsigned)c->conn_id);
+		result = 1;
+	} else {
+		log_info("Driver swap result: 0");
+		result = 0;
+	}
+
+	/* Send 0x49 reply to the requester. */
+	bb_init(&out);
+	if (wr_u8(&out, SRV_DRIVER_SWAP_RESULT) < 0 ||
+	    wr_u8(&out, result) < 0)
+		goto out;
+	bcast_send_one(c, out.data, out.wpos);
+out:
+	bb_free(&out);
+	return 0;
+}
+
+/* ----- 0x4a ACP_DRIVER_SWAP_STATE_REQUEST ----------------------- */
+
+int
+h_driver_swap_state_request(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, sub_state, conn_state;
+	uint16_t car_id;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &car_id) < 0 ||
+	    rd_u8(&r, &sub_state) < 0 ||
+	    rd_u8(&r, &conn_state) < 0) {
+		log_warn("h_driver_swap_state_request: short body");
+		return 0;
+	}
+	if (check_car_owner(c, car_id) < 0) {
+		log_warn("ACP_DRIVER_SWAP_STATE_REQUEST for the wrong "
+		    "carId: %u (Connection owns %d)",
+		    (unsigned)car_id, c->car_id);
+		return 0;
+	}
+	if (sub_state != 2 && sub_state != 3 && sub_state != 4) {
+		log_warn("DriverSwap Request for type %u is not "
+		    "implemented", (unsigned)sub_state);
+		return 0;
+	}
+	log_info("driver swap state request: car=%u sub=%u state=%u (TODO)",
+	    (unsigned)car_id, (unsigned)sub_state, (unsigned)conn_state);
+	return 0;
+}
+
+/* ----- 0x4f ACP_DRIVER_STINT_RESET ------------------------------ */
+
+int
+h_driver_stint_reset(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, force;
+	uint64_t ts_raw;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u8(&r, &force) < 0 ||
+	    rd_u64(&r, &ts_raw) < 0) {
+		log_warn("h_driver_stint_reset: short body");
+		return 0;
+	}
+	log_info("Receives driver stint reset for car %d", c->car_id);
+	return 0;
+}
+
+/* ----- 0x51 ACP_ELO_UPDATE -------------------------------------- */
+
+int
+h_elo_update(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	uint16_t new_elo, reserved;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &new_elo) < 0 ||
+	    rd_u16(&r, &reserved) < 0) {
+		log_warn("h_elo_update: short body");
+		return 0;
+	}
+	log_info("Car %d elo update => %u",
+	    c->car_id, (unsigned)new_elo);
+	/* TODO: update per-car rating. */
+	return 0;
+}
+
+/* ----- 0x54 ACP_MANDATORY_PITSTOP_SERVED ------------------------ */
+
+int
+h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	uint16_t car_id;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &car_id) < 0) {
+		log_warn("h_mandatory_pitstop_served: short body");
+		return 0;
+	}
+	if (check_car_owner(c, car_id) < 0) {
+		log_warn("Received ACP_MANDATORY_PITSTOP_SERVED for carId "
+		    "%u, but connection is %u",
+		    (unsigned)car_id, (unsigned)c->conn_id);
+		return 0;
+	}
+	log_info("Served Mandatory Pitstop: %u", (unsigned)car_id);
+	return 0;
+}
+
+/* ----- 0x55 ACP_LOAD_SETUP -> reply 0x56 ------------------------ */
+
+int
+h_load_setup(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, setup_index;
+	uint16_t car_id;
+	uint32_t revision;
+
+	(void)s;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u8(&r, &setup_index) < 0 ||
+	    rd_u16(&r, &car_id) < 0 ||
+	    rd_u32(&r, &revision) < 0) {
+		log_warn("h_load_setup: short body");
+		return 0;
+	}
+	log_info("load setup: conn=%u car=%u index=%u rev=%u (TODO reply 0x56)",
+	    (unsigned)c->conn_id, (unsigned)car_id,
+	    (unsigned)setup_index, (unsigned)revision);
+	return 0;
+}
+
+/* ----- 0x5b ACP_CTRL_INFO --------------------------------------- */
+
+int
+h_ctrl_info(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	(void)s;
+	log_info("ctrl info: conn=%u len=%zu (TODO)",
+	    (unsigned)c->conn_id, len);
+	(void)body;
+	return 0;
+}
+
+/* ----- UDP 0x1e ACP_CAR_UPDATE ---------------------------------- */
+
+int
+h_udp_car_update(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, seq;
+	uint16_t source_conn_id, target_car_id;
+	uint32_t client_ts_ms;
+
+	(void)s;
+	(void)c;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &source_conn_id) < 0 ||
+	    rd_u16(&r, &target_car_id) < 0 ||
+	    rd_u8(&r, &seq) < 0 ||
+	    rd_u32(&r, &client_ts_ms) < 0) {
+		log_warn("h_udp_car_update: short header");
+		return 0;
+	}
+	if (len < 68) {
+		log_warn("CarUpdate size is unexpected; did you forget "
+		    "to update the megapak? (%zu byte, %d byte expected)",
+		    len, 68);
+		return 0;
+	}
+	log_info("ACP_CAR_UPDATE: src_conn=%u car=%u seq=%u ts=%u",
+	    (unsigned)source_conn_id, (unsigned)target_car_id,
+	    (unsigned)seq, (unsigned)client_ts_ms);
+	/* TODO: store the 58 body bytes at per-car state +0x8..+0x4d
+	 * and fan out via 0x1e / 0x39 broadcasts from the tick. */
+	return 0;
+}
+
+/* ----- UDP 0x22 CAR_INFO_REQUEST -> reply 0x23 ------------------ */
+
+int
+h_udp_car_info_request(struct Server *s,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id;
+	uint16_t conn_id, car_index;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_u16(&r, &conn_id) < 0 ||
+	    rd_u16(&r, &car_index) < 0) {
+		log_warn("h_udp_car_info_request: short body");
+		return 0;
+	}
+	log_info("Connection %u asks for carInfo %u (TODO reply 0x23)",
+	    (unsigned)conn_id, (unsigned)car_index);
+	(void)s;
+	return 0;
+}

@@ -6,9 +6,11 @@
 PROG =		accd
 
 OBJS =		main.o \
+		bcast.o \
 		chat.o \
 		config.o \
 		dispatch.o \
+		handlers.o \
 		handshake.o \
 		io.o \
 		lan.o \
@@ -29,14 +31,20 @@ ${PROG}: ${OBJS}
 main.o: main.c config.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
 	${CC} ${CFLAGS} -c main.c
 
+bcast.o: bcast.c bcast.h io.h log.h msg.h state.h
+	${CC} ${CFLAGS} -c bcast.c
+
 chat.o: chat.c chat.h log.h msg.h state.h
 	${CC} ${CFLAGS} -c chat.c
 
 config.o: config.c config.h log.h state.h
 	${CC} ${CFLAGS} -c config.c
 
-dispatch.o: dispatch.c dispatch.h handshake.h io.h log.h msg.h prim.h state.h
+dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h state.h
 	${CC} ${CFLAGS} -c dispatch.c
+
+handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h prim.h state.h
+	${CC} ${CFLAGS} -c handlers.c
 
 handshake.o: handshake.c handshake.h io.h log.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c handshake.c
