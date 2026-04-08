@@ -499,7 +499,7 @@ Messages carried over the reliable TCP control channel. 22 distinct IDs:
 | `0x2e` | 46 | (body TBD) |
 | `0x2f` | 47 | (body TBD) |
 | `0x32` | 50 | **`ACP_CAR_LOCATION_UPDATE`** — body is `u16 carIndex` + `u8 carLocation` (5-value enum: NONE/Track/Pitlane/PitEntry/PitExit, see §7.9). Historical ACP name is still current. |
-| `0x3d` | 61 | `u8` + `i32` (2 fields) |
+| `0x3d` | 61 | **Event report** — body is `u8` + `i32` (2 fields). The server broadcasts a transformed server `0x3c` message (body `u16` + `u16` + `u32`, 9 bytes) to all other clients. |
 | `0x41` | 65 | `u8` + `u8` + `u64` + `i32` (4 fields; u64 likely timestamp) |
 | `0x42` | 66 | Single `u64`. **Probable clock synchronization** — client sends its timestamp, server uses it to compute offsets. |
 | `0x43` | 67 | (body delegated, not directly read) |
@@ -507,7 +507,7 @@ Messages carried over the reliable TCP control channel. 22 distinct IDs:
 | `0x47` | 71 | (body delegated; server sends a response immediately) |
 | `0x48` | 72 | `u16` + `u8` (distinct from the UDP `0x48` LAN discovery below; server sends a response) |
 | `0x4a` | 74 | `u16` + `u8` + `u8` (server sends a response) |
-| `0x4f` | 79 | `u8` + `u64` |
+| `0x4f` | 79 | **Event report with sub-variants** — body is `u8` + `u64`. The server broadcasts a transformed server `0x4f` message with a sub-opcode byte at body offset 3: sub `0x00` for the 4-byte variant (u16 + u8=0x00), sub `0x01` for the 12-byte variant (u16 + u8=0x01 + u64). |
 | `0x51` | 81 | Two `u16` fields (probably a small command, e.g. "focus car X, camera Y") |
 | `0x54` | 84 | Single `u16` (car index?) |
 | `0x55` | 85 | `u8` + `u16` + `i32` followed by a full embedded **CarInfo** (via `CarInfo::readFromPacket`). Carries the client's updated car state. |
@@ -519,13 +519,13 @@ Messages carried over the unreliable UDP channel on the main `udpPort`. 7 distin
 
 | ID (hex) | ID (dec) | Name / meaning |
 |---|---|---|
-| `0x13` | 19 | (pre-handshake message; body not decoded) |
+| `0x13` | 19 | **Silent keepalive** — the server receives these packets but does nothing with them; they skip both the per-id statistics tracking and the handler dispatch chain. A reimplementation should accept and silently drop them. |
 | `0x16` | 22 | **`PONG_PHYSICS`** — physics-side clock-sync ping/pong used to measure per-client latency and adjust simulation timestamps. Body: `u16 conn_id` + `u16 ?` + `i32 ts1` + `i32 ts2`. |
-| `0x17` | 23 | (pre-handshake message; body not decoded) |
+| `0x17` | 23 | **Silent keepalive** — same treatment as `0x13`. Both ids are excluded from bandwidth/qos statistics and have no server-side handler. |
 | `0x1e` | 30 | **`ACP_CAR_UPDATE`** — the per-tick car state update, sent by each client at simulation tick rate. Body layout: `u16 source_conn_id` + `u16 target_car_id` + `u8 flag` + `u32 value` (9-byte header) followed by 3 × `Vector3<float>` (36 bytes for position, velocity, and either angular velocity or forward direction), then a 4-byte input array (throttle / brake / clutch / handbrake or similar), several scalar state bytes, a `u16`, a 4 × `u32` array (sector / lap timing data), and more scalars. Total body ~60–80 bytes. Server validates that the source connection owns the target car and rejects the update otherwise. Wire order is **not** the same as the corresponding C++ struct field order — a reimplementation must preserve the observed wire sequence, not derive it from any public struct definition. |
 | `0x22` | 34 | **`CAR_INFO_REQUEST`** — body is `u16 connectionId` + `u16 carIndex`. The server replies with a full `CarInfo` structure for the requested car. Historical ACP name is still current. |
 | `0x5e` | 94 | Four-field record: `u16` + `u16` + `u64` + `u8` (possibly a time-synchronized event) |
-| `0x5f` | 95 | (delegated — body not yet decoded) |
+| `0x5f` | 95 | **Admin / server-identity query** — the client sends a Format-B string (typically an identifier or admin password). If the string matches the server's configured identifier, the server replies on UDP with another Format-A string containing the server's name / identification. Used by admin tooling to verify server identity over UDP without establishing a full TCP session. A reimplementation targeting private MP can ignore these messages. |
 
 #### 5.6.3 LAN discovery (UDP 8999)
 
@@ -588,7 +588,13 @@ repeated {per-connected-car record}    (typically 20+ bytes per car)
 ... trailing state scalars ...
 ```
 
-The sub-records enumerated above (the SeasonEntity, session manager state, assist rules, and server configuration snapshots) are serialized by dedicated per-type builders. Their exact inner formats require further analysis — the top-level welcome-trailer structure is known but the body of each sub-record is not yet decoded.
+The sub-records enumerated above are serialized by dedicated per-type builders. Partial structural information is known for each:
+
+- **Session manager state**: one leading flag byte followed by **7 session records spaced 56 bytes apart in the server struct** (matches the max session count in a race weekend: FP1/FP2/FP3/Q/Q2/R/R2), followed by a tail record. Each session record is serialized by a dedicated per-session appender whose exact body is not yet decoded.
+- **Assist rules**: built in a two-step pattern — a temporary snapshot is assembled from the server's runtime state (applying overrides from `assistRules.json`), then that snapshot is serialized into the outgoing packet with ~7 fields (matching the handbook's assist controls: stability control level, auto-steer, auto-lights, auto-wiper, auto-engine-start, auto-pit-limiter, auto-gear, auto-clutch, ideal-line).
+- **Additional state**: conditional — several server-side flags control whether this record is emitted at all. When present, it contains runtime state that is only meaningful after a session has actually started (session phase, active rules, etc.). A minimal reimplementation can send an empty placeholder here.
+
+A reimplementation aiming for wire-level compatibility with the accept path will need to decode the per-session appender and the assist-rules serializer (each is a few hundred bytes of decompilation). For phase-1 reject-only operation, neither is needed.
 
 **Practical recommendations**:
 
@@ -610,7 +616,7 @@ The sub-records enumerated above (the SeasonEntity, session manager state, assis
 | `0x1b` | 27 | `u16 pos_a` `u16 pos_b` `i32 lap_time_ms` `u8 quality` | **Lap time broadcast** — the server forwards a client's lap-time report to all other clients. Triggered by a client sending TCP id `0x19` (see §5.6.1). The `quality` byte is `0xFF` for invalid, otherwise a normalized 0..255 value derived from a float. |
 | `0x24` | 36 | `u16 carIndex` | **`CAR_DISCONNECT_NOTIFY`** — the server tells every other client that this car has disconnected |
 | `0x2b` | 43 | `u32` `u8` | 6-byte record; emitted from two distinct call sites |
-| `0x2e` | 46 | `u16` `u64` | 11-byte record with a u64 (probably a timestamp) |
+| `0x2e` | 46 | `u16` `u64` | **New-client-joined notify** — 11-byte record with a u64 timestamp. Pushed by the server to every existing client during a new client's handshake-accept sequence (called from the handshake handler with each other client's TCP socket as the target). A reimplementation joining a second client will need to emit this to the first client at the right moment. |
 | `0x37` | 55 | (body is empty — just the id byte) | Probable keepalive |
 | `0x3a` | 58 | `u16 car_id` + `u8 split_count` + `u32[count]` + `i32 clock` + `u16 car_field` | **Sector splits broadcast (game protocol)** — server-transformed relay of client `0x20` messages. Variable-length body (depends on split count). **Note**: a separate message with the same first byte `0x3a` exists on the lobby backend connection with a completely different fixed-15-byte body (`u8=0xc9 + u32 + u32 + u8=0x00 + u32`) — that's the lobby registration request. The two messages are distinguishable only by which TCP channel they flow on. |
 | `0x3b` | 59 | `u16 car_id` + `u32 split_time` + `u8` + `u32 lap_time` + `u16 flags` | **Single sector split broadcast** — server-transformed relay of client `0x21` messages. Fixed 14-byte body. |
