@@ -30,7 +30,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <time.h>
 
+#include "bcast.h"
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
@@ -189,5 +191,44 @@ handshake_handle(struct Server *s, struct Conn *c,
 
 reply:
 	free(password);
-	return handshake_send(c, reason, s);
+	if (handshake_send(c, reason, s) < 0)
+		return -1;
+
+	/*
+	 * After a successful accept, fan out 0x2e new-client-
+	 * joined notify to every OTHER already-connected client.
+	 * This lets them add the joining car to their local entry
+	 * list and display it in the lobby.  The binary also emits
+	 * a paired 0x4f sub-opcode 1 message right after; we do
+	 * the same.
+	 */
+	if (reason == REJECT_OK) {
+		struct ByteBuf notify;
+		uint64_t timestamp_ms;
+		struct timespec ts;
+
+		clock_gettime(CLOCK_MONOTONIC, &ts);
+		timestamp_ms = (uint64_t)ts.tv_sec * 1000ull +
+		    (uint64_t)ts.tv_nsec / 1000000ull;
+
+		bb_init(&notify);
+		if (wr_u8(&notify, SRV_CAR_SYSTEM_RELAY) == 0 &&
+		    wr_u16(&notify, (uint16_t)c->car_id) == 0 &&
+		    wr_u64(&notify, timestamp_ms) == 0)
+			(void)bcast_all(s, notify.data, notify.wpos,
+			    c->conn_id);
+		bb_free(&notify);
+
+		/* Paired 0x4f sub-opcode 1: u8 msg_id + u16 carId +
+		 * u8 sub=1 + u64 timestamp (12 bytes). */
+		bb_init(&notify);
+		if (wr_u8(&notify, SRV_DRIVER_STINT_RELAY) == 0 &&
+		    wr_u16(&notify, (uint16_t)c->car_id) == 0 &&
+		    wr_u8(&notify, 1) == 0 &&
+		    wr_u64(&notify, timestamp_ms) == 0)
+			(void)bcast_all(s, notify.data, notify.wpos,
+			    c->conn_id);
+		bb_free(&notify);
+	}
+	return 0;
 }

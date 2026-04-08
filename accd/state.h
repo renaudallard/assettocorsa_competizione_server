@@ -35,6 +35,41 @@ struct DriverInfo {
 };
 
 /*
+ * Per-car runtime state, populated from ACP_CAR_UPDATE datagrams.
+ * All fields are stored in the exact layout sent on the wire so
+ * they can be re-broadcast byte-for-byte via the 0x1e / 0x39
+ * fast / slow-rate per-car broadcasts.
+ */
+struct CarRuntime {
+	/* position / orientation / velocity (three Vector3 floats
+	 * per the sim protocol; see NOTEBOOK_B.md §5.6.2 0x1e) */
+	float		vec_a[3];	/* probable world position */
+	float		vec_b[3];	/* probable orientation */
+	float		vec_c[3];	/* confirmed velocity */
+
+	/* physical inputs (4 u8 values each, semantic TBD) */
+	uint8_t		input_a[4];
+	uint8_t		input_b[4];
+
+	/* scalar state bytes (exact semantic TBD — relayed opaquely) */
+	uint8_t		scalar_2c;
+	uint8_t		scalar_32;
+	uint8_t		scalar_33;
+	uint16_t	scalar_36;
+	uint8_t		scalar_34;
+	uint8_t		scalar_35;
+	uint32_t	scalar_44;
+	uint8_t		scalar_4c;
+	int16_t		scalar_1ec;
+
+	/* header echo */
+	uint8_t		packet_seq;		/* rolling counter */
+	uint32_t	client_timestamp_ms;	/* most recent client ts */
+	uint32_t	last_timestamp_ms;	/* for out-of-order drop */
+	int		has_data;		/* ever received? */
+};
+
+/*
  * Per-car record (entry list slot).
  */
 struct CarEntry {
@@ -51,6 +86,9 @@ struct CarEntry {
 	uint8_t		driver_count;
 	struct DriverInfo drivers[ACC_MAX_DRIVERS_PER_CAR];
 	int		used;			/* slot occupied? */
+
+	/* Runtime state updated every tick by ACP_CAR_UPDATE. */
+	struct CarRuntime rt;
 };
 
 /*

@@ -698,10 +698,16 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	uint8_t msg_id, seq;
 	uint16_t source_conn_id, target_car_id;
 	uint32_t client_ts_ms;
+	struct CarEntry *car;
+	struct CarRuntime *rt;
+	int i;
 
-	(void)s;
-	(void)c;
-
+	if (len != 68) {
+		log_warn("CarUpdate size is unexpected; did you forget "
+		    "to update the megapak? (%zu byte, %d byte expected)",
+		    len, 68);
+		return 0;
+	}
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u16(&r, &source_conn_id) < 0 ||
@@ -711,17 +717,74 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 		log_warn("h_udp_car_update: short header");
 		return 0;
 	}
-	if (len < 68) {
-		log_warn("CarUpdate size is unexpected; did you forget "
-		    "to update the megapak? (%zu byte, %d byte expected)",
-		    len, 68);
+
+	if (c == NULL) {
+		log_info("Ignoring ACP_CAR_UPDATE from unknown peer "
+		    "(source_conn=%u)", (unsigned)source_conn_id);
 		return 0;
 	}
-	log_info("ACP_CAR_UPDATE: src_conn=%u car=%u seq=%u ts=%u",
-	    (unsigned)source_conn_id, (unsigned)target_car_id,
-	    (unsigned)seq, (unsigned)client_ts_ms);
-	/* TODO: store the 58 body bytes at per-car state +0x8..+0x4d
-	 * and fan out via 0x1e / 0x39 broadcasts from the tick. */
+	if (c->car_id < 0 || (uint16_t)c->car_id != target_car_id) {
+		log_warn("Received car update for a different car, "
+		    "connectionId %u. Expected: %d Received: %u",
+		    (unsigned)c->conn_id, c->car_id,
+		    (unsigned)target_car_id);
+		return 0;
+	}
+	car = &s->cars[c->car_id];
+	rt = &car->rt;
+
+	/*
+	 * Drop outdated packets: the server tracks a monotonically
+	 * increasing client timestamp and discards anything not
+	 * strictly newer than the last one seen.
+	 */
+	if (rt->has_data && client_ts_ms <= rt->last_timestamp_ms) {
+		log_info("Dropped outdated car_update paket for carId %d,"
+		    " clientTimestamp %u vs lastTimeStamp %u",
+		    c->car_id, (unsigned)client_ts_ms,
+		    (unsigned)rt->last_timestamp_ms);
+		return 0;
+	}
+
+	rt->packet_seq = seq;
+	rt->client_timestamp_ms = client_ts_ms;
+	rt->last_timestamp_ms = client_ts_ms;
+
+	/* Three Vector3 blocks (3 * 12 = 36 bytes). */
+	for (i = 0; i < 3; i++)
+		if (rd_f32(&r, &rt->vec_a[i]) < 0)
+			return 0;
+	for (i = 0; i < 3; i++)
+		if (rd_f32(&r, &rt->vec_b[i]) < 0)
+			return 0;
+	for (i = 0; i < 3; i++)
+		if (rd_f32(&r, &rt->vec_c[i]) < 0)
+			return 0;
+
+	/* input array A (4 u8) */
+	for (i = 0; i < 4; i++)
+		if (rd_u8(&r, &rt->input_a[i]) < 0)
+			return 0;
+
+	if (rd_u8(&r, &rt->scalar_32) < 0 ||
+	    rd_u8(&r, &rt->scalar_33) < 0 ||
+	    rd_u16(&r, &rt->scalar_36) < 0 ||
+	    rd_u8(&r, &rt->scalar_2c) < 0 ||
+	    rd_u8(&r, &rt->scalar_34) < 0 ||
+	    rd_u8(&r, &rt->scalar_35) < 0 ||
+	    rd_u32(&r, &rt->scalar_44) < 0)
+		return 0;
+
+	/* input array B (4 u8) */
+	for (i = 0; i < 4; i++)
+		if (rd_u8(&r, &rt->input_b[i]) < 0)
+			return 0;
+
+	if (rd_u8(&r, &rt->scalar_4c) < 0 ||
+	    rd_i16(&r, &rt->scalar_1ec) < 0)
+		return 0;
+
+	rt->has_data = 1;
 	return 0;
 }
 

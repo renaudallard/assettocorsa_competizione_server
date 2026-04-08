@@ -46,7 +46,7 @@ dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h state.
 handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c handlers.c
 
-handshake.o: handshake.c handshake.h io.h log.h msg.h prim.h state.h
+handshake.o: handshake.c handshake.h bcast.h io.h log.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c handshake.c
 
 io.o: io.c io.h
