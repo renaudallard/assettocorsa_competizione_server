@@ -1,14 +1,41 @@
-# Assetto Corsa Competizione dedicated server — clean-room reimplementation
+<p align="center">
+  <img src="logo.svg" alt="accd" width="640"/>
+</p>
+
+# accd — ACC dedicated server, clean-room reimplementation
 
 A work-in-progress independent reimplementation of the Assetto Corsa
 Competizione dedicated server, built so an unmodified ACC game client
 (Steam, current build) can connect to it and play a private multiplayer
 session — on Linux and OpenBSD, without Wine.
 
-**Status**: very early. Phase 0 skeleton binds the configured TCP and
-UDP ports and logs every byte received. No protocol logic yet. See
-[`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) for the protocol
-specification this code is working towards.
+## Status
+
+**Protocol analysis phase.**  The clean-room specification in
+[`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) now documents:
+
+- Transport framing for both TCP (variable-width length prefix,
+  `u16` short or `0xFFFF + u32` extended) and UDP (datagram = message).
+- The scalar wire types, byte order, and the two distinct string
+  encodings (`u8` length + UTF-32 padded for short identifiers,
+  `u16` length + raw UTF-16 LE for longer text).
+- The client connection state machine (`0 → 1 → 3`) and the
+  handshake request body (client version, password, embedded
+  `CarInfo` and `DriverInfo`).
+- The complete client → server message ID catalog — 22 TCP IDs,
+  7 UDP IDs, plus LAN discovery — with known wire formats where
+  the bodies have been extracted.
+- 16 server → client message IDs with their wire formats, plus
+  the relay / broadcast pattern used for per-car state updates.
+- The ServerMonitor protobuf protocol (separate, fully recovered
+  from the public SDK distribution).
+
+**The `accd/` C implementation is still at phase 0**: it binds the
+configured TCP and UDP sockets, reads the stock Kunos
+`configuration.json` (UTF-16 LE), and hex-dumps every received byte.
+No protocol logic yet.  Phase 1 (TCP length-prefix framing, parse the
+handshake header, reject with the correct protocol version) is the
+next coding milestone.
 
 ## Scope
 

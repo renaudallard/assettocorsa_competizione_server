@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 160" role="img" aria-labelledby="logo-title logo-desc">
+  <title id="logo-title">accd</title>
+  <desc id="logo-desc">Clean-room reimplementation of the Assetto Corsa Competizione dedicated server.</desc>
+  <defs>
+    <style>
+      .bg     { fill: #0d1117; }
+      .title  { font: 700 84px 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+                fill: #e6edf3; letter-spacing: -2px; }
+      .accent { stroke: #3b82f6; stroke-width: 4; stroke-linecap: round; fill: none; }
+      .tag    { font: 400 13px 'SFMono-Regular', Consolas, 'Liberation Mono', monospace;
+                fill: #7d8590; letter-spacing: 3px; }
+      .dot    { fill: #3b82f6; }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" width="640" height="160" rx="10"/>
+
+  <!-- Project name -->
+  <text class="title" x="48" y="92">accd</text>
+
+  <!-- Accent underline -->
+  <line class="accent" x1="48" y1="108" x2="230" y2="108"/>
+
+  <!-- Blinking cursor dot (just decorative) -->
+  <circle class="dot" cx="240" cy="108" r="3"/>
+
+  <!-- Subtitle -->
+  <text class="tag" x="48" y="136">ASSETTO CORSA COMPETIZIONE  ·  CLEAN-ROOM SERVER</text>
+</svg>
