@@ -610,16 +610,23 @@ A reimplementation aiming for wire-level compatibility with the accept path will
 
 | ID (hex) | ID (dec) | Body fields | Known semantic |
 |---|---|---|---|
-| `0x04` | 4 | (body is empty — just the id byte) | Probable ack / keepalive |
+| `0x01` | 1 | (generic serializer + object body) | **Rejection / invalid-payload notification** — sent from the client disconnect-cleanup path. Log strings in the caller include `"Invalid payload (%d)"` and `"File too big, can't parse safely"`. |
+| `0x02` | 2 | (generic serializer + object body) | **Generic state snapshot push** — used by a state-push helper function called from various other flows. |
+| `0x03` | 3 | (generic serializer + object body) | **Track / session change notification** — sent when the track or session changes and as part of the initial state push to new clients. Paired with `0x07` in the state push sequence. |
+| `0x04` | 4 | (inline-built record, ~14 bytes) | **Handshake state A** — part of the welcome sequence following a successful handshake. The enclosing builder also sends `0x03` and `0x07`. |
+| `0x05` | 5 | (generic serializer + object body) | **Handshake state B** — sent alongside `0x04` during the welcome sequence. Also emitted by the driver-swap forwarder. |
+| `0x06` | 6 | (generic serializer + object body) | **Per-client queued state update** — generic state push used by the per-client send mechanism. |
+| `0x07` | 7 | (generic serializer + object body) | **Session running state** — paired with `0x03` in both the initial state push and the main server tick's periodic broadcasts. |
 | `0x0b` | 11 | `u16 version` + `u8 flags` + `u16 conn_id` + trailer | **Handshake response** — see §5.6.4c. Used for both accept and reject outcomes. |
-| `0x0c` | 12 | `u8` `u32` `u32` `u32` | 14-byte record, semantics TBD |
-| `0x14` | 20 | (body ~trivial) | Probable ack or keepalive — builder is 275 bytes with a single literal byte write. |
+| `0x0c` | 12 | `u8` + `u32` + `u32` + `u32` | 14-byte state record |
+| `0x14` | 20 | (1-byte body, just the id) | Silent keepalive / ack |
 | `0x1b` | 27 | `u16 pos_a` `u16 pos_b` `i32 lap_time_ms` `u8 quality` | **Lap time broadcast** — the server forwards a client's lap-time report to all other clients. Triggered by a client sending TCP id `0x19` (see §5.6.1). The `quality` byte is `0xFF` for invalid, otherwise a normalized 0..255 value derived from a float. |
 | `0x1e` | 30 | `u16 car_id` + `u8 car_location` + `u32 timing` + `u16` + `u64 timestamp` + `u32` + ... (~21 fields total) | **Per-car periodic state broadcast** — pushed from the main server tick at the "fast" update rate. Carries compact per-car state (position class, lap timing, split info). Note: the same id byte is used by client→server `ACP_CAR_UPDATE` — the two directions have entirely separate wire formats and meanings. |
 | `0x24` | 36 | `u16 carIndex` | **`CAR_DISCONNECT_NOTIFY`** — the server tells every other client that this car has disconnected |
 | `0x2b` | 43 | `u32` `u8` | 6-byte record; emitted from two distinct call sites plus from the session-transition multi-message builders |
 | `0x2e` | 46 | `u16` `u64` | **New-client-joined notify** — 11-byte record with a u64 timestamp. Pushed by the server to every existing client during a new client's handshake-accept sequence (called from the handshake handler with each other client's TCP socket as the target). A reimplementation joining a second client will need to emit this to the first client at the right moment. |
-| `0x37` | 55 | (body is empty — just the id byte) | Probable keepalive |
+| `0x36` | 54 | (1-byte body) | Keepalive / tick broadcast — emitted from the main server tick tail alongside `0x37` and `0x3e` as a periodic heartbeat burst. |
+| `0x37` | 55 | (body is empty — just the id byte) | Keepalive — emitted with `0x36` and `0x3e` from the main server tick. |
 | `0x39` | 57 | `u8` + `u16 car_id` + `u8 car_location` + `u32` + `u16` + `u64` + `u32` + ... (~22 fields total) | **Per-car periodic state broadcast** (sibling of `0x1e`) — pushed from the main server tick at a different cadence than `0x1e`. Wire format is very similar; the two together comprise the server's tier-2 state push pipeline. Likely one is the "fast" update (position/lap) and the other is the "slow" update (rating/history). |
 | `0x3a` | 58 | `u16 car_id` + `u8 split_count` + `u32[count]` + `i32 clock` + `u16 car_field` | **Sector splits broadcast (game protocol)** — server-transformed relay of client `0x20` messages. Variable-length body (depends on split count). **Note**: a separate message with the same first byte `0x3a` exists on the lobby backend connection with a completely different fixed-15-byte body (`u8=0xc9 + u32 + u32 + u8=0x00 + u32`) — that's the lobby registration request. The two messages are distinguishable only by which TCP channel they flow on. |
 | `0x3b` | 59 | `u16 car_id` + `u32 split_time` + `u8` + `u32 lap_time` + `u16 flags` | **Single sector split broadcast** — server-transformed relay of client `0x21` messages. Fixed 14-byte body. |
@@ -636,6 +643,29 @@ A reimplementation aiming for wire-level compatibility with the accept path will
 | `0x5d` | 93 | (body TBD) | Emitted by the session-transition multi-message builder alongside `0x5b` and `0x2b`. |
 
 A comprehensive sweep has found **23 distinct server → client message IDs**. This list should be ≥90% complete for messages that use the standard `build-and-send` pattern. Messages built by generic serializers (where the msg id is a parameter, not a literal) or by virtual methods that don't initialize their own output vector may still be missing — most likely one or two additional ids at most.
+
+#### 5.6.4d Post-handshake welcome sequence
+
+When a client successfully handshakes, the server emits **multiple messages in sequence** before the client is considered fully joined. A reimplementation that wants to be wire-compatible on the accept path must emit all of these, not just the handshake response:
+
+```
+To the joining client:
+  1. 0x0b  — handshake response (car id, protocol version,
+             connection id, session/track trailer)
+  2. 0x04  — handshake state A (inline-built state record)
+  3. 0x05  — handshake state B (generic serializer)
+  4. 0x03  — track / session change notification
+             (generic serializer)
+  5. 0x07  — session running state
+             (generic serializer)
+
+To every OTHER currently connected client:
+  6. 0x2e  — new-client-joined notify (u16 + u64 timestamp)
+```
+
+Messages 3 and 4 (ids `0x03` and `0x07`) are the same as the ones emitted periodically by the main server tick, so if the server has a unified "push current state" function, it can be reused here. Messages 1 and 2 are handshake-specific. Message 6 is fan-out to existing clients.
+
+A reimplementation that only sends `0x0b` and stops will likely see the client disconnect after a timeout, because the client is waiting for the rest of the welcome sequence before proceeding to the session view.
 
 #### 5.6.4b Relay / broadcast architecture (two-tier)
 
