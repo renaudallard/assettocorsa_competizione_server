@@ -36,6 +36,7 @@
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
+#include "monitor.h"
 #include "msg.h"
 #include "prim.h"
 #include "state.h"
@@ -229,6 +230,15 @@ reply:
 			(void)bcast_all(s, notify.data, notify.wpos,
 			    c->conn_id);
 		bb_free(&notify);
+
+		/*
+		 * Push the post-handshake welcome state to the
+		 * joining client: 0x04 CAR_ENTRY, 0x05 CONNECTION_
+		 * ENTRY, 0x03 SESSION_STATE, 0x07 LEADERBOARD_UPDATE.
+		 * Without this the real client almost certainly
+		 * disconnects after the 0x0b response.
+		 */
+		(void)monitor_push_welcome_sequence(s, c);
 	}
 	return 0;
 }

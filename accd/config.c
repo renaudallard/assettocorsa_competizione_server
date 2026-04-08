@@ -22,6 +22,7 @@
 #include <unistd.h>
 
 #include "config.h"
+#include "json.h"
 #include "log.h"
 #include "state.h"
 
@@ -108,61 +109,13 @@ utf16le_to_utf8(const char *in, size_t inlen)
 	return out;
 }
 
-static int
-json_find_int(const char *json, const char *key, int *out)
+static void
+copy_str(char *dst, size_t dstsz, const char *src)
 {
-	const char *p;
-	char needle[64];
-	int n;
-
-	n = snprintf(needle, sizeof(needle), "\"%s\"", key);
-	if (n < 0 || (size_t)n >= sizeof(needle))
-		return -1;
-	p = strstr(json, needle);
-	if (p == NULL)
-		return -1;
-	p += n;
-	while (*p != '\0' &&
-	    (*p == ' ' || *p == '\t' || *p == '\n' ||
-	     *p == '\r' || *p == ':'))
-		p++;
-	if (*p == '\0')
-		return -1;
-	*out = (int)strtol(p, NULL, 10);
-	return 0;
-}
-
-static int
-json_find_string(const char *json, const char *key, char *out, size_t outsz)
-{
-	const char *p, *q;
-	char needle[64];
-	int n;
-	size_t copy;
-
-	n = snprintf(needle, sizeof(needle), "\"%s\"", key);
-	if (n < 0 || (size_t)n >= sizeof(needle))
-		return -1;
-	p = strstr(json, needle);
-	if (p == NULL)
-		return -1;
-	p += n;
-	while (*p != '\0' &&
-	    (*p == ' ' || *p == '\t' || *p == '\n' ||
-	     *p == '\r' || *p == ':'))
-		p++;
-	if (*p != '"')
-		return -1;
-	p++;
-	q = strchr(p, '"');
-	if (q == NULL)
-		return -1;
-	copy = (size_t)(q - p);
-	if (copy >= outsz)
-		copy = outsz - 1;
-	memcpy(out, p, copy);
-	out[copy] = '\0';
-	return 0;
+	if (src == NULL || dstsz == 0)
+		return;
+	strncpy(dst, src, dstsz - 1);
+	dst[dstsz - 1] = '\0';
 }
 
 static char *
@@ -185,10 +138,32 @@ load_one(const char *cfg_dir, const char *name)
 	return utf8;
 }
 
+/*
+ * Parse a JSON file under cfg_dir and return the root node.
+ * Caller must free with json_free().  Returns NULL on error.
+ */
+static struct json_node *
+load_json(const char *cfg_dir, const char *name)
+{
+	char *utf8 = load_one(cfg_dir, name);
+	struct json_node *root;
+	char err[256] = "";
+	size_t len;
+
+	if (utf8 == NULL)
+		return NULL;
+	len = strlen(utf8);
+	root = json_parse(utf8, len, err, sizeof(err));
+	if (root == NULL)
+		log_warn("config: parse %s: %s", name, err);
+	free(utf8);
+	return root;
+}
+
 int
 config_load(struct Server *s, const char *cfg_dir)
 {
-	char *configuration, *settings, *event;
+	struct json_node *configuration, *settings, *event;
 
 	/* defaults */
 	s->tcp_port = 9232;
@@ -201,42 +176,41 @@ config_load(struct Server *s, const char *cfg_dir)
 	snprintf(s->server_name, sizeof(s->server_name), "accd");
 	snprintf(s->track, sizeof(s->track), "monza");
 
-	configuration = load_one(cfg_dir, "configuration.json");
-	if (configuration != NULL) {
-		(void)json_find_int(configuration, "tcpPort", &s->tcp_port);
-		(void)json_find_int(configuration, "udpPort", &s->udp_port);
-		(void)json_find_int(configuration, "maxConnections",
-		    &s->max_connections);
-		(void)json_find_int(configuration, "lanDiscovery",
-		    &s->lan_discovery);
-		free(configuration);
-	} else {
+	configuration = load_json(cfg_dir, "configuration.json");
+	if (configuration == NULL)
 		return -1;
-	}
+	s->tcp_port = json_obj_get_int(configuration, "tcpPort", s->tcp_port);
+	s->udp_port = json_obj_get_int(configuration, "udpPort", s->udp_port);
+	s->max_connections = json_obj_get_int(configuration,
+	    "maxConnections", s->max_connections);
+	s->lan_discovery = json_obj_get_int(configuration,
+	    "lanDiscovery", s->lan_discovery);
+	json_free(configuration);
 
-	settings = load_one(cfg_dir, "settings.json");
+	settings = load_json(cfg_dir, "settings.json");
 	if (settings != NULL) {
-		(void)json_find_string(settings, "serverName",
-		    s->server_name, sizeof(s->server_name));
-		(void)json_find_string(settings, "password",
-		    s->password, sizeof(s->password));
-		(void)json_find_string(settings, "adminPassword",
-		    s->admin_password, sizeof(s->admin_password));
-		(void)json_find_string(settings, "spectatorPassword",
-		    s->spectator_password,
-		    sizeof(s->spectator_password));
-		(void)json_find_int(settings, "ignorePrematureDisconnects",
-		    &s->ignore_premature_disconnects);
-		(void)json_find_int(settings, "dumpLeaderboards",
-		    &s->dump_leaderboards);
-		free(settings);
+		copy_str(s->server_name, sizeof(s->server_name),
+		    json_obj_get_str(settings, "serverName"));
+		copy_str(s->password, sizeof(s->password),
+		    json_obj_get_str(settings, "password"));
+		copy_str(s->admin_password, sizeof(s->admin_password),
+		    json_obj_get_str(settings, "adminPassword"));
+		copy_str(s->spectator_password,
+		    sizeof(s->spectator_password),
+		    json_obj_get_str(settings, "spectatorPassword"));
+		s->ignore_premature_disconnects = json_obj_get_int(
+		    settings, "ignorePrematureDisconnects",
+		    s->ignore_premature_disconnects);
+		s->dump_leaderboards = json_obj_get_int(settings,
+		    "dumpLeaderboards", s->dump_leaderboards);
+		json_free(settings);
 	}
 
-	event = load_one(cfg_dir, "event.json");
+	event = load_json(cfg_dir, "event.json");
 	if (event != NULL) {
-		(void)json_find_string(event, "track",
-		    s->track, sizeof(s->track));
-		free(event);
+		copy_str(s->track, sizeof(s->track),
+		    json_obj_get_str(event, "track"));
+		json_free(event);
 	}
 
 	if (s->max_connections < 1 || s->max_connections > ACC_MAX_CARS)

@@ -13,9 +13,12 @@ OBJS =		main.o \
 		handlers.o \
 		handshake.o \
 		io.o \
+		json.o \
 		lan.o \
 		log.o \
+		monitor.o \
 		net.o \
+		pb.o \
 		prim.o \
 		state.o \
 		tick.o
@@ -37,7 +40,7 @@ bcast.o: bcast.c bcast.h io.h log.h msg.h state.h
 chat.o: chat.c chat.h log.h msg.h state.h
 	${CC} ${CFLAGS} -c chat.c
 
-config.o: config.c config.h log.h state.h
+config.o: config.c config.h json.h log.h state.h
 	${CC} ${CFLAGS} -c config.c
 
 dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h prim.h state.h
@@ -46,11 +49,14 @@ dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h prim.h
 handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c handlers.c
 
-handshake.o: handshake.c handshake.h bcast.h io.h log.h msg.h prim.h state.h
+handshake.o: handshake.c handshake.h bcast.h io.h log.h monitor.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c handshake.c
 
 io.o: io.c io.h
 	${CC} ${CFLAGS} -c io.c
+
+json.o: json.c json.h
+	${CC} ${CFLAGS} -c json.c
 
 lan.o: lan.c lan.h io.h log.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c lan.c
@@ -58,8 +64,14 @@ lan.o: lan.c lan.h io.h log.h msg.h prim.h state.h
 log.o: log.c log.h
 	${CC} ${CFLAGS} -c log.c
 
+monitor.o: monitor.c monitor.h bcast.h io.h log.h msg.h pb.h state.h
+	${CC} ${CFLAGS} -c monitor.c
+
 net.o: net.c net.h log.h
 	${CC} ${CFLAGS} -c net.c
+
+pb.o: pb.c pb.h io.h
+	${CC} ${CFLAGS} -c pb.c
 
 prim.o: prim.c prim.h io.h
 	${CC} ${CFLAGS} -c prim.c
