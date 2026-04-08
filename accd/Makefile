@@ -25,7 +25,8 @@ OBJS =		main.o \
 		results.o \
 		session.o \
 		state.o \
-		tick.o
+		tick.o \
+		weather.o
 
 CFLAGS +=	-std=c99 -Wall -Wextra -Wpedantic -O2 -g
 LDFLAGS +=
@@ -96,8 +97,11 @@ session.o: session.c session.h log.h msg.h state.h
 state.o: state.c state.h bcast.h io.h log.h msg.h prim.h
 	${CC} ${CFLAGS} -c state.c
 
-tick.o: tick.c tick.h bcast.h io.h log.h msg.h prim.h results.h session.h state.h
+tick.o: tick.c tick.h bcast.h io.h log.h msg.h prim.h results.h session.h state.h weather.h
 	${CC} ${CFLAGS} -c tick.c
+
+weather.o: weather.c weather.h io.h log.h msg.h prim.h state.h
+	${CC} ${CFLAGS} -c weather.c
 
 clean:
 	rm -f ${PROG} ${OBJS}

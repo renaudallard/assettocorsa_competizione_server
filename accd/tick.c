@@ -22,6 +22,7 @@
 #include "session.h"
 #include "state.h"
 #include "tick.h"
+#include "weather.h"
 
 /*
  * Broadcast cadences, in ticks (~100 ms each):
@@ -273,6 +274,19 @@ tick_run(struct Server *s)
 		last_phase = s->session.phase;
 	}
 
-	(void)CADENCE_WEATHER;
+	/*
+	 * Weather: step the deterministic simulator and broadcast
+	 * 0x37 when something changed enough to be worth pushing.
+	 */
+	if ((s->tick_count % CADENCE_WEATHER) == 0) {
+		if (weather_step(s)) {
+			struct ByteBuf bb;
+
+			bb_init(&bb);
+			if (weather_build_broadcast(s, &bb) == 0)
+				(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+			bb_free(&bb);
+		}
+	}
 }
 
