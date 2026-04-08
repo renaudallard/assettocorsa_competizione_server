@@ -461,6 +461,112 @@ The receiving side uses a stateful cursor on the packet buffer. Each primitive r
 
 Bounds-check behavior on the Kunos server is **non-fatal**: out-of-range reads log an error but continue reading past the end of the buffer, potentially returning garbage. A clean reimplementation should be **stricter**: treat any out-of-range read as a protocol error and drop the connection. Non-fatal behavior is developer-mode debugging convenience and is not part of the contract.
 
+### 5.5 Client connection state machine
+
+A client connection is in exactly one of three states at any time:
+
+| State | Meaning | Allowed inbound messages |
+|---|---|---|
+| `0` | Unauthenticated — client has just connected and has not been through a successful handshake yet | Only message id `9` (handshake / request connection). Any other message id causes immediate transition to state `3`. |
+| `1` | Authenticated — client has passed the handshake and is playing | Message id `9` (re-authentication, rarely used), message id `0x10` (client disconnect), and all other IDs in the main dispatch set (§5.6) |
+| `3` | Disconnecting / disconnected | All messages are ignored. The connection is closed at the next receive cycle. |
+
+Transitions:
+
+- `0 → 1`: on a successful response from the handshake handler.
+- `0 → 3`: on handshake failure, or on any non-handshake message received in state `0`.
+- `1 → 3`: on a message id `0x10`, or on a protocol error in a later message.
+- `1 → 1`: normal message processing.
+
+### 5.6 Message ID catalog (client → server)
+
+All IDs listed here are for messages **from the client to the server**. The first byte of each message body is the ID. Server-to-client messages have a separate, not-yet-enumerated ID space.
+
+Protocol version: **`0x100` (256)** for ACC Dedicated Server 1.10.2.
+
+#### 5.6.1 TCP message IDs
+
+Messages carried over the reliable TCP control channel. 22 distinct IDs:
+
+| ID (hex) | ID (dec) | Name / meaning |
+|---|---|---|
+| `0x09` | 9 | Request connection (handshake); see §5.6.4 |
+| `0x10` | 16 | Client-initiated graceful disconnect |
+| `0x19` | 25 | (body TBD) |
+| `0x20` | 32 | (body TBD) |
+| `0x21` | 33 | (body TBD) |
+| `0x2a` | 42 | (body TBD) |
+| `0x2e` | 46 | (body TBD) |
+| `0x2f` | 47 | (body TBD) |
+| `0x32` | 50 | Car location update (historical name in shipped SDK log: `ACP_CAR_LOCATION_UPDATE`; matches field semantic of the 5-value `CarLocation` enum from §7.9) |
+| `0x3d` | 61 | (body TBD) |
+| `0x41` | 65 | (body TBD) |
+| `0x42` | 66 | (body TBD) |
+| `0x43` | 67 | (body TBD) |
+| `0x45` | 69 | (body TBD) |
+| `0x47` | 71 | (body TBD) |
+| `0x48` | 72 | (body TBD, distinct from the UDP `0x48` LAN discovery below) |
+| `0x4a` | 74 | (body TBD) |
+| `0x4f` | 79 | (body TBD) |
+| `0x51` | 81 | (body TBD) |
+| `0x54` | 84 | (body TBD) |
+| `0x55` | 85 | (body TBD) |
+| `0x5b` | 91 | (body TBD) |
+
+#### 5.6.2 UDP message IDs
+
+Messages carried over the unreliable UDP channel on the main `udpPort`. 7 distinct IDs. These are handled by a chain of inline `if` blocks in the server rather than a central switch:
+
+| ID (hex) | ID (dec) | Name / meaning |
+|---|---|---|
+| `0x13` | 19 | (body TBD) |
+| `0x16` | 22 | (body TBD) |
+| `0x17` | 23 | (body TBD) |
+| `0x1e` | 30 | (body TBD) |
+| `0x22` | 34 | (body TBD — very likely the per-tick car-state update based on structural analysis) |
+| `0x5e` | 94 | (body TBD) |
+| `0x5f` | 95 | (body TBD) |
+
+#### 5.6.3 LAN discovery (UDP 8999)
+
+One message ID on the fixed LAN discovery port:
+
+| ID (hex) | ID (dec) | Direction | Meaning |
+|---|---|---|---|
+| `0x48` | 72 | client → server | LAN discovery probe; server responds with a brief info packet |
+
+**Note the namespace overlap**: `0x48` is used on both the LAN discovery port and the main TCP channel, but with different semantics. A message is disambiguated by the transport / destination port, not just by the ID byte.
+
+#### 5.6.4 Handshake (message id `0x09`)
+
+Called when a new TCP client first connects. The body field order is:
+
+```
+u16 client_version
+string_A password
+... (additional fields, partially decoded: at least 4 bytes, 2 uint16s, plus
+     a full embedded CarInfo sub-structure with 32 fields and an embedded
+     DriverInfo with name / category / Steam id)
+```
+
+- **`client_version`** must exactly equal `0x100` (256) for ACC 1.10.2. Any other value causes rejection with the log string `"rejecting new connection with wrong client version %d (server runs %d)"`. **This version byte changes between ACC releases and is the primary build-gating mechanism.**
+- **`password`** uses **Format A** string encoding (§5.3.1). It is compared as an exact std::wstring against the server's `settings.password` field. An empty server password matches only an empty client password.
+- **The rest of the handshake body carries the client's own `DriverInfo` and `CarInfo`**, including first name, last name, short name, Steam ID, chosen car model, livery, team name, and a handful of flag bytes. The server parses this into an internal `CarEntry` / `DriverEntry` pair and uses it to populate the entry list.
+
+Rejection reasons observed, each with its own log message:
+
+| Reason | Triggered by |
+|---|---|
+| Wrong client version | `client_version != 0x100` |
+| Wrong password | mismatch against `settings.password` |
+| Server full | `connection count >= maxConnections` |
+| Player banned | Steam ID on the ban list (persists until server restart) |
+| Player kicked | Steam ID on the kick list (persists until race weekend restart) |
+| Invalid entry list forced car model | `entrylist.json` forces a specific car model for this Steam ID and the client tried to join with a different one |
+| Invalid entry list grid position | corrupt `defaultGridPosition` value in entrylist.json for this car |
+
+A reimplementation that wants to maintain parity should implement **all seven rejection checks**, in roughly the order above, since some depend on state computed by earlier checks (e.g. the full check happens after the password check so you can't probe for "is the server full" without knowing the password).
+
 ### 5.7 Known message IDs (historical, provisional)
 
 The `server.log` file shipped in the broadcasting SDK distribution (`LOG`) is a debug capture from an earlier build of the ACC server and contains named message IDs with their integer values. These names **may or may not still be in use** in the current target build (1.10.2); they are transcribed here as a starting point for correlating observed traffic with protocol semantics. The current build's debug logging was refactored and these names are no longer emitted.
