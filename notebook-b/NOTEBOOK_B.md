@@ -622,7 +622,9 @@ A reimplementation aiming for wire-level compatibility with the accept path will
 | `0x14` | 20 | (1-byte body, just the id) | Silent keepalive / ack |
 | `0x1b` | 27 | `u16 pos_a` `u16 pos_b` `i32 lap_time_ms` `u8 quality` | **Lap time broadcast** — the server forwards a client's lap-time report to all other clients. Triggered by a client sending TCP id `0x19` (see §5.6.1). The `quality` byte is `0xFF` for invalid, otherwise a normalized 0..255 value derived from a float. |
 | `0x1e` | 30 | `u16 car_id` + `u8 car_location` + `u32 timing` + `u16` + `u64 timestamp` + `u32` + ... (~21 fields total) | **Per-car periodic state broadcast** — pushed from the main server tick at the "fast" update rate. Carries compact per-car state (position class, lap timing, split info). Note: the same id byte is used by client→server `ACP_CAR_UPDATE` — the two directions have entirely separate wire formats and meanings. |
+| `0x23` | 35 | Per-car record (variable-length) | **Car info response over TCP** — the server's reply to a client sending UDP `0x22 CAR_INFO_REQUEST`. Body is built by the same per-connected-car record appender used in the handshake welcome trailer, so the layout matches the per-car record in the welcome sequence. |
 | `0x24` | 36 | `u16 carIndex` | **`CAR_DISCONNECT_NOTIFY`** — the server tells every other client that this car has disconnected |
+| `0x28` | 40 | Per-car record + session-manager state | **Larger state response over TCP** — replies to a UDP request with a combined per-car record and the session manager's current state. Used when a client asks for a full state refresh. |
 | `0x2b` | 43 | `u32` `u8` | 6-byte record; emitted from two distinct call sites plus from the session-transition multi-message builders |
 | `0x2e` | 46 | `u16` `u64` | **New-client-joined notify** — 11-byte record with a u64 timestamp. Pushed by the server to every existing client during a new client's handshake-accept sequence (called from the handshake handler with each other client's TCP socket as the target). A reimplementation joining a second client will need to emit this to the first client at the right moment. |
 | `0x36` | 54 | (1-byte body) | Keepalive / tick broadcast — emitted from the main server tick tail alongside `0x37` and `0x3e` as a periodic heartbeat burst. |
@@ -640,7 +642,9 @@ A reimplementation aiming for wire-level compatibility with the accept path will
 | `0x53` | 83 | (body TBD) | Emitted from at least **two** distinct builders: the driver-swap forwarder and the larger session-transition multi-message builder. Likely two unrelated uses of the same id byte, distinguished by context. |
 | `0x59` | 89 | `u16` `u8` | 4-byte record |
 | `0x5b` | 91 | (body TBD) | **Note**: client → server TCP also has a `0x5b` message with a different meaning. This server → client `0x5b` is one of the three ids emitted by the session-transition multi-message builder and is likely a session-state notification. |
-| `0x5d` | 93 | (body TBD) | Emitted by the session-transition multi-message builder alongside `0x5b` and `0x2b`. |
+| `0x5d` | 93 | `u8 u8` (2 bytes) | Emitted by the session-transition multi-message builder alongside `0x5b` and `0x2b`. |
+| `0xbe` | 190 | (variable-length body built by a state-snapshot helper) | **Periodic UDP broadcast** — emitted from the main server tick via the UDP send helper with a 2048-byte scratch buffer. Probably a LAN announcement or presence ping. |
+| `0xc0` | 192 | `u8 0xc0` + server info record + `u8 car_count` + per-car summary | **LAN discovery response** — the server's reply to a client `0x48` probe on UDP 8999. Contains the server name, capacity, connected-car count and per-car summary info. A reimplementation must emit this to be visible on the client's "LAN servers" list. |
 
 A comprehensive sweep has found **23 distinct server → client message IDs**. This list should be ≥90% complete for messages that use the standard `build-and-send` pattern. Messages built by generic serializers (where the msg id is a parameter, not a literal) or by virtual methods that don't initialize their own output vector may still be missing — most likely one or two additional ids at most.
 
