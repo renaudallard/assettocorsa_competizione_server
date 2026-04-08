@@ -492,7 +492,7 @@ Messages carried over the reliable TCP control channel. 22 distinct IDs:
 |---|---|---|
 | `0x09` | 9 | Request connection (handshake); see §5.6.4 |
 | `0x10` | 16 | Client-initiated graceful disconnect |
-| `0x19` | 25 | (body TBD) |
+| `0x19` | 25 | **Client lap-time report** — body is `u16` `u16` `i32` `u8` (cup position, track position, lap time in ms, and a signed quality byte). The server validates the fields, updates the reporting connection's rating state, then broadcasts a transformed `0x1b` message to every other client (see §5.6.2 row for `0x1b`). This message uses the tier-2 queued-lambda broadcast mechanism, not the direct relay. |
 | `0x20` | 32 | (body TBD) |
 | `0x21` | 33 | (body TBD) |
 | `0x2a` | 42 | (body TBD) |
@@ -520,9 +520,9 @@ Messages carried over the unreliable UDP channel on the main `udpPort`. 7 distin
 | ID (hex) | ID (dec) | Name / meaning |
 |---|---|---|
 | `0x13` | 19 | (pre-handshake message; body not decoded) |
-| `0x16` | 22 | Three-field record: `u16` + `i32` + `i32` (possibly ping/timing reply) |
+| `0x16` | 22 | **`PONG_PHYSICS`** — physics-side clock-sync ping/pong used to measure per-client latency and adjust simulation timestamps. Body: `u16 conn_id` + `u16 ?` + `i32 ts1` + `i32 ts2`. |
 | `0x17` | 23 | (pre-handshake message; body not decoded) |
-| `0x1e` | 30 | (delegated — body not yet decoded) |
+| `0x1e` | 30 | **`ACP_CAR_UPDATE`** — the per-tick car state update, sent by each client at simulation tick rate (~20–30 Hz). Header: `u16 source_conn_id` + `u16 target_car_id` + `u8 flag` + `u32 value`; followed by multiple 12-byte blocks each carrying a `Vector3<float>` of world-space physics state (position, velocity, angular velocity, etc.). Server validates that the source connection owns the target car and rejects the update otherwise. Body size is estimated at 60–120 bytes. |
 | `0x22` | 34 | **`CAR_INFO_REQUEST`** — body is `u16 connectionId` + `u16 carIndex`. The server replies with a full `CarInfo` structure for the requested car. Historical ACP name is still current. |
 | `0x5e` | 94 | Four-field record: `u16` + `u16` + `u64` + `u8` (possibly a time-synchronized event) |
 | `0x5f` | 95 | (delegated — body not yet decoded) |
@@ -537,6 +537,25 @@ One message ID on the fixed LAN discovery port:
 
 **Note the namespace overlap**: `0x48` is used on both the LAN discovery port and the main TCP channel, but with different semantics. A message is disambiguated by the transport / destination port, not just by the ID byte.
 
+#### 5.6.4c Handshake response (message id `0x0b`)
+
+After the server has processed a client's handshake request, it sends back a response message with **id `0x0b`**, regardless of whether the handshake was accepted or rejected. The same message id is used for both outcomes; the body distinguishes them.
+
+Header (first 6 bytes of the body):
+
+```
+u8  msg_id = 0x0b
+u16 protocol_version    (the server echoes its own version back — 0x100 for build 1.10.2)
+u8  server_flags        (a configuration byte from server state; exact layout TBD)
+u16 connection_id       (the server-assigned id for this client; 0xFFFF on rejection)
+... followed by a larger trailer that carries the initial entry list + session state on accept
+```
+
+On rejection the connection_id is set to a sentinel (`0xFFFF`) and the trailer may be empty. On accept, a substantial trailer follows that enumerates the current connected-car list and session configuration — the exact layout of this trailer is still under analysis, but a reimplementation can be compatible by:
+
+1. Sending a minimal 6-byte rejection message (`u8=0x0b`, `u16=0x0100`, `u8=0`, `u16=0xFFFF`) for every client that would be refused. The client should process this cleanly and disconnect.
+2. Leaving the accept path as "not yet implemented" until the trailer format is fully decoded.
+
 #### 5.6.4a Server → client message ID catalog
 
 **The server → client direction uses a separate ID namespace from client → server.** An ID like `0x4f` sent from client to server is not the same message as `0x4f` sent from server to client; the two directions have independent handler tables with independent wire formats.
@@ -546,8 +565,9 @@ One message ID on the fixed LAN discovery port:
 | ID (hex) | ID (dec) | Body fields | Known semantic |
 |---|---|---|---|
 | `0x04` | 4 | (body is empty — just the id byte) | Probable ack / keepalive |
+| `0x0b` | 11 | `u16 version` + `u8 flags` + `u16 conn_id` + trailer | **Handshake response** — see §5.6.4c. Used for both accept and reject outcomes. |
 | `0x0c` | 12 | `u8` `u32` `u32` `u32` | 14-byte record, semantics TBD |
-| `0x1b` | 27 | `u16` `u16` `u32` `u8` | 10-byte record, semantics TBD |
+| `0x1b` | 27 | `u16 pos_a` `u16 pos_b` `i32 lap_time_ms` `u8 quality` | **Lap time broadcast** — the server forwards a client's lap-time report to all other clients. Triggered by a client sending TCP id `0x19` (see §5.6.1). The `quality` byte is `0xFF` for invalid, otherwise a normalized 0..255 value derived from a float. |
 | `0x24` | 36 | `u16 carIndex` | **`CAR_DISCONNECT_NOTIFY`** — the server tells every other client that this car has disconnected |
 | `0x2b` | 43 | `u32` `u8` | 6-byte record; emitted from two distinct call sites |
 | `0x2e` | 46 | `u16` `u64` | 11-byte record with a u64 (probably a timestamp) |
@@ -564,19 +584,30 @@ One message ID on the fixed LAN discovery port:
 
 This list is **not exhaustive**. Several senders emit messages by `memcpy`-ing larger blocks (strings, embedded structures), and their wire formats were not captured by the inline-write extraction. Missing IDs are tracked in Notebook A's pass 2.8 notes.
 
-#### 5.6.4b Relay / broadcast pattern
+#### 5.6.4b Relay / broadcast architecture (two-tier)
 
-For several client → server message IDs (specifically `0x2a`, `0x2e`, `0x2f`, `0x32`), the server's handling is a **relay**:
+The server has **two distinct broadcast mechanisms** for forwarding client-originated events to other connected clients:
 
-1. The server receives the message from client A.
-2. The server reads enough fields to validate and log the event (typically 0–3 scalar fields).
-3. The server then **broadcasts the same payload unchanged to every other connected client**, using the embedded TCP sockets on each client's connection state.
+**Tier 1 — direct relay** (used by message ids `0x2a`, `0x2e`, `0x2f`, `0x32` and similar).
 
-The broadcast helper iterates the list of connected clients, checks each for "ready to receive", and calls `tcp_send_framed(payload, client_socket)` once per recipient. The sending client is excluded from the broadcast.
+The server receives a message from client A, reads the fields it needs to validate or log, and then **broadcasts the same payload byte-for-byte** to every other connected client. The inbound and outbound bodies are identical — the server doesn't re-serialize.
 
-**This means many messages are not re-serialized by the server** — they are relayed byte-for-byte. A reimplementation can handle these messages with a simple "receive and re-send" loop, without needing to understand the body contents beyond minimal validation.
+A reimplementation can handle tier-1 messages with a simple "receive, validate, forward" loop without needing to understand the body contents beyond minimal validation.
 
-Messages that are **not** relayed (and must be re-built server-side) include: the handshake response, session state snapshots, entry list pushes, disconnect notifications (`0x24`), and anything the server originates in response to its own state changes rather than to an incoming message.
+**Tier 2 — queued-lambda broadcast with transformation** (used by message ids `0x19` lap report, `0x20` and `0x21` sector splits, and a handful of other rate-heavy update messages).
+
+The server receives the message, reads the client's reported fields, updates its own state (ratings, lap counts, etc.), and then **builds a per-recipient message with a different message id** and broadcasts that. The outbound message is **not** the same as the inbound one — the server transforms the fields, computes derived values, and chooses a different id for the server → client direction.
+
+Concrete example: a client sends `0x19` (cup position, track position, lap time, quality). The server validates and records the lap, then broadcasts a new `0x1b` message to every other client containing the same four fields but with a normalized quality byte and the server's authoritative timestamp.
+
+Tier-2 broadcasts allow per-client customization (e.g. a client can be told about another client's lap time with its own relative-to-my-best delta baked in), rate-limiting, and different confidentiality levels per recipient.
+
+**Neither tier is used for**:
+- The handshake response (always direct, single-recipient).
+- The per-tick `ACP_CAR_UPDATE` stream — the server absorbs these updates into its CarEntity state and pushes state via the tier-2 broadcast mechanism on its own schedule.
+- Server-originated events (disconnect notifications, session phase changes, weather updates).
+
+A reimplementation that supports only tier-1 direct relay will pass basic client-to-client chat / location updates but will fail on lap-time reporting and sector splits; tier-2 requires slightly more plumbing (a small queue and a per-message transformation function) but is still straightforward in C.
 
 #### 5.6.4 Handshake (message id `0x09`)
 
