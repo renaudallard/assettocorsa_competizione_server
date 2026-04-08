@@ -645,7 +645,7 @@ A reimplementation aiming for wire-level compatibility with the accept path will
 | `0x23` | 35 | Per-car record (variable-length) | **Car info response over TCP** — the server's reply to a client sending UDP `0x22 CAR_INFO_REQUEST`. Body is built by the same per-connected-car record appender used in the handshake welcome trailer, so the layout matches the per-car record in the welcome sequence. |
 | `0x24` | 36 | `u16 carIndex` | **`CAR_DISCONNECT_NOTIFY`** — the server tells every other client that this car has disconnected |
 | `0x28` | 40 | Per-car record + session-manager state | **Larger state response over TCP** — replies to a UDP request with a combined per-car record and the session manager's current state. Used when a client asks for a full state refresh. |
-| `0x2b` | 43 | `u8` + `u32` + `u8` (6 bytes) | State record emitted from two distinct call sites (a "primary" and a "variant" builder, both with the same 6-byte wire format) plus from the session-transition multi-message builders. The `u32` is probably a connection id or timestamp, followed by a single-byte flag. |
+| `0x2b` | 43 | (varies — see semantics column) | **Generic chat / system message** — used in several distinct shapes that share the same id byte and the same dispatch path to clients: <br> **(a) Short state variant**: `u8 + u32 + u8` (6 bytes) — emitted by the small builders, payload is a connection-id-or-timestamp `u32` and a single-byte flag. <br> **(b) Chat reply variant**: `u8 + 2× string + i32 + u8 = chat_type` — emitted by the chat command parser as the reply to almost every admin command (`/admin`, `/track`, `/restart`, etc.). The chat type byte distinguishes "system message" (5) from "regular chat" (other values). Sent either to the issuing admin alone (when `cVar20 == '\0'`) or broadcast to every connection. <br> **(c) Kick / ban notification variant**: `u8 + 2× string + i32 + u8 = 5` where the first string is the human-readable reason (`"You have been kicked from the server"` / `"You have been banned from the server"`). Sent directly to the target client immediately before the connection is force-closed. <br> **(d) Ctrl info forward variant**: emitted by client→server case `0x5b` (`ACP_CTRL_INFO`) — see §5.6.1 — to forward a client's controller info to other admins as a chat-formatted summary. |
 | `0x2e` | 46 | `u8` + `u16 conn_id` + `u64 timestamp` (11 bytes) | **New-client-joined notify** — pushed by the server to every existing client during a new client's handshake-accept sequence. The sender function **also emits a paired `0x4f` sub-opcode-1 message** (12 bytes: `u8 + u16 carId + u8=1 + u64`) right after the `0x2e`, so the full new-client notification is two messages in sequence. A reimplementation joining a second client must emit both to the first client at the right moment. |
 | `0x36` | 54 | (1-byte body) | Keepalive / tick broadcast — emitted from the main server tick tail alongside `0x37` and `0x3e` as a periodic heartbeat burst. |
 | `0x37` | 55 | (body is empty — just the id byte) | Keepalive — emitted with `0x36` and `0x3e` from the main server tick. |
@@ -654,19 +654,19 @@ A reimplementation aiming for wire-level compatibility with the accept path will
 | `0x3b` | 59 | `u16 car_id` + `u32 split_time` + `u8` + `u32 lap_time` + `u16 flags` | **Single sector split broadcast** — server-transformed relay of client `0x21` messages. Fixed 14-byte body. |
 | `0x3c` | 60 | `u16` `u16` `u32` | 9-byte record, triggered by client case `0x3d` |
 | `0x3e` | 62 | (body is empty — just the id byte) | Probable keepalive |
-| `0x40` | 64 | (body TBD) | Multi-message builder — the enclosing function contains two `vec_init` calls and writes at least `0x40` as a first byte. Body details need further decoding. |
+| `0x40` | 64 | `u8 = 0x40` + serialized `WritableRaceStructure` / `RaceWeekendForecast` (variable-length, virtual serializer) | **Race weekend reset broadcast** — emitted by the "Resetting weekend to friday night" path that runs when admin uses `/restart` to restart the entire race weekend or when a new event is loaded. The function writes the `cfg/current/{configuration,event,settings,entrylist,eventRules}.txt` files, applies new weather rules (with retry-loop log `"Found weather obeying the rules in %d ms (%d tries, %d)"`), and pushes one `0x40` message to every connected client. The body after the id byte is built by a virtual serializer method (`vtable[0x20]`) — variable length depending on the WritableRaceStructure or RaceWeekendForecast snapshot being sent. |
 | `0x44` | 68 | (varies — see semantics column) | **Three distinct uses of this id byte**, all unrelated: (a) lobby registration request to Kunos's `kson` backend, only sent when `registerToLobby: 1` and irrelevant for private MP; (b) **damage zones broadcast** — server-transformed relay of client `0x43` carrying 5 normalized damage values for one car (see §5.6.1 row for client `0x43`); (c) a smaller game-protocol variant emitted from one of the multi-message builders. Disambiguated by transport / call site, not by the id byte alone. |
 | `0x46` | 70 | `u16 carId` + dirt-status block | **Car dirt status broadcast** — server-transformed relay of client `0x45` `ACP_CAR_DIRT`. The payload after the car id is a `ksRacing::CarDirtStatus` record (5 normalized floats packed via `FUN_1400327a0`). Broadcast to every other connected client via the standard `broadcast_except_one` helper. |
 | `0x47` | 71 | `u8` + `u16` + `u8` + `u8` (5 bytes) | State record — the `u16` is probably a car id and the two `u8` bytes are flags/deltas. |
 | `0x49` | 73 | `u8 result_code` (2 bytes total) | **Driver swap result** — TCP reply sent directly to the client that issued an `ACP_EXECUTE_DRIVER_SWAP` (client `0x48`). The result code is 0 on success and a non-zero error code otherwise. The server logs `"Driver swap result: %d"` immediately after sending. Single recipient — never broadcast. |
 | `0x4f` (sub 0x00) | 79 | `u16` `u8=0x00` | 4-byte variant A |
 | `0x4f` (sub 0x01) | 79 | `u16` `u8=0x01` `u64` | 12-byte variant B — same ID byte, distinguished by a sub-opcode byte at offset 3 |
-| `0x53` | 83 | (body TBD) | Emitted from at least **two** distinct builders: the driver-swap forwarder and the larger session-transition multi-message builder. Likely two unrelated uses of the same id byte, distinguished by context. |
+| `0x53` | 83 | `u8 = 0x53` + serialized `MultiplayerBOPUpdate` (`u16 carId` + `u32 restrictor` + `i32 ballast`) | **Multiplayer BOP (Balance of Performance) update** — pushed to every connected client whenever an admin issues a `/ballast <carNum> <kg>` or `/restrictor <carNum> <pct>` chat command. The chat-command processor builds a `ksRacing::MultiplayerBOPUpdate` struct on the stack and serializes it via its vtable into the outgoing vector after the msg id byte. The chat-output reply `"Assigned %d kg to car #%d"` (or `"... %d %% to car #%d"`) is sent separately as a `0x2b` chat broadcast. The driver-swap forwarder also emits `0x53` from a different builder; both uses share the same wire format. |
 | `0x56` | 86 | `u8 setup_id` + `u16 carId` + setup-blob | **Setup data response** — server's reply to a client `ACP_LOAD_SETUP` (client `0x55`). Built via a per-setup serializer (`FUN_1400328f0`) that pulls the setup blob from either the active session's pinned setup table or the per-car setup library, depending on whether the requested setup_index matches the session-pinned one. Sent over the requesting client's TCP socket. |
 | `0x58` | 88 | `u8 = 0x58` + `u16 carId` + `u8 swap_request_code` (5 bytes) | **Driver swap broadcast notification** — emitted by the server immediately after a successful `ACP_EXECUTE_DRIVER_SWAP` (client `0x48`) **only if** a server-config flag is set (the same flag also gates whether the swap result `0x49` is mirrored to other clients). Broadcast to every other connected client via `broadcast_except_one`, then also re-sent over the executing client's own TCP socket as a self-confirmation. |
 | `0x59` | 89 | `u16` `u8` | 4-byte record |
-| `0x5b` | 91 | (body TBD) | **Note**: client → server TCP also has a `0x5b` message with a different meaning. This server → client `0x5b` is one of the three ids emitted by the session-transition multi-message builder and is likely a session-state notification. |
-| `0x5d` | 93 | `u8 u8` (2 bytes) | Emitted by the session-transition multi-message builder alongside `0x5b` and `0x2b`. |
+| `0x5b` | 91 | `u8 = 0x5b` (1 byte total, just the id) | **Request ctrl info** — server-to-client probe sent when an admin runs the `/controller <carNum>` chat command. The server sends a single byte to the targeted client, which then replies with a client→server `0x5b` (`ACP_CTRL_INFO`, see §5.6.1) carrying the actual controller information. Either side of the exchange uses the same id byte; direction is the disambiguator. The server logs `"Requested controller info for car #%d"` after sending. |
+| `0x5d` | 93 | `u8 = 0x5d` + Format-A `connection_name` + `u8 = 0x01` + `u16 carId` + (further per-connection fields) | **`/connections` admin response — per-connection record** — emitted when an admin runs the `/connections` chat command. The chat parser walks the connection list and builds one `0x5d` message per connection, each containing the connection's display name (Format-A string) followed by a `0x01` separator byte and the connection's `carId`. Sent over the requesting admin's TCP socket only. |
 | `0xbe` | 190 | (variable-length body built by a state-snapshot helper) | **Periodic UDP broadcast** — emitted from the main server tick via the UDP send helper with a 2048-byte scratch buffer. Probably a LAN announcement or presence ping. |
 | `0xc0` | 192 | `u8 0xc0` + server info record + `u8 car_count` + per-car summary | **LAN discovery response** — the server's reply to a client `0x48` probe on UDP 8999. Contains the server name, capacity, connected-car count and per-car summary info. A reimplementation must emit this to be visible on the client's "LAN servers" list. |
 
@@ -1160,6 +1160,36 @@ Non-admin chat command (for driver swap in driver-swap teams): `&swap <driverNum
 
 Chat is a sim-protocol feature carried over TCP (ID TBD). Elevation is stateful on the server; `/admin <pw>` sets a flag on the client's connection. Entry-list drivers with `isServerAdmin: 1` are auto-elevated on join.
 
+### 8.1 Additional admin chat commands not in HB
+
+The chat command parser exposes several commands that are not documented in the public handbook. These were observed by inspecting the parser's literal-string table:
+
+| Command | Args | Effect |
+|---|---|---|
+| `/admin` | password | Elevate the issuing connection to server admin (or `"Wrong password"`) |
+| `/track` | trackName | Switch the current event's track (logs `"Event change to %s"`); replies `"no track name specified"` or `"Please set a valid track"` on bad input |
+| `/manual entrylist` | — | Dump the current connected drivers to a new entry list JSON; replies `"Saved entry list to ..."`, refuses on public servers (`"Entry list cannot be saved on public servers"`) |
+| `/manual start` | — | Replaced — replies `"This cmd was replaced by the formationLapType setting"` |
+| `/controllers` | — | Request ctrl info from every client; replies `"Requesting controllers for %d clients"` |
+| `/controller` | carNum | Request ctrl info from one specific car (single-recipient `0x5b` send) |
+| `/connections` | — | List all current connections (sends one `0x5d` per connection back to the issuing admin) |
+| `/hellban` | carNum | Apply hellban; replies `"Hellban inactive"` if disabled |
+| `/cleartp` | carNum | Clear pending post-race time penalties (`"Pending post race time penalties for #%d cleared by Race Control"`) |
+| `/report` | — | Mark / report a connection (replies `"Car #%d reported, thank you"`) |
+| `/latencymode` | n | Set latency mode 0..N (`"Latency mode: ..."`); validates the number |
+| `/debug conditions` | — | Toggle conditions debug logging (`"conditions stopped/started printing"`) |
+| `/debug bandwidth` | — | Toggle bandwidth stats debug logging |
+| `/debug qos` / `/netcode` | — | Toggle netcode-stats debug logging |
+| `/legacy` / `/regular` | — | Toggle netcode mode (`"Server now uses legacy netcode"` / `"Server is now in regular mode"`) |
+
+Penalty commands (`/dq`, `/dt`, `/dtc`, `/sg10`, `/sg10c`, `/sg20`, `/sg20c`, `/sg30`, `/sg30c`, `/tp5`, `/tp5c`, `/tp15`, `/tp15c`) generate human-readable broadcast strings such as `"5s penalty for car #%d"`, `"Drivethrough penalty for car #%d - causing a collision"`, etc., delivered as `0x2b` chat broadcasts to all connections.
+
+`/ballast` and `/restrictor` additionally emit a `0x53` `MultiplayerBOPUpdate` message (see §5.6.4a) with the new ballast / restrictor values, sent to every connection.
+
+The kick / ban path (`/kick` and `/ban`) emits a `0x2b` chat-style notification with the message `"You have been kicked from the server"` or `"You have been banned from the server"` directly to the target client immediately before force-closing the TCP socket.
+
+A reimplementation of the chat command surface for private MP needs to handle at minimum: `/admin`, `/next`, `/restart`, `/kick`, `/ban`, `/dq`, `/clear`, the time / drive-through penalty family, `/ballast`, `/restrictor`, and the `&swap` self-service command. The `/debug *` commands are local debug toggles only and do not need to behave faithfully.
+
 ---
 
 ## 9. Result file schema
@@ -1605,16 +1635,16 @@ Every "Protocol update to follow client update" note means the sim wire format c
 
 ## 14. Known-unknowns summary
 
-This list is what Notebook A still needs to resolve after Passes 1 through 2.17. Many of the original blind spots are now answered in §5 and §6 of this document; what remains:
+This list is what Notebook A still needs to resolve after Passes 1 through 2.15. Many of the original blind spots are now answered in §5, §6 and §8 of this document; what remains:
 
-1. Full **wire bodies** for the remaining server→client ids whose layouts are still TBD: `0x40`, `0x53`, `0x5b`. Each is emitted by a multi-message session-transition builder; the bodies are not built inline by literal byte writes but via sub-builders.
-2. Pit stop **service** sub-protocol — how the client requests fuel/tyre/repair and how the server grants/denies. The mandatory-pitstop-served message (`0x54`) is decoded but the request/grant flow is not.
-3. Penalty assignment sub-protocol — admin `/dq`, `/tp5`, etc. surface as chat commands, but the on-the-wire penalty messages and how the server distributes a penalty to all clients are not fully decoded.
-4. Result finalization sub-protocol — when and how the server commits a session result, what message id (if any) it sends to clients on session end, and how the result file is written.
-5. **Generic-id builders** (`FUN_14002e080` accepting msg_id as a parameter) may emit additional small-id messages (`0x01`–`0x07`) with semantics distinct from those already catalogued. The semantics in §5.6.4a are best-effort labels from caller context, not from the bytes themselves.
-6. Whether any portion of the handshake or per-tick stream is obfuscated, hashed, or keyed. No evidence of obfuscation has been found in 2.1–2.17, so the working assumption is "no", but a packet capture of a real client connecting would confirm.
-7. The exact field semantics of the four-byte input array in `ACP_CAR_UPDATE` (throttle / brake / clutch / handbrake order) and the meaning of the trailing scalars.
-8. Whether the three "Vector3" blocks in `ACP_CAR_UPDATE` are (position, velocity, angular_velocity) or (position, velocity, forward_direction) — both are plausible, both fit the wire size.
+1. **Pit stop service** sub-protocol — how the client requests fuel/tyre/repair and how the server grants/denies. The mandatory-pitstop-served message (`0x54`) is decoded but the request/grant/execute flow is not.
+2. **Result finalization** sub-protocol — when and how the server commits a session result and what message id (if any) it sends to clients on session end. The session save path is reachable from `/ballast` and `/restrictor` (which set a "results dirty" flag), but the actual save trigger is not yet decoded.
+3. **Generic-id builders** (`FUN_14002e080` accepting msg_id as a parameter) may emit additional small-id messages (`0x01`–`0x07`) with semantics distinct from those already catalogued. The semantics in §5.6.4a are best-effort labels from caller context, not from the bytes themselves.
+4. Whether any portion of the handshake or per-tick stream is obfuscated, hashed, or keyed. No evidence of obfuscation has been found in 2.1–2.15, so the working assumption is "no", but a packet capture of a real client connecting would confirm.
+5. The exact field semantics of the four-byte input array in `ACP_CAR_UPDATE` (throttle / brake / clutch / handbrake order) and the meaning of the trailing scalars.
+6. Whether the three "Vector3" blocks in `ACP_CAR_UPDATE` are (position, velocity, angular_velocity) or (position, velocity, forward_direction) — both are plausible, both fit the wire size.
+7. The exact body of the `0x40` race weekend reset broadcast — the wire format is built by a virtual `WritableRaceStructure::serialize` method (vtable[0x20]), so the bytes can only be enumerated by either decoding that vtable or capturing a real session.
+8. The detailed body of the `MultiplayerBOPUpdate` `0x53` message — the field order in the C++ struct is known (`carId u16` + `restrictor u32` + `ballast i32`) but the on-wire serialization order may differ.
 
 ---
 
@@ -1635,4 +1665,5 @@ Each phase is a checkpoint where we can stop, assess, and decide whether to cont
 | Date | Change |
 |---|---|
 | 2026-04-08 | Initial draft 0.1 from handbook 1.10.2, SDK sources, shipped server.log, default configs, and changelog.txt. |
-| 2026-04-08 | Pass 2.17 — deep decoding of remaining TCP dispatcher case bodies (0x43, 0x45, 0x47, 0x48, 0x4a, 0x4f, 0x51, 0x54, 0x55, 0x5b). Added semantic labels for ten client→server messages and four new server→client message ids (`0x46` car dirt broadcast, `0x49` driver swap result, `0x56` setup data response, `0x58` driver swap broadcast notification). The known server→client id count is now **27**. |
+| 2026-04-08 | Pass 2.14 — deep decoding of remaining TCP dispatcher case bodies (0x43, 0x45, 0x47, 0x48, 0x4a, 0x4f, 0x51, 0x54, 0x55, 0x5b). Added semantic labels for ten client→server messages and four new server→client message ids (`0x46` car dirt broadcast, `0x49` driver swap result, `0x56` setup data response, `0x58` driver swap broadcast notification). The known server→client id count is now **27**. |
+| 2026-04-08 | Pass 2.15 — multi-message builder decoding. Identified `FUN_14002c740` as the **race weekend reset** path (msg id `0x40`, writes `cfg/current/*.txt`), `FUN_14001dae0` and `FUN_140021680` as the **chat command parser / admin penalty processor**. Resolved bodies / semantics for `0x40`, `0x53` (`MultiplayerBOPUpdate` from `/ballast` and `/restrictor`), server→client `0x5b` (1-byte ctrl-info request from `/controller`), `0x5d` (`/connections` list response), and the kick/ban variant of `0x2b`. Added §8.1 with the full set of admin chat commands not in HB (`/admin`, `/track`, `/manual entrylist`, `/controllers`, `/connections`, `/hellban`, `/cleartp`, `/report`, `/latencymode`, `/debug *`, `/legacy`/`/regular`). |
