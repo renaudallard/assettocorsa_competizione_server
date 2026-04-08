@@ -313,9 +313,60 @@ The sim protocol multiplexes messages over both TCP and UDP. Both transports car
 
 The same internal buffer class handles both transports; it carries a flag indicating whether the payload arrived over TCP or UDP, but the field formats and the message-type byte layout are identical between the two.
 
-On UDP, each datagram is one message — the datagram boundary is the message boundary.
+#### 5.1.1 UDP framing
 
-On TCP, the framing wrapper (presence of a length prefix, header magic, or other delimiter) is not yet documented in this specification. A reimplementation must determine it from observation of traffic or from the TCP receive path of the target binary. (Known-unknown #1 in §5.9.)
+On UDP, each datagram is one message. The datagram boundary is the message boundary. No explicit framing bytes — the length is the datagram length.
+
+**Maximum UDP message size: 2048 bytes** (the receive buffer size). Messages larger than this are not supported over UDP and must be sent via TCP.
+
+#### 5.1.2 TCP framing
+
+TCP uses a variable-width length-prefix header so multiple messages can be streamed over a single connection and a reader can always determine the next message's boundary.
+
+**Short format** — for messages whose body is 0 to 65534 bytes:
+
+```
+  offset 0   1   2   3   ...   1+n
+         +-------+-----------------+
+         | len   | body[0..n-1]    |
+         +-------+-----------------+
+         u16 LE
+         (= n)
+```
+
+The first two bytes are a little-endian `u16` length giving the number of body bytes that follow. The body bytes immediately follow. Total frame size: `2 + n` bytes.
+
+**Extended format** — for messages whose body is 65535 or more bytes:
+
+```
+  offset 0   1   2   3   4   5   6   ...   5+n
+         +-------+---------------+-----------------+
+         | 0xFFFF | len            | body[0..n-1]  |
+         +-------+---------------+-----------------+
+         u16 LE    u32 LE (= n)
+         (sentinel)
+```
+
+The first two bytes are the sentinel value `0xFFFF` (u16 LE), followed by a little-endian `u32` length giving the number of body bytes that follow. Total frame size: `6 + n` bytes.
+
+**Reader behavior**:
+- Peek at the first `u16`. If less than `0xFFFF`, treat as short-format length.
+- If exactly `0xFFFF`, read the next `u32` as extended-format length.
+- Wait until `(header + body)` bytes are available before extracting.
+
+**Writer behavior**:
+- If body length < `0xFFFF`, emit the short header.
+- If body length ≥ `0xFFFF`, emit the extended header. There is no way to express a body of exactly `0xFFFF` bytes in the short format — the sentinel value is reserved.
+
+**A reimplementation should enforce a reasonable per-connection receive-accumulator cap** (e.g. 64 KB) and drop connections that exceed it. The Kunos server uses a 640 KB cap, which is much larger than needed for any legitimate message and is probably a legacy number.
+
+### 5.2 Dispatch architecture
+
+There is **no central dispatcher function** for incoming messages. Instead, each socket (both UDP and TCP) maintains a list of registered handler callbacks. On every received message, the socket iterates its handler list and invokes each callback with a wrapper around the message bytes.
+
+Each handler self-selects by reading byte 0 of the message (the message type identifier) and comparing it against the set of IDs that handler cares about. Handlers that do not recognize the ID return early without touching the cursor.
+
+A reimplementation may choose either architecture — the protocol contract is only that byte 0 is the message ID and handlers process bytes 1..n accordingly. A central switch-based dispatcher and a list-of-subscribers dispatcher are both compatible with the contract. The Kunos implementation uses the latter.
 
 ### 5.2 Scalar types
 
@@ -335,7 +386,11 @@ There are no varints, no tag bytes, no per-field headers. The type of each field
 
 ### 5.3 String encoding
 
-Strings are encoded with a fixed format:
+The protocol has **two string formats**. Which format a given field uses is determined by the schema of the message — there is no tag or marker on the wire indicating which format is in use. A reimplementation must know, for each string field, which format the protocol specifies.
+
+#### 5.3.1 Format A — short string (u8 length, UTF-32 padded)
+
+Used for short identifiers: driver first name, last name, short name (3 chars), race numbers-as-strings, small labels.
 
 ```
 +--------+-----------------------------+
@@ -343,12 +398,34 @@ Strings are encoded with a fixed format:
 +--------+-----------------------------+
 ```
 
-- **Length prefix**: 1 byte, unsigned. **Strings are limited to 255 characters.**
+- **Length prefix**: 1 byte, unsigned. **Max 255 characters.**
 - **Body**: exactly `len × 4` bytes. Each character occupies a 4-byte slot, of which the first 2 bytes are a little-endian UTF-16 code unit and the last 2 bytes are zero and ignored.
 
-Effectively the wire format is **UTF-32LE with only BMP code points** (code points ≤ U+FFFF). Non-BMP characters (emoji, supplementary plane) cannot be represented. In practice all strings carried by the protocol are display names, team names, and similar, and fit within BMP.
+Effectively: **UTF-32LE with only BMP code points** (≤ U+FFFF). Non-BMP characters (emoji, supplementary plane) cannot be represented. In practice all fields using this format are display names and short labels that fit within BMP.
 
-The protocol appears not to support strings longer than 255 characters. Any longer text (server descriptions, error messages, custom livery metadata) must use a different helper that has not yet been located in the binary. (Known-unknown #6 in §5.9.)
+#### 5.3.2 Format B — long string (u16 length, raw UTF-16 LE)
+
+Used for longer text: server name, chat messages, error text.
+
+```
++----------+------------------------+
+| u16 len  | len bytes of UTF-16 LE |
++----------+------------------------+
+```
+
+- **Length prefix**: 2 bytes, unsigned little-endian. **Represents the length in BYTES, not characters.** The value is expected to be even; each character is 2 bytes.
+- **Body**: exactly `len` bytes of UTF-16 LE data (no padding, no zero terminator). `len / 2` characters.
+- **Maximum**: 65535 bytes = 32767 characters in the worst case (only BMP), minus any per-message overhead. In practice limited further by the TCP accumulator cap.
+
+Format B can represent the full Unicode BMP. Supplementary-plane code points (surrogate pairs) would be encoded as two 16-bit code units each; whether the server decodes them correctly is not confirmed and a reimplementation should probably treat them as literal UTF-16 and not try to interpret as grapheme clusters.
+
+#### 5.3.3 How to tell which format is used
+
+Only by reference to the message schema for each specific field. Both formats are used in the same protocol, in different messages. A reimplementation must document, for each serializer it writes, which format each string field uses.
+
+Rule of thumb from observation: display names, short tags, and identity-like fields use Format A; free-form text, server metadata, and chat-like fields use Format B.
+
+### 5.4 Optional trailing fields (Format A strings only)
 
 ### 5.4 Optional trailing fields
 
