@@ -6,6 +6,7 @@
 PROG =		accd
 
 OBJS =		main.o \
+		bans.o \
 		bcast.o \
 		chat.o \
 		config.o \
@@ -19,6 +20,7 @@ OBJS =		main.o \
 		monitor.o \
 		net.o \
 		pb.o \
+		penalty.o \
 		prim.o \
 		results.o \
 		session.o \
@@ -36,10 +38,13 @@ ${PROG}: ${OBJS}
 main.o: main.c config.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
 	${CC} ${CFLAGS} -c main.c
 
+bans.o: bans.c bans.h log.h state.h
+	${CC} ${CFLAGS} -c bans.c
+
 bcast.o: bcast.c bcast.h io.h log.h msg.h state.h
 	${CC} ${CFLAGS} -c bcast.c
 
-chat.o: chat.c chat.h log.h msg.h state.h
+chat.o: chat.c chat.h bcast.h io.h log.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${CFLAGS} -c chat.c
 
 config.o: config.c config.h json.h log.h state.h
@@ -74,6 +79,9 @@ net.o: net.c net.h log.h
 
 pb.o: pb.c pb.h io.h
 	${CC} ${CFLAGS} -c pb.c
+
+penalty.o: penalty.c penalty.h log.h state.h
+	${CC} ${CFLAGS} -c penalty.c
 
 prim.o: prim.c prim.h io.h
 	${CC} ${CFLAGS} -c prim.c
