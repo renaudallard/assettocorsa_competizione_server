@@ -21,12 +21,15 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <math.h>
+
 #include "bcast.h"
 #include "chat.h"
 #include "handlers.h"
 #include "io.h"
 #include "log.h"
 #include "msg.h"
+#include "penalty.h"
 #include "prim.h"
 #include "session.h"
 #include "state.h"
@@ -393,6 +396,42 @@ h_car_location_update(struct Server *s, struct Conn *c,
 	log_info("car location: car=%u loc=%u",
 	    (unsigned)car_id, (unsigned)location);
 
+	/*
+	 * Phase 9 auto-penalty: pit-speeding detection.
+	 *
+	 * carLocation enum: NONE=0, Track=1, Pitlane=2, PitEntry=3,
+	 * PitExit=4.  When the car is in the pitlane and its
+	 * velocity (vec_c magnitude in m/s) exceeds the pit limit,
+	 * issue a drive-through penalty.
+	 *
+	 * The pit limit varies per track but 80 km/h (~22.2 m/s)
+	 * is a safe upper bound for every ACC track.
+	 */
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
+		struct CarEntry *car = &s->cars[c->car_id];
+		struct CarRaceState *race = &car->race;
+
+		race->in_pit = (location == 2 || location == 3 ||
+		    location == 4) ? 1 : 0;
+
+		if (location == 2 && car->rt.has_data) {
+			float vx = car->rt.vec_c[0];
+			float vy = car->rt.vec_c[1];
+			float vz = car->rt.vec_c[2];
+			float speed = sqrtf(vx * vx + vy * vy + vz * vz);
+
+			if (speed > 22.5f && !race->pit_crossing_latched) {
+				log_info("PITLANE SPEEDING for car #%d "
+				    "speed=%.1f m/s", car->race_number,
+				    speed);
+				penalty_enqueue(s, c->car_id, PEN_DT, 0);
+				race->pit_crossing_latched = 1;
+			}
+		}
+		if (location == 1)
+			race->pit_crossing_latched = 0;
+	}
+
 	bb_init(&out);
 	if (wr_u8(&out, ACP_CAR_LOCATION_UPDATE) < 0 ||
 	    wr_u16(&out, car_id) < 0 ||
@@ -751,8 +790,6 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 	uint8_t msg_id;
 	uint16_t car_id;
 
-	(void)s;
-
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u16(&r, &car_id) < 0) {
@@ -764,6 +801,10 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 		    "%u, but connection is %u",
 		    (unsigned)car_id, (unsigned)c->conn_id);
 		return 0;
+	}
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
+		s->cars[c->car_id].race.mandatory_pit_served = 1;
+		penalty_serve_front(s, c->car_id);
 	}
 	log_info("Served Mandatory Pitstop: %u", (unsigned)car_id);
 	return 0;

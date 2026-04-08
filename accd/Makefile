@@ -29,11 +29,12 @@ OBJS =		main.o \
 
 CFLAGS +=	-std=c99 -Wall -Wextra -Wpedantic -O2 -g
 LDFLAGS +=
+LIBS +=		-lm
 
 all: ${PROG}
 
 ${PROG}: ${OBJS}
-	${CC} ${LDFLAGS} -o ${PROG} ${OBJS}
+	${CC} ${LDFLAGS} -o ${PROG} ${OBJS} ${LIBS}
 
 main.o: main.c config.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
 	${CC} ${CFLAGS} -c main.c
@@ -53,7 +54,7 @@ config.o: config.c config.h json.h log.h state.h
 dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h prim.h state.h
 	${CC} ${CFLAGS} -c dispatch.c
 
-handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h prim.h state.h
+handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${CFLAGS} -c handlers.c
 
 handshake.o: handshake.c handshake.h bcast.h io.h log.h monitor.h msg.h prim.h state.h
