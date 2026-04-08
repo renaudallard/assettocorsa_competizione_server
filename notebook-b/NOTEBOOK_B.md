@@ -588,11 +588,31 @@ repeated {per-connected-car record}    (typically 20+ bytes per car)
 ... trailing state scalars ...
 ```
 
-The sub-records enumerated above are serialized by dedicated per-type builders. Partial structural information is known for each:
+The sub-records enumerated above are serialized by dedicated per-type builders. Known layouts:
 
-- **Session manager state**: one leading flag byte followed by **7 session records spaced 56 bytes apart in the server struct** (matches the max session count in a race weekend: FP1/FP2/FP3/Q/Q2/R/R2), followed by a tail record. Each session record is serialized by a dedicated per-session appender whose exact body is not yet decoded.
-- **Assist rules**: built in a two-step pattern — a temporary snapshot is assembled from the server's runtime state (applying overrides from `assistRules.json`), then that snapshot is serialized into the outgoing packet with ~7 fields (matching the handbook's assist controls: stability control level, auto-steer, auto-lights, auto-wiper, auto-engine-start, auto-pit-limiter, auto-gear, auto-clutch, ideal-line).
-- **Additional state**: conditional — several server-side flags control whether this record is emitted at all. When present, it contains runtime state that is only meaningful after a session has actually started (session phase, active rules, etc.). A minimal reimplementation can send an empty placeholder here.
+- **Session manager state** (fully decoded): one leading flag byte, then seven session records (each either 1 byte for an inactive session or 5 bytes for an active one: `u8 session_type + f32 elapsed_time`), then a 23-byte session-manager tail with layout `u8 + u8 + u8 + u32 + u16 + u32 + u32 + u8 + u8 + u32`. Total session block size: 31-59 bytes depending on how many sessions are active.
+- **Assist rules** (structural): built in a two-step pattern — a temporary snapshot is assembled from the server's runtime state (applying overrides from `assistRules.json`), then that snapshot is serialized into the outgoing packet with ~7 fields matching the handbook's assist controls.
+- **Additional state** (conditional): several server-side flags control whether this record is emitted at all. When present, it contains runtime state that is only meaningful after a session has actually started. A minimal reimplementation can send an empty placeholder here.
+
+### Per-car record layout (within the welcome trailer's connected-car list)
+
+Each connected car in the welcome trailer is encoded as **24 bytes in the following order**:
+
+```
+u8     byte_a          (from car-struct offset -4, unknown semantic)
+u8     byte_b          (from car-struct offset 0)
+u8     byte_c          (from car-struct offset +4, decremented by 1 on write)
+u32    field_d         (from car-struct offset +8, likely raceNumber or connectionId)
+u16    field_e         (from car-struct offset +0xc)
+u32    field_f         (from car-struct offset +0x10, likely carId)
+u32    field_g         (from car-struct offset +0x14)
+u8     byte_h          (from car-struct offset +0x18)
+u8     byte_i          (from car-struct offset +0x1c)
+u32    field_j         (from car-struct offset +0x20)
+u8     byte_k          (from server-global state, not from the car)
+```
+
+Total: 1+1+1+4+2+4+4+1+1+4+1 = **24 bytes per car**. For a full 30-car session the connected-car list is ~720 bytes plus the 1-byte count prefix.
 
 A reimplementation aiming for wire-level compatibility with the accept path will need to decode the per-session appender and the assist-rules serializer (each is a few hundred bytes of decompilation). For phase-1 reject-only operation, neither is needed.
 
