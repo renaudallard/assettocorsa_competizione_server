@@ -502,16 +502,16 @@ Messages carried over the reliable TCP control channel. 22 distinct IDs:
 | `0x3d` | 61 | **Event report** — body is `u8` + `i32` (2 fields). The server broadcasts a transformed server `0x3c` message (body `u16` + `u16` + `u32`, 9 bytes) to all other clients. |
 | `0x41` | 65 | `u8` + `u8` + `u64` + `i32` (4 fields; u64 likely timestamp) |
 | `0x42` | 66 | Single `u64`. **Probable clock synchronization** — client sends its timestamp, server uses it to compute offsets. |
-| `0x43` | 67 | (body delegated, not directly read) |
-| `0x45` | 69 | Five `u8` fields (likely flag/enum bitmap) |
-| `0x47` | 71 | (body delegated; server sends a response immediately) |
-| `0x48` | 72 | `u16` + `u8` (distinct from the UDP `0x48` LAN discovery below; server sends a response) |
-| `0x4a` | 74 | `u16` + `u8` + `u8` (server sends a response) |
-| `0x4f` | 79 | **Event report with sub-variants** — body is `u8` + `u64`. The server broadcasts a transformed server `0x4f` message with a sub-opcode byte at body offset 3: sub `0x00` for the 4-byte variant (u16 + u8=0x00), sub `0x01` for the 12-byte variant (u16 + u8=0x01 + u64). |
-| `0x51` | 81 | Two `u16` fields (probably a small command, e.g. "focus car X, camera Y") |
-| `0x54` | 84 | Single `u16` (car index?) |
-| `0x55` | 85 | `u8` + `u16` + `i32` followed by a full embedded **CarInfo** (via `CarInfo::readFromPacket`). Carries the client's updated car state. |
-| `0x5b` | 91 | (body delegated, not directly read) |
+| `0x43` | 67 | **Damage zones update** — body is 5 × `u8` (one normalized value per damage zone). The server stores them as 5 `float`s in the car-state damage block at car-struct offset 0x1b8, then broadcasts a transformed server **`0x44`** message to every other client via UDP `broadcast_except_one`. Log: `"Updated %d clients with new damage zones for car %d"`. **Note**: this is one of three distinct uses of the id byte `0x44` — see the server→client `0x44` row in §5.6.4a and the lobby-protocol `0x44` registration described there. |
+| `0x45` | 69 | **Car dirt status update** (`ACP_CAR_DIRT`) — body is 5 × `u8` (each normalized to a `float` and packed into a `ksRacing::CarDirtStatus` record at car-state offset 0x160). The server then builds and broadcasts a transformed server **`0x46`** message (msg id + `u16 carId` + appended status block) to every other client via the `broadcast_except_one` helper. |
+| `0x47` | 71 | **`ACP_UPDATE_DRIVER_SWAP_STATE`** — body is `u16 carId`. The server validates that the connection actually owns the target car (otherwise logs `"Received ACP_UPDATE_DRIVER_SWAP_STATE for alien car: %d"`), then walks the configured entry list and updates the entry's swap state via a per-entry lambda. No direct outbound message — the state change is propagated by other broadcasters on the next tick. |
+| `0x48` | 72 | **`ACP_EXECUTE_DRIVER_SWAP`** — body is `u16 carId` + `u8 swap_request_code`. The server validates the connection owns the car (otherwise logs `"ACP_EXECUTE_DRIVER_SWAP, but no car controlled for connection %d"` or `"... carId mismatch: %d (car controlled %d for connection %d)"`), then runs the swap procedure via the std::function dispatch. Result reply: server sends back **`0x49`** (u8 msg id + u8 result_code) over TCP to the requesting client (logged as `"Driver swap result: %d"` or, on failure, `"Driver swap failed: %d"`). On success and if a server-config flag is set, also emits **`0x58`** broadcast (u8 + u16 carId + u8 swap_request_code) to every other client. **Distinct from** the UDP `0x48` LAN discovery probe — the two share an id byte but are disambiguated by transport. |
+| `0x4a` | 74 | **`ACP_DRIVER_SWAP_STATE_REQUEST`** — body is `u16 carId` + `u8 sub_state` + `u8 connection_state`. The server validates ownership (otherwise logs `"ACP_DRIVER_SWAP_STATE_REQUEST for the wrong carId: %d (Connection owns %d)"`). Sub-state values 2, 3, 4 are accepted; anything else triggers `"DriverSwap Request for type %d is not implemented"`. Sub-state 3 walks every connection sharing the car and bumps each one from sub-state 3 to 2; sub-state 2 requires the request connection to actually own the car at the moment (`"DriverSwap 'Request'-Request, but car isn't controlled (%d) by this connection (%d)"`) and then dispatches via a per-entry lambda. The connection's own swap state byte is updated and the message log records `"Connection %d on car %d changes its swap connection state from %d to %d"`. |
+| `0x4f` | 79 | **`ACP_DRIVER_STINT_RESET`** (formerly catalogued as a generic "event report") — body is `u8 force_reset_flag` + `u64 timestamp`. The server logs `"Receives driver stint reset for car %d"`, normalizes the timestamp through `FUN_140042030`, then dispatches to one of two timing-update functions depending on the force flag, both wrapped in lambdas that send a per-recipient TCP message. The on-the-wire server→client `0x4f` (with sub-opcode 0x00 / 0x01 — see §5.6.4a) is the broadcast variant of this same event. |
+| `0x51` | 81 | **`ACP_ELO_UPDATE`** — body is `u16 new_elo` + `u16 (unused?)`. The server logs `"Car %d elo update %d => %d (%d)"`, writes the new value into the car-state struct at offset 0x1f8, and sets a "results dirty" flag for the next save. No outbound message. |
+| `0x54` | 84 | **`ACP_MANDATORY_PITSTOP_SERVED`** — body is `u16 carId`. The server validates the carId matches the connection's owned car (otherwise logs `"Received ACP_MANDATORY_PITSTOP_SERVED for carId %d, but connection is %d"`), then logs `"Served Mandatory Pitstop: %d"` and clears the mandatory-pitstop-pending flag for the car via the timing module. No outbound message. |
+| `0x55` | 85 | **`ACP_LOAD_SETUP`** — body is `u8 setup_index` + `u16 carId` + `u32 setup_revision`. The server looks up the setup data either from the active session's setup table or from a per-car setup library (depending on whether the requested setup_index matches the session's current pinned setup), then builds and sends back a **`0x56`** TCP response carrying the setup blob via the per-setup serializer. If `setup_index` is out of range the server returns silently without a reply. |
+| `0x5b` | 91 | **`ACP_CTRL_INFO`** — body is a complex `ksRacing::CtrlInfo` struct read by a dedicated parser, carrying: `u16 carId`, two Format-B strings (model/livery), several state booleans (gpe / as / sc / scp / defaults), a scaling factor `f32`, fuel and wear floats, and a setup_id. The server logs `"Ctrl Info carId %d (%s): %s"` followed by a flag string built from the booleans, then for every connection that meets a server-side filter it builds a per-recipient **`0x2b`** message containing a server-stringified version of the ctrl info and sends it over that connection's TCP socket. If the formatted message would exceed 250 bytes the server replaces it with the literal `"Received ctrl info, but message is too long. Please check logs"`. |
 
 #### 5.6.2 UDP message IDs
 
@@ -655,18 +655,22 @@ A reimplementation aiming for wire-level compatibility with the accept path will
 | `0x3c` | 60 | `u16` `u16` `u32` | 9-byte record, triggered by client case `0x3d` |
 | `0x3e` | 62 | (body is empty — just the id byte) | Probable keepalive |
 | `0x40` | 64 | (body TBD) | Multi-message builder — the enclosing function contains two `vec_init` calls and writes at least `0x40` as a first byte. Body details need further decoding. |
-| `0x44` | 68 | *not part of game-client protocol* | Lobby registration request to Kunos's `kson` backend — only sent when `registerToLobby: 1`, irrelevant for private MP |
+| `0x44` | 68 | (varies — see semantics column) | **Three distinct uses of this id byte**, all unrelated: (a) lobby registration request to Kunos's `kson` backend, only sent when `registerToLobby: 1` and irrelevant for private MP; (b) **damage zones broadcast** — server-transformed relay of client `0x43` carrying 5 normalized damage values for one car (see §5.6.1 row for client `0x43`); (c) a smaller game-protocol variant emitted from one of the multi-message builders. Disambiguated by transport / call site, not by the id byte alone. |
+| `0x46` | 70 | `u16 carId` + dirt-status block | **Car dirt status broadcast** — server-transformed relay of client `0x45` `ACP_CAR_DIRT`. The payload after the car id is a `ksRacing::CarDirtStatus` record (5 normalized floats packed via `FUN_1400327a0`). Broadcast to every other connected client via the standard `broadcast_except_one` helper. |
 | `0x47` | 71 | `u8` + `u16` + `u8` + `u8` (5 bytes) | State record — the `u16` is probably a car id and the two `u8` bytes are flags/deltas. |
+| `0x49` | 73 | `u8 result_code` (2 bytes total) | **Driver swap result** — TCP reply sent directly to the client that issued an `ACP_EXECUTE_DRIVER_SWAP` (client `0x48`). The result code is 0 on success and a non-zero error code otherwise. The server logs `"Driver swap result: %d"` immediately after sending. Single recipient — never broadcast. |
 | `0x4f` (sub 0x00) | 79 | `u16` `u8=0x00` | 4-byte variant A |
 | `0x4f` (sub 0x01) | 79 | `u16` `u8=0x01` `u64` | 12-byte variant B — same ID byte, distinguished by a sub-opcode byte at offset 3 |
 | `0x53` | 83 | (body TBD) | Emitted from at least **two** distinct builders: the driver-swap forwarder and the larger session-transition multi-message builder. Likely two unrelated uses of the same id byte, distinguished by context. |
+| `0x56` | 86 | `u8 setup_id` + `u16 carId` + setup-blob | **Setup data response** — server's reply to a client `ACP_LOAD_SETUP` (client `0x55`). Built via a per-setup serializer (`FUN_1400328f0`) that pulls the setup blob from either the active session's pinned setup table or the per-car setup library, depending on whether the requested setup_index matches the session-pinned one. Sent over the requesting client's TCP socket. |
+| `0x58` | 88 | `u8 = 0x58` + `u16 carId` + `u8 swap_request_code` (5 bytes) | **Driver swap broadcast notification** — emitted by the server immediately after a successful `ACP_EXECUTE_DRIVER_SWAP` (client `0x48`) **only if** a server-config flag is set (the same flag also gates whether the swap result `0x49` is mirrored to other clients). Broadcast to every other connected client via `broadcast_except_one`, then also re-sent over the executing client's own TCP socket as a self-confirmation. |
 | `0x59` | 89 | `u16` `u8` | 4-byte record |
 | `0x5b` | 91 | (body TBD) | **Note**: client → server TCP also has a `0x5b` message with a different meaning. This server → client `0x5b` is one of the three ids emitted by the session-transition multi-message builder and is likely a session-state notification. |
 | `0x5d` | 93 | `u8 u8` (2 bytes) | Emitted by the session-transition multi-message builder alongside `0x5b` and `0x2b`. |
 | `0xbe` | 190 | (variable-length body built by a state-snapshot helper) | **Periodic UDP broadcast** — emitted from the main server tick via the UDP send helper with a 2048-byte scratch buffer. Probably a LAN announcement or presence ping. |
 | `0xc0` | 192 | `u8 0xc0` + server info record + `u8 car_count` + per-car summary | **LAN discovery response** — the server's reply to a client `0x48` probe on UDP 8999. Contains the server name, capacity, connected-car count and per-car summary info. A reimplementation must emit this to be visible on the client's "LAN servers" list. |
 
-A comprehensive sweep has found **23 distinct server → client message IDs**. This list should be ≥90% complete for messages that use the standard `build-and-send` pattern. Messages built by generic serializers (where the msg id is a parameter, not a literal) or by virtual methods that don't initialize their own output vector may still be missing — most likely one or two additional ids at most.
+A comprehensive sweep plus deep TCP-dispatcher case decoding has found **27 distinct server → client message IDs**. This list should be ≥95% complete for messages that use the standard `build-and-send` pattern. Messages built by generic serializers (where the msg id is a parameter, not a literal) or by virtual methods that don't initialize their own output vector may still be missing — most likely one or two additional ids at most.
 
 #### 5.6.4d Post-handshake welcome sequence
 
@@ -1601,23 +1605,16 @@ Every "Protocol update to follow client update" note means the sim wire format c
 
 ## 14. Known-unknowns summary
 
-This list is what Notebook A needs to resolve. Keeping it here (with only the question, not any answer derived from the binary) is clean-room-safe.
+This list is what Notebook A still needs to resolve after Passes 1 through 2.17. Many of the original blind spots are now answered in §5 and §6 of this document; what remains:
 
-1. Full ACP_ message ID table and names (we have 9, 34, 49, 50; need 33, 41, 44, 45, 48 and everything else).
-2. TCP framing (length prefix size, header layout).
-3. UDP packet framing (message ID placement).
-4. Connection handshake payload format (ACP_REQUEST_CONNECTION contents, ordering, password/auth location).
-5. Entry list push format and timing relative to handshake.
-6. Per-tick car update format on UDP (full 3D, rotation, physics channels).
-7. Per-tick session state push format.
-8. Chat channel ID and frame layout.
-9. Weather/track update push ID and schedule.
-10. Pit stop request/grant/execute sub-protocol.
-11. Penalty assignment sub-protocol (admin + auto).
-12. Result finalization sub-protocol.
-13. Disconnection semantics and `ignorePrematureDisconnects` behavior.
-14. Whether any portion of the handshake is obfuscated or keyed, and if so how.
-15. The meaning of the `CLIENT VERSION:` number and how it's negotiated.
+1. Full **wire bodies** for the remaining server→client ids whose layouts are still TBD: `0x40`, `0x53`, `0x5b`. Each is emitted by a multi-message session-transition builder; the bodies are not built inline by literal byte writes but via sub-builders.
+2. Pit stop **service** sub-protocol — how the client requests fuel/tyre/repair and how the server grants/denies. The mandatory-pitstop-served message (`0x54`) is decoded but the request/grant flow is not.
+3. Penalty assignment sub-protocol — admin `/dq`, `/tp5`, etc. surface as chat commands, but the on-the-wire penalty messages and how the server distributes a penalty to all clients are not fully decoded.
+4. Result finalization sub-protocol — when and how the server commits a session result, what message id (if any) it sends to clients on session end, and how the result file is written.
+5. **Generic-id builders** (`FUN_14002e080` accepting msg_id as a parameter) may emit additional small-id messages (`0x01`–`0x07`) with semantics distinct from those already catalogued. The semantics in §5.6.4a are best-effort labels from caller context, not from the bytes themselves.
+6. Whether any portion of the handshake or per-tick stream is obfuscated, hashed, or keyed. No evidence of obfuscation has been found in 2.1–2.17, so the working assumption is "no", but a packet capture of a real client connecting would confirm.
+7. The exact field semantics of the four-byte input array in `ACP_CAR_UPDATE` (throttle / brake / clutch / handbrake order) and the meaning of the trailing scalars.
+8. Whether the three "Vector3" blocks in `ACP_CAR_UPDATE` are (position, velocity, angular_velocity) or (position, velocity, forward_direction) — both are plausible, both fit the wire size.
 
 ---
 
@@ -1638,3 +1635,4 @@ Each phase is a checkpoint where we can stop, assess, and decide whether to cont
 | Date | Change |
 |---|---|
 | 2026-04-08 | Initial draft 0.1 from handbook 1.10.2, SDK sources, shipped server.log, default configs, and changelog.txt. |
+| 2026-04-08 | Pass 2.17 — deep decoding of remaining TCP dispatcher case bodies (0x43, 0x45, 0x47, 0x48, 0x4a, 0x4f, 0x51, 0x54, 0x55, 0x5b). Added semantic labels for ten client→server messages and four new server→client message ids (`0x46` car dirt broadcast, `0x49` driver swap result, `0x56` setup data response, `0x58` driver swap broadcast notification). The known server→client id count is now **27**. |
