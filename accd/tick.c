@@ -107,9 +107,131 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 	(void)bcast_all(s, buf, sizeof(buf), 0xFFFF);
 }
 
+/*
+ * Build and emit the SRV_LEADERBOARD_BCAST (0x36) when the
+ * standings have changed.  Body: u32 session_meta + per-car
+ * minimal records (car_id + position + lap_count + last_lap +
+ * best_lap).  This is a simplified version of the binary's
+ * leaderboard record; full SRV_LEADERBOARD_UPDATE (0x07)
+ * protobuf carries the rich version.
+ */
+static void
+broadcast_leaderboard(struct Server *s)
+{
+	struct ByteBuf bb;
+	int i, n = 0;
+
+	bb_init(&bb);
+	if (wr_u8(&bb, SRV_LEADERBOARD_BCAST) < 0 ||
+	    wr_u32(&bb, s->session.standings_seq) < 0)
+		goto done;
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+		if (s->cars[i].used)
+			n++;
+	if (wr_u8(&bb, (uint8_t)n) < 0)
+		goto done;
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+		struct CarEntry *car = &s->cars[i];
+		if (!car->used)
+			continue;
+		if (wr_u16(&bb, car->car_id) < 0 ||
+		    wr_u16(&bb, (uint16_t)car->race.position) < 0 ||
+		    wr_i32(&bb, car->race.lap_count) < 0 ||
+		    wr_i32(&bb, car->race.last_lap_ms) < 0 ||
+		    wr_i32(&bb, car->race.best_lap_ms) < 0)
+			goto done;
+	}
+	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+	log_info("Updated leaderboard for %d clients", s->nconns);
+done:
+	bb_free(&bb);
+}
+
+/*
+ * Build and emit the SRV_GRID_POSITIONS (0x3f) at the start of
+ * the RACE phase.  Body: u8 grid_count + per-car { u16 carId +
+ * u8 flag_a + u32 grid_position + u8 flag_b }.
+ */
+static void
+broadcast_grid(struct Server *s)
+{
+	struct ByteBuf bb;
+	int i, n = 0;
+
+	bb_init(&bb);
+	if (wr_u8(&bb, SRV_GRID_POSITIONS) < 0)
+		goto done;
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+		if (s->cars[i].used)
+			n++;
+	if (wr_u8(&bb, (uint8_t)n) < 0)
+		goto done;
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+		struct CarEntry *car = &s->cars[i];
+		if (!car->used)
+			continue;
+		if (wr_u16(&bb, car->car_id) < 0 ||
+		    wr_u8(&bb, 0) < 0 ||
+		    wr_u32(&bb,
+			(uint32_t)(car->race.grid_position > 0 ?
+			    car->race.grid_position : (i + 1))) < 0 ||
+		    wr_u8(&bb, 0) < 0)
+			goto done;
+	}
+	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+	log_info("Sending grid positions: %d cars", n);
+done:
+	bb_free(&bb);
+}
+
+/*
+ * Build and emit the SRV_SESSION_RESULTS (0x3e) at the end of
+ * a session.  Body: u8 result_count + per-car { u8 + u8 + u8 +
+ * u32 + u16 + u32 + u32 + u8 + u8 + u32 } header.
+ */
+static void
+broadcast_session_results(struct Server *s)
+{
+	struct ByteBuf bb;
+	int i, n = 0;
+
+	bb_init(&bb);
+	if (wr_u8(&bb, SRV_SESSION_RESULTS) < 0)
+		goto done;
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+		if (s->cars[i].used)
+			n++;
+	if (wr_u8(&bb, (uint8_t)n) < 0)
+		goto done;
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+		struct CarEntry *car = &s->cars[i];
+		if (!car->used)
+			continue;
+		if (wr_u8(&bb, (uint8_t)car->race.position) < 0 ||
+		    wr_u8(&bb, car->cup_category) < 0 ||
+		    wr_u8(&bb, car->driver_count) < 0 ||
+		    wr_u32(&bb, (uint32_t)car->race.lap_count) < 0 ||
+		    wr_u16(&bb, car->car_id) < 0 ||
+		    wr_u32(&bb, (uint32_t)car->race.best_lap_ms) < 0 ||
+		    wr_u32(&bb, (uint32_t)car->race.race_time_ms) < 0 ||
+		    wr_u8(&bb, 0) < 0 ||
+		    wr_u8(&bb, 0) < 0 ||
+		    wr_u32(&bb, (uint32_t)car->race.last_lap_ms) < 0)
+			goto done;
+	}
+	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+	log_info("Send session results to %d clients (%zu byte)",
+	    s->nconns, bb.wpos);
+done:
+	bb_free(&bb);
+}
+
 void
 tick_run(struct Server *s)
 {
+	static uint16_t last_standings_seq = 0;
+	static uint8_t last_phase = 0;
+
 	s->tick_count++;
 
 	/* Drive the session phase machine. */
@@ -122,22 +244,29 @@ tick_run(struct Server *s)
 	if ((s->tick_count % CADENCE_PERCAR_SLOW) == 0)
 		broadcast_percar(s, SRV_PERCAR_SLOW_RATE, 1);
 
-	/* Keepalive heartbeat: SRV_KEEPALIVE_14 is a single-byte
-	 * message.  The binary also emits SRV_STATE_RECORD_0C and
-	 * SRV_KEEPALIVE_36/37/3E from the server tick tail; we
-	 * emit the simple keepalive here as the minimum viable
-	 * heartbeat. */
+	/* Keepalive heartbeat. */
 	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
 		broadcast_keepalive(s, SRV_KEEPALIVE_14);
 
 	/*
-	 * Future phases will also fan out:
-	 *   - SRV_LEADERBOARD_BCAST (0x36) when standings change
-	 *   - SRV_WEATHER_STATUS (0x37) on weather refresh
-	 *   - SRV_RATING_SUMMARY (0x4e) when ratings change
-	 *   - SRV_SESSION_RESULTS (0x3e) at session end
-	 *   - SRV_GRID_POSITIONS (0x3f) at race countdown
+	 * Leaderboard rebroadcast on standings change.
 	 */
+	if (s->session.standings_seq != last_standings_seq) {
+		last_standings_seq = s->session.standings_seq;
+		broadcast_leaderboard(s);
+	}
+
+	/*
+	 * One-shot grid broadcast at PRE_RACE entry.
+	 */
+	if (s->session.phase != last_phase) {
+		if (s->session.phase == PHASE_PRE_RACE)
+			broadcast_grid(s);
+		if (s->session.phase == PHASE_POST_SESSION)
+			broadcast_session_results(s);
+		last_phase = s->session.phase;
+	}
+
 	(void)CADENCE_WEATHER;
 }
 

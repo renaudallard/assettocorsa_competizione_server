@@ -28,6 +28,7 @@
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
+#include "session.h"
 #include "state.h"
 
 /*
@@ -42,7 +43,7 @@ check_car_owner(struct Conn *c, uint16_t car_id)
 	return ((uint16_t)c->car_id == car_id) ? 0 : -1;
 }
 
-/* ----- 0x19 ACP_LAP_COMPLETED -> broadcast 0x1b ------------------ */
+/* ----- 0x19 ACP_LAP_COMPLETED -> mutate state, broadcast 0x1b --- */
 
 int
 h_lap_completed(struct Server *s, struct Conn *c,
@@ -54,6 +55,7 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	int32_t lap_time_ms;
 	uint8_t quality;
 	struct ByteBuf out;
+	struct CarRaceState *race;
 	int rc;
 
 	rd_init(&r, body, len);
@@ -67,15 +69,25 @@ h_lap_completed(struct Server *s, struct Conn *c,
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	log_info("lap: conn=%u pos_a=%u pos_b=%u time=%d ms quality=%u",
-	    (unsigned)c->conn_id, (unsigned)pos_a, (unsigned)pos_b,
-	    (int)lap_time_ms, (unsigned)quality);
+	if (c->car_id < 0)
+		return 0;
+	race = &s->cars[c->car_id].race;
 
-	/*
-	 * Build the transformed 0x1b broadcast.  For now we just
-	 * forward the same four fields; per-recipient delta
-	 * computations can be layered on later.
-	 */
+	if (lap_time_ms > 0) {
+		race->lap_count++;
+		race->last_lap_ms = lap_time_ms;
+		if (race->best_lap_ms == 0 ||
+		    lap_time_ms < race->best_lap_ms)
+			race->best_lap_ms = lap_time_ms;
+		race->race_time_ms += lap_time_ms;
+		race->current_lap_ms = 0;
+	}
+	log_info("lap completed: car=%d lap_count=%d time=%d best=%d",
+	    c->car_id, race->lap_count, (int)lap_time_ms,
+	    race->best_lap_ms);
+
+	session_recompute_standings(s);
+
 	bb_init(&out);
 	if (wr_u8(&out, SRV_LAP_BROADCAST) < 0 ||
 	    wr_u16(&out, pos_a) < 0 ||
@@ -179,6 +191,15 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0)
 		return 0;
+	{
+		struct CarRaceState *race = &s->cars[c->car_id].race;
+		uint8_t sector = flag_b < 3 ? flag_b : 0;
+
+		race->sector_ms[sector] = split_time;
+		if (race->best_sectors_ms[sector] == 0 ||
+		    split_time < race->best_sectors_ms[sector])
+			race->best_sectors_ms[sector] = split_time;
+	}
 	log_info("sector split single: car=%d split=%d lap=%d",
 	    c->car_id, (int)split_time, (int)lap_time);
 
