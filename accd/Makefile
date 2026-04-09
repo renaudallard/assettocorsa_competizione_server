@@ -72,7 +72,7 @@ entrylist.o: entrylist.c entrylist.h json.h log.h state.h
 handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c handlers.c
 
-handshake.o: handshake.c handshake.h bcast.h io.h log.h msg.h prim.h state.h
+handshake.o: handshake.c handshake.h bcast.h io.h log.h msg.h prim.h state.h weather.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c handshake.c
 
 io.o: io.c io.h log.h

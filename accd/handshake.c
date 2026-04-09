@@ -64,6 +64,7 @@
 #include "msg.h"
 #include "prim.h"
 #include "state.h"
+#include "weather.h"
 
 int
 build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
@@ -287,6 +288,20 @@ reply:
 			(void)bcast_all(s, notify.data, notify.wpos,
 			    c->conn_id);
 		bb_free(&notify);
+
+		/*
+		 * Push initial weather + leaderboard to the joining
+		 * client, matching the real server's post-accept
+		 * sequence (0x36 + 0x37).
+		 */
+		{
+			struct ByteBuf wb;
+
+			bb_init(&wb);
+			if (weather_build_broadcast(s, &wb) == 0)
+				(void)bcast_send_one(c, wb.data, wb.wpos);
+			bb_free(&wb);
+		}
 	}
 	return 0;
 }
