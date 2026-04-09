@@ -374,19 +374,11 @@ On macOS with CrossOver, the path is typically:
 ~/Documents/Games/Assetto Corsa Competizione/Config/serverList.json
 ```
 
-The file contains a single JSON object with the server address:
+The file contains a single JSON object with the server IP:
 
 ```json
 {
     "leagueServerIP": "192.168.1.100"
-}
-```
-
-Hostnames also work:
-
-```json
-{
-    "leagueServerIP": "acc.example.com"
 }
 ```
 
