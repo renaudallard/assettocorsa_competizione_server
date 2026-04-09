@@ -82,8 +82,9 @@ jobs:
                   block = {}
                   for line in data.splitlines() + [""]:
                       if not line.strip():
-                          if block.get("Supported") == "1" and block.get("Lts") == "1" and "Version" in block:
-                              versions.append(block["Version"])
+                          if block.get("Supported") == "1" and "Version" in block:
+                              ver = block["Version"].split()[0]
+                              versions.append(ver)
                           block = {}
                           continue
                       if ":" in line:
@@ -110,18 +111,20 @@ jobs:
               try:
                   data = fetch_text("https://getfedora.org/releases.json")
                   releases = json.loads(data)
-                  versions = []
-                  for entry in releases.get("fedora", []):
+                  versions = set()
+                  for entry in releases:
                       ver = entry.get("version")
-                      status = entry.get("status")
-                      edition = entry.get("edition")
-                      if edition == "Everything" and status == "Active" and ver is not None:
-                          versions.append(int(ver))
+                      variant = entry.get("subvariant", "")
+                      if variant == "Everything" and ver is not None:
+                          try:
+                              versions.add(int(ver))
+                          except ValueError:
+                              pass
                   if versions:
                       return str(max(versions))
               except Exception:
                   pass
-              return "41"
+              return "42"
 
           def rocky_version_list():
               try:
