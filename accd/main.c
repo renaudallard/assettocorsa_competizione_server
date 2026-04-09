@@ -237,7 +237,7 @@ main(int argc, char **argv)
 		(void)lan_open(&srv.lan_fd);
 
 #ifdef __OpenBSD__
-	if (pledge("stdio inet", NULL) < 0)
+	if (pledge("stdio rpath wpath cpath inet", NULL) < 0)
 		log_warn("pledge: %s", strerror(errno));
 #endif
 

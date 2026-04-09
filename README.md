@@ -56,7 +56,7 @@ may need minor adjustments once end-to-end testing is complete.
 - **Admin console** — interactive stdin console when running from a
   terminal (see below).
 - **OpenBSD support** — builds and runs on OpenBSD 7.8 arm64 with
-  `pledge("stdio inet")` after binding ports.
+  `pledge("stdio rpath wpath cpath inet")` after binding ports.
 
 ### Known limitations
 
