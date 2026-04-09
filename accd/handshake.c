@@ -66,7 +66,7 @@
 #include "prim.h"
 #include "state.h"
 
-static int
+int
 build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 {
 	int i;

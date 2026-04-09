@@ -49,4 +49,12 @@
 int	handshake_handle(struct Server *s, struct Conn *c,
 		const unsigned char *body, size_t len);
 
+/*
+ * Build the welcome trailer body (carIndex + trackName + eventId +
+ * session list + entry list + per-car records).  Used by both the
+ * 0x0b handshake response and the 0x4b welcome redelivery.
+ */
+int	build_welcome_trailer(struct ByteBuf *bb, struct Server *s,
+		struct Conn *c);
+
 #endif /* ACCD_HANDSHAKE_H */

@@ -98,6 +98,7 @@ cmd_help(void)
 	reply("  clear_all        clear all penalties");
 	reply("  ballast <n> <kg> assign ballast");
 	reply("  restrictor <n> %%  assign restrictor");
+	reply("  track <name>     change track (redelivers welcome)");
 	reply("  connections      list connections (also broadcasts)");
 	reply("  quit             shut down the server");
 }
@@ -346,6 +347,9 @@ console_dispatch(struct Server *s, const char *line)
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "restrictor")) {
 		chat_do_bop(s, p + 10, 0, rbuf, sizeof(rbuf));
+		cmd_with_reply(rbuf);
+	} else if (chat_prefix(p, "track")) {
+		chat_do_track(s, p + 5, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "connections")) {
 		cmd_connections(s);

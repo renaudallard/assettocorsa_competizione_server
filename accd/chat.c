@@ -41,8 +41,10 @@
 
 #include "bcast.h"
 #include "chat.h"
+#include "handshake.h"
 #include "io.h"
 #include "log.h"
+#include "monitor.h"
 #include "msg.h"
 #include "penalty.h"
 #include "prim.h"
@@ -251,6 +253,58 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 	log_info("admin: %s", chat);
 }
 
+void
+chat_do_track(struct Server *s, const char *args,
+    char *reply, size_t replysz)
+{
+	const char *name;
+	char msg[128];
+	int j;
+
+	while (*args == ' ')
+		args++;
+	name = args;
+	if (*name == '\0') {
+		if (reply != NULL)
+			snprintf(reply, replysz, "no track name specified");
+		return;
+	}
+
+	/* Update the track name. */
+	snprintf(s->track, sizeof(s->track), "%s", name);
+	session_reset(s, 0);
+
+	snprintf(msg, sizeof(msg), "Event changed to %s", s->track);
+	chat_broadcast(s, msg, 4);
+	log_info("admin: %s", msg);
+
+	/*
+	 * Send 0x4b welcome trailer redelivery + monitor welcome
+	 * sequence to every connected client so they load the new
+	 * track.
+	 */
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct Conn *cn = s->conns[j];
+		struct ByteBuf bb;
+
+		if (cn == NULL || cn->state != CONN_AUTH)
+			continue;
+
+		/* 0x4b with the same body as the 0x0b welcome trailer. */
+		bb_init(&bb);
+		if (wr_u8(&bb, SRV_WELCOME_REDELIVERY) == 0 &&
+		    build_welcome_trailer(&bb, s, cn) == 0)
+			(void)tcp_send_framed(cn->fd, bb.data, bb.wpos);
+		bb_free(&bb);
+
+		/* Re-push the monitor sequence (0x04+0x05+0x03+0x07). */
+		(void)monitor_push_welcome_sequence(s, cn);
+	}
+
+	if (reply != NULL)
+		snprintf(reply, replysz, "%s", msg);
+}
+
 int
 chat_process(struct Server *s, struct Conn *c, const char *text)
 {
@@ -420,7 +474,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/restrictor")) {
 		chat_do_bop(s, text + 11, 0, NULL, 0);
 	} else if (chat_prefix(text, "/track")) {
-		log_info("admin: /track (TODO needs entrylist reload)");
+		chat_do_track(s, text + 6, NULL, 0);
 	} else if (chat_prefix(text, "/manual entrylist")) {
 		log_info("admin: /manual entrylist (TODO)");
 	} else if (chat_prefix(text, "/controllers")) {

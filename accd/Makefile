@@ -54,7 +54,7 @@ bans.o: bans.c bans.h log.h state.h
 bcast.o: bcast.c bcast.h io.h log.h msg.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c bcast.c
 
-chat.o: chat.c chat.h bcast.h io.h log.h msg.h penalty.h prim.h session.h state.h
+chat.o: chat.c chat.h bcast.h handshake.h io.h log.h monitor.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c chat.c
 
 console.o: console.c console.h chat.h log.h penalty.h session.h state.h
