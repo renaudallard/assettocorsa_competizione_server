@@ -606,7 +606,7 @@ out:
 	return 0;
 }
 
-/* ----- 0x45 ACP_CAR_DIRT_UPDATE -> broadcast 0x46 --------------- */
+/* ----- 0x46 ACP_CAR_DIRT_UPDATE -> broadcast 0x46 --------------- */
 
 int
 h_car_dirt(struct Server *s, struct Conn *c,
