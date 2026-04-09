@@ -105,7 +105,14 @@ weather_step(struct Server *s)
 	s->weather.forecast_30m = new_rain;
 
 	/* Significant change threshold: 5% in clouds or rain. */
-	return (dc * dc > 0.0025f || dr * dr > 0.0025f);
+	if (dc * dc > 0.0025f || dr * dr > 0.0025f) {
+		log_debug("weather: clouds=%.2f rain=%.2f wet=%.2f "
+		    "t=%.0fs", s->weather.clouds,
+		    s->weather.current_rain, s->weather.wetness,
+		    (double)s->session.weekend_time_s);
+		return 1;
+	}
+	return 0;
 }
 
 int

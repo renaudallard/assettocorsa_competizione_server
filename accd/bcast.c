@@ -43,6 +43,8 @@ bcast_send_one(struct Conn *c, const void *body, size_t len)
 	if (c == NULL || c->fd < 0)
 		return -1;
 	if (tcp_send_framed(c->fd, body, len) < 0) {
+		log_debug("bcast: send failed to conn=%u fd=%d, "
+		    "marking disconnect", (unsigned)c->conn_id, c->fd);
 		c->state = CONN_DISCONNECT;
 		return -1;
 	}

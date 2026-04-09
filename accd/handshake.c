@@ -611,19 +611,34 @@ handshake_handle(struct Server *s, struct Conn *c,
 	}
 
 	c->state = CONN_AUTH;
-	log_info("handshake accepted: fd=%d conn_id=%u car_id=%d race#=%d",
-	    c->fd, (unsigned)c->conn_id, c->car_id,
-	    s->cars[c->car_id].race_number);
+	{
+		struct CarEntry *lcar = &s->cars[c->car_id];
+		struct DriverInfo *ldrv = &lcar->drivers[0];
+
+		log_info("handshake accepted: fd=%d conn_id=%u car_id=%d "
+		    "race#=%d model=%u",
+		    c->fd, (unsigned)c->conn_id, c->car_id,
+		    lcar->race_number, (unsigned)lcar->car_model);
+		log_debug("  driver: \"%s\" \"%s\" [%s] cat=%u steam=%s",
+		    ldrv->first_name, ldrv->last_name,
+		    ldrv->short_name,
+		    (unsigned)ldrv->driver_category, ldrv->steam_id);
+	}
 
 reply:
 	free(password);
 	if (reason != REJECT_OK) {
+		log_debug("handshake reject: reason=%d client_ver=0x%04x "
+		    "fd=%d", (int)reason, (unsigned)client_version,
+		    c->fd);
 		if (handshake_send_reject(c, client_version) < 0)
 			return -1;
 		return -1;	/* close connection after reject */
 	}
 	if (handshake_send_accept(c, s) < 0)
 		return -1;
+	log_debug("handshake accept sent: conn=%u udp_port=%d",
+	    (unsigned)c->conn_id, s->udp_port);
 
 	/*
 	 * After a successful accept, fan out 0x2e new-client-
@@ -784,6 +799,10 @@ reply:
 				(void)bcast_send_one(c, wb.data, wb.wpos);
 			bb_free(&wb);
 		}
+
+		log_debug("welcome sequence sent: 0x2e+0x4f bcast + "
+		    "0x36+0x28+0x37+0x4e to conn=%u",
+		    (unsigned)c->conn_id);
 	}
 	return 0;
 }

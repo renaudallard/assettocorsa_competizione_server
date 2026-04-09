@@ -115,6 +115,8 @@ conn_drop(struct Server *s, struct Conn *c)
 		    c->car_id, s->nconns - 1);
 	}
 
+	log_debug("conn_drop: conn=%u fd=%d car=%d state=%d",
+	    (unsigned)c->conn_id, c->fd, c->car_id, (int)c->state);
 	if (c->fd >= 0)
 		close(c->fd);
 	bb_free(&c->rx);
