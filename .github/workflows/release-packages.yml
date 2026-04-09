@@ -398,6 +398,9 @@ jobs:
           set -euo pipefail
           dnf install -y git rpm-build make gcc which tar
 
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       - name: Checkout
         uses: actions/checkout@v6
         with:
