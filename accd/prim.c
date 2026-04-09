@@ -225,6 +225,17 @@ utf8_decode(const char *src, size_t srclen, uint32_t *out_cp)
 }
 
 int
+rd_can_str_a(const struct Reader *r)
+{
+	uint8_t cnt;
+
+	if (rd_remaining(r) < 1)
+		return 0;
+	cnt = *r->p;
+	return rd_remaining(r) >= 1 + (size_t)cnt * 4;
+}
+
+int
 rd_str_a(struct Reader *r, char **out)
 {
 	uint8_t cnt;

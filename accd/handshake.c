@@ -537,12 +537,19 @@ handshake_handle(struct Server *s, struct Conn *c,
 	}
 
 	/*
-	 * Parse DriverInfo first (into temporaries) so we can
-	 * check bans and entrylist before allocating a car slot.
+	 * Parse DriverInfo and CarInfo from the handshake body.
+	 *
+	 * The real ACC client sends a richer format than simple test
+	 * clients: DriverInfo carries 5 strings with has_more()
+	 * guards, a 41-byte numeric block, then steam_id; CarInfo
+	 * follows with dozens of customization fields.  We detect
+	 * the format by packet size (real client ~456 bytes, simple
+	 * client ~150 bytes) and parse accordingly.
 	 */
 	{
 		char *first = NULL, *last = NULL, *sname = NULL;
 		char *steam = NULL, *team = NULL;
+		char *skip_str = NULL;
 		char steam_buf[32] = "";
 		uint8_t cat = 0;
 		uint16_t nat = 0;
@@ -550,28 +557,85 @@ handshake_handle(struct Server *s, struct Conn *c,
 		uint8_t cmodel = 0, ccup = 0;
 		struct CarEntry *car;
 
-		(void)rd_str_a(&r, &first);
-		(void)rd_str_a(&r, &last);
-		(void)rd_str_a(&r, &sname);
-		(void)rd_u8(&r, &cat);
-		(void)rd_u16(&r, &nat);
-		if (rd_str_a(&r, &steam) == 0 && steam != NULL)
-			snprintf(steam_buf, sizeof(steam_buf), "%s", steam);
+		if (len > 200) {
+			/*
+			 * Real client format: 5 DriverInfo strings
+			 * (first, aux, last, aux, short), 41-byte
+			 * numeric block, steam_id, middle bytes,
+			 * then full CarInfo.
+			 */
+			if (rd_can_str_a(&r))
+				(void)rd_str_a(&r, &first);
+			if (rd_can_str_a(&r)) {
+				(void)rd_str_a(&r, &skip_str);
+				free(skip_str); skip_str = NULL;
+			}
+			if (rd_can_str_a(&r))
+				(void)rd_str_a(&r, &last);
+			if (rd_can_str_a(&r)) {
+				(void)rd_str_a(&r, &skip_str);
+				free(skip_str); skip_str = NULL;
+			}
+			if (rd_can_str_a(&r))
+				(void)rd_str_a(&r, &sname);
 
-		/* Ban check. */
-		if (bans_contains(&s->bans, steam_buf)) {
-			log_info("rejecting banned steam_id %s", steam_buf);
-			reason = REJECT_BANNED;
-			free(first); free(last); free(sname);
-			free(steam); free(team);
-			goto reply;
+			/* 41-byte numeric block. */
+			if (rd_remaining(&r) >= 41) {
+				(void)rd_skip(&r, 16);
+				(void)rd_u8(&r, &cat);
+				(void)rd_skip(&r, 24);
+			}
+
+			/* steam_id (6th string). */
+			if (rd_can_str_a(&r) &&
+			    rd_str_a(&r, &steam) == 0 && steam != NULL)
+				snprintf(steam_buf, sizeof(steam_buf),
+				    "%s", steam);
+
+			/* Skip middle bytes, parse CarInfo. */
+			(void)rd_skip(&r, 7);
+			(void)rd_skip(&r, 4);		/* carModelKey */
+			(void)rd_skip(&r, 4);		/* teamGuid */
+			(void)rd_i32(&r, &rnum);	/* raceNumber */
+			(void)rd_skip(&r, 33);		/* skin fields */
+			if (rd_can_str_a(&r)) {		/* customSkinName */
+				(void)rd_str_a(&r, &skip_str);
+				free(skip_str); skip_str = NULL;
+			}
+			(void)rd_skip(&r, 1);		/* bannerKey */
+			if (rd_can_str_a(&r))		/* teamName */
+				(void)rd_str_a(&r, &team);
+			(void)rd_u16(&r, &nat);		/* nationality */
+			if (rd_can_str_a(&r)) {		/* displayName */
+				(void)rd_str_a(&r, &skip_str);
+				free(skip_str); skip_str = NULL;
+			}
+			if (rd_can_str_a(&r)) {		/* competitorName */
+				(void)rd_str_a(&r, &skip_str);
+				free(skip_str); skip_str = NULL;
+			}
+			(void)rd_skip(&r, 3);		/* nat + templateKey */
+			(void)rd_u8(&r, &cmodel);	/* carModelType */
+			(void)rd_u8(&r, &ccup);
+		} else {
+			/*
+			 * Simple format (probe / test client):
+			 * 3 strings, u8 cat, u16 nat, steam_id,
+			 * i32 rnum, u8 model, u8 cup, str_a team.
+			 */
+			(void)rd_str_a(&r, &first);
+			(void)rd_str_a(&r, &last);
+			(void)rd_str_a(&r, &sname);
+			(void)rd_u8(&r, &cat);
+			(void)rd_u16(&r, &nat);
+			if (rd_str_a(&r, &steam) == 0 && steam != NULL)
+				snprintf(steam_buf, sizeof(steam_buf),
+				    "%s", steam);
+			(void)rd_i32(&r, &rnum);
+			(void)rd_u8(&r, &cmodel);
+			(void)rd_u8(&r, &ccup);
+			(void)rd_str_a(&r, &team);
 		}
-
-		/* Parse CarInfo fields. */
-		(void)rd_i32(&r, &rnum);
-		(void)rd_u8(&r, &cmodel);
-		(void)rd_u8(&r, &ccup);
-		(void)rd_str_a(&r, &team);
 
 		/*
 		 * Entry list enforcement: if forceEntryList is set,

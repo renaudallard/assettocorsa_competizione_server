@@ -69,6 +69,13 @@ int	rd_i16(struct Reader *r, int16_t *out);
 int	rd_f32(struct Reader *r, float *out);
 
 /*
+ * Check whether a complete Format-A string can be read at the
+ * current position.  Returns 1 if yes, 0 if not.  Does not
+ * advance the cursor.  Mirrors the real server's has_more() guard.
+ */
+int	rd_can_str_a(const struct Reader *r);
+
+/*
  * Read a Format-A wide string.  On success returns 0 and sets
  * *out to a freshly-malloc'd UTF-8 NUL-terminated string.  On
  * failure returns -1 and *out is untouched.
