@@ -281,7 +281,7 @@ main(int argc, char *argv[])
 
 	struct sigaction sa;
 	struct sockaddr_in addr, udp_addr;
-	unsigned char hs_buf[2048], rxbuf[RXBUF_SIZE];
+	unsigned char hs_buf[4096], rxbuf[RXBUF_SIZE];
 	size_t hs_len, rxlen;
 	int tcp_fd, udp_fd, udp_port, frame_seq;
 	uint16_t conn_id;

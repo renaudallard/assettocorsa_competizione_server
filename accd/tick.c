@@ -256,7 +256,7 @@ done:
 void
 tick_run(struct Server *s)
 {
-	uint16_t *last_standings_seq = &s->session.last_standings_seq;
+	uint32_t *last_standings_seq = &s->session.last_standings_seq;
 	uint8_t *last_phase = &s->session.last_phase;
 
 	s->tick_count++;

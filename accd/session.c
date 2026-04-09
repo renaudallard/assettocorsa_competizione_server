@@ -235,6 +235,14 @@ session_tick(struct Server *s)
 	if (s->session.session_index >= s->session_count)
 		return;
 
+	/* Reset to waiting when the last driver disconnects. */
+	if (s->nconns == 0 && s->session.phase != PHASE_POST_SESSION &&
+	    s->session.phase != PHASE_RESULTS) {
+		log_info("no drivers, resetting session");
+		session_reset(s, s->session.session_index);
+		return;
+	}
+
 	def = &s->sessions[s->session.session_index];
 	now = mono_ms();
 	elapsed = now - s->session.phase_started_ms;

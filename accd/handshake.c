@@ -424,8 +424,6 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 	}
 
 	return 0;
-
-	return 0;
 }
 
 /*
@@ -635,6 +633,15 @@ handshake_handle(struct Server *s, struct Conn *c,
 			(void)rd_u8(&r, &cmodel);
 			(void)rd_u8(&r, &ccup);
 			(void)rd_str_a(&r, &team);
+		}
+
+		/* Ban check. */
+		if (bans_contains(&s->bans, steam_buf)) {
+			log_info("rejecting banned steam_id %s", steam_buf);
+			reason = REJECT_BANNED;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
 		}
 
 		/*
