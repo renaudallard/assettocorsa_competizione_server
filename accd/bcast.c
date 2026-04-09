@@ -42,7 +42,11 @@ bcast_send_one(struct Conn *c, const void *body, size_t len)
 {
 	if (c == NULL || c->fd < 0)
 		return -1;
-	return tcp_send_framed(c->fd, body, len);
+	if (tcp_send_framed(c->fd, body, len) < 0) {
+		c->state = CONN_DISCONNECT;
+		return -1;
+	}
+	return 0;
 }
 
 int
