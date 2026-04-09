@@ -29,7 +29,13 @@
 #include <time.h>
 
 #ifdef __OpenBSD__
-#include <unistd.h>
+/*
+ * pledge(2) is an OpenBSD extension declared in <unistd.h>, but
+ * only when _POSIX_C_SOURCE is not defined.  We want the strict
+ * POSIX feature set on Linux so we forward-declare pledge here
+ * to keep both platforms compiling cleanly.
+ */
+extern int pledge(const char *promises, const char *execpromises);
 #endif
 
 #include "config.h"
