@@ -1,3 +1,11 @@
+accd (0.1.5) unstable; urgency=medium
+
+  * Always listen on UDP 8999 for client discovery probes.
+  * Fix serverList.json format documentation (leagueServerIP field).
+  * Add macOS CrossOver path for client configuration.
+
+ -- Renaud Allard <renaud@allard.it>  Wed, 09 Apr 2026 21:00:00 +0200
+
 accd (0.1.4) unstable; urgency=medium
 
   * Fix car dirt message ID: client sends 0x46, not 0x45.
