@@ -447,3 +447,20 @@ wr_str_b(struct ByteBuf *bb, const char *s)
 			return -1;
 	return 0;
 }
+
+int
+wr_str_raw(struct ByteBuf *bb, const char *s)
+{
+	size_t len;
+
+	if (s == NULL)
+		s = "";
+	len = strlen(s);
+	if (len > 0xFFFF)
+		len = 0xFFFF;
+	if (wr_u16(bb, (uint16_t)len) < 0)
+		return -1;
+	if (len > 0 && bb_append(bb, s, len) < 0)
+		return -1;
+	return 0;
+}

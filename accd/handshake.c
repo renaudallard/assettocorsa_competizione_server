@@ -61,7 +61,6 @@
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
-#include "monitor.h"
 #include "msg.h"
 #include "prim.h"
 #include "state.h"
@@ -71,86 +70,117 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 {
 	int i;
 
-	/* Trailer header: assigned car id (or 0xFFFFFFFF on reject). */
-	if (wr_u32(bb, (uint32_t)c->car_id) < 0)
-		return -1;
-
-	/* trackName + eventId, both Format-A. */
-	if (wr_str_a(bb, s->track) < 0)
-		return -1;
-	if (wr_str_a(bb, "") < 0)	/* eventId — empty for phase 1 */
-		return -1;
-
 	/*
-	 * Separator + session list.  Phase 1 emits zero sessions
-	 * so the trailer is short.
+	 * Welcome trailer strings use u16-byte-length-prefixed raw
+	 * UTF-8 (not Format-A), as observed from the real server.
 	 */
-	if (wr_u8(bb, 1) < 0)		/* separator */
+	if (wr_str_raw(bb, s->server_name) < 0)
 		return -1;
-	if (wr_u8(bb, 0) < 0)		/* session_count */
+	if (wr_str_raw(bb, s->track) < 0)
 		return -1;
 
-	/*
-	 * Sub-records (SeasonEntity, SessionManager, AssistRules,
-	 * ServerConfiguration, additional state) — emit empty
-	 * placeholders separated by 1-byte tags.  This is the
-	 * "minimum viable accept" path documented in §5.6.4c #2.
-	 */
-	for (i = 0; i < 5; i++) {
-		if (wr_u8(bb, 1) < 0)
+	/* Separator + assigned car_id. */
+	if (wr_u8(bb, 1) < 0)
+		return -1;
+	if (wr_u16(bb, (uint16_t)c->car_id) < 0)
+		return -1;
+
+	/* Session type + timing fields. */
+	if (wr_u8(bb, 1) < 0)
+		return -1;
+	if (wr_u8(bb, 1) < 0)
+		return -1;
+
+	/* preRaceWaitingTimeSeconds, sessionOverTimeSeconds. */
+	if (wr_u32(bb, 48) < 0)
+		return -1;
+	if (wr_u32(bb, 50) < 0)
+		return -1;
+
+	/* Assigned race number and car model info. */
+	if (wr_u8(bb, 0) < 0)
+		return -1;
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
+		struct CarEntry *car = &s->cars[c->car_id];
+		if (wr_u32(bb, (uint32_t)car->race_number) < 0)
 			return -1;
-		/* placeholder body: nothing */
+	} else {
+		if (wr_u32(bb, 0) < 0)
+			return -1;
 	}
 
-	/* Connected car list: count + 0 records (we send our own
-	 * car later via 0x23 / 0x28 if needed). */
-	if (wr_u8(bb, 1) < 0)		/* separator */
+	/* Remaining placeholder fields. */
+	if (wr_u32(bb, 0) < 0)		/* pad */
 		return -1;
-	if (wr_u8(bb, 0) < 0)		/* connected_car_count */
+	if (wr_u32(bb, 0) < 0)		/* pad */
 		return -1;
+	if (wr_u32(bb, 0xFF) < 0)	/* sentinel */
+		return -1;
+
+	/* Empty sub-record padding. */
+	for (i = 0; i < 128; i++)
+		if (wr_u8(bb, 0) < 0)
+			return -1;
 
 	return 0;
 }
 
+/*
+ * Send a 14-byte 0x0c reject response matching the real server
+ * format: u8(0x0c) + u32(server_ver=7) + u8(0) +
+ * u16(client_ver_echo) + u16(0) + u16(ACC_PROTOCOL_VERSION) +
+ * u16(0).
+ */
 static int
-handshake_send(struct Conn *c, enum reject_reason reason,
-    struct Server *s)
+handshake_send_reject(struct Conn *c, uint16_t client_version)
 {
 	struct ByteBuf bb;
-	uint16_t conn_id_field;
 	int rc;
 
 	bb_init(&bb);
-
-	/* msg id + server version */
-	if (wr_u8(&bb, SRV_HANDSHAKE_RESPONSE) < 0)
+	if (wr_u8(&bb, SRV_STATE_RECORD_0C) < 0 ||
+	    wr_u32(&bb, 7) < 0 ||
+	    wr_u8(&bb, 0) < 0 ||
+	    wr_u16(&bb, client_version) < 0 ||
+	    wr_u16(&bb, 0) < 0 ||
+	    wr_u16(&bb, ACC_PROTOCOL_VERSION) < 0 ||
+	    wr_u16(&bb, 0) < 0)
 		goto fail;
-	if (wr_u16(&bb, ACC_PROTOCOL_VERSION) < 0)
-		goto fail;
-
-	/* server flags: lobby off, accept-only currently */
-	if (wr_u8(&bb, 0) < 0)
-		goto fail;
-
-	/* connection id (0xFFFF on reject) */
-	conn_id_field = (reason == REJECT_OK) ? c->conn_id : 0xFFFF;
-	if (wr_u16(&bb, conn_id_field) < 0)
-		goto fail;
-
-	if (reason == REJECT_OK) {
-		if (build_welcome_trailer(&bb, s, c) < 0)
-			goto fail;
-	} else {
-		/* Reject: empty trailer with the reason as a single
-		 * byte (the binary uses an enum here too). */
-		if (wr_u8(&bb, (uint8_t)reason) < 0)
-			goto fail;
-	}
 
 	rc = tcp_send_framed(c->fd, bb.data, bb.wpos);
 	bb_free(&bb);
 	return rc;
+fail:
+	bb_free(&bb);
+	return -1;
+}
 
+/*
+ * Send a 0x0b accept response with the welcome trailer.
+ * Header: u8(0x0b) + u16(udp_port) + u8(0x12) +
+ * u16(nconns) + u16(conn_id) + u16(0).
+ */
+static int
+handshake_send_accept(struct Conn *c, struct Server *s)
+{
+	struct ByteBuf bb;
+	int rc;
+
+	bb_init(&bb);
+	if (wr_u8(&bb, SRV_HANDSHAKE_RESPONSE) < 0 ||
+	    wr_u16(&bb, (uint16_t)s->udp_port) < 0 ||
+	    wr_u8(&bb, 0x12) < 0 ||
+	    wr_u16(&bb, (uint16_t)s->nconns) < 0 ||
+	    wr_u16(&bb, c->conn_id) < 0 ||
+	    wr_u16(&bb, 0) < 0)
+		goto fail;
+
+	if (build_welcome_trailer(&bb, s, c) < 0)
+		goto fail;
+
+	rc = tcp_send_framed(c->fd, bb.data, bb.wpos);
+	bb_free(&bb);
+	return rc;
 fail:
 	bb_free(&bb);
 	return -1;
@@ -217,7 +247,12 @@ handshake_handle(struct Server *s, struct Conn *c,
 
 reply:
 	free(password);
-	if (handshake_send(c, reason, s) < 0)
+	if (reason != REJECT_OK) {
+		if (handshake_send_reject(c, client_version) < 0)
+			return -1;
+		return -1;	/* close connection after reject */
+	}
+	if (handshake_send_accept(c, s) < 0)
 		return -1;
 
 	/*
@@ -228,7 +263,7 @@ reply:
 	 * a paired 0x4f sub-opcode 1 message right after; we do
 	 * the same.
 	 */
-	if (reason == REJECT_OK) {
+	{
 		struct ByteBuf notify;
 		uint64_t timestamp_ms;
 		struct timespec ts;
@@ -255,15 +290,6 @@ reply:
 			(void)bcast_all(s, notify.data, notify.wpos,
 			    c->conn_id);
 		bb_free(&notify);
-
-		/*
-		 * Push the post-handshake welcome state to the
-		 * joining client: 0x04 CAR_ENTRY, 0x05 CONNECTION_
-		 * ENTRY, 0x03 SESSION_STATE, 0x07 LEADERBOARD_UPDATE.
-		 * Without this the real client almost certainly
-		 * disconnects after the 0x0b response.
-		 */
-		(void)monitor_push_welcome_sequence(s, c);
 	}
 	return 0;
 }

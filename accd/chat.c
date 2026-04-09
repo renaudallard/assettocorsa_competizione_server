@@ -44,7 +44,6 @@
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
-#include "monitor.h"
 #include "msg.h"
 #include "penalty.h"
 #include "prim.h"
@@ -329,9 +328,6 @@ chat_do_track(struct Server *s, const char *args,
 		    build_welcome_trailer(&bb, s, cn) == 0)
 			(void)tcp_send_framed(cn->fd, bb.data, bb.wpos);
 		bb_free(&bb);
-
-		/* Re-push the monitor sequence (0x04+0x05+0x03+0x07). */
-		(void)monitor_push_welcome_sequence(s, cn);
 	}
 
 	if (reply != NULL)

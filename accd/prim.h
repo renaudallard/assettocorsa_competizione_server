@@ -109,4 +109,11 @@ int	wr_str_a(struct ByteBuf *bb, const char *s);
  */
 int	wr_str_b(struct ByteBuf *bb, const char *s);
 
+/*
+ * Write a u16-byte-length-prefixed raw string.  Used in the 0x0b
+ * welcome trailer where the server sends plain UTF-8 bytes, not
+ * the Format-A / Format-B wide encodings.
+ */
+int	wr_str_raw(struct ByteBuf *bb, const char *s);
+
 #endif /* ACCD_PRIM_H */
