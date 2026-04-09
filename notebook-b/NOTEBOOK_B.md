@@ -537,90 +537,93 @@ One message ID on the fixed LAN discovery port:
 
 **Note the namespace overlap**: `0x48` is used on both the LAN discovery port and the main TCP channel, but with different semantics. A message is disambiguated by the transport / destination port, not just by the ID byte.
 
-#### 5.6.4c Handshake response (message id `0x0b`)
+#### 5.6.4c Handshake response (accept `0x0b` / reject `0x0c`)
 
-After the server has processed a client's handshake request, it sends back a response message with **id `0x0b`**, regardless of whether the handshake was accepted or rejected. The same message id is used for both outcomes; the body distinguishes them.
+The server uses **two different message IDs** for accept and reject outcomes, confirmed by probing a real Kunos accServer.exe 1.10.2 instance.
 
-Header (first 6 bytes of the body):
+##### Reject response (message id `0x0c`)
 
-```
-u8  msg_id = 0x0b
-u16 protocol_version    (the server echoes its own version back — 0x100 for build 1.10.2)
-u8  server_flags        (a configuration byte from server state; exact layout TBD)
-u16 connection_id       (the server-assigned id for this client; 0xFFFF on rejection)
-... followed by a larger trailer that carries the initial entry list + session state on accept
-```
-
-On rejection the connection_id is set to a sentinel (`0xFFFF`) and the trailer may be empty. On accept, a substantial trailer follows that enumerates the current connected-car list and session configuration.
-
-**Trailer structure** (observed field-by-field sequence):
+When the handshake is rejected (wrong version, bad password, server full, banned), the server sends a **14-byte `0x0c` message** and closes the connection:
 
 ```
-u32 carId                          (the assigned car, or 0xFFFFFFFF on reject)
-string trackName                   (Format A, matches event.json "track")
-string eventId                     (Format A)
-u8  = 1                            (separator / version byte)
-u8  session_count                  (number of configured sessions)
-repeated {per-session record}      (session_count × variable-length records)
-u8  = 1                            (separator)
-<SeasonEntity record>              (appended via a virtual serializer)
-u8  = 1                            (separator)
-<SessionManager state record>      (appended via a sub-builder)
-u8  = 1                            (separator)
-<AssistRules record>               (appended via another sub-builder)
-u8  = 1                            (separator)
-<ServerConfiguration snapshot>     (appended via another virtual)
-u8  = 1                            (separator)
-<additional state>                 (appended via a final sub-builder)
-u8  = 1                            (separator)
-u8  connected_car_count
-repeated {per-connected-car record}    (typically 20+ bytes per car)
-    u8  field_a       (from car+? offset)
-    u8  field_b
-    u8  field_c       (adjusted by -1 on write)
-    u32 field_d
-    u16 field_e
-    u32 field_f
-    u32 field_g
-    u8  field_h
-    u8  field_i
-    ... several more fields per car ...
-... trailing state scalars ...
+u8   msg_id = 0x0c
+u32  server_internal_version = 7
+u8   0x00
+u16  client_version_echo     (the version the client sent)
+u16  0x0000
+u16  server_protocol_version = 0x0100 (256)
+u16  0x0000
 ```
 
-The sub-records enumerated above are serialized by dedicated per-type builders. Known layouts:
+The `server_internal_version` field is 7 for client versions below `0x100` and 8 for versions above.
 
-- **Session manager state** (fully decoded): one leading flag byte, then seven session records (each either 1 byte for an inactive session or 5 bytes for an active one: `u8 session_type + f32 elapsed_time`), then a 23-byte session-manager tail with layout `u8 + u8 + u8 + u32 + u16 + u32 + u32 + u8 + u8 + u32`. Total session block size: 31-59 bytes depending on how many sessions are active.
-- **Assist rules** (structural): built in a two-step pattern — a temporary snapshot is assembled from the server's runtime state (applying overrides from `assistRules.json`), then that snapshot is serialized into the outgoing packet with ~7 fields matching the handbook's assist controls.
-- **Additional state** (conditional): several server-side flags control whether this record is emitted at all. When present, it contains runtime state that is only meaningful after a session has actually started. A minimal reimplementation can send an empty placeholder here.
+##### Accept response (message id `0x0b`)
 
-### Per-car record layout (within the welcome trailer's connected-car list)
+On successful accept, the server sends an `0x0b` message with a **~2000-byte trailer** containing the full session/car/config state:
 
-Each connected car in the welcome trailer is encoded as **24 bytes in the following order**:
+Accept header (10 bytes):
 
 ```
-u8     byte_a          (from car-struct offset -4, unknown semantic)
-u8     byte_b          (from car-struct offset 0)
-u8     byte_c          (from car-struct offset +4, decremented by 1 on write)
-u32    field_d         (from car-struct offset +8, likely raceNumber or connectionId)
-u16    field_e         (from car-struct offset +0xc)
-u32    field_f         (from car-struct offset +0x10, likely carId)
-u32    field_g         (from car-struct offset +0x14)
-u8     byte_h          (from car-struct offset +0x18)
-u8     byte_i          (from car-struct offset +0x1c)
-u32    field_j         (from car-struct offset +0x20)
-u8     byte_k          (from server-global state, not from the car)
+u8   msg_id = 0x0b
+u16  udp_port           (the UDP port the client should send car updates to; 9231 default)
+u8   0x12               (constant, purpose unknown)
+u16  nconns             (number of active connections, varies)
+u16  connection_id      (the server-assigned id for this client)
+u16  0x0000             (padding)
 ```
 
-Total: 1+1+1+4+2+4+4+1+1+4+1 = **24 bytes per car**. For a full 30-car session the connected-car list is ~720 bytes plus the 1-byte count prefix.
+Then two **u16-byte-length-prefixed raw UTF-8** strings (not Format-A):
 
-A reimplementation aiming for wire-level compatibility with the accept path will need to decode the per-session appender and the assist-rules serializer (each is a few hundred bytes of decompilation). For phase-1 reject-only operation, neither is needed.
+```
+u16  server_name_len + server_name_bytes    (e.g. "ACC Server (please edit settings.json)")
+u16  track_name_len  + track_name_bytes     (e.g. "mount_panorama")
+```
 
-**Practical recommendations**:
+**Trailer body** (after the strings, ~1900 bytes):
 
-1. **Minimum viable rejection**: send the 6-byte header alone with `connection_id = 0xFFFF` and no trailer. The client should disconnect cleanly.
-2. **Minimum viable accept**: build a 6-byte header with `connection_id = <some value>`, followed by the carId + trackName + eventId + a session count of 0 + separators + an empty car list + trailing zeros. This may or may not be accepted by the client depending on how strictly it validates the sub-records — to be determined by testing.
-3. **Full fidelity**: requires decoding each of the four sub-builders, each of which is probably 500–2000 bytes of decompilation. Pass 2.10 did not attempt this.
+```
+u8   separator = 0x01
+u16  car_id                  (server-assigned car ID, starts at 1001)
+u8   flag_a = 0x01
+u8   flag_b = 0x01
+u32  preRaceWaitingTimeSeconds
+u32  sessionOverTimeSeconds
+i32  raceNumber              (echoed from the client's request)
+u8   carModel                (echoed from the client's request)
+     <~1050 bytes season entity / track data, zero-filled is accepted>
+u8   separator = 0x01
+     <echoed DriverInfo as Format-A strings: first, last, short, category, nationality>
+     <padding + steam_id as Format-A>
+u8   separator = 0x01
+     <AssistRules: 8x u8 assist flags + f32 stability limit + 6x u8 flags>
+     <ServerConfiguration: formation lap, driver swap, latency settings>
+u8   separator = 0x01
+u8   0x00
+     <track name as Format-A string>
+u8   separator = 0x01
+     <inline weather snapshot: grip, clouds, rain, config fields>
+u8   separator = 0x01
+     <session definitions: per-session temp, duration, weather params>
+     <session schedule: per-session hour, time multiplier, duration>
+     <inline leaderboard: per-car driver names + timing>
+u8   separator = 0x01
+     <per-car realtime data placeholder>
+u8   separator = 0x01
+     <second inline weather snapshot (0x37 format)>
+     <session schedule recap>
+     <tyre compound name "Standard" + tail padding>
+```
+
+##### Post-accept welcome sequence
+
+After the `0x0b` response, the server immediately sends four additional messages to the joining client (confirmed by probing):
+
+1. **`0x28` SRV_LARGE_STATE_RESPONSE** (56 bytes) -- session timing + assist rule snapshot
+2. **`0x36` SRV_LEADERBOARD_BCAST** (~120 bytes) -- initial leaderboard with per-car driver name strings (Format-A)
+3. **`0x37` SRV_WEATHER_STATUS** (69 bytes) -- current weather snapshot
+4. **`0x4e` SRV_RATING_SUMMARY** (14 bytes) -- per-connection rating
+
+The server also fans out `0x2e` (car system relay) and `0x4f` (driver stint relay) to all OTHER already-connected clients to notify them of the new car joining.
 
 #### 5.6.4a Server → client message ID catalog
 
@@ -663,8 +666,8 @@ There are exactly **7 caller sites** in the binary that build the per-class obje
 | `FUN_14001ca20` | `0x02`, `0x03`, `0x04`, `0x07` | mix | Post-handshake welcome state push (full sync sequence) |
 
 **A reimplementation can therefore use the protobuf schemas already documented in §12B.3 to encode the bodies of `0x01`–`0x07` directly** — there is no separate undocumented wire format. The seven ids are just numbered transport tags identifying which `ServerMonitorProtocolMessage` type follows.
-| `0x0b` | 11 | `u16 version` + `u8 flags` + `u16 conn_id` + trailer | **Handshake response** — see §5.6.4c. Used for both accept and reject outcomes. |
-| `0x0c` | 12 | `u8` + `u32` + `u32` + `u32` | 14-byte state record |
+| `0x0b` | 11 | `u16 udp_port` + `u8 0x12` + `u16 nconns` + `u16 conn_id` + `u16 0` + trailer (~2000 bytes) | **Handshake accept response** -- see 5.6.4c. Contains the welcome trailer with session/car/config state. |
+| `0x0c` | 12 | `u32 server_ver` + `u8 0` + `u16 client_ver_echo` + `u16 0` + `u16 protocol_ver` + `u16 0` | **Handshake reject response** (14 bytes) -- see 5.6.4c. Connection closed after sending. |
 | `0x14` | 20 | (1-byte body, just the id) | Silent keepalive / ack |
 | `0x1b` | 27 | `u16 pos_a` `u16 pos_b` `i32 lap_time_ms` `u8 quality` | **Lap time broadcast** — the server forwards a client's lap-time report to all other clients. Triggered by a client sending TCP id `0x19` (see §5.6.1). The `quality` byte is `0xFF` for invalid, otherwise a normalized 0..255 value derived from a float. |
 | `0x1e` | 30 | 58-byte fixed-layout record | **Per-car periodic state broadcast — fast-rate variant.** Pushed from the main server tick for every connected car. Body after the msg id byte: `u16 carId` + `u8 carLocation` + `u32 timeDelta` + `u16 scalar` + three `(u64 + u32)` lap records (matching the `BestSessionLap` / `LastLap` / `CurrentLap` triple from the client-side broadcasting SDK's `RealtimeCarUpdate`) + 8 `u8` car-state bytes + a `u16` trailing scalar. Note: the same id byte is used by client→server `ACP_CAR_UPDATE` — the two directions have entirely separate wire formats and meanings. |
@@ -675,7 +678,7 @@ There are exactly **7 caller sites** in the binary that build the per-class obje
 | `0x2e` | 46 | `u8 = 0x2e` + `u16 carId` + `u64 system_data` (11 bytes) | **Two distinct uses sharing an identical wire format**: <br> **(a) New-client-joined notify** — pushed by the server to every existing client during a new client's handshake-accept sequence; the carId and timestamp are the joining car's identity. The sender function **also emits a paired `0x4f` sub-opcode-1 message** (12 bytes: `u8 + u16 carId + u8=1 + u64`) right after the `0x2e`, so the full new-client notification is two messages in sequence. <br> **(b) `ACP_CAR_SYSTEM_UPDATE` relay** — broadcast to every other client when one client sends an `ACP_CAR_SYSTEM_UPDATE` (client `0x2e`, see §5.6.1). The carId is the source car and the u64 carries the new system state. The two variants share both the id byte and the wire layout — they're distinguished only by call-site context. |
 | `0x2f` | 47 | `u8 = 0x2f` + `u16 carId` + `u8 tyreCompound` (4 bytes) | **`ACP_TYRE_COMPOUND_UPDATE` relay** — server-transformed broadcast of client `0x2f`. Sent to every other connected client when one client changes its tyre compound. |
 | `0x36` | 54 | `u8 = 0x36` + `u32 session_meta` + `u8 split_count` + `u32[split_count]` + `u8 has_active_player_flag` + `u16 entry_count` + `entry_count × {per-car leaderboard record, ~80–200 bytes each}` + `u8 + u8` trailer | **Standings / leaderboard broadcast** — emitted from the main server tick tail when the leaderboard recomputation has completed. Each per-car entry has a complex variable-length record produced by `FUN_140034210` containing: car position (u16), cup position (u16), driver flags (2 × u8), best lap time presence flag with optional `(u16 + u32)` lap data, an optional state byte gated by the `has_active_player_flag`, sector splits (u8 count + N × u32), driver list (u8 count + N × {4 strings + u8 + u16}), several u16/u32 timing and rating fields, and a u8/u16 escape-encoded final byte. After this broadcast the function iterates every entry list item and emits a follow-up per-car `0x07` message via the generic serializer (`FUN_14002e080(7, ...)`). Server log after broadcast: `"Updated leaderboard for %d clients (%s-%s %d min)"`. |
-| `0x37` | 55 | `u8 = 0x37` + `7 × u32 weather_factors` (cloud / rain / scaling values) + serialized `WeatherStatus` (variable, via vtable[0x20]) + `f32 timestamp` | **Periodic weather status broadcast** — emitted from the main server tick tail at a separate cadence (`_DAT_14014bd38`). The body is built by `FUN_1400330e0` which assembles a weather snapshot with `tanhf`-normalized rain / cloud / wet-track values, then calls a virtual `WeatherStatus::serialize` method (`vtable[0x20]`) and finally appends a session-time-delta float. Distinct from the previous catalog entry that called this a "keepalive" — it's a real weather push. |
+| `0x37` | 55 | `u8 = 0x37` + `7 × f32 weather_scaling` + `9 × f32 weather_status` + `f32 timestamp` (69 bytes total) | **Periodic weather status broadcast**. The 7 scaling floats correlate with cloud/rain levels (factor[0] ~ 1-clouds*0.3, factor[1] ~ 1-clouds*0.4). The 9 status floats are: ambient_temp, road_temp, grip, rain_intensity_or_cycle, wetness, dry_line_wetness, puddles, forecast_10m, forecast_30m. — emitted from the main server tick tail at a separate cadence (`_DAT_14014bd38`). The body is built by `FUN_1400330e0` which assembles a weather snapshot with `tanhf`-normalized rain / cloud / wet-track values, then calls a virtual `WeatherStatus::serialize` method (`vtable[0x20]`) and finally appends a session-time-delta float. Distinct from the previous catalog entry that called this a "keepalive" — it's a real weather push. |
 | `0x39` | 57 | 59-byte fixed-layout record | **Per-car periodic state broadcast — slow-rate variant** (sibling of `0x1e`). Same 58-byte layout as `0x1e` plus **one extra `u8` context byte** right after the msg id. The server pushes `0x39` at a slower cadence than `0x1e`; the two together form the complete per-car state pipeline. The extra byte likely indicates the update reason (race vs qualifying, full-sync vs delta, etc.). |
 | `0x3a` | 58 | `u16 car_id` + `u8 split_count` + `u32[count]` + `i32 clock` + `u16 car_field` | **Sector splits broadcast (game protocol)** — server-transformed relay of client `0x20` messages. Variable-length body (depends on split count). **Note**: a separate message with the same first byte `0x3a` exists on the lobby backend connection with a completely different fixed-15-byte body (`u8=0xc9 + u32 + u32 + u8=0x00 + u32`) — that's the lobby registration request. The two messages are distinguishable only by which TCP channel they flow on. |
 | `0x3b` | 59 | `u16 car_id` + `u32 split_time` + `u8` + `u32 lap_time` + `u16 flags` | **Single sector split broadcast** — server-transformed relay of client `0x21` messages. Fixed 14-byte body. |
@@ -704,26 +707,28 @@ A comprehensive sweep plus deep TCP-dispatcher case decoding plus a server-tick-
 
 #### 5.6.4d Post-handshake welcome sequence
 
-When a client successfully handshakes, the server emits **multiple messages in sequence** before the client is considered fully joined. A reimplementation that wants to be wire-compatible on the accept path must emit all of these, not just the handshake response:
+When a client successfully handshakes, the server emits **multiple messages in sequence** before the client is considered fully joined. Confirmed by probing a real Kunos accServer.exe 1.10.2:
 
 ```
-To the joining client:
-  1. 0x0b  — handshake response (car id, protocol version,
-             connection id, session/track trailer)
-  2. 0x04  — handshake state A (inline-built state record)
-  3. 0x05  — handshake state B (generic serializer)
-  4. 0x03  — track / session change notification
-             (generic serializer)
-  5. 0x07  — session running state
-             (generic serializer)
+To the joining client (in order):
+  1. 0x0b  -- handshake accept (UDP port, conn_id, ~2000-byte
+              welcome trailer with session/car/config state)
+  2. 0x28  -- SRV_LARGE_STATE_RESPONSE (56 bytes, session
+              timing + assist rule snapshot)
+  3. 0x36  -- SRV_LEADERBOARD_BCAST (~120 bytes, initial
+              leaderboard with per-car driver name strings)
+  4. 0x37  -- SRV_WEATHER_STATUS (69 bytes, current weather)
+  5. 0x4e  -- SRV_RATING_SUMMARY (14 bytes, per-connection
+              rating)
 
 To every OTHER currently connected client:
-  6. 0x2e  — new-client-joined notify (u16 + u64 timestamp)
+  6. 0x2e  -- new-client-joined notify (u16 carId + u64
+              timestamp)
+  7. 0x4f  -- paired driver stint relay (u16 carId + u8=1 +
+              u64 timestamp)
 ```
 
-Messages 3 and 4 (ids `0x03` and `0x07`) are the same as the ones emitted periodically by the main server tick, so if the server has a unified "push current state" function, it can be reused here. Messages 1 and 2 are handshake-specific. Message 6 is fan-out to existing clients.
-
-A reimplementation that only sends `0x0b` and stops will likely see the client disconnect after a timeout, because the client is waiting for the rest of the welcome sequence before proceeding to the session view.
+Note: the protobuf messages `0x03`-`0x07` are for the **ServerMonitor broadcasting protocol** (separate UDP port), not the game client sim protocol. The game client welcome uses sim-protocol messages `0x28`/`0x36`/`0x37`/`0x4e` instead.
 
 #### 5.6.4b Relay / broadcast architecture (two-tier)
 
