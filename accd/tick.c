@@ -256,8 +256,8 @@ done:
 void
 tick_run(struct Server *s)
 {
-	static uint16_t last_standings_seq = 0;
-	static uint8_t last_phase = 0;
+	uint16_t *last_standings_seq = &s->session.last_standings_seq;
+	uint8_t *last_phase = &s->session.last_phase;
 
 	s->tick_count++;
 
@@ -278,8 +278,8 @@ tick_run(struct Server *s)
 	/*
 	 * Leaderboard rebroadcast on standings change.
 	 */
-	if (s->session.standings_seq != last_standings_seq) {
-		last_standings_seq = s->session.standings_seq;
+	if (s->session.standings_seq != *last_standings_seq) {
+		*last_standings_seq = s->session.standings_seq;
 		broadcast_leaderboard(s);
 		/*
 		 * 0x4e periodic per-connection rating summary
@@ -320,7 +320,7 @@ tick_run(struct Server *s)
 	/*
 	 * One-shot grid broadcast at PRE_RACE entry.
 	 */
-	if (s->session.phase != last_phase) {
+	if (s->session.phase != *last_phase) {
 		if (s->session.phase == PHASE_PRE_RACE)
 			broadcast_grid(s);
 		if (s->session.phase == PHASE_POST_SESSION) {
@@ -330,7 +330,7 @@ tick_run(struct Server *s)
 				s->session.results_written = 1;
 			}
 		}
-		last_phase = s->session.phase;
+		*last_phase = s->session.phase;
 	}
 
 	/*
