@@ -259,8 +259,12 @@ main(int argc, char **argv)
 	if (srv.tcp_fd < 0 || srv.udp_fd < 0)
 		return 1;
 
-	if (srv.lan_discovery)
-		(void)lan_open(&srv.lan_fd);
+	/*
+	 * Always open UDP 8999 for discovery.  The ACC client sends a
+	 * discovery probe to this port before connecting via TCP, even
+	 * for remote servers listed in serverList.json.
+	 */
+	(void)lan_open(&srv.lan_fd);
 
 #ifdef __OpenBSD__
 	if (pledge("stdio rpath wpath cpath inet", NULL) < 0)

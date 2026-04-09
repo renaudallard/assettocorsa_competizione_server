@@ -48,18 +48,20 @@ Protocol messages are logged with hex dumps.
 reads four JSON files from the configuration directory:
 .Bl -tag -width Ds
 .It Pa configuration.json
-Network settings: TCP and UDP ports, maximum connections, lobby
-registration, and LAN discovery.
+Network settings: TCP and UDP ports, and maximum connections.
 .Bd -literal -offset indent
 {
     "udpPort": 9231,
     "tcpPort": 9232,
     "maxConnections": 85,
-    "registerToLobby": 0,
-    "lanDiscovery": 1,
     "configVersion": 1
 }
 .Ed
+.Pp
+The server always listens on UDP 8999 for client discovery probes.
+The ACC client sends a discovery probe to this port before connecting,
+even for remote servers.
+Ensure TCP 9232, UDP 9231, and UDP 8999 are all open in the firewall.
 .It Pa settings.json
 Server identity and access control: server name, passwords,
 car group restrictions, and rating requirements.

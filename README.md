@@ -232,10 +232,13 @@ Network settings:
     "udpPort": 9231,
     "tcpPort": 9232,
     "maxConnections": 30,
-    "lanDiscovery": 1,
     "configVersion": 1
 }
 ```
+
+The server always listens on UDP 8999 for client discovery probes
+(the ACC client sends a discovery probe before connecting, even for
+remote servers).  Ensure this port is open in your firewall.
 
 #### settings.json
 
@@ -356,9 +359,11 @@ Open these ports for clients to connect:
 |------|----------|---------|
 | 9232 | TCP | Game connection (handshake, chat, session data) |
 | 9231 | UDP | Car telemetry (position, inputs, timing) |
-| 8999 | UDP | LAN discovery (optional, local network only) |
+| 8999 | UDP | Client discovery (required for clients to find the server) |
 
 Ports 9232 and 9231 are configurable in `configuration.json`.
+Port 8999 is fixed by the ACC protocol.  All three ports must be
+open in the firewall for clients to connect.
 
 ### Connecting from the ACC game client
 
