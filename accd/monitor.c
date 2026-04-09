@@ -156,67 +156,80 @@ monitor_build_configuration_state(struct ByteBuf *bb,
 	if (pb_w_bool(bb, PB_CFG_IS_LOCKED_ENTRY_LIST, 0) < 0)
 		return -1;
 
-	/*
-	 * Repeated SessionDef sub-messages.  We don't yet have a
-	 * sessions[] table on Server (added in phase 5); for now
-	 * emit a single placeholder Practice session so the
-	 * client has something to populate its lobby UI with.
-	 */
+	/* Repeated SessionDef sub-messages from the configured sessions. */
 	{
-		size_t start;
+		int i;
 
-		if (pb_sub_begin(bb, PB_CFG_SESSIONS, &start) < 0)
-			return -1;
-		if (pb_w_enum(bb, PB_SDEF_SESSION_TYPE, 0) < 0)
-			return -1;
-		if (pb_w_int32(bb, PB_SDEF_ROUND, 0) < 0)
-			return -1;
-		if (pb_w_int32(bb, PB_SDEF_DURATION_SECONDS, 600) < 0)
-			return -1;
-		if (pb_w_int32(bb, PB_SDEF_RACE_DAY, 0) < 0)
-			return -1;
-		if (pb_w_int32(bb, PB_SDEF_MINUTE_OF_DAY, 600) < 0)
-			return -1;
-		if (pb_w_int32(bb, PB_SDEF_TIME_MULTIPLIER, 1) < 0)
-			return -1;
-		if (pb_w_int32(bb, PB_SDEF_OVERTIME_DURATION_S, 120) < 0)
-			return -1;
-		if (pb_w_int32(bb, PB_SDEF_PRE_RACE_WAIT_TIME_S, 80) < 0)
-			return -1;
-		if (pb_sub_end(bb, start) < 0)
-			return -1;
+		for (i = 0; i < s->session_count; i++) {
+			const struct SessionDef *def = &s->sessions[i];
+			size_t start;
+
+			if (pb_sub_begin(bb, PB_CFG_SESSIONS, &start) < 0)
+				return -1;
+			if (pb_w_enum(bb, PB_SDEF_SESSION_TYPE,
+			    session_type_to_pb(def->session_type)) < 0)
+				return -1;
+			if (pb_w_int32(bb, PB_SDEF_ROUND, i) < 0)
+				return -1;
+			if (pb_w_int32(bb, PB_SDEF_DURATION_SECONDS,
+			    (int32_t)def->duration_min * 60) < 0)
+				return -1;
+			if (pb_w_int32(bb, PB_SDEF_RACE_DAY,
+			    def->day_of_weekend) < 0)
+				return -1;
+			if (pb_w_int32(bb, PB_SDEF_MINUTE_OF_DAY,
+			    (int32_t)def->hour_of_day * 60) < 0)
+				return -1;
+			if (pb_w_int32(bb, PB_SDEF_TIME_MULTIPLIER,
+			    def->time_multiplier > 0 ?
+			    def->time_multiplier : 1) < 0)
+				return -1;
+			if (pb_w_int32(bb, PB_SDEF_OVERTIME_DURATION_S,
+			    120) < 0)
+				return -1;
+			if (pb_w_int32(bb, PB_SDEF_PRE_RACE_WAIT_TIME_S,
+			    80) < 0)
+				return -1;
+			if (pb_sub_end(bb, start) < 0)
+				return -1;
+		}
 	}
-	(void)session_type_to_pb;	/* used in phase 5 */
 	return 0;
 }
 
 int
 monitor_build_session_state(struct ByteBuf *bb, const struct Server *s)
 {
-	if (pb_w_int32(bb, PB_SS_CURRENT_SESSION_INDEX, 0) < 0)
+	if (pb_w_int32(bb, PB_SS_CURRENT_SESSION_INDEX,
+	    s->session.session_index) < 0)
 		return -1;
 	if (pb_w_int32(bb, PB_SS_WEEKEND_TIME_SECONDS,
-	    (int32_t)(s->tick_count / 10)) < 0)
+	    (int32_t)s->session.weekend_time_s) < 0)
 		return -1;
 	if (pb_w_float(bb, PB_SS_IDEAL_LINE_GRIP, 0.95f) < 0)
 		return -1;
-	if (pb_w_int32(bb, PB_SS_AMBIENT_TEMP, 22) < 0)
+	if (pb_w_int32(bb, PB_SS_AMBIENT_TEMP,
+	    s->session.ambient_temp > 0 ? s->session.ambient_temp : 22) < 0)
 		return -1;
-	if (pb_w_int32(bb, PB_SS_ROAD_TEMP, 26) < 0)
+	if (pb_w_int32(bb, PB_SS_ROAD_TEMP,
+	    s->session.track_temp > 0 ? s->session.track_temp : 26) < 0)
 		return -1;
-	if (pb_w_float(bb, PB_SS_CLOUD_LEVEL, 0.1f) < 0)
+	if (pb_w_float(bb, PB_SS_CLOUD_LEVEL, s->weather.clouds) < 0)
 		return -1;
-	if (pb_w_float(bb, PB_SS_RAIN_LEVEL, 0.0f) < 0)
+	if (pb_w_float(bb, PB_SS_RAIN_LEVEL, s->weather.current_rain) < 0)
 		return -1;
-	if (pb_w_float(bb, PB_SS_TRACK_WETNESS, 0.0f) < 0)
+	if (pb_w_float(bb, PB_SS_TRACK_WETNESS, s->weather.wetness) < 0)
 		return -1;
-	if (pb_w_float(bb, PB_SS_DRY_LINE_WETNESS, 0.0f) < 0)
+	if (pb_w_float(bb, PB_SS_DRY_LINE_WETNESS,
+	    s->weather.dry_line_wetness) < 0)
 		return -1;
-	if (pb_w_float(bb, PB_SS_TRACK_PUDDLES, 0.0f) < 0)
+	if (pb_w_float(bb, PB_SS_TRACK_PUDDLES, s->weather.puddles) < 0)
 		return -1;
-	if (pb_w_float(bb, PB_SS_RAIN_FORECAST_10MIN, 0.0f) < 0)
+	if (pb_w_float(bb, PB_SS_RAIN_FORECAST_10MIN,
+	    s->weather.forecast_10m) < 0)
 		return -1;
-	if (pb_w_float(bb, PB_SS_RAIN_FORECAST_30MIN, 0.0f) < 0)
+	if (pb_w_float(bb, PB_SS_RAIN_FORECAST_30MIN,
+	    s->weather.forecast_30m) < 0)
 		return -1;
 	if (pb_w_int32(bb, PB_SS_CARS_CONNECTED, s->nconns) < 0)
 		return -1;
@@ -230,7 +243,7 @@ monitor_build_realtime_update(struct ByteBuf *bb,
 	size_t sub_start;
 
 	if (pb_w_int32(bb, PB_RTU_SERVER_NOW,
-	    (int32_t)(s->tick_count * 100)) < 0)
+	    (int32_t)(s->session.weekend_time_s * 1000)) < 0)
 		return -1;
 	if (pb_sub_begin(bb, PB_RTU_SESSION_STATE, &sub_start) < 0)
 		return -1;

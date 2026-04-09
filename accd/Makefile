@@ -87,7 +87,7 @@ lan.o: lan.c lan.h io.h log.h msg.h prim.h state.h
 log.o: log.c log.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c log.c
 
-monitor.o: monitor.c monitor.h bcast.h io.h log.h msg.h pb.h state.h
+monitor.o: monitor.c monitor.h bcast.h io.h log.h msg.h pb.h prim.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c monitor.c
 
 net.o: net.c net.h log.h
