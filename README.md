@@ -368,35 +368,32 @@ On the client machine, create or edit the file:
 %userprofile%\Documents\Assetto Corsa Competizione\Config\serverList.json
 ```
 
-Example `serverList.json`:
+On macOS with CrossOver, the path is typically:
 
-```json
-[
-    {
-        "Name": "My accd server",
-        "Address": "192.168.1.100",
-        "Port": 9232,
-        "Password": "",
-        "IsLan": false
-    },
-    {
-        "Name": "LAN server",
-        "Address": "10.0.0.5",
-        "Port": 9232,
-        "Password": "secret",
-        "IsLan": true
-    }
-]
+```
+~/Documents/Games/Assetto Corsa Competizione/Config/serverList.json
 ```
 
-- `Address` -- the IP or hostname of the machine running accd.
-- `Port` -- must match `tcpPort` in `configuration.json` (default 9232).
-- `Password` -- must match the `password` field in the server's
-  `settings.json`; empty string for open servers.
-- `IsLan` -- set to `true` for servers on the same local network.
+The file contains a single JSON object with the server address:
 
-The servers will appear in the game's multiplayer server browser
-under the "Favourites" tab.
+```json
+{
+    "leagueServerIP": "192.168.1.100"
+}
+```
+
+Hostnames also work:
+
+```json
+{
+    "leagueServerIP": "acc.example.com"
+}
+```
+
+The game connects on the default ports (TCP 9232 / UDP 9231).
+If the server has a password, it is entered in-game when joining.
+
+The server will appear in the ACC multiplayer server list.
 
 ### Admin console
 
