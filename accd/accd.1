@@ -111,7 +111,7 @@ Pre-assigned car slots keyed by Steam ID.
 When present and
 .Dq forceEntryList
 is set in
-.Pa settings.json ,
+.Pa entrylist.json ,
 only listed drivers may connect.
 .El
 .Sh ADMIN COMMANDS
@@ -143,8 +143,12 @@ Drive-through penalty (collision).
 5-second time penalty (collision).
 .It /tp15 Ar car#
 15-second time penalty.
+.It /tp15c Ar car#
+15-second time penalty (collision).
 .It /sg10 Ar car# , /sg20 Ar car# , /sg30 Ar car#
 Stop-and-go penalty (10/20/30 seconds).
+.It /sg10c Ar car# , /sg20c Ar car# , /sg30c Ar car#
+Stop-and-go penalty (10/20/30 seconds, collision).
 .It /clear Ar car#
 Clear penalties for a car.
 .It /clear_all
@@ -154,7 +158,7 @@ Clear time penalties for a car.
 .It /ballast Ar car# Ar kg
 Set ballast (0\(en40 kg).
 .It /restrictor Ar car# Ar pct
-Set restrictor (0\(en20%).
+Set restrictor (0\(en99%).
 .It /track Ar name
 Change track for next session.
 .It /connections
@@ -172,8 +176,8 @@ Server identity and access control.
 Track, weather, and session schedule.
 .It Pa cfg/entrylist.json
 Optional entry list for pre-assigned slots.
-.It Pa cfg/bans.json
-Persistent ban list, managed automatically.
+.It Pa cfg/banlist.txt
+Persistent ban list (one Steam ID per line), managed automatically.
 .It Pa results/
 Session results written as JSON on session completion.
 .El

@@ -29,8 +29,8 @@ connections, assigns car IDs, and begins the session lifecycle.
   immediately after handshake accept, matching the real server's
   welcome sequence order.
 - **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
-  message types are handled; 31 server-to-client message types are
-  implemented.
+  message types are handled; 34 server-to-client message types are
+  implemented (plus 7 ServerMonitor protobuf types).
 - **Per-car state broadcast** — 10 Hz fast-rate (`0x1e`) and 1 Hz
   slow-rate (`0x39`) per-car broadcasts relayed to all other
   connections.
