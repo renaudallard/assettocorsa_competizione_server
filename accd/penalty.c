@@ -106,8 +106,7 @@ penalty_serve_front(struct Server *s, int car_id)
 	q = &s->cars[car_id].race.pen;
 	if (q->count == 0)
 		return;
-	q->slots[0].served = 1;
-	/* Slide the rest down. */
+	/* Remove the front entry and slide the rest down. */
 	for (i = 1; i < q->count; i++)
 		q->slots[i - 1] = q->slots[i];
 	q->count--;
