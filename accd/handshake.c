@@ -100,26 +100,330 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		return -1;
 
 	/* Echoed car info: raceNumber (i32), carModel (u8). */
-	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
-		struct CarEntry *car = &s->cars[c->car_id];
+	{
+		struct CarEntry *car = NULL;
+		struct DriverInfo *drv = NULL;
+		int j;
 
-		if (wr_i32(bb, car->race_number) < 0)
-			return -1;
-		if (wr_u8(bb, car->car_model) < 0)
-			return -1;
-	} else {
-		if (wr_i32(bb, 0) < 0)
-			return -1;
-		if (wr_u8(bb, 0) < 0)
-			return -1;
-	}
+		if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
+			car = &s->cars[c->car_id];
+			if (car->driver_count > 0)
+				drv = &car->drivers[0];
+		}
 
-	/* Remaining sub-record padding. */
-	for (i = 0; i < 5; i++)
+		if (wr_i32(bb, car ? car->race_number : 0) < 0)
+			return -1;
+		if (wr_u8(bb, car ? car->car_model : 0) < 0)
+			return -1;
+
+		/* Per-track season entity (pit positions, sector
+		 * markers). Zero-filled; the client loads its own
+		 * track data from game files. */
+		for (i = 0; i < 1052; i++)
+			if (wr_u8(bb, 0) < 0)
+				return -1;
+
+		/* Separator + echoed DriverInfo (Format-A). */
+		if (wr_u8(bb, 1) < 0)
+			return -1;
+		if (wr_str_a(bb, drv ? drv->first_name : "") < 0)
+			return -1;
+		if (wr_str_a(bb, drv ? drv->last_name : "") < 0)
+			return -1;
+		if (wr_str_a(bb, drv ? drv->short_name : "") < 0)
+			return -1;
+		if (wr_u8(bb, drv ? drv->driver_category : 0) < 0)
+			return -1;
+		if (wr_u16(bb, drv ? drv->nationality : 0) < 0)
+			return -1;
+
+		/* Padding + steam_id as Format-A. */
+		for (i = 0; i < 10; i++)
+			if (wr_u8(bb, 0) < 0)
+				return -1;
+		if (wr_str_a(bb, drv ? drv->steam_id : "") < 0)
+			return -1;
+
+		/* Padding to reach assist rules block. */
+		for (i = 0; i < 16; i++)
+			if (wr_u8(bb, 0) < 0)
+				return -1;
+
+		/* AssistRules: separator + 8x u8 + padding + f32(1.0)
+		 * + 6x u8 assist flags. */
+		if (wr_u8(bb, 1) < 0)
+			return -1;
+		for (i = 0; i < 8; i++)
+			if (wr_u8(bb, 2) < 0)
+				return -1;
 		if (wr_u32(bb, 0) < 0)
 			return -1;
-	if (wr_u32(bb, 0xFF) < 0)
-		return -1;
+		if (wr_f32(bb, 1.0f) < 0)
+			return -1;
+		for (i = 0; i < 6; i++)
+			if (wr_u8(bb, 2) < 0)
+				return -1;
+
+		/* Server config fields. */
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 5) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 5) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 4) < 0) return -1;
+		if (wr_u16(bb, 0) < 0) return -1;
+		if (wr_f32(bb, 0.8f) < 0) return -1;
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_f32(bb, 1.0f) < 0) return -1;
+		if (wr_f32(bb, 0.5f) < 0) return -1;
+
+		/* More config: formation lap, driver swap, etc. */
+		for (i = 0; i < 8; i++)
+			if (wr_u8(bb, 1) < 0)
+				return -1;
+		if (wr_u8(bb, 2) < 0) return -1;
+		if (wr_u16(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 2) < 0) return -1;
+		if (wr_u8(bb, 100) < 0) return -1;
+		if (wr_u8(bb, 100) < 0) return -1;
+		if (wr_u8(bb, 15) < 0) return -1;
+		if (wr_u32(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 2) < 0) return -1;
+		if (wr_u8(bb, 2) < 0) return -1;
+		if (wr_u16(bb, 300) < 0) return -1;
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_u8(bb, 10) < 0) return -1;
+		if (wr_u8(bb, 3) < 0) return -1;
+		for (i = 0; i < 8; i++)
+			if (wr_u8(bb, 2) < 0)
+				return -1;
+		if (wr_u32(bb, 100) < 0) return -1;
+		if (wr_u32(bb, 3000) < 0) return -1;
+		if (wr_u32(bb, 15) < 0) return -1;
+		if (wr_u32(bb, 3) < 0) return -1;
+		if (wr_u32(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+
+		/* Track name as Format-A. */
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_str_a(bb, s->track) < 0)
+			return -1;
+
+		/* Weather inline snapshot (separator + f32 fields). */
+		if (wr_u8(bb, 1) < 0) return -1;
+		{
+			float g2 = s->session.grip_level > 0
+			    ? s->session.grip_level : 1.0f;
+
+			if (wr_u8(bb, 0x20) < 0) return -1;
+			if (wr_u8(bb, 3) < 0) return -1;
+			if (wr_f32(bb, g2) < 0) return -1;
+			if (wr_f32(bb, s->weather.clouds * 0.1f) < 0)
+				return -1;
+			if (wr_f32(bb, s->weather.current_rain * 0.1f) < 0)
+				return -1;
+			if (wr_f32(bb, 1.0f) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 5) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 5) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 4) < 0) return -1;
+			if (wr_u16(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0xFF) < 0) return -1;
+			if (wr_u8(bb, 1) < 0) return -1;
+			if (wr_u32(bb, 0xFFFFFFFF) < 0) return -1;
+			if (wr_u8(bb, 0xFF) < 0) return -1;
+			if (wr_u8(bb, 1) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 1) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u16(bb, 0xFFFF) < 0) return -1;
+			if (wr_u32(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 1) < 0) return -1;
+		}
+
+		/* Session definitions (per-session records). */
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_u8(bb, 0x32) < 0) return -1;
+		if (wr_u8(bb, 3) < 0) return -1;
+		for (j = 0; j < 3; j++) {
+			float a_t = s->session.ambient_temp > 0
+			    ? (float)s->session.ambient_temp : 22.0f;
+
+			if (wr_f32(bb, a_t) < 0) return -1;
+			if (wr_f32(bb, a_t + 8.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.1f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 1.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, a_t) < 0) return -1;
+			if (wr_f32(bb, -1.0f) < 0) return -1;
+			if (wr_f32(bb, 5.0f) < 0) return -1;
+			if (wr_f32(bb, 15.0f) < 0) return -1;
+			if (wr_f32(bb, -1.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.4f) < 0) return -1;
+			if (wr_f32(bb, 0.3f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+		}
+
+		/* Session schedule entries. */
+		for (j = 0; j < s->session_count && j < 3; j++) {
+			const struct SessionDef *def = &s->sessions[j];
+
+			if (wr_u8(bb, def->hour_of_day) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, def->time_multiplier) < 0) return -1;
+			if (wr_u16(bb, 0) < 0) return -1;
+			if (wr_f32(bb, 1.0f) < 0) return -1;
+			if (wr_u16(bb, 3) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u16(bb, (uint16_t)(def->duration_min * 60)) < 0)
+				return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u16(bb, 120) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_f32(bb, 1.0f) < 0) return -1;
+		}
+
+		/* Leaderboard inline + car entries. */
+		if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+		if (wr_u8(bb, 3) < 0) return -1;
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+
+		{
+			int nc = 0;
+			for (j = 0; j < ACC_MAX_CARS; j++)
+				if (s->cars[j].used) nc++;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, (uint8_t)nc) < 0) return -1;
+			for (j = 0; j < ACC_MAX_CARS; j++) {
+				struct CarEntry *ec = &s->cars[j];
+				struct DriverInfo *ed;
+
+				if (!ec->used) continue;
+				ed = &ec->drivers[0];
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_u16(bb, ec->car_id) < 0) return -1;
+				if (wr_u16(bb, (uint16_t)ec->race_number) < 0)
+					return -1;
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_u16(bb, ec->driver_count) < 0) return -1;
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_u8(bb, 1) < 0) return -1;
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_str_a(bb, ed->first_name) < 0) return -1;
+				if (wr_str_a(bb, ed->short_name) < 0) return -1;
+				if (wr_u16(bb, 0) < 0) return -1;
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+				if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+				if (wr_u8(bb, 1) < 0) return -1;
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_u8(bb, 3) < 0) return -1;
+				if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+				if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+				if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+				if (wr_u32(bb, 0) < 0) return -1;
+				if (wr_u32(bb, 0) < 0) return -1;
+			}
+		}
+
+		/* Per-car realtime data placeholder. */
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_u32(bb, 0) < 0) return -1;
+		{
+			float g = s->session.grip_level > 0
+			    ? s->session.grip_level : 1.0f;
+
+			if (wr_f32(bb, g) < 0) return -1;
+			if (wr_f32(bb, s->weather.clouds) < 0) return -1;
+			if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
+			if (wr_u32(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 5) < 0) return -1;
+			if (wr_u32(bb, 0) < 0) return -1;
+			if (wr_f32(bb, 0.4f) < 0) return -1;
+			if (wr_f32(bb, 0.3f) < 0) return -1;
+			if (wr_f32(bb, 0.0f) < 0) return -1;
+			if (wr_u8(bb, 5) < 0) return -1;
+			for (i = 0; i < 20; i++)
+				if (wr_u8(bb, 0) < 0) return -1;
+		}
+
+		/* Inline weather snapshot. */
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (weather_build_broadcast(s, bb) < 0)
+			return -1;
+
+		/* Session schedule recap. */
+		for (j = 0; j < s->session_count && j < 3; j++) {
+			const struct SessionDef *def = &s->sessions[j];
+
+			if (wr_u8(bb, def->hour_of_day) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, def->time_multiplier) < 0) return -1;
+			if (wr_u16(bb, 0) < 0) return -1;
+			if (wr_f32(bb, 1.0f) < 0) return -1;
+			if (wr_u16(bb, 3) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u16(bb, (uint16_t)(def->duration_min * 60)) < 0)
+				return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u16(bb, 120) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_f32(bb, 1.0f) < 0) return -1;
+		}
+
+		/* Tyre compound + tail. */
+		if (wr_u8(bb, 5) < 0) return -1;
+		if (wr_u8(bb, 5) < 0) return -1;
+		for (i = 0; i < 6; i++)
+			if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 0xFF) < 0) return -1;
+		/* 0x40 variant for tyre compound. */
+		if (wr_u8(bb, 0x40) < 0) return -1;
+		if (wr_u32(bb, 0xFFFFFFFF) < 0) return -1;
+		if (wr_u32(bb, 0) < 0) return -1;
+		if (wr_u32(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		/* Compound name "Standard". */
+		if (wr_u8(bb, 8) < 0) return -1;
+		if (bb_append(bb, "Standard", 8) < 0) return -1;
+		/* Tail padding. */
+		for (i = 0; i < 24; i++)
+			if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 3) < 0) return -1;
+		if (wr_u16(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+	}
+
+	return 0;
 
 	return 0;
 }
