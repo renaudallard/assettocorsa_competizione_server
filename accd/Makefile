@@ -1,11 +1,8 @@
 # accd -- ACC dedicated server reimplementation
 #
 # Portable Makefile.  Works with both BSD make and GNU make.
-# No conditionals, no pattern-substitution tricks.
-#
-# OpenBSD users: iconv lives in ports at /usr/local.  Build with
-#     make CFLAGS="-I/usr/local/include" \
-#          LDFLAGS="-L/usr/local/lib" LIBS="-liconv"
+# iconv detection is automatic: /usr/local paths are always
+# searched, and -liconv is linked when iconv is not in libc.
 
 PROG =		accd
 
@@ -37,13 +34,21 @@ OBJS =		main.o \
 # Internal flags always applied.  User-supplied CFLAGS / LDFLAGS
 # / LIBS are appended after these so platform-specific paths can
 # override without losing the compiler warnings.
-ACCD_CFLAGS =	-std=c99 -Wall -Wextra -Wpedantic -O2 -g
+ACCD_CFLAGS =	-std=c99 -Wall -Wextra -Wpedantic -O2 -g \
+		-I/usr/local/include
+ACCD_LDFLAGS =	-L/usr/local/lib
 ACCD_LIBS =	-lm
 
 all: ${PROG}
 
 ${PROG}: ${OBJS}
-	${CC} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} ${LIBS}
+	@ICONV=; \
+	if ! echo 'void iconv_open(); int main(){iconv_open();}' | \
+	    ${CC} -x c - -o /dev/null 2>/dev/null; then \
+	    ICONV="-liconv"; \
+	fi; \
+	echo ${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV ${LIBS}; \
+	${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV ${LIBS}
 
 main.o: main.c bans.h config.h console.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c main.c
