@@ -4,10 +4,21 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=/etc/accd
-ExecStart=/usr/bin/accd
+DynamicUser=yes
+StateDirectory=accd
+WorkingDirectory=/var/lib/accd
+ExecStart=/usr/bin/accd -c /var/lib/accd/cfg
 StandardInput=null
 Restart=on-failure
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
 
 [Install]
 WantedBy=multi-user.target
