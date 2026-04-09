@@ -97,7 +97,7 @@ h_lap_completed(struct Server *s, struct Conn *c,
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	if (c->car_id < 0)
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	race = &s->cars[c->car_id].race;
 
@@ -217,7 +217,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	if (c->car_id < 0)
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
