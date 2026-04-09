@@ -1,3 +1,14 @@
+accd (0.1.4) unstable; urgency=medium
+
+  * Fix car dirt message ID: client sends 0x46, not 0x45.
+  * Fix leaderboard car entry format (car_model, cup_category, 4 driver
+    strings matching Kunos wire format).
+  * Add accd(1) man page with full option, config, and admin command docs.
+  * Install target now places man page; add uninstall target.
+  * Update notebook and README to match wire capture findings.
+
+ -- Renaud Allard <renaud@allard.it>  Wed, 09 Apr 2026 20:00:00 +0200
+
 accd (0.1.3) unstable; urgency=medium
 
   * Fix handshake parser for real ACC client wire format (5 DriverInfo
