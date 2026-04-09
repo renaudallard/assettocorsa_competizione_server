@@ -109,44 +109,41 @@ interoperability of an independently created program.
 
 ```
 .
-├── README.md              This file.
-├── LICENSE                ISC license.
+├── README.md                This file.
+├── LICENSE                  BSD-2-Clause license.
+├── VERSION                  Version number (triggers releases).
 ├── notebook-b/
-│   └── NOTEBOOK_B.md      The public clean-room protocol spec.
-├── accd/                  The C implementation.
-│   ├── main.c             Poll loop + signal handling + lifecycle.
-│   ├── bans.{c,h}         Persistent kick / ban list.
-│   ├── bcast.{c,h}        Broadcast helpers (tier-1 direct relay).
-│   ├── chat.{c,h}         Admin chat commands + penalty dispatch.
-│   ├── config.{c,h}       JSON config reader (UTF-16 LE or UTF-8).
-│   ├── console.{c,h}      stdin admin console (poll-driven).
-│   ├── dispatch.{c,h}     TCP / UDP message dispatchers.
-│   ├── entrylist.{c,h}    entrylist.json reader.
-│   ├── handlers.{c,h}     Per-msg-id handlers (21 TCP + 7 UDP).
-│   ├── handshake.{c,h}    ACP_REQUEST_CONNECTION + 0x0b + welcome.
-│   ├── io.{c,h}           Byte buffer + TCP framing layer.
-│   ├── json.{c,h}         Recursive-descent JSON parser.
-│   ├── lan.{c,h}          UDP 8999 LAN discovery handler.
-│   ├── log.{c,h}          Timestamped logger + hexdump.
-│   ├── monitor.{c,h}      ServerMonitor protobuf message builders.
-│   ├── msg.h              All message id constants + enums.
-│   ├── net.{c,h}          tcp_listen / udp_bind helpers.
-│   ├── pb.{c,h}           Minimal write-only protobuf encoder.
-│   ├── penalty.{c,h}      Per-car penalty queue.
-│   ├── prim.{c,h}         Primitive readers / writers + strings.
-│   ├── results.{c,h}      Session results JSON writer.
-│   ├── session.{c,h}      Session phase machine + standings sort.
-│   ├── state.{c,h}        Per-conn / global server state structs.
-│   ├── tick.{c,h}         Periodic tick + leaderboard broadcasts.
-│   ├── weather.{c,h}      Deterministic sin/cos weather simulator.
-│   ├── Makefile
-│   └── README
-├── .gitignore
-├── acc-server/            The Kunos server download. Gitignored.
-│                          Fetch it yourself via SteamCMD (below);
-│                          you will need this locally to test the
-│                          reimplementation against a real client.
-└── tmp/                   Scratch directory. Gitignored.
+│   └── NOTEBOOK_B.md        The public clean-room protocol spec.
+├── accd/                    The C implementation (24 modules).
+│   ├── main.c               Poll loop + signal handling + lifecycle.
+│   ├── bans.{c,h}           Persistent kick / ban list.
+│   ├── bcast.{c,h}          Broadcast helpers (tier-1 direct relay).
+│   ├── chat.{c,h}           Admin chat commands + penalty dispatch.
+│   ├── config.{c,h}         JSON config reader (UTF-16 LE or UTF-8).
+│   ├── console.{c,h}        stdin admin console (poll-driven).
+│   ├── dispatch.{c,h}       TCP / UDP message dispatchers.
+│   ├── entrylist.{c,h}      entrylist.json reader.
+│   ├── handlers.{c,h}       Per-msg-id handlers (21 TCP + 7 UDP).
+│   ├── handshake.{c,h}      ACP_REQUEST_CONNECTION + 0x0b + welcome.
+│   ├── io.{c,h}             Byte buffer + TCP framing layer.
+│   ├── json.{c,h}           Recursive-descent JSON parser.
+│   ├── lan.{c,h}            UDP 8999 LAN discovery handler.
+│   ├── log.{c,h}            Timestamped logger + hexdump.
+│   ├── monitor.{c,h}        ServerMonitor protobuf message builders.
+│   ├── msg.h                All message id constants + enums.
+│   ├── net.{c,h}            tcp_listen / udp_bind helpers.
+│   ├── pb.{c,h}             Minimal write-only protobuf encoder.
+│   ├── penalty.{c,h}        Per-car penalty queue.
+│   ├── prim.{c,h}           Primitive readers / writers + strings.
+│   ├── results.{c,h}        Session results JSON writer.
+│   ├── session.{c,h}        Session phase machine + standings sort.
+│   ├── state.{c,h}          Per-conn / global server state structs.
+│   ├── tick.{c,h}           Periodic tick + leaderboard broadcasts.
+│   ├── weather.{c,h}        Deterministic sin/cos weather simulator.
+│   └── Makefile
+├── debian/                  Debian/Ubuntu packaging.
+├── redhat/                  Fedora/Rocky RPM spec.
+└── .github/workflows/       CI: autorelease + multi-distro packaging.
 ```
 
 The implementation is **24 modules and ~8700 lines of portable
