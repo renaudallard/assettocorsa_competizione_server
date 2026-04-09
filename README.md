@@ -55,7 +55,9 @@ connections, assigns car IDs, and begins the session lifecycle.
   and realtime updates (available for future broadcasting
   protocol support).
 - **Entry list** — `entrylist.json` reader populating car templates
-  with driver info, ballast, restrictor, grid positions.
+  with driver info, ballast, restrictor, grid positions.  When
+  `forceEntryList: 1`, only Steam IDs in the entry list are
+  accepted; others are rejected.
 - **LAN discovery** — UDP 8999 broadcast response so clients on
   the same network find the server automatically.
 - **Rating summary** — periodic `0x4e` per-connection broadcast.
@@ -78,8 +80,6 @@ connections, assigns car IDs, and begins the session lifecycle.
 
 - No public lobby registration (`registerToLobby` is always 0).
 - No Championship Points / CP rating system.
-- Entry list enforcement is not yet implemented (any client is
-  accepted regardless of `entrylist.json` content).
 
 The clean-room protocol specification in
 [`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) documents

@@ -175,6 +175,9 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		return -1;
 	}
 
+	s->force_entry_list = json_obj_get_int(root,
+	    "forceEntryList", 0);
+
 	entries = json_obj_get(root, "entries");
 	n = json_arr_len(entries);
 	if (n > ACC_MAX_CARS)

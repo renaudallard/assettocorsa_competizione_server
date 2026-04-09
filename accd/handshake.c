@@ -536,72 +536,128 @@ handshake_handle(struct Server *s, struct Conn *c,
 		goto reply;
 	}
 
-	c->car_id = server_alloc_car(s);
-	if (c->car_id < 0) {
-		reason = REJECT_FULL;
-		goto reply;
-	}
-
 	/*
-	 * Parse DriverInfo: first_name, last_name, short_name,
-	 * category(u8), nationality(u16), steam_id.
-	 * Then CarInfo: race_number(i32), car_model(u8),
-	 * cup_category(u8), team_name, ...
-	 * Fields after team_name are best-effort; if the body
-	 * is short we just use defaults.
+	 * Parse DriverInfo first (into temporaries) so we can
+	 * check bans and entrylist before allocating a car slot.
 	 */
 	{
-		struct CarEntry *car = &s->cars[c->car_id];
 		char *first = NULL, *last = NULL, *sname = NULL;
 		char *steam = NULL, *team = NULL;
-		uint8_t cat;
-		uint16_t nat;
-		int32_t rnum;
-		uint8_t cmodel, ccup;
+		char steam_buf[32] = "";
+		uint8_t cat = 0;
+		uint16_t nat = 0;
+		int32_t rnum = 0;
+		uint8_t cmodel = 0, ccup = 0;
+		struct CarEntry *car;
 
-		if (rd_str_a(&r, &first) == 0)
-			snprintf(car->drivers[0].first_name,
-			    sizeof(car->drivers[0].first_name), "%s",
-			    first);
-		if (rd_str_a(&r, &last) == 0)
-			snprintf(car->drivers[0].last_name,
-			    sizeof(car->drivers[0].last_name), "%s",
-			    last);
-		if (rd_str_a(&r, &sname) == 0)
-			snprintf(car->drivers[0].short_name,
-			    sizeof(car->drivers[0].short_name), "%s",
-			    sname);
-		if (rd_u8(&r, &cat) == 0)
-			car->drivers[0].driver_category = cat;
-		if (rd_u16(&r, &nat) == 0)
-			car->drivers[0].nationality = nat;
-		if (rd_str_a(&r, &steam) == 0)
-			snprintf(car->drivers[0].steam_id,
-			    sizeof(car->drivers[0].steam_id), "%s",
-			    steam);
-		car->driver_count = 1;
+		(void)rd_str_a(&r, &first);
+		(void)rd_str_a(&r, &last);
+		(void)rd_str_a(&r, &sname);
+		(void)rd_u8(&r, &cat);
+		(void)rd_u16(&r, &nat);
+		if (rd_str_a(&r, &steam) == 0 && steam != NULL)
+			snprintf(steam_buf, sizeof(steam_buf), "%s", steam);
 
-		/* Check ban list after parsing steam_id. */
-		if (bans_contains(&s->bans, car->drivers[0].steam_id)) {
-			log_info("rejecting banned steam_id %s",
-			    car->drivers[0].steam_id);
-			car->used = 0;
-			c->car_id = -1;
+		/* Ban check. */
+		if (bans_contains(&s->bans, steam_buf)) {
+			log_info("rejecting banned steam_id %s", steam_buf);
 			reason = REJECT_BANNED;
 			free(first); free(last); free(sname);
 			free(steam); free(team);
 			goto reply;
 		}
 
-		if (rd_i32(&r, &rnum) == 0)
+		/* Parse CarInfo fields. */
+		(void)rd_i32(&r, &rnum);
+		(void)rd_u8(&r, &cmodel);
+		(void)rd_u8(&r, &ccup);
+		(void)rd_str_a(&r, &team);
+
+		/*
+		 * Entry list enforcement: if forceEntryList is set,
+		 * look up the client's steam_id in the preloaded
+		 * entries. Assign them to the matching slot, or
+		 * reject if not found.
+		 */
+		if (s->force_entry_list) {
+			int slot = -1, i;
+
+			for (i = 0; i < ACC_MAX_CARS &&
+			    i < s->max_connections; i++) {
+				struct CarEntry *ec = &s->cars[i];
+				int dj;
+
+				for (dj = 0; dj < ec->driver_count; dj++) {
+					if (strcmp(ec->drivers[dj].steam_id,
+					    steam_buf) == 0) {
+						slot = i;
+						break;
+					}
+				}
+				if (slot >= 0)
+					break;
+			}
+			if (slot < 0) {
+				log_info("rejecting %s: not in entry list",
+				    steam_buf);
+				reason = REJECT_BAD_CAR;
+				free(first); free(last); free(sname);
+				free(steam); free(team);
+				goto reply;
+			}
+			if (s->cars[slot].used) {
+				log_info("rejecting %s: entry slot %d "
+				    "already in use", steam_buf, slot);
+				reason = REJECT_FULL;
+				free(first); free(last); free(sname);
+				free(steam); free(team);
+				goto reply;
+			}
+			s->cars[slot].used = 1;
+			c->car_id = slot;
+		} else {
+			c->car_id = server_alloc_car(s);
+			if (c->car_id < 0) {
+				reason = REJECT_FULL;
+				free(first); free(last); free(sname);
+				free(steam); free(team);
+				goto reply;
+			}
+		}
+
+		/* Populate the car slot with parsed data. */
+		car = &s->cars[c->car_id];
+		if (first != NULL)
+			snprintf(car->drivers[0].first_name,
+			    sizeof(car->drivers[0].first_name), "%s",
+			    first);
+		if (last != NULL)
+			snprintf(car->drivers[0].last_name,
+			    sizeof(car->drivers[0].last_name), "%s",
+			    last);
+		if (sname != NULL)
+			snprintf(car->drivers[0].short_name,
+			    sizeof(car->drivers[0].short_name), "%s",
+			    sname);
+		car->drivers[0].driver_category = cat;
+		car->drivers[0].nationality = nat;
+		snprintf(car->drivers[0].steam_id,
+		    sizeof(car->drivers[0].steam_id), "%s", steam_buf);
+		if (car->driver_count == 0)
+			car->driver_count = 1;
+
+		/*
+		 * Only override car fields from the handshake if the
+		 * entry list did not pre-populate them.
+		 */
+		if (!s->force_entry_list) {
 			car->race_number = rnum;
-		if (rd_u8(&r, &cmodel) == 0)
 			car->car_model = cmodel;
-		if (rd_u8(&r, &ccup) == 0)
 			car->cup_category = ccup;
-		if (rd_str_a(&r, &team) == 0)
-			snprintf(car->team_name,
-			    sizeof(car->team_name), "%s", team);
+			if (team != NULL)
+				snprintf(car->team_name,
+				    sizeof(car->team_name), "%s", team);
+		}
 
 		free(first);
 		free(last);

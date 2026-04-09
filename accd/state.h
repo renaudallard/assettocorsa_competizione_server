@@ -288,6 +288,7 @@ struct Server {
 	char		track[ACC_TRACK_NAME_LEN];
 	int		ignore_premature_disconnects;
 	int		dump_leaderboards;
+	int		force_entry_list;
 
 	/* runtime */
 	int		tcp_fd;
