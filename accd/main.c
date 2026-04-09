@@ -41,6 +41,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <sys/types.h>
+#include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -124,6 +125,13 @@ handle_tcp_accept(struct Server *s)
 		if (errno != EINTR && errno != EAGAIN)
 			log_warn("accept: %s", strerror(errno));
 		return;
+	}
+	{
+		struct timeval tv;
+		tv.tv_sec = 5;
+		tv.tv_usec = 0;
+		(void)setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO,
+		    &tv, sizeof(tv));
 	}
 	c = conn_new(s, cfd, &from);
 	if (c == NULL) {
@@ -340,8 +348,18 @@ main(int argc, char **argv)
 			}
 			if (c == NULL)
 				continue;
-			if (handle_tcp_client(&srv, c) < 0)
+			if (c->state == CONN_DISCONNECT ||
+			    handle_tcp_client(&srv, c) < 0)
 				conn_drop(&srv, c);
+		}
+
+		/* Sweep connections marked for disconnect (kick/ban
+		 * or failed sends) that had no poll events this
+		 * iteration. */
+		for (slot = 0; slot < ACC_MAX_CARS; slot++) {
+			if (srv.conns[slot] != NULL &&
+			    srv.conns[slot]->state == CONN_DISCONNECT)
+				conn_drop(&srv, srv.conns[slot]);
 		}
 
 		if (mono_ms() - last_tick_ms >= TICK_INTERVAL_MS) {
