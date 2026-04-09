@@ -44,6 +44,30 @@
 #include "results.h"
 #include "state.h"
 
+static void
+fprint_json_str(FILE *f, const char *s)
+{
+	fputc('"', f);
+	for (; *s != '\0'; s++) {
+		switch (*s) {
+		case '"':	fputs("\\\"", f); break;
+		case '\\':	fputs("\\\\", f); break;
+		case '\b':	fputs("\\b", f); break;
+		case '\f':	fputs("\\f", f); break;
+		case '\n':	fputs("\\n", f); break;
+		case '\r':	fputs("\\r", f); break;
+		case '\t':	fputs("\\t", f); break;
+		default:
+			if ((unsigned char)*s < 0x20)
+				fprintf(f, "\\u%04x", (unsigned char)*s);
+			else
+				fputc(*s, f);
+			break;
+		}
+	}
+	fputc('"', f);
+}
+
 static const char *
 session_type_str(uint8_t t)
 {
@@ -93,10 +117,14 @@ results_write(struct Server *s)
 
 	fprintf(f, "{\n");
 	fprintf(f, "  \"sessionType\": \"%s\",\n", session_type_str(st));
-	fprintf(f, "  \"trackName\": \"%s\",\n", s->track);
+	fprintf(f, "  \"trackName\": ");
+	fprint_json_str(f, s->track);
+	fprintf(f, ",\n");
 	fprintf(f, "  \"sessionIndex\": %u,\n", (unsigned)sidx);
 	fprintf(f, "  \"raceWeekendIndex\": 0,\n");
-	fprintf(f, "  \"serverName\": \"%s\",\n", s->server_name);
+	fprintf(f, "  \"serverName\": ");
+	fprint_json_str(f, s->server_name);
+	fprintf(f, ",\n");
 	fprintf(f, "  \"sessionResult\": {\n");
 	fprintf(f, "    \"bestlap\": %d,\n",
 	    s->cars[0].used ? s->cars[0].race.best_lap_ms : 0);
@@ -125,8 +153,9 @@ results_write(struct Server *s)
 		fprintf(f, "          \"carModel\": %u,\n", car->car_model);
 		fprintf(f, "          \"cupCategory\": %u,\n",
 		    car->cup_category);
-		fprintf(f, "          \"teamName\": \"%s\",\n",
-		    car->team_name);
+		fprintf(f, "          \"teamName\": ");
+		fprint_json_str(f, car->team_name);
+		fprintf(f, ",\n");
 		fprintf(f, "          \"nationality\": %u,\n",
 		    car->nationality);
 		fprintf(f, "          \"carGuid\": -1,\n");
@@ -141,14 +170,18 @@ results_write(struct Server *s)
 				d = &car->drivers[dj];
 				if (!dfirst) fprintf(f, ",");
 				fprintf(f, "\n            {\n");
-				fprintf(f, "              \"firstName\": \"%s\",\n",
-				    d->first_name);
-				fprintf(f, "              \"lastName\": \"%s\",\n",
-				    d->last_name);
-				fprintf(f, "              \"shortName\": \"%s\",\n",
-				    d->short_name);
-				fprintf(f, "              \"playerId\": \"%s\"\n",
-				    d->steam_id);
+				fprintf(f, "              \"firstName\": ");
+				fprint_json_str(f, d->first_name);
+				fprintf(f, ",\n");
+				fprintf(f, "              \"lastName\": ");
+				fprint_json_str(f, d->last_name);
+				fprintf(f, ",\n");
+				fprintf(f, "              \"shortName\": ");
+				fprint_json_str(f, d->short_name);
+				fprintf(f, ",\n");
+				fprintf(f, "              \"playerId\": ");
+				fprint_json_str(f, d->steam_id);
+				fprintf(f, "\n");
 				fprintf(f, "            }");
 				dfirst = 0;
 			}
@@ -158,10 +191,18 @@ results_write(struct Server *s)
 		fprintf(f, "        \"currentDriver\": {\n");
 		d = &car->drivers[car->current_driver_index <
 		    car->driver_count ? car->current_driver_index : 0];
-		fprintf(f, "          \"firstName\": \"%s\",\n", d->first_name);
-		fprintf(f, "          \"lastName\": \"%s\",\n", d->last_name);
-		fprintf(f, "          \"shortName\": \"%s\",\n", d->short_name);
-		fprintf(f, "          \"playerId\": \"%s\"\n", d->steam_id);
+		fprintf(f, "          \"firstName\": ");
+		fprint_json_str(f, d->first_name);
+		fprintf(f, ",\n");
+		fprintf(f, "          \"lastName\": ");
+		fprint_json_str(f, d->last_name);
+		fprintf(f, ",\n");
+		fprintf(f, "          \"shortName\": ");
+		fprint_json_str(f, d->short_name);
+		fprintf(f, ",\n");
+		fprintf(f, "          \"playerId\": ");
+		fprint_json_str(f, d->steam_id);
+		fprintf(f, "\n");
 		fprintf(f, "        },\n");
 		fprintf(f, "        \"currentDriverIndex\": %u,\n",
 		    car->current_driver_index);
@@ -191,7 +232,10 @@ results_write(struct Server *s)
 	fprintf(f, "\n    ]\n");
 	fprintf(f, "  }\n");
 	fprintf(f, "}\n");
-	fclose(f);
+	if (fclose(f) != 0) {
+		log_warn("results: fclose %s: %s", path, strerror(errno));
+		return -1;
+	}
 
 	log_info("results: wrote %s", path);
 	return 0;
