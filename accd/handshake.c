@@ -358,15 +358,67 @@ reply:
 		bb_free(&notify);
 
 		/*
-		 * Push initial weather + leaderboard to the joining
-		 * client, matching the real server's post-accept
-		 * sequence (0x36 + 0x37).
+		 * Post-accept welcome sequence matching the real
+		 * server: 0x28 + 0x36 + 0x37 + 0x4e.
 		 */
 		{
 			struct ByteBuf wb;
 
+			/* 0x28 SRV_LARGE_STATE_RESPONSE: session
+			 * timing + assist rule snapshot. */
+			bb_init(&wb);
+			if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0 &&
+			    wr_u8(&wb, 0) == 0 &&
+			    wr_u8(&wb, 1) == 0) {
+				int k;
+				float grip = s->session.grip_level > 0
+				    ? s->session.grip_level : 1.0f;
+
+				/* 3 copies of session time as f32. */
+				for (k = 0; k < 3; k++)
+					(void)wr_f32(&wb,
+					    (float)s->session.weekend_time_s);
+				/* 3 copies of end time. */
+				for (k = 0; k < 3; k++)
+					(void)wr_f32(&wb,
+					    (float)(s->sessions[0].duration_min
+					    * 60));
+				(void)wr_u8(&wb, 0);
+				(void)wr_u8(&wb, 6);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u8(&wb, 1);
+				(void)wr_f32(&wb, grip);
+				(void)wr_u16(&wb, 3);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u16(&wb, 600);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u16(&wb, 120);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u8(&wb, 0);
+				(void)wr_f32(&wb, grip);
+				(void)bcast_send_one(c, wb.data, wb.wpos);
+			}
+			bb_free(&wb);
+
+			/* 0x37 weather status. */
 			bb_init(&wb);
 			if (weather_build_broadcast(s, &wb) == 0)
+				(void)bcast_send_one(c, wb.data, wb.wpos);
+			bb_free(&wb);
+
+			/* 0x4e rating summary for this connection. */
+			bb_init(&wb);
+			if (wr_u8(&wb, SRV_RATING_SUMMARY) == 0 &&
+			    wr_u8(&wb, 1) == 0 &&
+			    wr_u16(&wb, c->conn_id) == 0 &&
+			    wr_u8(&wb, 0) == 0 &&
+			    wr_i16(&wb, 0) == 0 &&
+			    wr_i16(&wb, 0) == 0 &&
+			    wr_u32(&wb, 0xFFFFFFFF) == 0 &&
+			    wr_str_a(&wb, "") == 0)
 				(void)bcast_send_one(c, wb.data, wb.wpos);
 			bb_free(&wb);
 		}

@@ -271,8 +271,10 @@ tick_run(struct Server *s)
 	if ((s->tick_count % CADENCE_PERCAR_SLOW) == 0)
 		broadcast_percar(s, SRV_PERCAR_SLOW_RATE, 1);
 
-	/* Keepalive heartbeat. */
-	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
+	/* Keepalive heartbeat: only when no weather broadcasts
+	 * are flowing (the real server uses 0x37 as heartbeat). */
+	if ((s->tick_count % CADENCE_KEEPALIVE) == 0 &&
+	    (s->tick_count % CADENCE_WEATHER) != 0)
 		broadcast_keepalive(s, SRV_KEEPALIVE_14);
 
 	/*
