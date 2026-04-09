@@ -100,6 +100,7 @@ cmd_help(void)
 	reply("  restrictor <n> %%  assign restrictor");
 	reply("  track [name]     show or change track");
 	reply("  connections      list connections (also broadcasts)");
+	reply("  debug            toggle debug tracing");
 	reply("  quit             shut down the server");
 }
 
@@ -368,6 +369,9 @@ console_dispatch(struct Server *s, const char *line)
 		}
 	} else if (chat_prefix(p, "connections")) {
 		cmd_connections(s);
+	} else if (chat_prefix(p, "debug")) {
+		g_debug = !g_debug;
+		reply("debug tracing %s", g_debug ? "enabled" : "disabled");
 	} else if (chat_prefix(p, "legacy")) {
 		chat_broadcast(s, "Server now uses legacy netcode", 4);
 		reply("legacy netcode enabled");

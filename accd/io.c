@@ -39,6 +39,7 @@
 #include <stdint.h>
 
 #include "io.h"
+#include "log.h"
 
 #define BB_INITIAL_CAP	256
 
@@ -167,6 +168,14 @@ tcp_send_framed(int fd, const void *body, size_t len)
 {
 	unsigned char hdr[6];
 	size_t hdrlen;
+	const unsigned char *b = (const unsigned char *)body;
+
+	if (len >= 1) {
+		log_debug("tcp tx fd=%d msg=0x%02x len=%zu",
+		    fd, (unsigned)b[0], len);
+		if (g_debug && len > 1)
+			log_hexdump("  tx", body, len);
+	}
 	struct iovec iov[2];
 	const unsigned char *src;
 	ssize_t n;

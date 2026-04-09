@@ -37,6 +37,8 @@
 
 #include "log.h"
 
+int g_debug;
+
 static void
 vlog_with_tag(const char *tag, const char *fmt, va_list ap)
 {
@@ -80,6 +82,18 @@ log_err(const char *fmt, ...)
 
 	va_start(ap, fmt);
 	vlog_with_tag("ERR ", fmt, ap);
+	va_end(ap);
+}
+
+void
+log_debug(const char *fmt, ...)
+{
+	va_list ap;
+
+	if (!g_debug)
+		return;
+	va_start(ap, fmt);
+	vlog_with_tag("DBG ", fmt, ap);
 	va_end(ap);
 }
 

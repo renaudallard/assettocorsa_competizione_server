@@ -39,6 +39,11 @@ void	log_warn(const char *fmt, ...)
 void	log_err(const char *fmt, ...)
 		__attribute__((format(printf, 1, 2)));
 
+void	log_debug(const char *fmt, ...)
+		__attribute__((format(printf, 1, 2)));
+
 void	log_hexdump(const char *prefix, const void *buf, size_t len);
+
+extern int g_debug;
 
 #endif /* ACCD_LOG_H */

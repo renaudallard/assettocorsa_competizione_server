@@ -207,12 +207,26 @@ main(int argc, char **argv)
 {
 	struct Server srv;
 	struct pollfd pfds[POLL_SLOTS];
-	int npfds, i, r;
+	int npfds, i, r, ch;
 	const char *cfg_dir = "cfg";
 	uint64_t last_tick_ms;
 
-	if (argc > 1)
-		cfg_dir = argv[1];
+	while ((ch = getopt(argc, argv, "dc:")) != -1) {
+		switch (ch) {
+		case 'd':
+			g_debug = 1;
+			break;
+		case 'c':
+			cfg_dir = optarg;
+			break;
+		default:
+			fprintf(stderr,
+			    "usage: accd [-d] [-c cfgdir]\n");
+			return 1;
+		}
+	}
+	if (optind < argc)
+		cfg_dir = argv[optind];
 
 	setup_signals();
 	server_init(&srv);

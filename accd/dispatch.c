@@ -61,6 +61,11 @@ dispatch_one_tcp(struct Server *s, struct Conn *c,
 	}
 	msg_id = body[0];
 
+	log_debug("tcp rx conn=%u msg=0x%02x len=%zu",
+	    (unsigned)c->conn_id, (unsigned)msg_id, len);
+	if (g_debug && len > 1)
+		log_hexdump("  rx", body, len);
+
 	if (c->state == CONN_UNAUTH && msg_id != ACP_REQUEST_CONNECTION) {
 		log_warn("tcp: unauthenticated msg 0x%02x from fd %d "
 		    "(dropping)", (unsigned)msg_id, c->fd);
@@ -180,6 +185,15 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		return;
 	}
 	msg_id = buf[0];
+
+	/* Skip keepalive noise in debug output. */
+	if (msg_id != ACP_KEEPALIVE_A && msg_id != ACP_KEEPALIVE_B) {
+		log_debug("udp rx msg=0x%02x len=%zu from %s:%u",
+		    (unsigned)msg_id, len,
+		    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port));
+		if (g_debug && len > 1)
+			log_hexdump("  rx", buf, len);
+	}
 
 	switch (msg_id) {
 	case ACP_KEEPALIVE_A:		/* 0x13 */
