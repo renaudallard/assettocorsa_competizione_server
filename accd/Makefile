@@ -130,9 +130,16 @@ clean:
 
 PREFIX ?=	/usr/local
 DESTDIR ?=
+MANDIR ?=	${PREFIX}/share/man
 
 install: ${PROG}
 	install -d ${DESTDIR}${PREFIX}/bin
 	install -m 755 ${PROG} ${DESTDIR}${PREFIX}/bin/${PROG}
+	install -d ${DESTDIR}${MANDIR}/man1
+	install -m 644 accd.1 ${DESTDIR}${MANDIR}/man1/accd.1
 
-.PHONY: all clean install probe
+uninstall:
+	rm -f ${DESTDIR}${PREFIX}/bin/${PROG}
+	rm -f ${DESTDIR}${MANDIR}/man1/accd.1
+
+.PHONY: all clean install uninstall probe

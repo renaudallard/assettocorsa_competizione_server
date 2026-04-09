@@ -1,0 +1,188 @@
+.\" Copyright (c) 2025-2026 Renaud Allard
+.\" All rights reserved.
+.\"
+.\" Redistribution and use in source and binary forms, with or without
+.\" modification, are permitted provided that the following conditions
+.\" are met:
+.\" 1. Redistributions of source code must retain the above copyright
+.\"    notice, this list of conditions and the following disclaimer.
+.\" 2. Redistributions in binary form must reproduce the above copyright
+.\"    notice, this list of conditions and the following disclaimer in the
+.\"    documentation and/or other materials provided with the distribution.
+.\"
+.\" THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS "AS IS" AND
+.\" ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+.\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+.\" PURPOSE ARE DISCLAIMED.
+.\"
+.Dd April 9, 2026
+.Dt ACCD 1
+.Os
+.Sh NAME
+.Nm accd
+.Nd ACC dedicated server
+.Sh SYNOPSIS
+.Nm
+.Op Fl d
+.Op Fl c Ar cfgdir
+.Sh DESCRIPTION
+.Nm
+is a clean-room reimplementation of the Assetto Corsa Competizione
+dedicated server.
+An unmodified ACC game client can connect to it and play private
+multiplayer sessions on Linux and OpenBSD, without Wine.
+.Pp
+The options are as follows:
+.Bl -tag -width Ds
+.It Fl c Ar cfgdir
+Set the configuration directory.
+The default is
+.Pa cfg
+in the current working directory.
+.It Fl d
+Enable debug logging.
+Protocol messages are logged with hex dumps.
+.El
+.Sh CONFIGURATION
+.Nm
+reads four JSON files from the configuration directory:
+.Bl -tag -width Ds
+.It Pa configuration.json
+Network settings: TCP and UDP ports, maximum connections, lobby
+registration, and LAN discovery.
+.Bd -literal -offset indent
+{
+    "udpPort": 9231,
+    "tcpPort": 9232,
+    "maxConnections": 85,
+    "registerToLobby": 0,
+    "lanDiscovery": 1,
+    "configVersion": 1
+}
+.Ed
+.It Pa settings.json
+Server identity and access control: server name, passwords,
+car group restrictions, and rating requirements.
+.Bd -literal -offset indent
+{
+    "serverName": "My Server",
+    "adminPassword": "",
+    "carGroup": "FreeForAll",
+    "trackMedalsRequirement": -1,
+    "safetyRatingRequirement": -1,
+    "racecraftRatingRequirement": -1,
+    "password": "",
+    "maxCarSlots": 30,
+    "spectatorPassword": "",
+    "configVersion": 1
+}
+.Ed
+.It Pa event.json
+Track, weather, and session schedule.
+Session types are
+.Dq P
+(practice),
+.Dq Q
+(qualifying), and
+.Dq R
+(race).
+.Bd -literal -offset indent
+{
+    "track": "spa_2019",
+    "ambientTemp": 22,
+    "cloudLevel": 0.1,
+    "rain": 0.0,
+    "weatherRandomness": 1,
+    "sessions": [
+        {
+            "hourOfDay": 14,
+            "dayOfWeekend": 1,
+            "timeMultiplier": 1,
+            "sessionType": "P",
+            "sessionDurationMinutes": 15
+        }
+    ],
+    "configVersion": 1
+}
+.Ed
+.It Pa entrylist.json
+Optional.
+Pre-assigned car slots keyed by Steam ID.
+When present and
+.Dq forceEntryList
+is set in
+.Pa settings.json ,
+only listed drivers may connect.
+.El
+.Sh ADMIN COMMANDS
+When
+.Nm
+is run with a TTY on standard input, an interactive console
+accepts the same commands as in-game admin chat.
+Authenticate first with
+.Dq /admin Ar password .
+.Pp
+.Bl -tag -width "/connections" -compact
+.It /next
+Advance to the next session.
+.It /restart
+Restart the current session.
+.It /kick Ar car#
+Kick a car by number.
+.It /ban Ar car#
+Ban a car's Steam ID.
+.It /dq Ar car#
+Disqualify a car.
+.It /dt Ar car#
+Drive-through penalty.
+.It /dtc Ar car#
+Drive-through penalty (collision).
+.It /tp5 Ar car#
+5-second time penalty.
+.It /tp5c Ar car#
+5-second time penalty (collision).
+.It /tp15 Ar car#
+15-second time penalty.
+.It /sg10 Ar car# , /sg20 Ar car# , /sg30 Ar car#
+Stop-and-go penalty (10/20/30 seconds).
+.It /clear Ar car#
+Clear penalties for a car.
+.It /clear_all
+Clear all penalties.
+.It /cleartp Ar car#
+Clear time penalties for a car.
+.It /ballast Ar car# Ar kg
+Set ballast (0\(en40 kg).
+.It /restrictor Ar car# Ar pct
+Set restrictor (0\(en20%).
+.It /track Ar name
+Change track for next session.
+.It /connections
+List connected drivers.
+.It /debug
+Toggle debug logging.
+.El
+.Sh FILES
+.Bl -tag -width Ds
+.It Pa cfg/configuration.json
+Network configuration.
+.It Pa cfg/settings.json
+Server identity and access control.
+.It Pa cfg/event.json
+Track, weather, and session schedule.
+.It Pa cfg/entrylist.json
+Optional entry list for pre-assigned slots.
+.It Pa cfg/bans.json
+Persistent ban list, managed automatically.
+.It Pa results/
+Session results written as JSON on session completion.
+.El
+.Sh EXIT STATUS
+.Ex -std
+.Sh AUTHORS
+.An Renaud Allard
+.Sh CAVEATS
+This is an independent reimplementation, not affiliated with
+Kunos Simulazioni.
+The server does not connect to the ACC lobby; only LAN discovery
+and direct connect are supported.

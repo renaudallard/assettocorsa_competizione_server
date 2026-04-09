@@ -169,7 +169,7 @@ C99**, with no dependencies beyond libc, iconv, and libm.
 The implementation (`accd/`) is portable C99 that builds with either
 BSD or GNU `make`, using only libc + iconv + libm.
 
-### Linux (glibc — iconv is in libc)
+### Linux (glibc --- iconv is in libc)
 
 ```sh
 cd accd
@@ -191,6 +191,18 @@ The Makefile auto-detects `/usr/local/include/iconv.h` and links
 Tested on OpenBSD 7.8 arm64 with `clang 19.1.7`.  On OpenBSD
 the process pledges to `stdio rpath wpath cpath inet` after
 binding its listening ports.
+
+### Installing
+
+```sh
+cd accd
+make install          # installs to /usr/local/bin and man1
+make install PREFIX=/usr DESTDIR=/tmp/staging   # for packaging
+```
+
+The install target places the `accd` binary and man page.
+See `accd(1)` for full documentation of options, configuration
+files, and admin commands.
 
 ## Running
 
