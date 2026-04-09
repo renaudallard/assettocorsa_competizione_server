@@ -111,29 +111,37 @@ weather_step(struct Server *s)
 int
 weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 {
-	int i;
-
 	if (wr_u8(bb, SRV_WEATHER_STATUS) < 0)
 		return -1;
 
 	/*
-	 * 7 × u32 weather scaling factors per the §5.6.4a layout.
-	 * The exact constants come from the binary's
-	 * tanhf-normalized rain/cloud factors.  We emit conservative
-	 * placeholders that the client should accept.
+	 * 7 × f32 weather scaling factors.  Probing the real server
+	 * shows these are floats (not u32 zeros): the first two
+	 * correlate with cloud/rain levels, the last two with
+	 * forecast values.
 	 */
-	for (i = 0; i < 7; i++)
-		if (wr_u32(bb, 0) < 0)
-			return -1;
+	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.03f) < 0) return -1;
+	if (wr_f32(bb, 1.0f - s->weather.current_rain * 0.04f) < 0)
+		return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, s->weather.forecast_10m) < 0) return -1;
+	if (wr_f32(bb, s->weather.forecast_30m) < 0) return -1;
 
 	/*
-	 * 9 × u32 WeatherStatus fields (per the WeatherStatus::
-	 * vftable[0x20] dump from Pass 2.19): 9 floats from
-	 * struct offsets 0x28..0x48.
+	 * 9 × f32 WeatherStatus: ambient_temp, road_temp,
+	 * grip, rain_intensity, wetness, dry_line_wetness,
+	 * puddles, forecast_10m, forecast_30m.
 	 */
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
-	if (wr_f32(bb, 22.0f) < 0) return -1;	/* ambient temp */
-	if (wr_f32(bb, 26.0f) < 0) return -1;	/* track temp */
+	{
+		float ambient = s->session.ambient_temp > 0
+		    ? (float)s->session.ambient_temp : 22.0f;
+		float road = s->session.track_temp > 0
+		    ? (float)s->session.track_temp : 26.0f;
+		if (wr_f32(bb, ambient) < 0) return -1;
+		if (wr_f32(bb, road) < 0) return -1;
+	}
 	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
 	if (wr_f32(bb, s->weather.wetness) < 0) return -1;
 	if (wr_f32(bb, s->weather.dry_line_wetness) < 0) return -1;
