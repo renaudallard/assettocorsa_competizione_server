@@ -162,12 +162,4 @@ int	monitor_build_realtime_update(struct ByteBuf *bb,
 int	monitor_build_leaderboard(struct ByteBuf *bb,
 		const struct Server *s);
 
-/*
- * Send the post-handshake welcome push sequence (0x04 + 0x05 +
- * 0x03 + 0x07) to the joining client and a 0x04 + 0x05
- * notification of the new car/connection to every other already-
- * authenticated client.
- */
-int	monitor_push_welcome_sequence(struct Server *s, struct Conn *c);
-
 #endif /* ACCD_MONITOR_H */

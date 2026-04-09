@@ -268,64 +268,8 @@ monitor_build_leaderboard(struct ByteBuf *bb, const struct Server *s)
 	return 0;
 }
 
-/* ----- post-handshake push sequence ------------------------------ */
-
-static int
-send_msg(struct Conn *c, uint8_t msg_id, struct ByteBuf *body)
-{
-	struct ByteBuf out;
-	int rc;
-
-	bb_init(&out);
-	if (wr_u8(&out, msg_id) < 0) {
-		bb_free(&out);
-		return -1;
-	}
-	if (body->wpos > 0 &&
-	    bb_append(&out, body->data, body->wpos) < 0) {
-		bb_free(&out);
-		return -1;
-	}
-	rc = bcast_send_one(c, out.data, out.wpos);
-	bb_free(&out);
-	return rc;
-}
-
-int
-monitor_push_welcome_sequence(struct Server *s, struct Conn *c)
-{
-	struct ByteBuf body;
-	struct CarEntry *car;
-
-	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
-		return -1;
-	car = &s->cars[c->car_id];
-
-	/* 0x04 SRV_CAR_ENTRY for the joining car. */
-	bb_init(&body);
-	if (monitor_build_car_entry(&body, car, c->conn_id) == 0)
-		(void)send_msg(c, SRV_CAR_ENTRY, &body);
-	bb_free(&body);
-
-	/* 0x05 SRV_CONNECTION_ENTRY for the joining connection. */
-	bb_init(&body);
-	if (monitor_build_connection_entry(&body, s, c) == 0)
-		(void)send_msg(c, SRV_CONNECTION_ENTRY, &body);
-	bb_free(&body);
-
-	/* 0x03 SRV_SESSION_STATE current snapshot. */
-	bb_init(&body);
-	if (monitor_build_session_state(&body, s) == 0)
-		(void)send_msg(c, SRV_SESSION_STATE, &body);
-	bb_free(&body);
-
-	/* 0x07 SRV_LEADERBOARD_UPDATE current snapshot. */
-	bb_init(&body);
-	if (monitor_build_leaderboard(&body, s) == 0)
-		(void)send_msg(c, SRV_LEADERBOARD_UPDATE, &body);
-	bb_free(&body);
-
-	log_info("welcome push sequence sent to conn=%u car=%d",
-	    (unsigned)c->conn_id, c->car_id);
-	return 0;
-}
+/* The monitor_push_welcome_sequence function was removed: the
+ * game client uses the sim-protocol welcome (0x0b + 0x37), not
+ * the protobuf monitor messages (0x03-0x07).  The protobuf
+ * builders above remain available for future ServerMonitor
+ * broadcast protocol support on a separate UDP port. */
