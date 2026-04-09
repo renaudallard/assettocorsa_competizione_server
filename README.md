@@ -350,25 +350,41 @@ Ports 9232 and 9231 are configurable in `configuration.json`.
 
 ### Connecting from the ACC game client
 
-On the client machine, edit
-`%userprofile%\Documents\Assetto Corsa Competizione\Config\serverList.json`
-and add an entry for your server:
+On the client machine, create or edit the file:
+
+```
+%userprofile%\Documents\Assetto Corsa Competizione\Config\serverList.json
+```
+
+Example `serverList.json`:
 
 ```json
 [
     {
-        "Name": "My Server",
-        "Address": "your.server.ip",
+        "Name": "My accd server",
+        "Address": "192.168.1.100",
         "Port": 9232,
         "Password": "",
         "IsLan": false
+    },
+    {
+        "Name": "LAN server",
+        "Address": "10.0.0.5",
+        "Port": 9232,
+        "Password": "secret",
+        "IsLan": true
     }
 ]
 ```
 
-Set `Password` to match the `password` field in the server's
-`settings.json`.  The server will appear in the game's multiplayer
-server browser.
+- `Address` -- the IP or hostname of the machine running accd.
+- `Port` -- must match `tcpPort` in `configuration.json` (default 9232).
+- `Password` -- must match the `password` field in the server's
+  `settings.json`; empty string for open servers.
+- `IsLan` -- set to `true` for servers on the same local network.
+
+The servers will appear in the game's multiplayer server browser
+under the "Favourites" tab.
 
 ### Admin console
 
