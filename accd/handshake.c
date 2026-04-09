@@ -223,25 +223,80 @@ handshake_handle(struct Server *s, struct Conn *c,
 		reason = REJECT_PASSWORD;
 		goto reply;
 	}
-	if (s->nconns >= s->max_connections) {
+	/* nconns already includes this connection (incremented in
+	 * conn_new at TCP accept time), so compare with > not >=. */
+	if (s->nconns > s->max_connections) {
 		log_info("rejecting connection: server full");
 		reason = REJECT_FULL;
 		goto reply;
 	}
 
-	/*
-	 * For phase 1 we trust the rest of the body (DriverInfo,
-	 * CarInfo) and skip past it.  Allocate a car slot and
-	 * mark the connection as authenticated.
-	 */
 	c->car_id = server_alloc_car(s);
 	if (c->car_id < 0) {
 		reason = REJECT_FULL;
 		goto reply;
 	}
+
+	/*
+	 * Parse DriverInfo: first_name, last_name, short_name,
+	 * category(u8), nationality(u16), steam_id.
+	 * Then CarInfo: race_number(i32), car_model(u8),
+	 * cup_category(u8), team_name, ...
+	 * Fields after team_name are best-effort; if the body
+	 * is short we just use defaults.
+	 */
+	{
+		struct CarEntry *car = &s->cars[c->car_id];
+		char *first = NULL, *last = NULL, *sname = NULL;
+		char *steam = NULL, *team = NULL;
+		uint8_t cat;
+		uint16_t nat;
+		int32_t rnum;
+		uint8_t cmodel, ccup;
+
+		if (rd_str_a(&r, &first) == 0)
+			snprintf(car->drivers[0].first_name,
+			    sizeof(car->drivers[0].first_name), "%s",
+			    first);
+		if (rd_str_a(&r, &last) == 0)
+			snprintf(car->drivers[0].last_name,
+			    sizeof(car->drivers[0].last_name), "%s",
+			    last);
+		if (rd_str_a(&r, &sname) == 0)
+			snprintf(car->drivers[0].short_name,
+			    sizeof(car->drivers[0].short_name), "%s",
+			    sname);
+		if (rd_u8(&r, &cat) == 0)
+			car->drivers[0].driver_category = cat;
+		if (rd_u16(&r, &nat) == 0)
+			car->drivers[0].nationality = nat;
+		if (rd_str_a(&r, &steam) == 0)
+			snprintf(car->drivers[0].steam_id,
+			    sizeof(car->drivers[0].steam_id), "%s",
+			    steam);
+		car->driver_count = 1;
+
+		if (rd_i32(&r, &rnum) == 0)
+			car->race_number = rnum;
+		if (rd_u8(&r, &cmodel) == 0)
+			car->car_model = cmodel;
+		if (rd_u8(&r, &ccup) == 0)
+			car->cup_category = ccup;
+		if (rd_str_a(&r, &team) == 0)
+			snprintf(car->team_name,
+			    sizeof(car->team_name), "%s", team);
+
+		free(first);
+		free(last);
+		free(sname);
+		free(steam);
+		free(team);
+	}
+
 	c->state = CONN_AUTH;
-	log_info("handshake accepted: fd=%d conn_id=%u car_id=%d",
-	    c->fd, (unsigned)c->conn_id, c->car_id);
+	log_info("handshake accepted: fd=%d conn_id=%u car_id=%d race#=%d",
+	    c->fd, (unsigned)c->conn_id, c->car_id,
+	    s->cars[c->car_id].race_number);
 
 reply:
 	free(password);

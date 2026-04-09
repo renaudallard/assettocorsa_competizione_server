@@ -105,7 +105,7 @@ prim.o: prim.c prim.h io.h
 results.o: results.c results.h log.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c results.c
 
-session.o: session.c session.h log.h msg.h state.h
+session.o: session.c session.h log.h msg.h results.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c session.c
 
 state.o: state.c state.h bcast.h io.h log.h msg.h prim.h

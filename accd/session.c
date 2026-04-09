@@ -36,6 +36,7 @@
 
 #include "log.h"
 #include "msg.h"
+#include "results.h"
 #include "session.h"
 #include "state.h"
 
@@ -284,6 +285,12 @@ void
 session_advance(struct Server *s)
 {
 	uint8_t next = (uint8_t)(s->session.session_index + 1);
+
+	/* Write results for the current session before advancing. */
+	if (!s->session.results_written) {
+		(void)results_write(s);
+		s->session.results_written = 1;
+	}
 
 	if (next >= s->session_count) {
 		log_info("session: weekend complete, entering RESULTS");
