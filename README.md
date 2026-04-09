@@ -203,8 +203,11 @@ listening ports.
 ## Running
 
 `accd` expects a `cfg/` directory containing `configuration.json`
-and (optionally) `settings.json` + `event.json`, all UTF-16 LE per
-the Kunos server layout.  Pass the cfg directory as the first
+and (optionally) `settings.json`, `event.json`, `entrylist.json`.
+Each file may be either UTF-16 LE with a BOM (the format
+`accServer.exe` writes) or plain UTF-8 (so the files can be
+hand-edited in any normal text editor on Linux or OpenBSD);
+detection is automatic.  Pass the cfg directory as the first
 argument, or run from a directory that contains it:
 
 ```sh

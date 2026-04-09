@@ -1,9 +1,10 @@
 /*
  * entrylist.c -- entrylist.json reader.
  *
- * Reuses config.c's load_one helper for UTF-16 LE -> UTF-8
- * conversion (we re-implement it locally to avoid an
- * inter-module dependency on a private function).
+ * Accepts either UTF-16 LE (the format accServer.exe writes) or
+ * plain UTF-8 (so the file can be edited by hand).  Detection is
+ * by BOM sniffing; see decode_cfg_bytes in config.c for the same
+ * logic used for configuration.json / settings.json / event.json.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -58,18 +59,37 @@ read_file(const char *path, size_t *outlen)
 }
 
 static char *
-utf16le_to_utf8(const char *in, size_t inlen)
+decode_cfg_bytes(const char *in, size_t inlen)
 {
 	iconv_t cd;
 	char *out, *outp;
 	const char *inp;
 	size_t outsz, inrem, outrem;
 
-	if (inlen >= 2 && (unsigned char)in[0] == 0xff &&
-	    (unsigned char)in[1] == 0xfe) {
-		in += 2;
-		inlen -= 2;
+	/* Optional UTF-8 BOM -- strip it. */
+	if (inlen >= 3 &&
+	    (unsigned char)in[0] == 0xef &&
+	    (unsigned char)in[1] == 0xbb &&
+	    (unsigned char)in[2] == 0xbf) {
+		in += 3;
+		inlen -= 3;
 	}
+
+	/* No UTF-16 LE BOM -- return as UTF-8 verbatim. */
+	if (inlen < 2 ||
+	    (unsigned char)in[0] != 0xff ||
+	    (unsigned char)in[1] != 0xfe) {
+		out = malloc(inlen + 1);
+		if (out == NULL)
+			return NULL;
+		if (inlen > 0)
+			memcpy(out, in, inlen);
+		out[inlen] = '\0';
+		return out;
+	}
+
+	in += 2;
+	inlen -= 2;
 	cd = iconv_open("UTF-8", "UTF-16LE");
 	if (cd == (iconv_t)-1)
 		return NULL;
@@ -117,10 +137,10 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		    path, strerror(errno));
 		return -1;
 	}
-	utf8 = utf16le_to_utf8(raw, rawlen);
+	utf8 = decode_cfg_bytes(raw, rawlen);
 	free(raw);
 	if (utf8 == NULL) {
-		log_warn("entrylist: iconv failed for %s", path);
+		log_warn("entrylist: decode failed for %s", path);
 		return -1;
 	}
 	root = json_parse(utf8, strlen(utf8), err, sizeof(err));

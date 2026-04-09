@@ -73,19 +73,49 @@ read_file(const char *path, size_t *outlen)
 	return buf;
 }
 
+/*
+ * Decode a raw config file into a NUL-terminated UTF-8 string.
+ *
+ * Kunos's accServer.exe writes its configs as UTF-16 LE with a BOM
+ * (ff fe).  We accept that encoding for compatibility with the
+ * stock tooling, but we also accept plain UTF-8 (with or without a
+ * BOM) so the files can be edited by hand in any ordinary text
+ * editor on Linux / OpenBSD.  Detection is by BOM sniffing; in the
+ * absence of a UTF-16 LE BOM the bytes are returned verbatim.
+ */
 static char *
-utf16le_to_utf8(const char *in, size_t inlen)
+decode_cfg_bytes(const char *in, size_t inlen)
 {
 	iconv_t cd;
 	char *out, *outp;
 	const char *inp;
 	size_t outbufsz, inrem, outrem;
 
-	if (inlen >= 2 && (unsigned char)in[0] == 0xff &&
-	    (unsigned char)in[1] == 0xfe) {
-		in += 2;
-		inlen -= 2;
+	/* Optional UTF-8 BOM -- strip it. */
+	if (inlen >= 3 &&
+	    (unsigned char)in[0] == 0xef &&
+	    (unsigned char)in[1] == 0xbb &&
+	    (unsigned char)in[2] == 0xbf) {
+		in += 3;
+		inlen -= 3;
 	}
+
+	/* No UTF-16 LE BOM? Treat as UTF-8 / ASCII and return a copy. */
+	if (inlen < 2 ||
+	    (unsigned char)in[0] != 0xff ||
+	    (unsigned char)in[1] != 0xfe) {
+		out = malloc(inlen + 1);
+		if (out == NULL)
+			return NULL;
+		if (inlen > 0)
+			memcpy(out, in, inlen);
+		out[inlen] = '\0';
+		return out;
+	}
+
+	/* UTF-16 LE with BOM -- skip the BOM, transcode via iconv. */
+	in += 2;
+	inlen -= 2;
 
 	cd = iconv_open("UTF-8", "UTF-16LE");
 	if (cd == (iconv_t)-1)
@@ -132,10 +162,10 @@ load_one(const char *cfg_dir, const char *name)
 		log_warn("config: cannot read %s: %s", path, strerror(errno));
 		return NULL;
 	}
-	utf8 = utf16le_to_utf8(raw, rawlen);
+	utf8 = decode_cfg_bytes(raw, rawlen);
 	free(raw);
 	if (utf8 == NULL)
-		log_warn("config: iconv failed for %s", path);
+		log_warn("config: decode failed for %s", path);
 	return utf8;
 }
 
