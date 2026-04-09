@@ -208,11 +208,13 @@ and (optionally) `settings.json`, `event.json`, `entrylist.json`.
 Each file may be either UTF-16 LE with a BOM (the format
 `accServer.exe` writes) or plain UTF-8 (so the files can be
 hand-edited in any normal text editor on Linux or OpenBSD);
-detection is automatic.  Pass the cfg directory as the first
-argument, or run from a directory that contains it:
+detection is automatic.  By default `accd` looks for `cfg/` in the
+current directory; an alternative path can be passed as the first
+argument:
 
 ```sh
-./accd ../acc-server/server/cfg
+./accd                           # uses ./cfg/
+./accd /path/to/other/cfg        # explicit path
 ```
 
 To fetch the stock Kunos cfg files (you need a Steam account that
@@ -238,7 +240,7 @@ to control the server without needing to connect as an in-game
 client:
 
 ```
-$ ./accd cfg
+$ ./accd
 [...startup logs on stderr...]
 help
 commands (leading / optional):
@@ -258,8 +260,8 @@ session 0  phase=PRACTICE  remaining=540000 ms  tick=42  conns=1
 ```
 
 Console replies go to stdout, server logs go to stderr.
-Separate them with `./accd cfg 2>accd.log`.  When stdin is not
-a TTY (e.g. `./accd cfg < /dev/null` or systemd), the console
+Separate them with `./accd 2>accd.log`.  When stdin is not
+a TTY (e.g. `./accd < /dev/null` or systemd), the console
 disables itself and the server runs headless.
 
 ### Quick smoke test (no real client)
