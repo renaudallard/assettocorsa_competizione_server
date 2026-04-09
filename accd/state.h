@@ -237,6 +237,7 @@ struct CarEntry {
 	uint8_t		current_driver_index;
 	uint8_t		driver_count;
 	struct DriverInfo drivers[ACC_MAX_DRIVERS_PER_CAR];
+	uint8_t		swap_state[ACC_MAX_DRIVERS_PER_CAR]; /* 0=idle..5=done */
 	int		used;			/* slot occupied? */
 
 	/* Runtime state updated every tick by ACP_CAR_UPDATE. */

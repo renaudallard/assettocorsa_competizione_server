@@ -63,7 +63,6 @@ may need minor adjustments once end-to-end testing is complete.
 - Real-client testing is not yet complete; some wire-format details
   may need adjustment based on packet captures against the stock
   Kunos `accServer.exe`.
-- Driver swap state machine is stubbed (logged but not functional).
 - No public lobby registration (`registerToLobby` is always 0).
 - No Championship Points / CP rating system.
 

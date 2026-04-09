@@ -283,10 +283,50 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		return 1;
 	}
 
-	/* &swap (driver swap, non-admin). */
+	/* &swap <index> (driver swap, non-admin). */
 	if (chat_prefix(text, "&swap")) {
-		log_info("swap: conn=%u requested driver swap (TODO)",
-		    (unsigned)c->conn_id);
+		const char *arg = text + 5;
+		int target;
+		struct CarEntry *car;
+
+		if (c->car_id < 0) {
+			log_info("swap: conn=%u has no car",
+			    (unsigned)c->conn_id);
+			return 1;
+		}
+		car = &s->cars[c->car_id];
+		if (chat_parse_int(arg, &target) < 0 ||
+		    target < 0 || target >= car->driver_count) {
+			log_info("swap: invalid target from conn=%u",
+			    (unsigned)c->conn_id);
+			return 1;
+		}
+		if ((uint8_t)target == car->current_driver_index) {
+			log_info("swap: target %d is already active",
+			    target);
+			return 1;
+		}
+		car->swap_state[target] = 1;	/* REQUESTED */
+		log_info("swap: conn=%u requested driver %d on car %u",
+		    (unsigned)c->conn_id, target,
+		    (unsigned)car->car_id);
+
+		/* Broadcast updated swap state to all clients. */
+		{
+			struct ByteBuf bb;
+			int i;
+
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_DRIVER_SWAP_STATE_BCAST) == 0 &&
+			    wr_u16(&bb, car->car_id) == 0 &&
+			    wr_u8(&bb, car->driver_count) == 0) {
+				for (i = 0; i < car->driver_count; i++)
+					(void)wr_u8(&bb, car->swap_state[i]);
+				(void)bcast_all(s, bb.data, bb.wpos,
+				    0xFFFF);
+			}
+			bb_free(&bb);
+		}
 		return 1;
 	}
 

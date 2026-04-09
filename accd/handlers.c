@@ -647,6 +647,32 @@ out:
 	return 0;
 }
 
+/* ----- swap state broadcast helper ------------------------------- */
+
+/*
+ * Build and broadcast 0x47 SRV_DRIVER_SWAP_STATE_BCAST to all
+ * connections.  Body: u8 msg_id + u16 car_id + u8 driver_count +
+ * driver_count x u8 swap_state.
+ */
+static void
+broadcast_swap_state(struct Server *s, struct CarEntry *car)
+{
+	struct ByteBuf bb;
+	int i;
+
+	bb_init(&bb);
+	if (wr_u8(&bb, SRV_DRIVER_SWAP_STATE_BCAST) < 0 ||
+	    wr_u16(&bb, car->car_id) < 0 ||
+	    wr_u8(&bb, car->driver_count) < 0)
+		goto done;
+	for (i = 0; i < car->driver_count; i++)
+		if (wr_u8(&bb, car->swap_state[i]) < 0)
+			goto done;
+	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+done:
+	bb_free(&bb);
+}
+
 /* ----- 0x47 ACP_UPDATE_DRIVER_SWAP_STATE ------------------------ */
 
 int
@@ -654,10 +680,10 @@ h_update_driver_swap_state(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
-	uint8_t msg_id;
+	uint8_t msg_id, dcnt;
 	uint16_t car_id;
-
-	(void)s;
+	struct CarEntry *car;
+	int i;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 || rd_u16(&r, &car_id) < 0) {
@@ -670,8 +696,22 @@ h_update_driver_swap_state(struct Server *s, struct Conn *c,
 		    (unsigned)car_id, c->car_id, (unsigned)c->conn_id);
 		return 0;
 	}
-	log_info("driver swap state update: car=%u (TODO)",
-	    (unsigned)car_id);
+	car = &s->cars[car_id];
+	if (rd_u8(&r, &dcnt) < 0)
+		return 0;
+	if (dcnt > car->driver_count)
+		dcnt = car->driver_count;
+	for (i = 0; i < dcnt; i++) {
+		uint8_t st;
+		if (rd_u8(&r, &st) < 0)
+			break;
+		car->swap_state[i] = st;
+	}
+	log_info("driver swap state update: car=%u states=[%u,%u,%u,%u]",
+	    (unsigned)car_id,
+	    (unsigned)car->swap_state[0], (unsigned)car->swap_state[1],
+	    (unsigned)car->swap_state[2], (unsigned)car->swap_state[3]);
+	broadcast_swap_state(s, car);
 	return 0;
 }
 
@@ -684,9 +724,9 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	struct Reader r;
 	uint8_t msg_id, swap_code, result;
 	uint16_t car_id;
+	struct CarEntry *car;
 	struct ByteBuf out;
-
-	(void)s;
+	int i;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
@@ -699,23 +739,68 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 		log_warn("ACP_EXECUTE_DRIVER_SWAP, but no car controlled "
 		    "for connection %u", (unsigned)c->conn_id);
 		result = 1;
-	} else if ((uint16_t)c->car_id != car_id) {
+		goto reply;
+	}
+	if ((uint16_t)c->car_id != car_id) {
 		log_warn("ACP_EXECUTE_DRIVER_SWAP, but carId mismatch: %u "
 		    "(car controlled %d for connection %u)",
 		    (unsigned)car_id, c->car_id, (unsigned)c->conn_id);
 		result = 1;
-	} else {
-		log_info("Driver swap result: 0");
-		result = 0;
+		goto reply;
 	}
 
+	car = &s->cars[car_id];
+
+	/* Validate: target driver must exist and differ from current. */
+	if (swap_code >= car->driver_count) {
+		log_warn("driver swap: target %u out of range (car has %u)",
+		    (unsigned)swap_code, (unsigned)car->driver_count);
+		result = 1;
+		goto reply;
+	}
+	if (swap_code == car->current_driver_index) {
+		log_warn("driver swap: target %u is already active",
+		    (unsigned)swap_code);
+		result = 1;
+		goto reply;
+	}
+
+	/* Validate: car must be in pit. */
+	if (!car->race.in_pit) {
+		log_warn("driver swap: car %u not in pit", (unsigned)car_id);
+		result = 1;
+		goto reply;
+	}
+
+	/* Commit the swap. */
+	car->current_driver_index = swap_code;
+	for (i = 0; i < ACC_MAX_DRIVERS_PER_CAR; i++)
+		car->swap_state[i] = 0;
+	log_info("driver swap: car %u -> driver %u (%s %s)",
+	    (unsigned)car_id, (unsigned)swap_code,
+	    car->drivers[swap_code].first_name,
+	    car->drivers[swap_code].last_name);
+	result = 0;
+
+	/* Broadcast 0x58 driver swap notification to all clients. */
+	bb_init(&out);
+	if (wr_u8(&out, SRV_DRIVER_SWAP_NOTIFY) == 0 &&
+	    wr_u16(&out, car_id) == 0 &&
+	    wr_u8(&out, swap_code) == 0)
+		(void)bcast_all(s, out.data, out.wpos, 0xFFFF);
+	bb_free(&out);
+
+	/* Broadcast reset swap state. */
+	broadcast_swap_state(s, car);
+
+reply:
 	/* Send 0x49 reply to the requester. */
 	bb_init(&out);
 	if (wr_u8(&out, SRV_DRIVER_SWAP_RESULT) < 0 ||
 	    wr_u8(&out, result) < 0)
-		goto out;
+		goto done;
 	bcast_send_one(c, out.data, out.wpos);
-out:
+done:
 	bb_free(&out);
 	return 0;
 }
@@ -729,8 +814,8 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 	struct Reader r;
 	uint8_t msg_id, sub_state, conn_state;
 	uint16_t car_id;
-
-	(void)s;
+	struct CarEntry *car;
+	int i;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
@@ -746,13 +831,42 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 		    (unsigned)car_id, c->car_id);
 		return 0;
 	}
-	if (sub_state != 2 && sub_state != 3 && sub_state != 4) {
+	car = &s->cars[car_id];
+
+	switch (sub_state) {
+	case 2:
+		/*
+		 * Initiate: set the requesting driver's swap state
+		 * to the value the client sent.
+		 */
+		if (car->current_driver_index < car->driver_count)
+			car->swap_state[car->current_driver_index] = conn_state;
+		break;
+	case 3:
+		/*
+		 * Confirm: bump any slot at state 3 (REQ_PENDING)
+		 * back to 2 (FOREIGN), then apply conn_state.
+		 */
+		for (i = 0; i < car->driver_count; i++)
+			if (car->swap_state[i] == 3)
+				car->swap_state[i] = 2;
+		if (car->current_driver_index < car->driver_count)
+			car->swap_state[car->current_driver_index] = conn_state;
+		break;
+	case 4:
+		/* Execute: set requesting driver to EXECUTING. */
+		if (car->current_driver_index < car->driver_count)
+			car->swap_state[car->current_driver_index] = 4;
+		break;
+	default:
 		log_warn("DriverSwap Request for type %u is not "
 		    "implemented", (unsigned)sub_state);
 		return 0;
 	}
-	log_info("driver swap state request: car=%u sub=%u state=%u (TODO)",
+
+	log_info("driver swap state request: car=%u sub=%u state=%u",
 	    (unsigned)car_id, (unsigned)sub_state, (unsigned)conn_state);
+	broadcast_swap_state(s, car);
 	return 0;
 }
 
