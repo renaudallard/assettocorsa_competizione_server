@@ -1,3 +1,26 @@
+accd (0.1.2) unstable; urgency=medium
+
+  * Handshake validated against real Kunos accServer.exe 1.10.2.
+  * Fix reject response to use 0x0c format (was 0x0b with 0xFFFF).
+  * Fix accept header to include UDP port (was protocol version).
+  * Fix welcome trailer strings to use u16-byte-len UTF-8 (was Format-A).
+  * Fix CarInfo field order: raceNumber before carModel.
+  * Parse DriverInfo and CarInfo from handshake request body.
+  * Populate full welcome trailer with all Kunos sub-records.
+  * Add post-accept 0x28, 0x36, 0x37, 0x4e welcome sequence.
+  * Fix weather broadcast: correct scaling factors and grip level field.
+  * Fix weather_init called from config with event.json values.
+  * Preserve ambient/track temp across session reset.
+  * Write results on session_advance for the last session.
+  * Fix server-full off-by-one (nconns already includes connecting client).
+  * Wire BanList into Server struct: enforce bans in handshake, persist on /ban.
+  * Fix json_free for string-rooted documents.
+  * Add systemd service to RPM package.
+  * Harden systemd service with sandboxing directives.
+  * Remove unused monitor_push_welcome_sequence.
+
+ -- Renaud Allard <renaud@allard.it>  Wed, 09 Apr 2026 17:00:00 +0200
+
 accd (0.1.1) unstable; urgency=medium
 
   * Fix chat BOP argument parsing, /clear, /cleartp, track name bounds check.
