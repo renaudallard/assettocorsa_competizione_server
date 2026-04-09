@@ -86,7 +86,7 @@ From `HB §III.2.1` and `CFG/configuration.json`:
 
 ### 2.2 Outbound connections
 
-- **Kunos lobby backend ("kson")**: HTTPS/TCP to Kunos infrastructure when `registerToLobby: 1`. Transmits server config and session state updates. `LOG` lines 4–5 show `"Sent Lobby Registration Request with trackName hungaroring"` → `"RegisterToLobby succeeded"` → `"Sent config to kson"`, and session phase changes emit `"Sent new session state to kson"`. **A reimplementation must set `registerToLobby: 0` and must not attempt to impersonate this endpoint.**
+- **Kunos lobby backend ("kson")**: TLS/TCP to Kunos infrastructure on port 443 when `registerToLobby: 1`. Uses a custom binary protocol with kson string encoding (u16 byte-length + UTF-16LE), not HTTP. The full protocol is documented in section 11. **A reimplementation must set `registerToLobby: 0` and must not attempt to impersonate this endpoint.**
 - **Steam**: the Kunos server links the Steam client library. Driver identity uses Steam64 IDs with an `S` prefix (`HB §VI`). A reimplementation does not need Steam integration for LAN-only operation but cannot verify Steam IDs without it.
 
 ### 2.3 Byte order and framing conventions (from `SDK`)
@@ -1253,21 +1253,164 @@ For phase 1 of the reimplementation: implement a stub that reports constant cond
 
 ## 11. Lobby / backend integration
 
-### 11.1 What the Kunos server does
+### 11.1 Transport
 
-From `LOG`:
-- `"Sent Lobby Registration Request with trackName hungaroring"` at startup
-- `"RegisterToLobby succeeded"`
-- `"WARNING: Lobby accepted connection"` (the WARNING prefix is odd; possibly a level mismatch in the original log code)
-- `"Sent config to kson"` once after registration
-- `"Sent connected drivers list to kson"` on each driver change
-- `"Sent new session state to kson"` on every session phase transition
+TLS/TCP to port 443.  The binary uses Windows Schannel (not a
+bundled TLS library).  Two lobby servers are hardcoded:
 
-### 11.2 What the reimplementation does
+| Role | IP | Hosting |
+|------|----|---------|
+| Primary | `131.153.158.178` | PhoenixNAP, Netherlands |
+| Secondary | `144.76.81.131` | Hetzner, Germany |
 
-**Nothing.** `registerToLobby` is hard-wired to `0`. The reimplementation is invisible to the Kunos lobby and must be joined via direct IP (see `serverList.json` mechanism in `HB §III.3.1`).
+Three hidden `configuration.json` keys override them:
+`lobbyPrimaryIP_DO_NOT_PUBLISH`, `lobbySecondaryIP_DO_NOT_PUBLISH`,
+`lobbyPort_DO_NOT_PUBLISH`.
 
-The reimplementation **must not** attempt to impersonate the Kunos backend in traffic to real ACC clients, as this would exceed the Art. 6 interoperability carve-out and would attack Kunos's infrastructure by proxy.
+### 11.2 Connection flow
+
+1. **TCP connect** to lobby IP port 443, set `TCP_NODELAY`.
+2. **TLS handshake** (Schannel).
+3. **Send 256-byte probe**: `u16(tcp_port)` + `u8(tcp_port % 77)` + `u8(tcp_port / 21)` + 252 zero bytes.
+4. **Sleep 1 second**, then check connection.
+5. **Send 0x44 registration** (variable length, ~200+ bytes).
+6. **Wait for 0xef** accept/reject from lobby.
+7. If accepted (byte 0 = 0): enter operational state.
+8. If rejected (byte 0 = 1-6): log reason, `exit(1)`.
+
+### 11.3 State machine
+
+| State | Name | Description |
+|-------|------|-------------|
+| 1 | Rejected | Backend rejected, fatal (`exit(1)`) |
+| 2 | Disconnected | Waiting to retry.  Interval: 10s for first 3 attempts, 30s + random jitter thereafter. |
+| 3 | Connecting | TCP+TLS handshake in progress |
+| 4 | Connected | TLS up, sending 0x44 registration |
+| 5 | Handshake | Registration sent, waiting for 0xef response.  Timeout triggers reconnect. |
+| 6 | Operational | Sending heartbeats, handling incoming commands |
+
+### 11.4 Kson string encoding
+
+The kson protocol uses its own string format, distinct from
+the game protocol's Format-A:
+
+```
+u16 byte_length
+u8[byte_length] UTF-16LE data
+```
+
+Error guard: `"UDPPacket::writeKsonString called with byte length over 65k"`.
+
+Two writer functions exist in the binary:
+- `FUN_14004d240(buffer, wchar_t*)` -- from a wide string pointer
+- `FUN_14004d490(buffer, string_object*)` -- from a C++ std::wstring
+
+### 11.5 Client-to-lobby messages
+
+#### 0x44 Registration (~200+ bytes, variable)
+
+```
+u8   0x44
+kson_str  server_password
+u32  tcp_port
+u32  udp_port
+kson_str  track_name
+kson_str  server_name
+u8   server_state
+u8   has_password (bool)
+u8   config_flag (+0x1c8)
+u8   config_flag (+0x1cc)
+u8   config_flag (+0x1d0)
+u8   session_type (P=0, Q=4, R=10)
+u8   config_bool (+0x228)
+u8   config_bool (+0x229)
+u8   config_bool (+0x231)
+u8   wine_detected (0/1, via GetProcAddress("wine_get_version"))
+u8   car_state_byte (from first car entry)
+u8   competition_mode (0=off, 1=type1, 2=type2)
+[conditional competition config bytes]
+u8   config_byte (+0x310)
+u8   car_count
+per-car {
+    u8   car_model
+    u8   cup_category
+    u8   driver_category
+    i16  rating (scaled)
+    u16  driver_nationality
+    u16  car_nationality
+    u8   float_cast
+}
+u8   timing_field
+kson_str  config_string_1
+kson_str  config_string_2
+kson_str  config_string_3
+```
+
+The Wine detection flag is notable: the server explicitly reports
+whether it runs under Wine/CrossOver.  Rejection reason 5 targets
+Wine servers that cause "problems for other users".
+
+#### 0x3a Unregistration (fixed, 15 bytes + kson_str)
+
+```
+u8   0x3a
+u8   0xc9 (magic)
+u32  7
+u32  6
+u8   0x00
+kson_str  server_name
+u32  connection_count
+```
+
+#### 0xd7 Config response (reply to lobby's 0xf6)
+
+```
+u8   0xd7
+kson_str  server_name
+kson_str  track_name
+kson_str  password
+```
+
+#### 0xf2 Heartbeat (periodic, in state 6)
+
+Includes CPU load and bandwidth statistics.  Exact fields not
+fully decoded.
+
+### 11.6 Lobby-to-server messages
+
+| Cmd | Name | Description |
+|-----|------|-------------|
+| `0xef` | Accept/Reject | Byte 1: 0=accepted, 1-6=rejection reason |
+| `0xf1` | Unknown | Delegates to `FUN_1400473f0` |
+| `0xf3` | CP data push | Competition Points data.  Reads two strings then a `ServerEventConfig`.  Logs `"Receiving CP data for %s @ %s"` |
+| `0xf4` | State push A | Reads two strings, builds a `0x2b` message to clients via `FUN_1400251b0` |
+| `0xf5` | State push B | Reads two strings, builds a `0x2b` variant via `FUN_140025470` |
+| `0xf6` | Config request | Server replies with `0xd7` containing name, track, password |
+| `0xfd` | Acknowledgment | Clears the "waiting for ack" flag |
+
+### 11.7 Rejection reasons
+
+| Code | Message |
+|------|---------|
+| 0 | `"Unexpected: Rejected with reason NotRejected"` |
+| 1 | `"Server is outdated and can't connect to the lobby anymore"` |
+| 2 | `"This server is of a higher version compared to the lobby"` |
+| 3 | `"This server has been blocked by the backend"` |
+| 4 | `"This server has been rejected by the backend for unknown reasons"` |
+| 5 | `"This server isn't running on a supported platform AND is configured in a way that causes problems"` |
+| 6 | `"Server did not respond on the public IP"` |
+
+### 11.8 What the reimplementation does
+
+**Nothing.** `registerToLobby` is hard-wired to `0`. The
+reimplementation is invisible to the Kunos lobby and must be
+joined via direct IP (see `serverList.json` mechanism in
+`HB III.3.1`).
+
+The reimplementation **must not** attempt to impersonate the
+Kunos backend in traffic to real ACC clients, as this would
+exceed the Art. 6 interoperability carve-out and would attack
+Kunos's infrastructure by proxy.
 
 ---
 
