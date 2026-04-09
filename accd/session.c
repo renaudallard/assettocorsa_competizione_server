@@ -85,9 +85,13 @@ session_reset(struct Server *s, uint8_t session_index)
 int
 session_is_practice_or_qualy(const struct Server *s)
 {
-	uint8_t p = s->session.phase;
+	uint8_t sidx = s->session.session_index;
+	uint8_t st;
 
-	return p == PHASE_PRACTICE || p == PHASE_QUALIFYING;
+	if (sidx >= s->session_count)
+		return 0;
+	st = s->sessions[sidx].session_type;
+	return st == 0 || st == 4;	/* P=0, Q=4 */
 }
 
 /*
