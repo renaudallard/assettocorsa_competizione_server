@@ -37,6 +37,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <stddef.h>
+#include <time.h>
 
 #include "dispatch.h"
 #include "handlers.h"
@@ -197,12 +198,58 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 
 	switch (msg_id) {
 	case ACP_KEEPALIVE_A:		/* 0x13 */
-	case ACP_KEEPALIVE_B:		/* 0x17 */
-		return;			/* silent */
+	case ACP_KEEPALIVE_B: {		/* 0x17 */
+		/*
+		 * The real client sends 0x13 + u16(conn_id).  The
+		 * server replies with a 0x14 keepalive carrying the
+		 * server timestamp and per-car timing hints.  This
+		 * also serves as the UDP peer-address association:
+		 * the first keepalive from a client teaches the
+		 * server which UDP source port belongs to which
+		 * TCP connection.
+		 */
+		struct Reader kr;
+		uint16_t ka_conn_id = 0;
+		struct ByteBuf reply;
+		struct Conn *kc;
+		struct timespec kts;
+		uint32_t srv_ms;
+
+		rd_init(&kr, buf, len);
+		(void)rd_skip(&kr, 1);		/* msg_id */
+		(void)rd_u16(&kr, &ka_conn_id);
+
+		kc = server_find_conn(s, ka_conn_id);
+		if (kc == NULL)
+			return;
+
+		/* Learn / update the UDP peer address. */
+		kc->peer = *peer;
+
+		clock_gettime(CLOCK_MONOTONIC, &kts);
+		srv_ms = (uint32_t)((uint64_t)kts.tv_sec * 1000 +
+		    (uint64_t)kts.tv_nsec / 1000000);
+
+		bb_init(&reply);
+		if (wr_u8(&reply, SRV_KEEPALIVE_14) == 0 &&
+		    wr_u32(&reply, srv_ms) == 0 &&
+		    wr_u16(&reply, 0) == 0 &&
+		    wr_u16(&reply, 0) == 0 &&
+		    wr_u16(&reply, 0) == 0 &&
+		    wr_u8(&reply, 2) == 0 &&
+		    wr_u8(&reply, 4) == 0 &&
+		    wr_u8(&reply, 100) == 0 &&
+		    wr_u8(&reply, 100) == 0) {
+			(void)sendto(s->udp_fd, reply.data, reply.wpos, 0,
+			    (const struct sockaddr *)peer,
+			    (socklen_t)sizeof(*peer));
+		}
+		bb_free(&reply);
+		return;
+	}
 
 	case ACP_PONG_PHYSICS:		/* 0x16 */
-		log_info("udp 0x16 PONG_PHYSICS from %s:%u (%zu bytes) TODO",
-		    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port), len);
+		/* Client echoes the server timestamp from 0x14. */
 		return;
 
 	case ACP_CAR_UPDATE:		/* 0x1e */
