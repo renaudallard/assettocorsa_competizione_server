@@ -51,5 +51,13 @@ jobs:
             --title "accd $ver" \
             --generate-notes
 
-      # Package builds are triggered automatically by the
-      # release:published event in release-packages.yml.
+      - name: Trigger package build
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        run: |
+          ver="${{ steps.version.outputs.version }}"
+          gh workflow run release-packages.yml \
+            --ref "$ver" \
+            -f ref="$ver" \
+            -f release_tag="$ver"
