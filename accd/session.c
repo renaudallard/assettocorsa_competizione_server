@@ -72,7 +72,7 @@ session_reset(struct Server *s, uint8_t session_index)
 		s->session.track_temp = tt;
 	}
 	s->session.session_index = session_index;
-	s->session.phase = PHASE_PRE_SESSION;
+	s->session.phase = PHASE_NONE;
 	s->session.phase_started_ms = mono_ms();
 	s->session.standings_seq = 1;
 
@@ -228,7 +228,8 @@ session_tick(struct Server *s)
 	if (s->session_count == 0)
 		return;
 	if (s->session.phase == PHASE_NONE) {
-		session_reset(s, 0);
+		if (s->nconns > 0)
+			enter_phase(s, PHASE_PRE_SESSION);
 		return;
 	}
 	if (s->session.session_index >= s->session_count)
