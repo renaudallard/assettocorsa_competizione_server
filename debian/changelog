@@ -1,3 +1,18 @@
+accd (0.1.1) unstable; urgency=medium
+
+  * Fix chat BOP argument parsing, /clear, /cleartp, track name bounds check.
+  * Fix session standings sort to use session type instead of phase.
+  * Add upper bound check on car_id in lap and sector handlers.
+  * Move tick phase-tracking state into SessionState for correct session resets.
+  * Fix monitor protocol to use actual session, weather, and config data.
+  * Fix results JSON writer to escape strings and check fclose.
+  * Fix bans_remove NULL dereference and bans_save silent write failure.
+  * Enforce CONN_DISCONNECT: kicked/banned clients are now actually dropped.
+  * Add SO_SNDTIMEO on client sockets to prevent slow clients from stalling.
+  * Fix CI version detection for Fedora and Ubuntu, remove duplicate builds.
+
+ -- Renaud Allard <renaud@allard.it>  Wed, 09 Apr 2026 12:00:00 +0200
+
 accd (0.1.0) unstable; urgency=medium
 
   * Initial release.
