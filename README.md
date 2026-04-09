@@ -4,95 +4,74 @@
 
 # accd — ACC dedicated server, clean-room reimplementation
 
-A work-in-progress independent reimplementation of the Assetto Corsa
-Competizione dedicated server, built so an unmodified ACC game client
-(Steam, current build) can connect to it and play a private multiplayer
+An independent reimplementation of the Assetto Corsa Competizione
+dedicated server, built so an unmodified ACC game client (Steam,
+current build) can connect to it and play a private multiplayer
 session — on Linux and OpenBSD, without Wine.
 
 ## Status
 
-**Phases 1–11 complete; phase 12 (real-client testing under Wine) is
-the only outstanding task.**
+The server implements the full ACC multiplayer protocol and can
+host private sessions.  Real-client validation against the ACC
+game client is ongoing; the protobuf field numbers in `monitor.h`
+may need minor adjustments once end-to-end testing is complete.
 
-The clean-room specification in
-[`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) documents:
+### What works
 
-- Transport framing for both TCP (variable-width length prefix,
-  `u16` short or `0xFFFF + u32` extended) and UDP (datagram = message).
-- The scalar wire types, byte order, and the two distinct string
-  encodings (`u8` length + UTF-32 padded for short identifiers,
-  `u16` length + raw UTF-16 LE for longer text).
-- The client connection state machine (`0 → 1 → 3`) and the
-  handshake request body (client version, password, embedded
-  `CarInfo` and `DriverInfo`).
-- The complete client → server message ID catalog — 22 TCP IDs,
-  7 UDP IDs, plus LAN discovery — with known wire formats and
-  semantic labels for every case.
-- **31 server → client message IDs** with byte-exact wire formats,
-  including the welcome trailer, per-tick broadcasters, leaderboard
-  / weather / session results / grid positions / ratings, the
-  driver swap state machine, BoP updates, setup data responses,
-  chat broadcasts, and the welcome trailer redelivery.
-- The ServerMonitor protobuf protocol (msg types 1–7), confirmed
-  to be the same data carried by sim-protocol ids `0x01`–`0x07`.
+- **Handshake and connection lifecycle** — TCP framing (variable-
+  width length prefix), handshake with password validation, client
+  version check, connection state machine, disconnect notification.
+- **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
+  message types are handled; 31 server-to-client message types are
+  implemented.
+- **Per-car state broadcast** — 10 Hz fast-rate (`0x1e`) and 1 Hz
+  slow-rate (`0x39`) per-car broadcasts relayed to all other
+  connections.
+- **Session management** — configurable session sequence
+  (Practice / Qualifying / Race) with automatic phase transitions,
+  session timers, and session advance/restart via admin commands.
+- **Leaderboard and standings** — real-time standings recomputation
+  on lap completion, leaderboard broadcast (`0x36`), grid positions
+  at race start (`0x3f`), session results at session end (`0x3e`).
+- **Results file writer** — `results/YYMMDD_HHMMSS_<type>.json`
+  written at session end, matching the stock server schema.
+- **Admin commands** — full set via in-game chat or the stdin
+  console: `/admin`, `/next`, `/restart`, `/kick`, `/ban`, `/dq`,
+  time penalties (`/tp5`, `/tp15`, drive-through, stop-and-go),
+  `/ballast`, `/restrictor`, `/clear`, `/connections`.
+- **Penalty system** — per-car penalty queue, pit-speed enforcement
+  from telemetry, mandatory pitstop tracking.
+- **Weather** — deterministic sin/cos weather simulator with cloud
+  and rain cycles, broadcast on significant change (`0x37`).
+- **ServerMonitor protocol** — seven protobuf message builders for
+  the post-handshake welcome push (`0x04` + `0x05` + `0x03` +
+  `0x07`), matching the binary's generic-serializer IDs.
+- **Entry list** — `entrylist.json` reader populating car templates
+  with driver info, ballast, restrictor, grid positions.
+- **LAN discovery** — UDP 8999 broadcast response so clients on
+  the same network find the server automatically.
+- **Rating summary** — periodic `0x4e` per-connection broadcast.
+- **BoP updates** — `0x53` broadcast on ballast/restrictor changes.
+- **Persistent bans** — `cfg/banlist.txt`, survives restarts.
+- **Admin console** — interactive stdin console when running from a
+  terminal (see below).
+- **OpenBSD support** — builds and runs on OpenBSD 7.8 arm64 with
+  `pledge("stdio inet")` after binding ports.
 
-The `accd/` C implementation now covers:
+### Known limitations
 
-- **Phase 1** — TCP framing, primitive readers/writers, full
-  handshake with real `0x0b` response.
-- **Phase 2–3** — every TCP and UDP dispatcher case wired to a
-  real handler (~21 TCP + 7 UDP), per-tick `0x1e`/`0x39` per-car
-  broadcast fan-out, `0x14` keepalive heartbeat, `0x24` disconnect
-  notify, `0x5f` admin query response, `0xc0` LAN discovery reply.
-- **Phase 4** — hand-rolled JSON parser (recursive-descent,
-  bump-allocated tree), hand-rolled protobuf encoder (varint,
-  length-delimited, fixed32, submessage backpatch), and seven
-  `ServerMonitor*` message builders (`HandshakeResult`, `CarEntry`,
-  `ConnectionEntry`, `SessionState`, `ConfigurationState`,
-  `RealtimeUpdate`, `Leaderboard`).  The post-handshake welcome
-  push sequence `0x04` + `0x05` + `0x03` + `0x07` is emitted to
-  the joining client automatically.
-- **Phase 5** — session phase state machine
-  (`PRE_SESSION → STARTING → PRACTICE / QUALIFYING / PRE_RACE →
-  RACE → POST_SESSION → RESULTS`), driven from the tick loop with
-  durations loaded from `event.json`.
-- **Phase 6** — per-car `CarRaceState` (laps, position, sectors,
-  best lap), lap-completion mutations, standings recomputation,
-  `0x36` leaderboard broadcast on change, `0x3f` grid positions at
-  race countdown, `0x3e` session results at session end.
-- **Phase 7** — `results/YYMMDD_HHMMSS_<type>.json` writer at
-  session end, schema matching `§9` of the clean-room spec.
-- **Phase 8** — real admin chat commands: `/admin`, `/next`,
-  `/restart`, `/kick`, `/ban` (with `0x2b` kick/ban notification),
-  `/dq`, `/clear`, `/clear_all`, `/cleartp`, the time-penalty
-  family (`/tp5`, `/tp5c`, `/tp15`, `/tp15c`, `/dt`, `/dtc`, and
-  stop-and-go), `/ballast` and `/restrictor` with `0x53`
-  `MultiplayerBOPUpdate` broadcast, `/connections`, `/legacy`,
-  `/regular`.
-- **Phase 9** — penalty queue per car, pit-speeding auto-detection
-  from `ACP_CAR_UPDATE` velocity, mandatory-pitstop tracking.
-- **Phase 10** — deterministic weather simulator (sin/cos rain and
-  cloud cycle modeled on the algorithm in the binary's weather
-  function), `0x37` weather broadcast on significant change.
-- **Phase 11** — `entrylist.json` reader populating `Server.cars[]`
-  as entry templates, `0x56` setup data response, `0x4e` per-
-  connection rating summary, persistent kick/ban list in
-  `cfg/banlist.txt`.
+- Real-client testing is not yet complete; some wire-format details
+  may need adjustment based on packet captures against the stock
+  Kunos `accServer.exe`.
+- Driver swap state machine is stubbed (logged but not functional).
+- No public lobby registration (`registerToLobby` is always 0).
+- No Championship Points / CP rating system.
 
-The implementation is **24 modules and ~7800 lines of portable
-C99**, builds clean under `gcc -Wall -Wextra -Wpedantic -O2` on
-Linux and under `clang -Wall -Wextra -Wpedantic -O2` on OpenBSD
-7.8 arm64.  The OpenBSD build was verified end-to-end on a real
-host — handshake + welcome push produces byte-identical wire
-output to the Linux build.  On OpenBSD the process pledges to
-`stdio inet` after binding its listening ports.
-
-The one remaining task (phase 12) is to run the server against a
-real ACC game client under Wine to verify the ServerMonitor
-protobuf field numbers and the welcome trailer layout.  Until
-that happens, field numbers in `monitor.h` are a best-guess from
-the catalog and may need small adjustments once a real client
-tries to decode them.
+The clean-room protocol specification in
+[`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) documents
+the full wire protocol: transport framing, string encodings,
+connection state machine, all client and server message IDs with
+byte-exact wire formats, and the ServerMonitor protobuf schema.
 
 ## Scope
 
@@ -132,7 +111,7 @@ interoperability of an independently created program.
 ```
 .
 ├── README.md              This file.
-├── NOTEBOOK_B.md          — see notebook-b/
+├── LICENSE                ISC license.
 ├── notebook-b/
 │   └── NOTEBOOK_B.md      The public clean-room protocol spec.
 ├── accd/                  The C implementation.
@@ -171,6 +150,9 @@ interoperability of an independently created program.
 └── tmp/                   Scratch directory. Gitignored.
 ```
 
+The implementation is **24 modules and ~8700 lines of portable
+C99**, with no dependencies beyond libc, iconv, and libm.
+
 ## Building
 
 The implementation (`accd/`) is portable C99 that builds with either
@@ -193,44 +175,185 @@ make CFLAGS="-I/usr/local/include" \
      LDFLAGS="-L/usr/local/lib" LIBS="-liconv"
 ```
 
-Tested on OpenBSD 7.8 arm64 with `clang 19.1.7`.  The build is
-byte-identical in output to the Linux build: the same 189-byte
-handshake response + welcome push sequence is produced for the
-same synthetic client input.
-
-On OpenBSD the process pledges to `stdio inet` after binding its
-listening ports.
+Tested on OpenBSD 7.8 arm64 with `clang 19.1.7`.  On OpenBSD
+the process pledges to `stdio inet` after binding its listening
+ports.
 
 ## Running
 
-`accd` expects a `cfg/` directory containing `configuration.json`
-and (optionally) `settings.json`, `event.json`, `entrylist.json`.
-Each file may be either UTF-16 LE with a BOM (the format
+### Configuration
+
+`accd` expects a `cfg/` directory containing JSON configuration
+files.  Each file may be either UTF-16 LE with a BOM (the format
 `accServer.exe` writes) or plain UTF-8 (so the files can be
-hand-edited in any normal text editor on Linux or OpenBSD);
-detection is automatic.  By default `accd` looks for `cfg/` in the
-current directory; an alternative path can be passed as the first
-argument:
+hand-edited in any normal text editor); detection is automatic.
+
+By default `accd` looks for `cfg/` in the current directory; an
+alternative path can be passed as the first argument:
 
 ```sh
 ./accd                           # uses ./cfg/
 ./accd /path/to/other/cfg        # explicit path
 ```
 
-To fetch the stock Kunos cfg files (you need a Steam account that
-owns Assetto Corsa Competizione):
+#### configuration.json
+
+Network settings:
+
+```json
+{
+    "udpPort": 9231,
+    "tcpPort": 9232,
+    "maxConnections": 30,
+    "lanDiscovery": 1,
+    "configVersion": 1
+}
+```
+
+#### settings.json
+
+Server identity and passwords:
+
+```json
+{
+    "serverName": "My accd server",
+    "password": "",
+    "adminPassword": "my-admin-pass",
+    "spectatorPassword": "",
+    "maxCarSlots": 30,
+    "configVersion": 1
+}
+```
+
+- `password` — required to join as a driver; empty means open.
+- `adminPassword` — used in-game via `/admin <password>` to
+  elevate to admin rights (kick, ban, penalties, etc.).
+- `spectatorPassword` — alternative that admits the client as a
+  spectator.
+
+#### event.json
+
+Track, weather, and session schedule:
+
+```json
+{
+    "track": "monza",
+    "preRaceWaitingTimeSeconds": 80,
+    "sessionOverTimeSeconds": 120,
+    "ambientTemp": 22,
+    "cloudLevel": 0.1,
+    "rain": 0.0,
+    "weatherRandomness": 1,
+    "sessions": [
+        {
+            "hourOfDay": 12,
+            "dayOfWeekend": 2,
+            "timeMultiplier": 1,
+            "sessionType": "P",
+            "sessionDurationMinutes": 10
+        },
+        {
+            "hourOfDay": 14,
+            "dayOfWeekend": 2,
+            "timeMultiplier": 1,
+            "sessionType": "Q",
+            "sessionDurationMinutes": 10
+        },
+        {
+            "hourOfDay": 16,
+            "dayOfWeekend": 3,
+            "timeMultiplier": 2,
+            "sessionType": "R",
+            "sessionDurationMinutes": 20
+        }
+    ],
+    "configVersion": 1
+}
+```
+
+Session types: `P` (Practice), `Q` (Qualifying), `R` (Race).
+
+#### entrylist.json (optional)
+
+Pre-populated car entries with driver info, ballast, restrictor,
+and grid positions.  If absent, the server accepts any client into
+the first available slot.
+
+### Fetching stock Kunos config files
+
+To get the default config files from the ACC Dedicated Server Steam
+tool (requires a Steam account that owns ACC):
 
 ```sh
 steamcmd +@sSteamCmdForcePlatformType windows \
          +force_install_dir /path/to/acc-server \
          +login <your steam username> \
          +app_update 1430110 validate +quit
+cp -r /path/to/acc-server/server/cfg ./cfg
 ```
 
-The server prints the parsed config, binds the configured ports,
-runs a 10 Hz poll/tick loop, accepts TCP connections, parses any
-framed handshake message, and replies with the 0x0b response.
-Every other message is logged but not yet processed.
+The stock files are UTF-16 LE; `accd` reads them as-is or you can
+convert them to UTF-8 for easy editing with `iconv`:
+
+```sh
+iconv -f UTF-16LE -t UTF-8 cfg/settings.json | tr -d '\r' > tmp && mv tmp cfg/settings.json
+```
+
+### Starting the server
+
+```sh
+cd accd
+./accd
+```
+
+The server binds the configured TCP and UDP ports (default 9232
+and 9231), starts the session schedule from `event.json`, and
+begins accepting client connections.  Log output goes to stderr:
+
+```
+2026-04-09 08:19:24.384 INFO accd phase 1 starting (pid 78045)
+2026-04-09 08:19:24.385 INFO config: tcp=9232 udp=9231 max=30 lan=1 track="monza"
+2026-04-09 08:19:24.385 INFO lan discovery listening on udp/8999
+2026-04-09 08:19:24.385 INFO admin console enabled (type 'help' for commands)
+2026-04-09 08:19:24.385 INFO listening: tcp/9232 udp/9231 (Ctrl-C to stop)
+```
+
+Stop the server with `Ctrl-C`, `quit` at the console, or
+`kill -TERM <pid>`.
+
+### Firewall / port forwarding
+
+Open these ports for clients to connect:
+
+| Port | Protocol | Purpose |
+|------|----------|---------|
+| 9232 | TCP | Game connection (handshake, chat, session data) |
+| 9231 | UDP | Car telemetry (position, inputs, timing) |
+| 8999 | UDP | LAN discovery (optional, local network only) |
+
+Ports 9232 and 9231 are configurable in `configuration.json`.
+
+### Connecting from the ACC game client
+
+On the client machine, edit
+`%userprofile%\Documents\Assetto Corsa Competizione\Config\serverList.json`
+and add an entry for your server:
+
+```json
+[
+    {
+        "Name": "My Server",
+        "Address": "your.server.ip",
+        "Port": 9232,
+        "Password": "",
+        "IsLan": false
+    }
+]
+```
+
+Set `Password` to match the `password` field in the server's
+`settings.json`.  The server will appear in the game's multiplayer
+server browser.
 
 ### Admin console
 
@@ -253,16 +376,54 @@ commands (leading / optional):
   kick <num>       kick car by race number
   ban <num>        kick + persistent ban
   dq <num>         disqualify
-  [...]
+  tp5 <num>        5s time penalty (tp5c = collision)
+  tp15 <num>       15s time penalty (tp15c)
+  dt <num>         drive-through (dtc)
+  sg10 <num>       10s stop-and-go (sg10c..sg30c)
+  clear <num>      clear penalties for car
+  clear_all        clear all penalties
+  ballast <n> <kg> assign ballast
+  restrictor <n> % assign restrictor
+  connections      list connections (also broadcasts)
   quit             shut down the server
 status
 session 0  phase=PRACTICE  remaining=540000 ms  tick=42  conns=1
 ```
 
+The leading `/` is optional (both `next` and `/next` work).
 Console replies go to stdout, server logs go to stderr.
-Separate them with `./accd 2>accd.log`.  When stdin is not
-a TTY (e.g. `./accd < /dev/null` or systemd), the console
-disables itself and the server runs headless.
+Separate them with `./accd 2>accd.log`.
+
+When stdin is not a TTY (e.g. `./accd < /dev/null` or systemd),
+the console disables itself and the server runs headless.  All
+admin commands remain available via in-game chat after
+authenticating with `/admin <password>`.
+
+### Running as a background service
+
+To run headless without the console:
+
+```sh
+./accd 2>accd.log &
+```
+
+Or with a systemd unit (Linux):
+
+```ini
+[Unit]
+Description=accd - ACC dedicated server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/path/to/accd
+ExecStart=/path/to/accd/accd
+StandardInput=null
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
 
 ### Quick smoke test (no real client)
 
@@ -301,7 +462,7 @@ contributing, please read section 0 of
 
 ## License
 
-ISC. See [`LICENSE`](LICENSE) for the full text.  The clean-room
+BSD-2-Clause. See [`LICENSE`](LICENSE) for the full text.  The clean-room
 specification text in `notebook-b/` is authored for public
 reference under the same terms.
 
