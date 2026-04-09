@@ -21,7 +21,13 @@ connections, assigns car IDs, and begins the session lifecycle.
 
 - **Handshake and connection lifecycle** — TCP framing (variable-
   width length prefix), handshake with password validation, client
-  version check, connection state machine, disconnect notification.
+  version check, DriverInfo/CarInfo parsing, connection state
+  machine, disconnect notification.  Reject (`0x0c`) and accept
+  (`0x0b`) formats validated against real Kunos `accServer.exe`.
+- **Post-accept welcome sequence** — `0x28` large state response,
+  `0x36` initial leaderboard, `0x37` weather snapshot, and `0x4e`
+  rating summary sent immediately after handshake accept, matching
+  the real server's welcome sequence.
 - **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
   message types are handled; 31 server-to-client message types are
   implemented.
@@ -44,9 +50,10 @@ connections, assigns car IDs, and begins the session lifecycle.
   from telemetry, mandatory pitstop tracking.
 - **Weather** — deterministic sin/cos weather simulator with cloud
   and rain cycles, broadcast on significant change (`0x37`).
-- **ServerMonitor protocol** — seven protobuf message builders for
-  the post-handshake welcome push (`0x04` + `0x05` + `0x03` +
-  `0x07`), matching the binary's generic-serializer IDs.
+- **ServerMonitor protocol** — protobuf message builders for
+  session state, car entries, connection entries, leaderboard,
+  and realtime updates (available for future broadcasting
+  protocol support).
 - **Entry list** — `entrylist.json` reader populating car templates
   with driver info, ballast, restrictor, grid positions.
 - **LAN discovery** — UDP 8999 broadcast response so clients on
@@ -58,7 +65,8 @@ connections, assigns car IDs, and begins the session lifecycle.
   `0x48` / `0x4a` / `0x58` wire protocol.
 - **Live track change** — `/track <name>` changes the track
   mid-session with `0x4b` welcome redelivery to all clients.
-- **Persistent bans** — `cfg/banlist.txt`, survives restarts.
+- **Persistent bans** — `/ban` writes to `cfg/banlist.txt` and
+  rejects banned Steam IDs on reconnect.  Survives restarts.
 - **Debug tracing** — `-d` flag or `debug` console command enables
   full wire hexdump of every message sent and received.
 - **Admin console** — interactive stdin console when running from a
@@ -68,13 +76,10 @@ connections, assigns car IDs, and begins the session lifecycle.
 
 ### Known limitations
 
-- The welcome trailer is a minimal placeholder; the full trailer
-  includes additional session/car/config sub-records not yet
-  populated.
-- The handshake request parser skips DriverInfo/CarInfo fields
-  after password validation; all fields are still accepted.
 - No public lobby registration (`registerToLobby` is always 0).
 - No Championship Points / CP rating system.
+- Entry list enforcement is not yet implemented (any client is
+  accepted regardless of `entrylist.json` content).
 
 The clean-room protocol specification in
 [`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) documents
@@ -156,7 +161,7 @@ interoperability of an independently created program.
 └── .github/workflows/       CI: autorelease + multi-distro packaging.
 ```
 
-The implementation is **24 modules and ~9500 lines of portable
+The implementation is **24 modules and ~10,000 lines of portable
 C99**, with no dependencies beyond libc, iconv, and libm.
 
 ## Building
@@ -173,13 +178,15 @@ make
 
 Tested on Debian sid aarch64 with `gcc 15.2.0`.
 
-### OpenBSD (iconv lives in ports at `/usr/local`)
+### OpenBSD
 
 ```sh
 cd accd
-make CFLAGS="-I/usr/local/include" \
-     LDFLAGS="-L/usr/local/lib" LIBS="-liconv"
+make
 ```
+
+The Makefile auto-detects `/usr/local/include/iconv.h` and links
+`-liconv` when iconv is not in libc.  No extra flags needed.
 
 Tested on OpenBSD 7.8 arm64 with `clang 19.1.7`.  On OpenBSD
 the process pledges to `stdio rpath wpath cpath inet` after
@@ -418,38 +425,30 @@ To run headless without the console:
 ./accd 2>accd.log &
 ```
 
-Or with a systemd unit (Linux):
+Or install the `.deb` / `.rpm` package and use the shipped systemd
+unit, which runs as an unprivileged dynamic user with sandboxing:
 
-```ini
-[Unit]
-Description=accd - ACC dedicated server
-After=network.target
-
-[Service]
-Type=simple
-WorkingDirectory=/path/to/accd
-ExecStart=/path/to/accd/accd
-StandardInput=null
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
+```sh
+sudo systemctl enable --now accd
+# config files go in /var/lib/accd/cfg/
 ```
 
 ### Quick smoke test (no real client)
 
-Reject path — wrong protocol version:
+Reject path (wrong protocol version, should get 14-byte `0x0c`
+reject and connection closed):
 
 ```sh
 printf '\x03\x00\x09\x99\x00' | nc -q 1 127.0.0.1 9232 | xxd
-# expects: 07 00 0b 00 01 00 ff ff 01
+# expects: 0e 00 0c 07 00 00 00 00 99 00 00 00 00 01 00 00
 ```
 
-Accept path — empty server password:
+Accept path (correct version `0x100`, empty password, should get
+`0x0b` accept with welcome trailer):
 
 ```sh
 printf '\x04\x00\x09\x00\x01\x00' | nc -q 1 127.0.0.1 9232 | xxd
-# expects: 29 00 0b 00 01 00 00 00 00 00 00 00 ...
+# expects: large response starting with 0b 0f 24 ...
 ```
 
 ## Contributing
