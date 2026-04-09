@@ -98,7 +98,7 @@ cmd_help(void)
 	reply("  clear_all        clear all penalties");
 	reply("  ballast <n> <kg> assign ballast");
 	reply("  restrictor <n> %%  assign restrictor");
-	reply("  track <name>     change track (redelivers welcome)");
+	reply("  track [name]     show or change track");
 	reply("  connections      list connections (also broadcasts)");
 	reply("  quit             shut down the server");
 }
@@ -348,9 +348,24 @@ console_dispatch(struct Server *s, const char *line)
 	} else if (chat_prefix(p, "restrictor")) {
 		chat_do_bop(s, p + 10, 0, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
+	} else if (chat_prefix(p, "tracks")) {
+		int ti, n = chat_track_count();
+		reply("available tracks (%d):", n);
+		for (ti = 0; ti < n; ti++)
+			reply("  %s", chat_track_name(ti));
 	} else if (chat_prefix(p, "track")) {
-		chat_do_track(s, p + 5, rbuf, sizeof(rbuf));
-		cmd_with_reply(rbuf);
+		const char *targ = p + 5;
+		while (*targ == ' ') targ++;
+		if (*targ == '\0') {
+			int ti, n = chat_track_count();
+			reply("current track: %s", s->track);
+			reply("available tracks (%d):", n);
+			for (ti = 0; ti < n; ti++)
+				reply("  %s", chat_track_name(ti));
+		} else {
+			chat_do_track(s, p + 5, rbuf, sizeof(rbuf));
+			cmd_with_reply(rbuf);
+		}
 	} else if (chat_prefix(p, "connections")) {
 		cmd_connections(s);
 	} else if (chat_prefix(p, "legacy")) {

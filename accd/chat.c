@@ -253,6 +253,33 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 	log_info("admin: %s", chat);
 }
 
+static const char *track_list[] = {
+	"monza", "misano", "paul_ricard", "silverstone", "spa",
+	"nurburgring", "hungaroring", "zandvoort", "brands_hatch",
+	"zolder", "barcelona", "mount_panorama_2019", "laguna_seca",
+	"suzuka", "kyalami", "oulton_park", "snetterton", "donington",
+	"imola", "watkins_glen", "cota", "indianapolis", "valencia",
+	"nurburgring_24h", "red_bull_ring",
+	NULL
+};
+
+int
+chat_track_count(void)
+{
+	int n = 0;
+	while (track_list[n] != NULL)
+		n++;
+	return n;
+}
+
+const char *
+chat_track_name(int index)
+{
+	if (index < 0 || track_list[index] == NULL)
+		return NULL;
+	return track_list[index];
+}
+
 void
 chat_do_track(struct Server *s, const char *args,
     char *reply, size_t replysz)
@@ -266,7 +293,9 @@ chat_do_track(struct Server *s, const char *args,
 	name = args;
 	if (*name == '\0') {
 		if (reply != NULL)
-			snprintf(reply, replysz, "no track name specified");
+			snprintf(reply, replysz,
+			    "current track: %s (type 'tracks' for list)",
+			    s->track);
 		return;
 	}
 

@@ -77,5 +77,8 @@ void	chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	    char *reply, size_t replysz);
 void	chat_do_track(struct Server *s, const char *args,
 	    char *reply, size_t replysz);
+int	chat_track_count(void);
+const char *
+	chat_track_name(int index);
 
 #endif /* ACCD_CHAT_H */
