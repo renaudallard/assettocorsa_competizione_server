@@ -11,9 +11,11 @@ session — on Linux and OpenBSD, without Wine.
 
 ## Status
 
-**Phase 1 — handshake works end-to-end.**  The clean-room
-specification in [`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md)
-now documents:
+**Phases 1–11 complete; phase 12 (real-client testing under Wine) is
+the only outstanding task.**
+
+The clean-room specification in
+[`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) documents:
 
 - Transport framing for both TCP (variable-width length prefix,
   `u16` short or `0xFFFF + u32` extended) and UDP (datagram = message).
@@ -34,17 +36,63 @@ now documents:
 - The ServerMonitor protobuf protocol (msg types 1–7), confirmed
   to be the same data carried by sim-protocol ids `0x01`–`0x07`.
 
-**The `accd/` C implementation is at phase 1**: it reads the stock
-Kunos config files, binds the TCP and UDP listeners, accepts
-framed TCP messages, parses `ACP_REQUEST_CONNECTION`, and replies
-with a real `0x0b` handshake response containing either a rejection
-code or a minimum-viable welcome trailer.  Every other TCP and UDP
-message id has a dispatch stub that logs the id and length but
-does not yet mutate state.
+The `accd/` C implementation now covers:
 
-The implementation is split into 13 modules totalling about
-2700 lines of portable C99, builds clean under `gcc -Wall -Wextra
--Wpedantic`, and pledges `stdio inet` on OpenBSD after binding.
+- **Phase 1** — TCP framing, primitive readers/writers, full
+  handshake with real `0x0b` response.
+- **Phase 2–3** — every TCP and UDP dispatcher case wired to a
+  real handler (~21 TCP + 7 UDP), per-tick `0x1e`/`0x39` per-car
+  broadcast fan-out, `0x14` keepalive heartbeat, `0x24` disconnect
+  notify, `0x5f` admin query response, `0xc0` LAN discovery reply.
+- **Phase 4** — hand-rolled JSON parser (recursive-descent,
+  bump-allocated tree), hand-rolled protobuf encoder (varint,
+  length-delimited, fixed32, submessage backpatch), and seven
+  `ServerMonitor*` message builders (`HandshakeResult`, `CarEntry`,
+  `ConnectionEntry`, `SessionState`, `ConfigurationState`,
+  `RealtimeUpdate`, `Leaderboard`).  The post-handshake welcome
+  push sequence `0x04` + `0x05` + `0x03` + `0x07` is emitted to
+  the joining client automatically.
+- **Phase 5** — session phase state machine
+  (`PRE_SESSION → STARTING → PRACTICE / QUALIFYING / PRE_RACE →
+  RACE → POST_SESSION → RESULTS`), driven from the tick loop with
+  durations loaded from `event.json`.
+- **Phase 6** — per-car `CarRaceState` (laps, position, sectors,
+  best lap), lap-completion mutations, standings recomputation,
+  `0x36` leaderboard broadcast on change, `0x3f` grid positions at
+  race countdown, `0x3e` session results at session end.
+- **Phase 7** — `results/YYMMDD_HHMMSS_<type>.json` writer at
+  session end, schema matching `§9` of the clean-room spec.
+- **Phase 8** — real admin chat commands: `/admin`, `/next`,
+  `/restart`, `/kick`, `/ban` (with `0x2b` kick/ban notification),
+  `/dq`, `/clear`, `/clear_all`, `/cleartp`, the time-penalty
+  family (`/tp5`, `/tp5c`, `/tp15`, `/tp15c`, `/dt`, `/dtc`, and
+  stop-and-go), `/ballast` and `/restrictor` with `0x53`
+  `MultiplayerBOPUpdate` broadcast, `/connections`, `/legacy`,
+  `/regular`.
+- **Phase 9** — penalty queue per car, pit-speeding auto-detection
+  from `ACP_CAR_UPDATE` velocity, mandatory-pitstop tracking.
+- **Phase 10** — deterministic weather simulator (sin/cos rain and
+  cloud cycle modeled on the algorithm in the binary's weather
+  function), `0x37` weather broadcast on significant change.
+- **Phase 11** — `entrylist.json` reader populating `Server.cars[]`
+  as entry templates, `0x56` setup data response, `0x4e` per-
+  connection rating summary, persistent kick/ban list in
+  `cfg/banlist.txt`.
+
+The implementation is **23 modules and ~7500 lines of portable
+C99**, builds clean under `gcc -Wall -Wextra -Wpedantic -O2` on
+Linux and under `clang -Wall -Wextra -Wpedantic -O2` on OpenBSD
+7.8 arm64.  The OpenBSD build was verified end-to-end on a real
+host — handshake + welcome push produces byte-identical wire
+output to the Linux build.  On OpenBSD the process pledges to
+`stdio inet` after binding its listening ports.
+
+The one remaining task (phase 12) is to run the server against a
+real ACC game client under Wine to verify the ServerMonitor
+protobuf field numbers and the welcome trailer layout.  Until
+that happens, field numbers in `monitor.h` are a best-guess from
+the catalog and may need small adjustments once a real client
+tries to decode them.
 
 ## Scope
 
@@ -87,20 +135,31 @@ interoperability of an independently created program.
 ├── NOTEBOOK_B.md          — see notebook-b/
 ├── notebook-b/
 │   └── NOTEBOOK_B.md      The public clean-room protocol spec.
-├── accd/                  The C implementation (work in progress).
+├── accd/                  The C implementation.
 │   ├── main.c             Poll loop + signal handling + lifecycle.
+│   ├── bans.{c,h}         Persistent kick / ban list.
+│   ├── bcast.{c,h}        Broadcast helpers (tier-1 direct relay).
+│   ├── chat.{c,h}         Admin chat commands + penalty dispatch.
 │   ├── config.{c,h}       UTF-16 LE JSON config reader.
-│   ├── state.{c,h}        Per-conn / global server state structs.
-│   ├── msg.h              All 53 message id constants + enums.
-│   ├── io.{c,h}           Byte buffer + TCP framing layer.
-│   ├── prim.{c,h}         Primitive readers / writers + strings.
-│   ├── net.{c,h}          tcp_listen / udp_bind helpers.
-│   ├── log.{c,h}          Timestamped logger + hexdump.
-│   ├── handshake.{c,h}    ACP_REQUEST_CONNECTION + 0x0b response.
 │   ├── dispatch.{c,h}     TCP / UDP message dispatchers.
-│   ├── chat.{c,h}         Admin chat command parser skeleton.
-│   ├── tick.{c,h}         Periodic server tick stub.
+│   ├── entrylist.{c,h}    entrylist.json reader.
+│   ├── handlers.{c,h}     Per-msg-id handlers (21 TCP + 7 UDP).
+│   ├── handshake.{c,h}    ACP_REQUEST_CONNECTION + 0x0b + welcome.
+│   ├── io.{c,h}           Byte buffer + TCP framing layer.
+│   ├── json.{c,h}         Recursive-descent JSON parser.
 │   ├── lan.{c,h}          UDP 8999 LAN discovery handler.
+│   ├── log.{c,h}          Timestamped logger + hexdump.
+│   ├── monitor.{c,h}      ServerMonitor protobuf message builders.
+│   ├── msg.h              All message id constants + enums.
+│   ├── net.{c,h}          tcp_listen / udp_bind helpers.
+│   ├── pb.{c,h}           Minimal write-only protobuf encoder.
+│   ├── penalty.{c,h}      Per-car penalty queue.
+│   ├── prim.{c,h}         Primitive readers / writers + strings.
+│   ├── results.{c,h}      Session results JSON writer.
+│   ├── session.{c,h}      Session phase machine + standings sort.
+│   ├── state.{c,h}        Per-conn / global server state structs.
+│   ├── tick.{c,h}         Periodic tick + leaderboard broadcasts.
+│   ├── weather.{c,h}      Deterministic sin/cos weather simulator.
 │   ├── Makefile
 │   └── README
 ├── .gitignore
@@ -114,16 +173,29 @@ interoperability of an independently created program.
 ## Building
 
 The implementation (`accd/`) is portable C99 that builds with either
-BSD or GNU `make`, using only libc (iconv is in libc on both Linux
-glibc and OpenBSD).
+BSD or GNU `make`, using only libc + iconv + libm.
+
+### Linux (glibc — iconv is in libc)
 
 ```sh
 cd accd
 make
 ```
 
-Tested on Debian sid aarch64.  Intended to build unchanged on
-OpenBSD; please file an issue if it does not.
+Tested on Debian sid aarch64 with `gcc 15.2.0`.
+
+### OpenBSD (iconv lives in ports at `/usr/local`)
+
+```sh
+cd accd
+make CFLAGS="-I/usr/local/include" \
+     LDFLAGS="-L/usr/local/lib" LIBS="-liconv"
+```
+
+Tested on OpenBSD 7.8 arm64 with `clang 19.1.7`.  The build is
+byte-identical in output to the Linux build: the same 189-byte
+handshake response + welcome push sequence is produced for the
+same synthetic client input.
 
 On OpenBSD the process pledges to `stdio inet` after binding its
 listening ports.
