@@ -1,3 +1,11 @@
+accd (0.1.6) unstable; urgency=medium
+
+  * Fix LAN discovery probe and response format (0xbf envelope,
+    nonce echo, correct response fields).
+  * Wait for drivers before starting the session.
+
+ -- Renaud Allard <renaud@allard.it>  Thu, 10 Apr 2026 00:15:00 +0200
+
 accd (0.1.5) unstable; urgency=medium
 
   * Always listen on UDP 8999 for client discovery probes.
