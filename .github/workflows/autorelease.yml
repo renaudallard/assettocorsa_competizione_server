@@ -1,0 +1,58 @@
+name: Autorelease
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - VERSION
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.RELEASE_TOKEN || github.token }}
+
+      - name: Extract version
+        id: version
+        run: |
+          ver=$(cat VERSION | tr -d '[:space:]')
+          if [ -z "$ver" ]; then
+            echo "Failed to extract version from VERSION" >&2
+            exit 1
+          fi
+          echo "version=$ver" >> "$GITHUB_OUTPUT"
+
+      - name: Check if tag exists
+        id: check
+        run: |
+          if git tag -l "${{ steps.version.outputs.version }}" | grep -q .; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create tag and release
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        run: |
+          ver="${{ steps.version.outputs.version }}"
+          git tag "$ver"
+          git push origin "$ver"
+          gh release create "$ver" \
+            --title "accd $ver" \
+            --generate-notes
+
+      - name: Trigger package builds
+        if: steps.check.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN || github.token }}
+        run: |
+          gh workflow run release-packages.yml \
+            -f ref="${{ steps.version.outputs.version }}" \
+            -f release_tag="${{ steps.version.outputs.version }}"

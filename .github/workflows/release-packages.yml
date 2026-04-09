@@ -1,0 +1,639 @@
+name: Release Packages
+
+on:
+  release:
+    types:
+      - published
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Git ref (branch/tag) to build packages from"
+        required: true
+        default: main
+      release_tag:
+        description: "Existing release tag to attach rebuilt assets to"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+  RPMBUILD_TOPDIR: /tmp/rpmbuild
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  detect-versions:
+    name: Detect distro versions
+    runs-on: ubuntu-latest
+    outputs:
+      ubuntu_stable: ${{ steps.detect.outputs.ubuntu_stable }}
+      ubuntu_lts: ${{ steps.detect.outputs.ubuntu_lts }}
+      debian_stable: ${{ steps.detect.outputs.debian_stable }}
+      debian_oldstable: ${{ steps.detect.outputs.debian_oldstable }}
+      fedora_release: ${{ steps.detect.outputs.fedora_release }}
+      rocky_release: ${{ steps.detect.outputs.rocky_release }}
+      rocky_latest: ${{ steps.detect.outputs.rocky_latest }}
+      rocky_container_latest: ${{ steps.detect.outputs.rocky_container_latest }}
+      alpine_latest: ${{ steps.detect.outputs.alpine_latest }}
+      freebsd_version: ${{ steps.detect.outputs.freebsd_version }}
+    steps:
+      - name: Fetch latest distro versions
+        id: detect
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import urllib.request
+          import json
+          import re
+
+          def fetch_text(url):
+              with urllib.request.urlopen(url, timeout=10) as resp:
+                  return resp.read().decode()
+
+          def latest_ubuntu_non_lts():
+              try:
+                  data = fetch_text("https://changelogs.ubuntu.com/meta-release")
+                  versions = []
+                  block = {}
+                  for line in data.splitlines() + [""]:
+                      if not line.strip():
+                          if block.get("Supported") == "1" and block.get("Lts", "0") == "0" and "Version" in block:
+                              versions.append(block["Version"])
+                          block = {}
+                          continue
+                      if ":" in line:
+                          k, v = line.split(":", 1)
+                          block[k.strip()] = v.strip()
+                  if versions:
+                      return versions[-1]
+              except Exception:
+                  pass
+              return "latest"
+
+          def latest_ubuntu_lts():
+              try:
+                  data = fetch_text("https://changelogs.ubuntu.com/meta-release-lts")
+                  versions = []
+                  block = {}
+                  for line in data.splitlines() + [""]:
+                      if not line.strip():
+                          if block.get("Supported") == "1" and block.get("Lts") == "1" and "Version" in block:
+                              versions.append(block["Version"])
+                          block = {}
+                          continue
+                      if ":" in line:
+                          k, v = line.split(":", 1)
+                          block[k.strip()] = v.strip()
+                  if versions:
+                      return versions[-1]
+              except Exception:
+                  pass
+              return "24.04"
+
+          def debian_codename(track):
+              url = f"https://deb.debian.org/debian/dists/{track}/Release"
+              try:
+                  data = fetch_text(url)
+                  for line in data.splitlines():
+                      if line.startswith("Codename:"):
+                          return line.split(":", 1)[1].strip()
+              except Exception:
+                  pass
+              return track
+
+          def latest_fedora_release():
+              try:
+                  data = fetch_text("https://getfedora.org/releases.json")
+                  releases = json.loads(data)
+                  versions = []
+                  for entry in releases.get("fedora", []):
+                      ver = entry.get("version")
+                      status = entry.get("status")
+                      edition = entry.get("edition")
+                      if edition == "Everything" and status == "Active" and ver is not None:
+                          versions.append(int(ver))
+                  if versions:
+                      return str(max(versions))
+              except Exception:
+                  pass
+              return "41"
+
+          def rocky_version_list():
+              try:
+                  html = fetch_text("https://dl.rockylinux.org/pub/rocky/")
+                  versions = []
+                  for line in html.splitlines():
+                      match = re.search(r'href="([0-9]+(?:\.[0-9]+)?)/"', line)
+                      if match:
+                          versions.append(match.group(1))
+                  if versions:
+                      return sorted(set(versions), key=lambda v: [int(x) for x in v.split(".")])
+              except Exception:
+                  pass
+              return ["9", "10"]
+
+          def rocky_container_tag(majors):
+              try:
+                  data = fetch_text("https://quay.io/api/v1/repository/rockylinux/rockylinux/tag/?limit=100&page=1")
+                  tag_list = json.loads(data).get("tags", [])
+                  tags = {t.get("name") for t in tag_list if t.get("name")}
+              except Exception:
+                  tags = set()
+              for rel in reversed(majors):
+                  for cand in [rel, f"{rel}.0", f"{rel}.1"]:
+                      if cand in tags:
+                          return cand
+              return majors[-1] if majors else "9"
+
+          def latest_alpine():
+              try:
+                  html = fetch_text("https://dl-cdn.alpinelinux.org/alpine/")
+                  versions = []
+                  for line in html.splitlines():
+                      m = re.search(r'href="v([0-9]+\.[0-9]+)/"', line)
+                      if m:
+                          versions.append(m.group(1))
+                  if versions:
+                      return sorted(versions, key=lambda v: [int(x) for x in v.split(".")])[-1]
+              except Exception:
+                  pass
+              return "3.21"
+
+          def latest_freebsd():
+              try:
+                  data = fetch_text("https://www.freebsd.org/releases/")
+                  versions = re.findall(r'(\d+\.\d+)-RELEASE', data)
+                  if versions:
+                      return sorted(set(versions), key=lambda v: [int(x) for x in v.split(".")])[-1]
+              except Exception:
+                  pass
+              return "14.2"
+
+          out = os.environ["GITHUB_OUTPUT"]
+          with open(out, "a") as f:
+              f.write(f"ubuntu_stable={latest_ubuntu_non_lts()}\n")
+              f.write(f"ubuntu_lts={latest_ubuntu_lts()}\n")
+              f.write(f"debian_stable={debian_codename('stable')}\n")
+              f.write(f"debian_oldstable={debian_codename('oldstable')}\n")
+              f.write(f"fedora_release={latest_fedora_release()}\n")
+              rocky = rocky_version_list()
+              rocky_majors = sorted({v.split('.')[0] for v in rocky}, key=int)
+              latest_major = rocky_majors[-1] if rocky_majors else "9"
+              f.write(f"rocky_release={latest_major}\n")
+              f.write(f"rocky_latest={latest_major}\n")
+              f.write(f"rocky_container_latest={rocky_container_tag(rocky_majors)}\n")
+              f.write(f"alpine_latest={latest_alpine()}\n")
+              f.write(f"freebsd_version={latest_freebsd()}\n")
+          PY
+
+  build-deb-ubuntu-stable:
+    name: Build Debian Packages (Ubuntu Stable)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+    container: ubuntu:${{ needs.detect-versions.outputs.ubuntu_stable }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare build environment
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y \
+            git ca-certificates \
+            build-essential debhelper fakeroot dpkg-dev
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Build Debian packages
+        run: |
+          set -euo pipefail
+          dpkg-buildpackage -us -uc -b -j"$(nproc)"
+
+      - name: Collect Debian artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/deb/ubuntu-stable
+          shopt -s nullglob
+          for pkg in ../*.deb; do
+            name=$(dpkg-deb -f "$pkg" Package)
+            ver=$(dpkg-deb -f "$pkg" Version)
+            arch=$(dpkg-deb -f "$pkg" Architecture)
+            cp "$pkg" "artifacts/deb/ubuntu-stable/${name}_${ver}~ubuntu-${{ needs.detect-versions.outputs.ubuntu_stable }}_${arch}.deb"
+          done
+
+      - name: Upload Debian artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: deb-packages-ubuntu-stable
+          path: artifacts/deb/ubuntu-stable/
+          if-no-files-found: error
+
+  build-deb-ubuntu-lts:
+    name: Build Debian Packages (Ubuntu LTS)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+    container: ubuntu:${{ needs.detect-versions.outputs.ubuntu_lts }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare build environment
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y \
+            git ca-certificates \
+            build-essential debhelper fakeroot dpkg-dev
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Build Debian packages
+        run: |
+          set -euo pipefail
+          dpkg-buildpackage -us -uc -b -j"$(nproc)"
+
+      - name: Collect Debian artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/deb/ubuntu-lts
+          shopt -s nullglob
+          for pkg in ../*.deb; do
+            name=$(dpkg-deb -f "$pkg" Package)
+            ver=$(dpkg-deb -f "$pkg" Version)
+            arch=$(dpkg-deb -f "$pkg" Architecture)
+            cp "$pkg" "artifacts/deb/ubuntu-lts/${name}_${ver}~ubuntu-${{ needs.detect-versions.outputs.ubuntu_lts }}_${arch}.deb"
+          done
+
+      - name: Upload Debian artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: deb-packages-ubuntu-lts
+          path: artifacts/deb/ubuntu-lts/
+          if-no-files-found: error
+
+  build-deb-debian-stable:
+    name: Build Debian Packages (Debian Stable)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+    container: debian:${{ needs.detect-versions.outputs.debian_stable }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare build environment
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y \
+            git ca-certificates \
+            build-essential debhelper fakeroot dpkg-dev
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Build Debian packages
+        run: |
+          set -euo pipefail
+          dpkg-buildpackage -us -uc -b -j"$(nproc)"
+
+      - name: Collect Debian artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/deb/debian-stable
+          shopt -s nullglob
+          for pkg in ../*.deb; do
+            name=$(dpkg-deb -f "$pkg" Package)
+            ver=$(dpkg-deb -f "$pkg" Version)
+            arch=$(dpkg-deb -f "$pkg" Architecture)
+            cp "$pkg" "artifacts/deb/debian-stable/${name}_${ver}~debian-${{ needs.detect-versions.outputs.debian_stable }}_${arch}.deb"
+          done
+
+      - name: Upload Debian artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: deb-packages-debian-stable
+          path: artifacts/deb/debian-stable/
+          if-no-files-found: error
+
+  build-deb-debian-lts:
+    name: Build Debian Packages (Debian LTS)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+    container: debian:${{ needs.detect-versions.outputs.debian_oldstable }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Prepare build environment
+        run: |
+          set -euo pipefail
+          apt-get update
+          apt-get install -y \
+            git ca-certificates \
+            build-essential debhelper fakeroot dpkg-dev
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Build Debian packages
+        run: |
+          set -euo pipefail
+          dpkg-buildpackage -us -uc -b -j"$(nproc)"
+
+      - name: Collect Debian artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/deb/debian-lts
+          shopt -s nullglob
+          for pkg in ../*.deb; do
+            name=$(dpkg-deb -f "$pkg" Package)
+            ver=$(dpkg-deb -f "$pkg" Version)
+            arch=$(dpkg-deb -f "$pkg" Architecture)
+            cp "$pkg" "artifacts/deb/debian-lts/${name}_${ver}~debian-${{ needs.detect-versions.outputs.debian_oldstable }}_${arch}.deb"
+          done
+
+      - name: Upload Debian artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: deb-packages-debian-lts
+          path: artifacts/deb/debian-lts/
+          if-no-files-found: error
+
+  build-rpm-fedora:
+    name: Build RPM Packages (Fedora)
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+    container: fedora:${{ needs.detect-versions.outputs.fedora_release }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          dnf install -y git rpm-build make gcc which tar
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Prepare source tarball
+        run: |
+          set -euo pipefail
+          ver=$(cat VERSION | tr -d '[:space:]')
+          RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
+          rm -rf "${RPM_TOPDIR}"
+          mkdir -p "${RPM_TOPDIR}"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          git archive --format=tar.gz --prefix="accd-${ver}/" HEAD > "${RPM_TOPDIR}/SOURCES/accd-${ver}.tar.gz"
+          sed "s/^Version:.*/Version: ${ver}/" redhat/accd.spec > "${RPM_TOPDIR}/SPECS/accd.spec"
+
+      - name: Build RPM packages
+        run: |
+          set -euo pipefail
+          RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
+          rpmbuild --define "_topdir ${RPM_TOPDIR}" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
+
+      - name: Collect RPM artifacts
+        run: |
+          set -euo pipefail
+          RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
+          mkdir -p artifacts/rpm/fedora-${{ needs.detect-versions.outputs.fedora_release }}
+          find "${RPM_TOPDIR}/RPMS" -name '*.rpm' -print | while read -r pkg; do
+            base=$(basename "$pkg")
+            namever=${base%%.rpm}
+            cp "$pkg" "artifacts/rpm/fedora-${{ needs.detect-versions.outputs.fedora_release }}/${namever}.fedora.${{ needs.detect-versions.outputs.fedora_release }}.rpm"
+          done
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: rpm-packages-fedora-${{ needs.detect-versions.outputs.fedora_release }}
+          path: artifacts/rpm/fedora-${{ needs.detect-versions.outputs.fedora_release }}/
+          if-no-files-found: error
+
+  build-rpm-rocky:
+    name: Build RPM Packages (Rocky ${{ needs.detect-versions.outputs.rocky_latest }})
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+    container:
+      image: quay.io/rockylinux/rockylinux:${{ needs.detect-versions.outputs.rocky_container_latest }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Install build tools
+        run: |
+          set -euo pipefail
+          pkgmgr=""
+          if command -v dnf >/dev/null 2>&1; then
+            pkgmgr="dnf"
+          elif command -v microdnf >/dev/null 2>&1; then
+            microdnf install -y dnf dnf-plugins-core
+            pkgmgr="dnf"
+          fi
+          if [ -z "$pkgmgr" ]; then
+            echo "No supported package manager found" >&2
+            exit 1
+          fi
+          $pkgmgr install -y epel-release || true
+          dnf config-manager --set-enabled crb || true
+          $pkgmgr install -y git rpm-build make gcc which tar
+
+      - name: Mark workspace as safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Prepare source tarball
+        run: |
+          set -euo pipefail
+          ver=$(cat VERSION | tr -d '[:space:]')
+          RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
+          rm -rf "${RPM_TOPDIR}"
+          mkdir -p "${RPM_TOPDIR}"/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          git archive --format=tar.gz --prefix="accd-${ver}/" HEAD > "${RPM_TOPDIR}/SOURCES/accd-${ver}.tar.gz"
+          sed "s/^Version:.*/Version: ${ver}/" redhat/accd.spec > "${RPM_TOPDIR}/SPECS/accd.spec"
+
+      - name: Build RPM packages
+        run: |
+          set -euo pipefail
+          RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
+          rpmbuild --define "_topdir ${RPM_TOPDIR}" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
+
+      - name: Collect RPM artifacts
+        run: |
+          set -euo pipefail
+          RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
+          mkdir -p artifacts/rpm/rocky-${{ needs.detect-versions.outputs.rocky_latest }}
+          find "${RPM_TOPDIR}/RPMS" -name '*.rpm' -print | while read -r pkg; do
+            base=$(basename "$pkg")
+            namever=${base%%.rpm}
+            cp "$pkg" "artifacts/rpm/rocky-${{ needs.detect-versions.outputs.rocky_latest }}/${namever}.rocky.${{ needs.detect-versions.outputs.rocky_latest }}.rpm"
+          done
+
+      - name: Upload RPM artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: rpm-packages-rocky-${{ needs.detect-versions.outputs.rocky_latest }}
+          path: artifacts/rpm/rocky-${{ needs.detect-versions.outputs.rocky_latest }}/
+          if-no-files-found: error
+
+  build-apk-alpine:
+    name: Build Alpine Package
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+    container: alpine:${{ needs.detect-versions.outputs.alpine_latest }}
+    defaults:
+      run:
+        shell: sh
+    steps:
+      - name: Install build tools
+        run: |
+          apk add --no-cache git build-base
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Build
+        run: |
+          cd accd
+          make -j"$(nproc)"
+          ver=$(cat ../VERSION | tr -d '[:space:]')
+          arch=$(uname -m)
+          staging="accd-${ver}-alpine-${arch}"
+          mkdir -p "${staging}/bin"
+          cp accd "${staging}/bin/"
+          cp ../LICENSE ../README.md "${staging}/"
+          tar czf "../${staging}.tar.gz" "${staging}"
+
+      - name: Upload Alpine artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: alpine-packages
+          path: accd-*-alpine-*.tar.gz
+          if-no-files-found: error
+
+  build-freebsd:
+    name: Build FreeBSD package (${{ needs.detect-versions.outputs.freebsd_version }})
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Build on FreeBSD
+        uses: cross-platform-actions/action@v0.31.0
+        with:
+          operating_system: freebsd
+          version: "${{ needs.detect-versions.outputs.freebsd_version }}"
+          run: |
+            set -eux
+            cd accd
+            make -j$(sysctl -n hw.ncpu)
+
+            ver=$(cat ../VERSION | tr -d '[:space:]')
+            arch=$(uname -m)
+
+            staging="accd-${ver}-freebsd-${arch}"
+            mkdir -p "${staging}/bin"
+            cp accd "${staging}/bin/"
+            cp ../LICENSE ../README.md "${staging}/"
+            tar czf "../${staging}.tar.gz" "${staging}"
+
+      - name: Upload FreeBSD artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: freebsd-packages
+          path: accd-*-freebsd-*.tar.gz
+          if-no-files-found: error
+
+  publish:
+    name: Upload Release Assets
+    runs-on: ubuntu-latest
+    needs:
+      - detect-versions
+      - build-deb-ubuntu-stable
+      - build-deb-ubuntu-lts
+      - build-deb-debian-stable
+      - build-deb-debian-lts
+      - build-rpm-fedora
+      - build-rpm-rocky
+      - build-apk-alpine
+      - build-freebsd
+    steps:
+      - name: Download Debian artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: deb-packages-*
+          path: release-assets/deb
+          merge-multiple: true
+
+      - name: Download RPM artifacts
+        uses: actions/download-artifact@v8
+        with:
+          pattern: rpm-packages-*
+          path: release-assets/rpm
+          merge-multiple: true
+
+      - name: Download Alpine artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: alpine-packages
+          path: release-assets/alpine
+
+      - name: Download FreeBSD artifacts
+        uses: actions/download-artifact@v8
+        with:
+          name: freebsd-packages
+          path: release-assets/freebsd
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event.release.tag_name }}
+          files: |
+            release-assets/deb/*.deb
+            release-assets/rpm/*.rpm
+            release-assets/alpine/*.tar.gz
+            release-assets/freebsd/*.tar.gz

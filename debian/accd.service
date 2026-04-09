@@ -1,0 +1,13 @@
+[Unit]
+Description=accd - ACC dedicated server
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/etc/accd
+ExecStart=/usr/bin/accd
+StandardInput=null
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

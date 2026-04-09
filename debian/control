@@ -1,0 +1,16 @@
+Source: accd
+Section: games
+Priority: optional
+Maintainer: Renaud Allard <renaud@allard.it>
+Build-Depends: debhelper (>= 10), make, gcc
+Standards-Version: 4.5.1
+Vcs-Git: https://github.com/renaudallard/assettocorsa_competizione_server.git
+Vcs-Browser: https://github.com/renaudallard/assettocorsa_competizione_server
+
+Package: accd
+Architecture: any
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Description: ACC dedicated server, clean-room reimplementation
+ An independent reimplementation of the Assetto Corsa Competizione
+ dedicated server, built so an unmodified ACC game client can connect
+ to it and play a private multiplayer session on Linux, without Wine.

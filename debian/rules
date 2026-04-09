@@ -1,0 +1,18 @@
+#!/usr/bin/make -f
+
+%:
+	dh $@
+
+override_dh_auto_build:
+	$(MAKE) -C accd
+
+override_dh_auto_install:
+	$(MAKE) -C accd install DESTDIR=$(CURDIR)/debian/accd PREFIX=/usr
+
+override_dh_auto_test:
+
+override_dh_auto_clean:
+	$(MAKE) -C accd clean
+
+override_dh_installsystemd:
+	dh_installsystemd --no-enable --no-start

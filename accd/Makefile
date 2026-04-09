@@ -120,4 +120,11 @@ weather.o: weather.c weather.h io.h log.h msg.h prim.h state.h
 clean:
 	rm -f ${PROG} ${OBJS}
 
-.PHONY: all clean
+PREFIX ?=	/usr/local
+DESTDIR ?=
+
+install: ${PROG}
+	install -d ${DESTDIR}${PREFIX}/bin
+	install -m 755 ${PROG} ${DESTDIR}${PREFIX}/bin/${PROG}
+
+.PHONY: all clean install
