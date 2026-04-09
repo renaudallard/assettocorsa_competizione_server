@@ -364,7 +364,65 @@ reply:
 		{
 			struct ByteBuf wb;
 
-			/* 0x28 SRV_LARGE_STATE_RESPONSE: session
+			/* 0x36 initial leaderboard snapshot. */
+		{
+			struct ByteBuf lb;
+			int j, nc = 0;
+
+			bb_init(&lb);
+			if (wr_u8(&lb, SRV_LEADERBOARD_BCAST) == 0 &&
+			    wr_u32(&lb, s->session.standings_seq) == 0) {
+				/* Best session splits (INT32_MAX = none). */
+				(void)wr_u8(&lb, 3);
+				(void)wr_i32(&lb, 0x7FFFFFFF);
+				(void)wr_i32(&lb, 0x7FFFFFFF);
+				(void)wr_i32(&lb, 0x7FFFFFFF);
+				(void)wr_u8(&lb, 0);
+
+				for (j = 0; j < ACC_MAX_CARS &&
+				    j < s->max_connections; j++)
+					if (s->cars[j].used) nc++;
+				(void)wr_u8(&lb, (uint8_t)nc);
+
+				for (j = 0; j < ACC_MAX_CARS &&
+				    j < s->max_connections; j++) {
+					struct CarEntry *ec = &s->cars[j];
+
+					if (!ec->used) continue;
+					(void)wr_u16(&lb, ec->car_id);
+					(void)wr_u16(&lb,
+					    (uint16_t)ec->race_number);
+					(void)wr_u16(&lb, 0);
+					(void)wr_u16(&lb, ec->driver_count);
+					(void)wr_u8(&lb, 0);
+					(void)wr_u8(&lb, 1);
+					(void)wr_u8(&lb, 0);
+					(void)wr_u8(&lb, 0);
+					(void)wr_str_a(&lb,
+					    ec->drivers[0].first_name);
+					(void)wr_str_a(&lb,
+					    ec->drivers[0].short_name);
+					(void)wr_u16(&lb, 0);
+					(void)wr_u8(&lb, 0);
+					(void)wr_i32(&lb, 0x7FFFFFFF);
+					(void)wr_i32(&lb, 0x7FFFFFFF);
+					(void)wr_u8(&lb, 0);
+					(void)wr_i32(&lb, 0x7FFFFFFF);
+					(void)wr_u8(&lb, 1);
+					(void)wr_u8(&lb, 0);
+					(void)wr_u8(&lb, 3);
+					(void)wr_i32(&lb, 0x7FFFFFFF);
+					(void)wr_i32(&lb, 0x7FFFFFFF);
+					(void)wr_i32(&lb, 0x7FFFFFFF);
+					(void)wr_u32(&lb, 0);
+					(void)wr_u32(&lb, 0);
+				}
+				(void)bcast_send_one(c, lb.data, lb.wpos);
+			}
+			bb_free(&lb);
+		}
+
+		/* 0x28 SRV_LARGE_STATE_RESPONSE: session
 			 * timing + assist rule snapshot. */
 			bb_init(&wb);
 			if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0 &&

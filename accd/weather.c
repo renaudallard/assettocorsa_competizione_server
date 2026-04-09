@@ -120,8 +120,8 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	 * correlate with cloud/rain levels, the last two with
 	 * forecast values.
 	 */
-	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.03f) < 0) return -1;
-	if (wr_f32(bb, 1.0f - s->weather.current_rain * 0.04f) < 0)
+	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.3f) < 0) return -1;
+	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.4f) < 0)
 		return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
