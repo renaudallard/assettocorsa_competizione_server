@@ -325,14 +325,14 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 				if (wr_u16(bb, ec->car_id) < 0) return -1;
 				if (wr_u16(bb, (uint16_t)ec->race_number) < 0)
 					return -1;
-				if (wr_u8(bb, 0) < 0) return -1;
-				if (wr_u16(bb, ec->driver_count) < 0) return -1;
-				if (wr_u8(bb, 0) < 0) return -1;
-				if (wr_u8(bb, 1) < 0) return -1;
-				if (wr_u8(bb, 0) < 0) return -1;
-				if (wr_u8(bb, 0) < 0) return -1;
-				if (wr_str_a(bb, ed->first_name) < 0) return -1;
+				if (wr_u8(bb, ec->car_model) < 0) return -1;
+				if (wr_u8(bb, ec->cup_category) < 0) return -1;
+				if (wr_u32(bb, 0) < 0) return -1;
+				if (wr_u8(bb, ec->driver_count) < 0) return -1;
+				if (wr_str_a(bb, ed->steam_id) < 0) return -1;
 				if (wr_str_a(bb, ed->short_name) < 0) return -1;
+				if (wr_str_a(bb, ed->first_name) < 0) return -1;
+				if (wr_str_a(bb, ed->last_name) < 0) return -1;
 				if (wr_u16(bb, 0) < 0) return -1;
 				if (wr_u8(bb, 0) < 0) return -1;
 				if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
@@ -870,21 +870,26 @@ reply:
 						    &s->cars[j];
 
 						if (!ec->used) continue;
+						(void)wr_u8(&lb, 0);
 						(void)wr_u16(&lb,
 						    ec->car_id);
 						(void)wr_u16(&lb,
 						    (uint16_t)ec->race_number);
-						(void)wr_u16(&lb, 0);
-						(void)wr_u16(&lb,
+						(void)wr_u8(&lb,
+						    ec->car_model);
+						(void)wr_u8(&lb,
+						    ec->cup_category);
+						(void)wr_u32(&lb, 0);
+						(void)wr_u8(&lb,
 						    ec->driver_count);
-						(void)wr_u8(&lb, 0);
-						(void)wr_u8(&lb, 1);
-						(void)wr_u8(&lb, 0);
-						(void)wr_u8(&lb, 0);
+						(void)wr_str_a(&lb,
+						    ec->drivers[0].steam_id);
+						(void)wr_str_a(&lb,
+						    ec->drivers[0].short_name);
 						(void)wr_str_a(&lb,
 						    ec->drivers[0].first_name);
 						(void)wr_str_a(&lb,
-						    ec->drivers[0].short_name);
+						    ec->drivers[0].last_name);
 						(void)wr_u16(&lb, 0);
 						(void)wr_u8(&lb, 0);
 						(void)wr_i32(&lb, 0x7FFFFFFF);
