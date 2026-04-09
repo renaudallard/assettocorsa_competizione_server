@@ -122,8 +122,11 @@ tick.o: tick.c tick.h bcast.h io.h log.h msg.h prim.h results.h session.h state.
 weather.o: weather.c weather.h io.h log.h msg.h prim.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c weather.c
 
+probe: probe.c
+	${CC} ${ACCD_CFLAGS} ${CFLAGS} ${ACCD_LDFLAGS} ${LDFLAGS} -o probe probe.c
+
 clean:
-	rm -f ${PROG} ${OBJS}
+	rm -f ${PROG} ${OBJS} probe
 
 PREFIX ?=	/usr/local
 DESTDIR ?=
@@ -132,4 +135,4 @@ install: ${PROG}
 	install -d ${DESTDIR}${PREFIX}/bin
 	install -m 755 ${PROG} ${DESTDIR}${PREFIX}/bin/${PROG}
 
-.PHONY: all clean install
+.PHONY: all clean install probe
