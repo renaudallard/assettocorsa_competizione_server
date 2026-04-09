@@ -63,7 +63,14 @@ session_reset(struct Server *s, uint8_t session_index)
 		return;
 	}
 
-	memset(&s->session, 0, sizeof(s->session));
+	{
+		uint8_t at = s->session.ambient_temp;
+		uint8_t tt = s->session.track_temp;
+
+		memset(&s->session, 0, sizeof(s->session));
+		s->session.ambient_temp = at;
+		s->session.track_temp = tt;
+	}
 	s->session.session_index = session_index;
 	s->session.phase = PHASE_PRE_SESSION;
 	s->session.phase_started_ms = mono_ms();

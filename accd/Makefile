@@ -60,7 +60,7 @@ chat.o: chat.c chat.h bcast.h handshake.h io.h log.h msg.h penalty.h prim.h sess
 console.o: console.c console.h chat.h log.h penalty.h session.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c console.c
 
-config.o: config.c config.h entrylist.h json.h log.h state.h
+config.o: config.c config.h entrylist.h json.h log.h state.h weather.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c config.c
 
 dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h prim.h state.h

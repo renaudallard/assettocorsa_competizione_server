@@ -142,6 +142,8 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 		if (wr_f32(bb, ambient) < 0) return -1;
 		if (wr_f32(bb, road) < 0) return -1;
 	}
+	if (wr_f32(bb, s->session.grip_level > 0
+	    ? s->session.grip_level : 1.0f) < 0) return -1;
 	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
 	if (wr_f32(bb, s->weather.wetness) < 0) return -1;
 	if (wr_f32(bb, s->weather.dry_line_wetness) < 0) return -1;

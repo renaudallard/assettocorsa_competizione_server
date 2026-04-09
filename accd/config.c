@@ -51,6 +51,7 @@
 #include "json.h"
 #include "log.h"
 #include "state.h"
+#include "weather.h"
 
 #define CFG_MAX_SIZE	(1u << 20)
 
@@ -298,6 +299,35 @@ config_load(struct Server *s, const char *cfg_dir)
 			else
 				d->session_type = 0;
 		}
+		s->session.ambient_temp = (uint8_t)json_obj_get_int(
+		    event, "ambientTemp", 22);
+		s->session.track_temp = (uint8_t)(
+		    s->session.ambient_temp + 8);
+
+		{
+			float clouds = (float)json_obj_get_int(event,
+			    "cloudLevel", 0) / 10.0f;
+			float rain = (float)json_obj_get_int(event,
+			    "rain", 0) / 10.0f;
+			int randomness = json_obj_get_int(event,
+			    "weatherRandomness", 0);
+
+			/* cloudLevel and rain in event.json are 0.0..1.0
+			 * floats but json_obj_get_int truncates; try the
+			 * raw node value. */
+			{
+				const struct json_node *cn = json_obj_get(
+				    event, "cloudLevel");
+				const struct json_node *rn = json_obj_get(
+				    event, "rain");
+				if (cn != NULL)
+					clouds = (float)cn->u.num;
+				if (rn != NULL)
+					rain = (float)rn->u.num;
+			}
+			weather_init(s, clouds, rain, randomness);
+		}
+
 		json_free(event);
 	}
 
