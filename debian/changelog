@@ -1,3 +1,18 @@
+accd (0.1.3) unstable; urgency=medium
+
+  * Fix handshake parser for real ACC client wire format (5 DriverInfo
+    strings, 41-byte numeric block, full CarInfo with car customization).
+  * Match Kunos welcome sequence order: 0x28, 0x36, 0x37.
+  * Implement UDP keepalive response (0x14) and peer address learning.
+  * Fix 0x28 large state response format (u8 prefix per f32 value).
+  * Send 0x4e rating summary at disconnect instead of welcome.
+  * Fix car dirt message ID: client sends 0x46, not 0x45.
+  * Fix leaderboard car entry format (steam_id, short_name, first_name,
+    last_name, car_model, cup_category).
+  * Add probe test client for protocol capture and validation.
+
+ -- Renaud Allard <renaud@allard.it>  Wed, 09 Apr 2026 19:30:00 +0200
+
 accd (0.1.2) unstable; urgency=medium
 
   * Handshake validated against real Kunos accServer.exe 1.10.2.
