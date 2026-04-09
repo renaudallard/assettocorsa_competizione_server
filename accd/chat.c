@@ -124,9 +124,13 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 
 	if (chat_parse_int(args, &car_num) < 0)
 		return;
+	/* Skip leading spaces, then skip the first number (car_num),
+	 * then skip spaces again to reach the value argument. */
 	while (*args == ' ')
 		args++;
-	while (*args && (*args < '0' || *args > '9'))
+	while (*args >= '0' && *args <= '9')
+		args++;
+	while (*args == ' ')
 		args++;
 	if (*args == '\0')
 		return;
@@ -275,7 +279,7 @@ chat_track_count(void)
 const char *
 chat_track_name(int index)
 {
-	if (index < 0 || track_list[index] == NULL)
+	if (index < 0 || index >= chat_track_count())
 		return NULL;
 	return track_list[index];
 }
@@ -455,24 +459,36 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/clear")) {
 		if (chat_parse_int(text + 6, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);
-			char chat[128];
 
-			penalty_clear(s, car_id);
-			snprintf(chat, sizeof(chat),
-			    "Pending penalties for #%d cleared by Race Control",
-			    car_num);
-			chat_broadcast(s,chat, 4);
+			if (car_id < 0) {
+				log_warn("admin: /clear for unknown car #%d",
+				    car_num);
+			} else {
+				char chat[128];
+
+				penalty_clear(s, car_id);
+				snprintf(chat, sizeof(chat),
+				    "Pending penalties for #%d cleared "
+				    "by Race Control", car_num);
+				chat_broadcast(s,chat, 4);
+			}
 		}
 	} else if (chat_prefix(text, "/cleartp")) {
 		if (chat_parse_int(text + 8, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);
-			char chat[128];
 
-			penalty_clear(s, car_id);
-			snprintf(chat, sizeof(chat),
-			    "Pending post race time penalties for #%d "
-			    "cleared by Race Control", car_num);
-			chat_broadcast(s,chat, 4);
+			if (car_id < 0) {
+				log_warn("admin: /cleartp for unknown car #%d",
+				    car_num);
+			} else {
+				char chat[128];
+
+				penalty_clear(s, car_id);
+				snprintf(chat, sizeof(chat),
+				    "Pending post race time penalties for #%d "
+				    "cleared by Race Control", car_num);
+				chat_broadcast(s,chat, 4);
+			}
 		}
 	} else if (chat_prefix(text, "/tp5c")) {
 		chat_do_penalty(s, "tp5c", text + 5, 1, NULL, 0);
