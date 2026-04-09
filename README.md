@@ -301,10 +301,15 @@ contributing, please read section 0 of
 
 ## License
 
-TBD. The intent is a permissive open-source license (e.g. ISC /
-BSD-2-Clause) on all code the project publishes, to match the
-OpenBSD ecosystem expectations. The clean-room specification text
-is authored for public reference.
+ISC. See [`LICENSE`](LICENSE) for the full text.  The clean-room
+specification text in `notebook-b/` is authored for public
+reference under the same terms.
 
 Nothing in this repository is authored, endorsed, or licensed by
 Kunos Simulazioni or 505 Games.
+
+## Support This Project
+
+If you find this project useful, you can support its development:
+
+[![PayPal](https://img.shields.io/badge/PayPal-Donate-blue.svg?logo=paypal)](https://www.paypal.me/RenaudAllard)
