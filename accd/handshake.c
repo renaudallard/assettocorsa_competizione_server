@@ -804,31 +804,34 @@ reply:
 			struct ByteBuf wb;
 
 			/* 0x28 SRV_LARGE_STATE_RESPONSE: session
-			 * timing + assist rule snapshot. */
+			 * timing + assist rule snapshot.  Each f32
+			 * value is prefixed by u8(1). */
 			bb_init(&wb);
 			if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0 &&
-			    wr_u8(&wb, 0) == 0 &&
-			    wr_u8(&wb, 1) == 0) {
+			    wr_u8(&wb, 0) == 0) {
 				int k;
 				float grip = s->session.grip_level > 0
 				    ? s->session.grip_level : 1.0f;
 
 				/* 3 copies of session time as f32. */
-				for (k = 0; k < 3; k++)
+				for (k = 0; k < 3; k++) {
+					(void)wr_u8(&wb, 1);
 					(void)wr_f32(&wb,
 					    (float)s->session.weekend_time_s);
+				}
 				/* 3 copies of end time. */
-				for (k = 0; k < 3; k++)
+				for (k = 0; k < 3; k++) {
+					(void)wr_u8(&wb, 1);
 					(void)wr_f32(&wb,
 					    (float)(s->sessions[0].duration_min
 					    * 60));
+				}
 				(void)wr_u8(&wb, 0);
 				(void)wr_u8(&wb, 6);
 				(void)wr_u8(&wb, 0);
 				(void)wr_u8(&wb, 1);
 				(void)wr_f32(&wb, grip);
 				(void)wr_u16(&wb, 3);
-				(void)wr_u8(&wb, 0);
 				(void)wr_u16(&wb, 600);
 				(void)wr_u8(&wb, 0);
 				(void)wr_u8(&wb, 0);
