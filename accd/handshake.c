@@ -85,42 +85,39 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 	if (wr_u16(bb, (uint16_t)c->car_id) < 0)
 		return -1;
 
-	/* Session type + timing fields. */
+	/* Session flags. */
 	if (wr_u8(bb, 1) < 0)
 		return -1;
 	if (wr_u8(bb, 1) < 0)
 		return -1;
 
 	/* preRaceWaitingTimeSeconds, sessionOverTimeSeconds. */
-	if (wr_u32(bb, 48) < 0)
+	if (wr_u32(bb, 52) < 0)
 		return -1;
 	if (wr_u32(bb, 50) < 0)
 		return -1;
 
-	/* Assigned race number and car model info. */
-	if (wr_u8(bb, 0) < 0)
-		return -1;
+	/* Echoed car info: raceNumber (i32), carModel (u8). */
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
 		struct CarEntry *car = &s->cars[c->car_id];
-		if (wr_u32(bb, (uint32_t)car->race_number) < 0)
+
+		if (wr_i32(bb, car->race_number) < 0)
+			return -1;
+		if (wr_u8(bb, car->car_model) < 0)
 			return -1;
 	} else {
-		if (wr_u32(bb, 0) < 0)
+		if (wr_i32(bb, 0) < 0)
+			return -1;
+		if (wr_u8(bb, 0) < 0)
 			return -1;
 	}
 
-	/* Remaining placeholder fields. */
-	if (wr_u32(bb, 0) < 0)		/* pad */
-		return -1;
-	if (wr_u32(bb, 0) < 0)		/* pad */
-		return -1;
-	if (wr_u32(bb, 0xFF) < 0)	/* sentinel */
-		return -1;
-
-	/* Empty sub-record padding. */
-	for (i = 0; i < 128; i++)
-		if (wr_u8(bb, 0) < 0)
+	/* Remaining sub-record padding. */
+	for (i = 0; i < 5; i++)
+		if (wr_u32(bb, 0) < 0)
 			return -1;
+	if (wr_u32(bb, 0xFF) < 0)
+		return -1;
 
 	return 0;
 }
