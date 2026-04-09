@@ -136,8 +136,8 @@ session_recompute_standings(struct Server *s)
 		s->session.standings_seq++;
 }
 
-static const char *
-phase_name(uint8_t p)
+const char *
+session_phase_name(uint8_t p)
 {
 	switch (p) {
 	case PHASE_NONE:		return "NONE";
@@ -160,8 +160,8 @@ enter_phase(struct Server *s, uint8_t new_phase)
 		return;
 	log_info("session %u: %s -> %s",
 	    (unsigned)s->session.session_index,
-	    phase_name(s->session.phase),
-	    phase_name(new_phase));
+	    session_phase_name(s->session.phase),
+	    session_phase_name(new_phase));
 	s->session.phase = new_phase;
 	s->session.phase_started_ms = mono_ms();
 }

@@ -79,7 +79,7 @@ The `accd/` C implementation now covers:
   connection rating summary, persistent kick/ban list in
   `cfg/banlist.txt`.
 
-The implementation is **23 modules and ~7500 lines of portable
+The implementation is **24 modules and ~7800 lines of portable
 C99**, builds clean under `gcc -Wall -Wextra -Wpedantic -O2` on
 Linux and under `clang -Wall -Wextra -Wpedantic -O2` on OpenBSD
 7.8 arm64.  The OpenBSD build was verified end-to-end on a real
@@ -140,7 +140,8 @@ interoperability of an independently created program.
 │   ├── bans.{c,h}         Persistent kick / ban list.
 │   ├── bcast.{c,h}        Broadcast helpers (tier-1 direct relay).
 │   ├── chat.{c,h}         Admin chat commands + penalty dispatch.
-│   ├── config.{c,h}       UTF-16 LE JSON config reader.
+│   ├── config.{c,h}       JSON config reader (UTF-16 LE or UTF-8).
+│   ├── console.{c,h}      stdin admin console (poll-driven).
 │   ├── dispatch.{c,h}     TCP / UDP message dispatchers.
 │   ├── entrylist.{c,h}    entrylist.json reader.
 │   ├── handlers.{c,h}     Per-msg-id handlers (21 TCP + 7 UDP).
@@ -228,6 +229,38 @@ The server prints the parsed config, binds the configured ports,
 runs a 10 Hz poll/tick loop, accepts TCP connections, parses any
 framed handshake message, and replies with the 0x0b response.
 Every other message is logged but not yet processed.
+
+### Admin console
+
+When stdin is a TTY (interactive terminal or SSH session), an
+admin console is automatically enabled.  Type commands directly
+to control the server without needing to connect as an in-game
+client:
+
+```
+$ ./accd cfg
+[...startup logs on stderr...]
+help
+commands (leading / optional):
+  help             show this list
+  status           session phase, connections, tick
+  show cars        list car slots in use
+  show conns       list active connections
+  next             advance to next session
+  restart          restart current session
+  kick <num>       kick car by race number
+  ban <num>        kick + persistent ban
+  dq <num>         disqualify
+  [...]
+  quit             shut down the server
+status
+session 0  phase=PRACTICE  remaining=540000 ms  tick=42  conns=1
+```
+
+Console replies go to stdout, server logs go to stderr.
+Separate them with `./accd cfg 2>accd.log`.  When stdin is not
+a TTY (e.g. `./accd cfg < /dev/null` or systemd), the console
+disables itself and the server runs headless.
 
 ### Quick smoke test (no real client)
 

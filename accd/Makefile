@@ -14,6 +14,7 @@ OBJS =		main.o \
 		bcast.o \
 		chat.o \
 		config.o \
+		console.o \
 		dispatch.o \
 		entrylist.o \
 		handlers.o \
@@ -44,7 +45,7 @@ all: ${PROG}
 ${PROG}: ${OBJS}
 	${CC} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} ${LIBS}
 
-main.o: main.c config.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
+main.o: main.c config.h console.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c main.c
 
 bans.o: bans.c bans.h log.h state.h
@@ -55,6 +56,9 @@ bcast.o: bcast.c bcast.h io.h log.h msg.h state.h
 
 chat.o: chat.c chat.h bcast.h io.h log.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c chat.c
+
+console.o: console.c console.h chat.h log.h penalty.h session.h state.h
+	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c console.c
 
 config.o: config.c config.h entrylist.h json.h log.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c config.c

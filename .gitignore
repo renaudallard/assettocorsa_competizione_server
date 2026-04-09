@@ -13,6 +13,9 @@ notebook-a/
 # Not part of the project, not redistributable.
 tmp/
 
+# Auto-generated session result files
+accd/results/
+
 # Typical local build / tool artifacts
 target/
 build/

@@ -47,4 +47,10 @@ void	session_recompute_standings(struct Server *s);
  */
 int	session_is_practice_or_qualy(const struct Server *s);
 
+/*
+ * Human-readable name for a session phase enum value.
+ */
+const char *
+	session_phase_name(uint8_t phase);
+
 #endif /* ACCD_SESSION_H */

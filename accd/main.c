@@ -39,6 +39,7 @@ extern int pledge(const char *promises, const char *execpromises);
 #endif
 
 #include "config.h"
+#include "console.h"
 #include "dispatch.h"
 #include "io.h"
 #include "lan.h"
@@ -49,10 +50,10 @@ extern int pledge(const char *promises, const char *execpromises);
 #include "tick.h"
 
 #define POLL_RECV_BUF	8192
-#define POLL_SLOTS	(ACC_MAX_CARS + 4)
+#define POLL_SLOTS	(ACC_MAX_CARS + 5)	/* tcp + udp + lan + stdin + conns */
 #define TICK_INTERVAL_MS	100
 
-static volatile sig_atomic_t g_stop;
+volatile sig_atomic_t g_stop;
 
 static void
 on_signal(int sig)
@@ -77,6 +78,10 @@ setup_signals(void)
 	sa.sa_handler = SIG_IGN;
 	if (sigaction(SIGPIPE, &sa, NULL) < 0)
 		log_err("sigaction SIGPIPE: %s", strerror(errno));
+#ifdef SIGTTIN
+	if (sigaction(SIGTTIN, &sa, NULL) < 0)
+		log_err("sigaction SIGTTIN: %s", strerror(errno));
+#endif
 }
 
 /* ----- per-fd handlers ------------------------------------------- */
@@ -211,6 +216,8 @@ main(int argc, char **argv)
 		log_warn("pledge: %s", strerror(errno));
 #endif
 
+	console_init();
+
 	log_info("listening: tcp/%d udp/%d (Ctrl-C to stop)",
 	    srv.tcp_port, srv.udp_port);
 
@@ -230,6 +237,12 @@ main(int argc, char **argv)
 		npfds++;
 		if (srv.lan_fd >= 0) {
 			pfds[npfds].fd = srv.lan_fd;
+			pfds[npfds].events = POLLIN;
+			pfds[npfds].revents = 0;
+			npfds++;
+		}
+		if (console_fd() >= 0) {
+			pfds[npfds].fd = console_fd();
 			pfds[npfds].events = POLLIN;
 			pfds[npfds].revents = 0;
 			npfds++;
@@ -265,6 +278,11 @@ main(int argc, char **argv)
 				lan_handle(&srv, srv.lan_fd);
 			i++;
 		}
+		if (console_fd() >= 0) {
+			if (pfds[i].revents & (POLLIN | POLLHUP))
+				console_handle(&srv);
+			i++;
+		}
 		for (; i < npfds; i++) {
 			struct Conn *c;
 			int fd;
@@ -294,6 +312,7 @@ main(int argc, char **argv)
 	}
 
 	log_info("accd shutting down");
+	console_close();
 	if (srv.lan_fd >= 0)
 		close(srv.lan_fd);
 	close(srv.tcp_fd);
