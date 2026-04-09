@@ -45,7 +45,7 @@ all: ${PROG}
 ${PROG}: ${OBJS}
 	${CC} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} ${LIBS}
 
-main.o: main.c config.h console.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
+main.o: main.c bans.h config.h console.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c main.c
 
 bans.o: bans.c bans.h log.h state.h
@@ -54,7 +54,7 @@ bans.o: bans.c bans.h log.h state.h
 bcast.o: bcast.c bcast.h io.h log.h msg.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c bcast.c
 
-chat.o: chat.c chat.h bcast.h handshake.h io.h log.h msg.h penalty.h prim.h session.h state.h
+chat.o: chat.c chat.h bans.h bcast.h handshake.h io.h log.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c chat.c
 
 console.o: console.c console.h chat.h log.h penalty.h session.h state.h
@@ -72,7 +72,7 @@ entrylist.o: entrylist.c entrylist.h json.h log.h state.h
 handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h penalty.h prim.h session.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c handlers.c
 
-handshake.o: handshake.c handshake.h bcast.h io.h log.h msg.h prim.h state.h weather.h
+handshake.o: handshake.c handshake.h bans.h bcast.h io.h log.h msg.h prim.h state.h weather.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c handshake.c
 
 io.o: io.c io.h log.h

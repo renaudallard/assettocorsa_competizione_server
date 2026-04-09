@@ -39,6 +39,7 @@
 #include <string.h>
 #include <strings.h>
 
+#include "bans.h"
 #include "bcast.h"
 #include "chat.h"
 #include "handshake.h"
@@ -251,6 +252,14 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 		bb_free(&out);
 	}
 	target->state = CONN_DISCONNECT;
+	if (permanent && car_id >= 0 && car_id < ACC_MAX_CARS) {
+		const char *sid = s->cars[car_id].drivers[0].steam_id;
+
+		if (bans_add(&s->bans, sid) == 0) {
+			bans_save(&s->bans, s->cfg_dir);
+			log_info("admin: banned steam_id %s", sid);
+		}
+	}
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", chat);
 	log_info("admin: %s", chat);

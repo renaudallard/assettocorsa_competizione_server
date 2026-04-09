@@ -41,6 +41,7 @@
 #include "io.h"
 #include "msg.h"
 
+#define ACC_MAX_BANS		256
 #define ACC_MAX_CARS		64
 #define ACC_MAX_DRIVERS_PER_CAR	4
 #define ACC_MAX_NAME_LEN	64
@@ -166,6 +167,11 @@ struct WeatherStatus {
  * carried in the wire protocol; everything else is server-side
  * enforcement only).
  */
+struct BanList {
+	char	entries[ACC_MAX_BANS][32];
+	int	count;
+};
+
 struct AssistRules {
 	uint8_t		stability_control_max;
 	uint8_t		disable_autosteer;
@@ -298,7 +304,9 @@ struct Server {
 	struct SessionState	session;
 	struct WeatherStatus	weather;
 	struct AssistRules	assist;
+	struct BanList		bans;
 	uint8_t			bop_version;
+	char			cfg_dir[256];	/* for saving bans */
 
 	/* timing */
 	uint64_t	tick_count;

@@ -58,6 +58,7 @@
 #include <time.h>
 
 #include "bcast.h"
+#include "bans.h"
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
@@ -275,6 +276,18 @@ handshake_handle(struct Server *s, struct Conn *c,
 			    sizeof(car->drivers[0].steam_id), "%s",
 			    steam);
 		car->driver_count = 1;
+
+		/* Check ban list after parsing steam_id. */
+		if (bans_contains(&s->bans, car->drivers[0].steam_id)) {
+			log_info("rejecting banned steam_id %s",
+			    car->drivers[0].steam_id);
+			car->used = 0;
+			c->car_id = -1;
+			reason = REJECT_BANNED;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
+		}
 
 		if (rd_i32(&r, &rnum) == 0)
 			car->race_number = rnum;

@@ -42,13 +42,6 @@
 
 #include "state.h"
 
-#define ACC_MAX_BANS	256
-
-struct BanList {
-	char	entries[ACC_MAX_BANS][32];
-	int	count;
-};
-
 void	bans_init(struct BanList *bl);
 void	bans_load(struct BanList *bl, const char *cfg_dir);
 void	bans_save(const struct BanList *bl, const char *cfg_dir);

@@ -64,6 +64,7 @@
 extern int pledge(const char *promises, const char *execpromises);
 #endif
 
+#include "bans.h"
 #include "config.h"
 #include "console.h"
 #include "dispatch.h"
@@ -243,6 +244,9 @@ main(int argc, char **argv)
 		log_err("config_load failed for %s", cfg_dir);
 		return 1;
 	}
+	snprintf(srv.cfg_dir, sizeof(srv.cfg_dir), "%s", cfg_dir);
+	bans_init(&srv.bans);
+	bans_load(&srv.bans, cfg_dir);
 
 	log_info("accd phase 1 starting (pid %d)", (int)getpid());
 	log_info("config: tcp=%d udp=%d max=%d lan=%d track=\"%s\"",
