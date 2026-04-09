@@ -470,14 +470,20 @@ parse_value(struct parser *p)
 	case '[':
 		return parse_array(p);
 	case '"': {
-		const char *s = parse_string(p);
-		struct json_node *n;
+		/*
+		 * Allocate the node FIRST so it is the first slab
+		 * allocation (right after the header).  json_free()
+		 * depends on this layout to locate the header.
+		 */
+		struct json_node *n = new_node(p, JSON_STR);
+		const char *s;
 
+		if (n == NULL)
+			return NULL;
+		s = parse_string(p);
 		if (s == NULL)
 			return NULL;
-		n = new_node(p, JSON_STR);
-		if (n != NULL)
-			n->u.s = s;
+		n->u.s = s;
 		return n;
 	}
 	case 't':
@@ -547,8 +553,9 @@ json_free(struct json_node *root)
 	if (root == NULL)
 		return;
 	/*
-	 * The root node is bump-allocated immediately after the
-	 * slab header.  Walk back to find the header.
+	 * The root node is always the first slab allocation
+	 * (immediately after the slab header).  Walk back to
+	 * find the header and free the slab.
 	 */
 	base = (char *)root - sizeof(struct slab_header);
 	hdr = (struct slab_header *)base;
