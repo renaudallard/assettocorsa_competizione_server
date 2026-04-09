@@ -98,7 +98,8 @@ bans_save(const struct BanList *bl, const char *cfg_dir)
 	fprintf(f, "# accd ban list -- one Steam64 ID per line\n");
 	for (i = 0; i < bl->count; i++)
 		fprintf(f, "%s\n", bl->entries[i]);
-	fclose(f);
+	if (fclose(f) != 0)
+		log_warn("bans: fclose %s: %s", path, strerror(errno));
 }
 
 int
@@ -134,6 +135,8 @@ bans_remove(struct BanList *bl, const char *steam_id)
 {
 	int i;
 
+	if (steam_id == NULL || steam_id[0] == '\0')
+		return -1;
 	for (i = 0; i < bl->count; i++) {
 		if (strcmp(bl->entries[i], steam_id) == 0) {
 			memmove(&bl->entries[i], &bl->entries[i + 1],
