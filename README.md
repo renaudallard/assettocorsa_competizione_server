@@ -12,9 +12,10 @@ session — on Linux and OpenBSD, without Wine.
 ## Status
 
 The server implements the full ACC multiplayer protocol and can
-host private sessions.  Real-client validation against the ACC
-game client is ongoing; the protobuf field numbers in `monitor.h`
-may need minor adjustments once end-to-end testing is complete.
+host private sessions.  The handshake, reject, and welcome
+response formats have been validated against a real Kunos
+`accServer.exe` 1.10.2 instance.  The server correctly accepts
+connections, assigns car IDs, and begins the session lifecycle.
 
 ### What works
 
@@ -67,9 +68,11 @@ may need minor adjustments once end-to-end testing is complete.
 
 ### Known limitations
 
-- Real-client testing is not yet complete; some wire-format details
-  may need adjustment based on packet captures against the stock
-  Kunos `accServer.exe`.
+- The welcome trailer is a minimal placeholder; the full trailer
+  includes additional session/car/config sub-records not yet
+  populated.
+- The handshake request parser skips DriverInfo/CarInfo fields
+  after password validation; all fields are still accepted.
 - No public lobby registration (`registerToLobby` is always 0).
 - No Championship Points / CP rating system.
 
