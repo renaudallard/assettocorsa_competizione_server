@@ -168,6 +168,10 @@ tcp_send_framed(int fd, const void *body, size_t len)
 {
 	unsigned char hdr[6];
 	size_t hdrlen;
+	struct iovec iov[2];
+	const unsigned char *src;
+	ssize_t n;
+	size_t total, sent;
 	const unsigned char *b = (const unsigned char *)body;
 
 	if (len >= 1) {
@@ -176,10 +180,6 @@ tcp_send_framed(int fd, const void *body, size_t len)
 		if (g_debug && len > 1)
 			log_hexdump("  tx", body, len);
 	}
-	struct iovec iov[2];
-	const unsigned char *src;
-	ssize_t n;
-	size_t total, sent;
 
 	if (len < 0xFFFF) {
 		hdr[0] = (unsigned char)(len & 0xff);
