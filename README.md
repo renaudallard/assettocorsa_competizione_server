@@ -25,9 +25,9 @@ connections, assigns car IDs, and begins the session lifecycle.
   machine, disconnect notification.  Reject (`0x0c`) and accept
   (`0x0b`) formats validated against real Kunos `accServer.exe`.
 - **Post-accept welcome sequence** — `0x28` large state response,
-  `0x36` initial leaderboard, `0x37` weather snapshot, and `0x4e`
-  rating summary sent immediately after handshake accept, matching
-  the real server's welcome sequence.
+  `0x36` initial leaderboard, and `0x37` weather snapshot sent
+  immediately after handshake accept, matching the real server's
+  welcome sequence order.
 - **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
   message types are handled; 31 server-to-client message types are
   implemented.
