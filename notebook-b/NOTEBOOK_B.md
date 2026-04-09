@@ -1418,6 +1418,82 @@ Kunos's infrastructure by proxy.
 
 A second protocol, entirely separate from the sim-side protocol, is used by server-monitoring and hosting tools. Unlike the sim protocol, this one is **protobuf-based** and its schema is fully known.
 
+## 12A. Rating / CP system
+
+### 12A.1 Architecture
+
+The ACC rating system (SA, RC, Track Medals, Competition Points)
+is entirely computed by the Kunos lobby backend.  The dedicated
+server is a pure **relay/store**: it receives rating data from the
+backend via the kson `0xf3` CP push (see section 11.6), stores it
+per-connection, and periodically broadcasts it to clients via `0x4e`.
+
+The server does NOT compute ratings locally.  Evidence:
+
+- `FUN_140042030` (tagged `update_connection_rating` in
+  notebook-a) is a 57-byte timestamp normalizer, not a rating
+  calculator.  It reads two doubles from the connection struct
+  and adds them to a parameter.
+- The connection's rating field at struct offset +0x3f is never
+  written by any lap-completion, session-end, or incident handler.
+- The `ACP_ELO_UPDATE` (`0x51`) handler only stores a
+  client-reported elo value; the server does not validate or
+  compute it.
+- The `-10` (= -1.0 after /10) values in wire captures are the
+  uninitialized sentinel, sent when no backend has populated the
+  rating.
+
+### 12A.2 Rating fields
+
+Known rating categories from the SDK and configuration:
+
+| Name | Config key | Range | Source |
+|------|-----------|-------|--------|
+| Safety Rating (SA) | `safetyRatingRequirement` | 0-99 | Backend |
+| Racecraft Rating (RC) | `racecraftRatingRequirement` | 0-99 | Backend |
+| Track Medals (TM) | `trackMedalsRequirement` | 0-3 | Backend |
+| Driver Category | (handshake) | 0=Bronze..3=Platinum | Client |
+| Cup Category | (handshake/entrylist) | 0=Overall..4=Am | Config |
+| Elo | `ACP_ELO_UPDATE` (0x51) | integer | Client-reported |
+
+String fields "CN" (Consistency), "CC" (Car Control), "PC" (Pace),
+and "TR" (Trust) do not appear in the server binary.  If they
+exist, they are client-side-only or backend-only concepts.
+
+### 12A.3 The 0x4e rating broadcast
+
+Format (per-connection record):
+
+```
+u16  conn_id
+u8   presence_flag (0 = no car found, non-zero = valid)
+i16  ratingA * 10  (signed, 1 decimal place precision)
+i16  ratingB * 10  (signed, same source as ratingA)
+u32  0xFFFFFFFF    (sentinel)
+str_a steam_id     (Format-A string)
+```
+
+Both ratingA and ratingB are read from the same connection struct
+offset (+0x3f) in the Kunos binary, so they are always identical.
+The distinction between SA and RC may only be meaningful when the
+lobby backend populates them separately.
+
+Broadcast trigger: the server tick checks a `ratings_dirty` flag
+(connection list offset +0x140a1) on a configurable cooldown timer.
+The flag is set when standings change.
+
+### 12A.4 Implications for the reimplementation
+
+Without a lobby backend connection, the server correctly sends
+default/zero ratings.  This matches the Kunos server's behavior
+when disconnected from the backend.  The `settings.json`
+requirement fields are effectively ignored (treated as -1 =
+disabled) since there is no backend to provide real rating data.
+
+No local rating computation is possible or necessary.
+
+---
+
 ### 12B.1 Transport and framing
 
 Uses the same TCP listener as the sim protocol (`tcpPort`). The server distinguishes ServerMonitor clients from sim clients at connection time via the first message, which is a `ServerMonitorConnectionRequest` protobuf message instead of a sim-protocol handshake. (The exact demultiplexing rule needs to be confirmed; it may be based on a magic byte, an SNI-like prefix, or lazy fallback.)
