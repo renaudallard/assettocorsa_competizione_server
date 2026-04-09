@@ -52,7 +52,14 @@ may need minor adjustments once end-to-end testing is complete.
   the same network find the server automatically.
 - **Rating summary** — periodic `0x4e` per-connection broadcast.
 - **BoP updates** — `0x53` broadcast on ballast/restrictor changes.
+- **Driver swap** — full endurance-style driver swap state machine
+  for multi-driver entries, with `&swap` chat command and `0x47` /
+  `0x48` / `0x4a` / `0x58` wire protocol.
+- **Live track change** — `/track <name>` changes the track
+  mid-session with `0x4b` welcome redelivery to all clients.
 - **Persistent bans** — `cfg/banlist.txt`, survives restarts.
+- **Debug tracing** — `-d` flag or `debug` console command enables
+  full wire hexdump of every message sent and received.
 - **Admin console** — interactive stdin console when running from a
   terminal (see below).
 - **OpenBSD support** — builds and runs on OpenBSD 7.8 arm64 with
@@ -146,7 +153,7 @@ interoperability of an independently created program.
 └── .github/workflows/       CI: autorelease + multi-distro packaging.
 ```
 
-The implementation is **24 modules and ~8700 lines of portable
+The implementation is **24 modules and ~9500 lines of portable
 C99**, with no dependencies beyond libc, iconv, and libm.
 
 ## Building
@@ -172,8 +179,8 @@ make CFLAGS="-I/usr/local/include" \
 ```
 
 Tested on OpenBSD 7.8 arm64 with `clang 19.1.7`.  On OpenBSD
-the process pledges to `stdio inet` after binding its listening
-ports.
+the process pledges to `stdio rpath wpath cpath inet` after
+binding its listening ports.
 
 ## Running
 
@@ -190,6 +197,8 @@ alternative path can be passed as the first argument:
 ```sh
 ./accd                           # uses ./cfg/
 ./accd /path/to/other/cfg        # explicit path
+./accd -d                        # enable debug tracing
+./accd -c /path/to/cfg           # alternative to positional arg
 ```
 
 #### configuration.json
@@ -380,7 +389,10 @@ commands (leading / optional):
   clear_all        clear all penalties
   ballast <n> <kg> assign ballast
   restrictor <n> % assign restrictor
+  track [name]     show or change track
+  tracks           list available tracks
   connections      list connections (also broadcasts)
+  debug            toggle debug tracing
   quit             shut down the server
 status
 session 0  phase=PRACTICE  remaining=540000 ms  tick=42  conns=1
