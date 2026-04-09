@@ -9,6 +9,7 @@ Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  gcc
 BuildRequires:  make
+BuildRequires:  systemd-rpm-macros
 
 %description
 An independent reimplementation of the Assetto Corsa Competizione
@@ -23,8 +24,19 @@ make -C accd %{?_smp_mflags}
 
 %install
 make -C accd install DESTDIR=%{buildroot} PREFIX=/usr
+install -D -m 644 debian/accd.service %{buildroot}%{_unitdir}/accd.service
+
+%post
+%systemd_post accd.service
+
+%preun
+%systemd_preun accd.service
+
+%postun
+%systemd_postun_with_restart accd.service
 
 %files
 %license LICENSE
 %doc README.md
 /usr/bin/accd
+%{_unitdir}/accd.service
