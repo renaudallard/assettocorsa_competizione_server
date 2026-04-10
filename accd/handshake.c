@@ -591,7 +591,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 				    "%s", steam);
 
 			/* Skip middle bytes, parse CarInfo. */
-			(void)rd_skip(&r, 7);
+			(void)rd_skip(&r, 8);
 			(void)rd_skip(&r, 4);		/* carModelKey */
 			(void)rd_skip(&r, 4);		/* teamGuid */
 			(void)rd_i32(&r, &rnum);	/* raceNumber */
