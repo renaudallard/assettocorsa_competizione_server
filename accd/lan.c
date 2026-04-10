@@ -148,10 +148,11 @@ lan_handle(struct Server *s, int fd)
 	    wr_u8(&reply, s->password[0] != '\0' ? 1 : 0) == 0 &&
 	    wr_u16(&reply, (uint16_t)s->tcp_port) == 0 &&
 	    wr_u32(&reply, nonce) == 0 &&
-	    wr_u8(&reply, s->session_count > 0 &&
-		s->session.session_index < s->session_count
-		? s->sessions[s->session.session_index].session_type
-		: 0) == 0) {
+	    wr_u8(&reply, s->session.phase == PHASE_NONE ? 0xfa
+		: (s->session_count > 0 &&
+		    s->session.session_index < s->session_count
+		    ? s->sessions[s->session.session_index].session_type
+		    : 0)) == 0) {
 		if (sendto(fd, reply.data, reply.wpos, 0,
 		    (struct sockaddr *)&from, fromlen) < 0)
 			log_warn("lan sendto: %s", strerror(errno));
