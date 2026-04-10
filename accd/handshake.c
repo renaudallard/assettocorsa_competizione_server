@@ -262,17 +262,19 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 			if (wr_str_a(bb, ed->last_name) < 0) return -1;
 			if (wr_u16(bb, 0) < 0) return -1;
 			if (wr_u8(bb, 0) < 0) return -1;
-			if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_u8(bb, 0) < 0) return -1;
-			if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+			if (wr_u16(bb, ec->current_driver_index)
+			    < 0) return -1;
+			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+			if (wr_u16(bb, 0) < 0) return -1;
+			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+			if (wr_u8(bb, 0xFF) < 0) return -1;
 			if (wr_u8(bb, 1) < 0) return -1;
 			if (wr_u8(bb, 0) < 0) return -1;
 			if (wr_u8(bb, 3) < 0) return -1;
 			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
 			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
 			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_u32(bb, 0) < 0) return -1;
 			if (wr_u32(bb, 0) < 0) return -1;
 		}
 	}
