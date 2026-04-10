@@ -42,9 +42,12 @@
 
 #include "state.h"
 
-/* Initialize the weather state from event.json values. */
+/* Initialize the weather state from event.json values.
+ * start_time_s is hourOfDay * 3600 so initial cloud/rain
+ * values match what weather_step will compute on first tick. */
 void	weather_init(struct Server *s, float base_clouds,
-		float base_rain, int randomness);
+		float base_rain, int randomness,
+		uint32_t start_time_s);
 
 /*
  * Step the weather simulator forward.  Called every CADENCE_

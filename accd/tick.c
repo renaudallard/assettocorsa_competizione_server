@@ -336,18 +336,19 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * Weather: step the deterministic simulator and broadcast
-	 * 0x37 when something changed enough to be worth pushing.
+	 * Weather: step the simulator and broadcast 0x37 every
+	 * cadence.  The broadcast carries weekend_time_s which
+	 * drives the client's in-game clock, so it must be sent
+	 * unconditionally (matching the Kunos 5-second cadence).
 	 */
 	if ((s->tick_count % CADENCE_WEATHER) == 0) {
-		if (weather_step(s)) {
-			struct ByteBuf bb;
+		struct ByteBuf bb;
 
-			bb_init(&bb);
-			if (weather_build_broadcast(s, &bb) == 0)
-				(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
-			bb_free(&bb);
-		}
+		(void)weather_step(s);
+		bb_init(&bb);
+		if (weather_build_broadcast(s, &bb) == 0)
+			(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+		bb_free(&bb);
 	}
 }
 

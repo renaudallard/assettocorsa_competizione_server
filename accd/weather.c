@@ -46,17 +46,39 @@
 
 void
 weather_init(struct Server *s, float base_clouds, float base_rain,
-    int randomness)
+    int randomness, uint32_t start_time_s)
 {
+	double t = (double)start_time_s;
+	float clouds, rain;
+
 	(void)randomness;
-	s->weather.clouds = base_clouds;
-	s->weather.current_rain = base_rain;
-	s->weather.target_rain = base_rain;
-	s->weather.wetness = base_rain;
+	(void)base_clouds;
+	(void)base_rain;
+
+	/*
+	 * Compute initial cloud/rain from the same sine wave that
+	 * weather_step uses, evaluated at the session start time.
+	 * This ensures the first weather_step sees zero delta and
+	 * won't fire a spurious broadcast during client loading.
+	 */
+	clouds = (float)(0.3 + 0.3 * sin(t / 3600.0 * 1.5));
+	if (clouds < 0.0f) clouds = 0.0f;
+	if (clouds > 1.0f) clouds = 1.0f;
+
+	rain = clouds > 0.5f
+	    ? (float)(0.4 * (sin(t / 3600.0 + WX_RAIN_PHASE) + 1.0))
+	    : 0.0f;
+	if (rain < 0.0f) rain = 0.0f;
+	if (rain > 1.0f) rain = 1.0f;
+
+	s->weather.clouds = clouds;
+	s->weather.current_rain = rain;
+	s->weather.target_rain = rain;
+	s->weather.wetness = rain;
 	s->weather.dry_line_wetness = 0;
 	s->weather.puddles = 0;
-	s->weather.forecast_10m = base_rain;
-	s->weather.forecast_30m = base_rain;
+	s->weather.forecast_10m = rain;
+	s->weather.forecast_30m = rain;
 	s->weather.last_step_ms = 0;
 }
 

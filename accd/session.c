@@ -75,6 +75,8 @@ session_reset(struct Server *s, uint8_t session_index)
 	s->session.phase = PHASE_NONE;
 	s->session.phase_started_ms = mono_ms();
 	s->session.standings_seq = 1;
+	s->session.weekend_time_s =
+	    (uint32_t)s->sessions[session_index].hour_of_day * 3600u;
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarRaceState *r = &s->cars[i].race;
@@ -284,7 +286,9 @@ session_tick(struct Server *s)
 	case PHASE_PRACTICE:
 	case PHASE_QUALIFYING:
 	case PHASE_RACE:
-		s->session.weekend_time_s = (uint32_t)(elapsed / 1000);
+		s->session.weekend_time_s =
+		    (uint32_t)(def->hour_of_day * 3600 +
+		    elapsed / 1000 * def->time_multiplier);
 		if (def->duration_min > 0 &&
 		    elapsed >= (uint64_t)def->duration_min * 60ull * 1000ull) {
 			enter_phase(s, PHASE_POST_SESSION);

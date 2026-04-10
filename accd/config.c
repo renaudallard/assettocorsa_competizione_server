@@ -340,7 +340,14 @@ config_load(struct Server *s, const char *cfg_dir)
 				if (rn != NULL)
 					rain = (float)rn->u.num;
 			}
-			weather_init(s, clouds, rain, randomness);
+			{
+				uint32_t start_s =
+				    (uint32_t)s->sessions[0].hour_of_day
+				    * 3600u;
+				weather_init(s, clouds, rain, randomness,
+				    start_s);
+				s->session.weekend_time_s = start_s;
+			}
 		}
 
 		json_free(event);
