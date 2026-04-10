@@ -252,10 +252,23 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		/* Client echoes the server timestamp from 0x14. */
 		return;
 
-	case ACP_CAR_UPDATE:		/* 0x1e */
-		c = find_conn_by_peer(s, peer);
+	case ACP_CAR_UPDATE: {		/* 0x1e */
+		/*
+		 * Match by source_conn_id from the packet (bytes
+		 * 1-2) instead of peer address, so multiple clients
+		 * behind the same NAT can coexist.  Also update the
+		 * peer address for sendto replies.
+		 */
+		uint16_t src_conn = 0;
+
+		if (len >= 3)
+			src_conn = (uint16_t)(buf[1] | (buf[2] << 8));
+		c = server_find_conn(s, src_conn);
+		if (c != NULL)
+			c->peer = *peer;
 		(void)h_udp_car_update(s, c, buf, len);
 		return;
+	}
 
 	case ACP_CAR_INFO_REQUEST:	/* 0x22 */
 		(void)h_udp_car_info_request(s, buf, len);
