@@ -85,9 +85,14 @@ session_reset(struct Server *s, uint8_t session_index)
 		r->position = (int16_t)(i + 1);
 	}
 
-	log_info("session %u: starting (type=%u)",
-	    (unsigned)session_index,
-	    (unsigned)s->sessions[session_index].session_type);
+{
+		const char *sname = "PRACTICE";
+		uint8_t st = s->sessions[session_index].session_type;
+		if (st == 4) sname = "QUALIFYING";
+		else if (st == 10) sname = "RACE";
+		log_info("session %u: waiting for drivers (%s)",
+		    (unsigned)session_index, sname);
+	}
 }
 
 int
