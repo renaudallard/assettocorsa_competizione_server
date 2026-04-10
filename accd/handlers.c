@@ -64,11 +64,12 @@
  * by this connection.  Returns 0 if valid, -1 if not.
  */
 static int
-check_car_owner(struct Conn *c, uint16_t car_id)
+check_car_owner(struct Conn *c, uint16_t wire_car_id)
 {
 	if (c->car_id < 0)
 		return -1;
-	return ((uint16_t)c->car_id == car_id) ? 0 : -1;
+	/* Compare against the wire ID (base 1001), not the slot index. */
+	return ((uint16_t)(ACC_CAR_ID_BASE + c->car_id) == wire_car_id) ? 0 : -1;
 }
 
 /* ----- 0x19 ACP_LAP_COMPLETED -> mutate state, broadcast 0x1b --- */
@@ -741,7 +742,8 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 		result = 1;
 		goto reply;
 	}
-	if ((uint16_t)c->car_id != car_id) {
+	if (c->car_id < 0 ||
+	    (uint16_t)(ACC_CAR_ID_BASE + c->car_id) != car_id) {
 		log_warn("ACP_EXECUTE_DRIVER_SWAP, but carId mismatch: %u "
 		    "(car controlled %d for connection %u)",
 		    (unsigned)car_id, c->car_id, (unsigned)c->conn_id);
@@ -1041,7 +1043,8 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 		    "(source_conn=%u)", (unsigned)source_conn_id);
 		return 0;
 	}
-	if (c->car_id < 0 || (uint16_t)c->car_id != target_car_id) {
+	if (c->car_id < 0 ||
+	    s->cars[c->car_id].car_id != target_car_id) {
 		log_warn("Received car update for a different car, "
 		    "connectionId %u. Expected: %d Received: %u",
 		    (unsigned)c->conn_id, c->car_id,
