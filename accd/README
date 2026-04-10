@@ -46,8 +46,9 @@ SMOKE TESTS
 
     Accept path (empty server password):
         printf '\x04\x00\x09\x00\x01\x00' | nc -q 1 127.0.0.1 $tcpPort
-    expects a ~41-byte 0x0b response with car id 0 and the welcome
-    trailer skeleton.
+    expects a 0x0b response with car id and the welcome trailer
+    built dynamically from server state (weather, sessions,
+    leaderboard).
 
 MODULES
     main.c       poll loop, signal handling, server lifecycle
@@ -60,7 +61,8 @@ MODULES
     net.c/h      tcp_listen / udp_bind helpers
     log.c/h      timestamped stderr logger with hexdump
     handshake.c/h  parse 0x09 ACP_REQUEST_CONNECTION, build 0x0b
-                 response (accept or reject)
+                 response with dynamic welcome trailer (weather,
+                 session schedule, leaderboard, realtime data)
     dispatch.c/h  TCP framed-message dispatch + UDP datagram dispatch
                  with all 21 TCP and 7 UDP cases stubbed out
     chat.c/h     admin chat command parser skeleton
