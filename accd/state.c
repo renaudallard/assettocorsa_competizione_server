@@ -83,6 +83,8 @@ conn_new(struct Server *s, int fd, const struct sockaddr_in *peer)
 	c->state = CONN_UNAUTH;
 	c->conn_id = (uint16_t)slot;
 	c->car_id = -1;
+	c->hs_echo = NULL;
+	c->hs_echo_len = 0;
 	bb_init(&c->rx);
 	bb_init(&c->tx);
 
@@ -136,6 +138,7 @@ conn_drop(struct Server *s, struct Conn *c)
 		close(c->fd);
 	bb_free(&c->rx);
 	bb_free(&c->tx);
+	free(c->hs_echo);
 	if (c->conn_id < ACC_MAX_CARS && s->conns[c->conn_id] == c) {
 		s->conns[c->conn_id] = NULL;
 		s->nconns--;

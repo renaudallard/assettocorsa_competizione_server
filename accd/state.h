@@ -271,6 +271,8 @@ struct Conn {
 	int		is_spectator;
 	struct ByteBuf	rx;		/* incoming TCP byte stream */
 	struct ByteBuf	tx;		/* not yet used; for batched sends */
+	unsigned char	*hs_echo;	/* raw handshake body to echo in trailer */
+	size_t		 hs_echo_len;
 };
 
 /*
