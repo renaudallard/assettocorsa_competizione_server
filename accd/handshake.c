@@ -923,10 +923,24 @@ reply:
 			if (weather_build_broadcast(s, &wb) == 0)
 				(void)bcast_send_one(c, wb.data, wb.wpos);
 			bb_free(&wb);
+
+			/* 0x4e rating summary. */
+			bb_init(&wb);
+			if (wr_u8(&wb, SRV_RATING_SUMMARY) == 0 &&
+			    wr_u8(&wb, 1) == 0 &&
+			    wr_u16(&wb, c->conn_id) == 0 &&
+			    wr_u8(&wb, 0) == 0 &&
+			    wr_i16(&wb, 0) == 0 &&
+			    wr_i16(&wb, 0) == 0 &&
+			    wr_u32(&wb, 0xFFFFFFFF) == 0 &&
+			    wr_str_a(&wb,
+				s->cars[c->car_id].drivers[0].steam_id) == 0)
+				(void)bcast_send_one(c, wb.data, wb.wpos);
+			bb_free(&wb);
 		}
 
 		log_debug("welcome sequence sent: 0x2e+0x4f bcast + "
-		    "0x28+0x36+0x37 to conn=%u",
+		    "0x28+0x36+0x37+0x4e to conn=%u",
 		    (unsigned)c->conn_id);
 	}
 	return 0;
