@@ -596,6 +596,7 @@ jobs:
 
   publish:
     name: Upload Release Assets
+    if: always()
     runs-on: ubuntu-latest
     needs:
       - detect-versions
@@ -608,38 +609,23 @@ jobs:
       - build-apk-alpine
       - build-freebsd
     steps:
-      - name: Download Debian artifacts
+      - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
-          pattern: deb-packages-*
-          path: release-assets/deb
-          merge-multiple: true
+          path: release-assets
+          merge-multiple: false
 
-      - name: Download RPM artifacts
-        uses: actions/download-artifact@v8
-        with:
-          pattern: rpm-packages-*
-          path: release-assets/rpm
-          merge-multiple: true
-
-      - name: Download Alpine artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: alpine-packages
-          path: release-assets/alpine
-
-      - name: Download FreeBSD artifacts
-        uses: actions/download-artifact@v8
-        with:
-          name: freebsd-packages
-          path: release-assets/freebsd
+      - name: Collect assets
+        run: |
+          set -euo pipefail
+          mkdir -p upload
+          find release-assets -name '*.deb' -o -name '*.rpm' -o -name '*.tar.gz' | \
+            while read f; do cp "$f" upload/; done
+          ls -la upload/ || echo "No assets found"
 
       - name: Upload release assets
+        if: hashFiles('upload/*') != ''
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.event.release.tag_name }}
-          files: |
-            release-assets/deb/*.deb
-            release-assets/rpm/*.rpm
-            release-assets/alpine/*.tar.gz
-            release-assets/freebsd/*.tar.gz
+          files: upload/*
