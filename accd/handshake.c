@@ -217,23 +217,10 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 	if (wr_str_raw(bb, s->track) < 0)
 		return -1;
 
-	/* Section 2: per-car echoed data. */
-	if (wr_u8(bb, 1) < 0)				/* n_cars */
-		return -1;
-	if (wr_u16(bb, car ? car->car_id : 0) < 0)	/* wire car_id */
-		return -1;
-	if (wr_u8(bb, 1) < 0 || wr_u8(bb, 1) < 0)	/* preambles */
-		return -1;
-
-	/* Echo the raw handshake body (after password). */
-	if (c->hs_echo != NULL && c->hs_echo_len > 0) {
-		if (bb_append(bb, c->hs_echo, c->hs_echo_len) < 0)
-			return -1;
-	}
-
-	/* Section 3: config template (328 bytes, verified identical
-	 * between probe and real client Kunos captures). */
-	if (bb_append(bb, config_tpl, sizeof(config_tpl)) < 0)
+	/* Sections 2+3: per-car data + config.  Use the Kunos template
+	 * from offset 56 (after names) to offset 613 (before leaderboard).
+	 * This includes the car echoed data and config sections. */
+	if (bb_append(bb, kunos_welcome_tpl + 56, 613 - 56) < 0)
 		return -1;
 
 	/* Section 4: leaderboard + per-car entries. */
