@@ -399,7 +399,7 @@ jobs:
       - name: Install build tools
         run: |
           set -euo pipefail
-          dnf install -y git rpm-build make gcc which tar
+          dnf install -y git rpm-build make gcc which tar systemd-rpm-macros
 
       - name: Mark workspace as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -424,7 +424,7 @@ jobs:
         run: |
           set -euo pipefail
           RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
-          rpmbuild --define "_topdir ${RPM_TOPDIR}" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
+          rpmbuild --define "_topdir ${RPM_TOPDIR}" --define "source_date_epoch_from_changelog 0" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
 
       - name: Collect RPM artifacts
         run: |
@@ -471,7 +471,7 @@ jobs:
           fi
           $pkgmgr install -y epel-release || true
           dnf config-manager --set-enabled crb || true
-          $pkgmgr install -y git rpm-build make gcc which tar
+          $pkgmgr install -y git rpm-build make gcc which tar systemd-rpm-macros
 
       - name: Mark workspace as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -496,7 +496,7 @@ jobs:
         run: |
           set -euo pipefail
           RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
-          rpmbuild --define "_topdir ${RPM_TOPDIR}" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
+          rpmbuild --define "_topdir ${RPM_TOPDIR}" --define "source_date_epoch_from_changelog 0" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
 
       - name: Collect RPM artifacts
         run: |

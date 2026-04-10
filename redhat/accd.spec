@@ -39,4 +39,5 @@ install -D -m 644 debian/accd.service %{buildroot}%{_unitdir}/accd.service
 %license LICENSE
 %doc README.md
 /usr/bin/accd
+%{_mandir}/man1/accd.1*
 %{_unitdir}/accd.service
