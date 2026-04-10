@@ -753,44 +753,63 @@ reply:
 		{
 			struct ByteBuf wb;
 
-			/* 0x28 SRV_LARGE_STATE_RESPONSE: session
-			 * timing + assist rule snapshot.  Each f32
-			 * value is prefixed by u8(1). */
+			/*
+			 * 0x28 SRV_LARGE_STATE_RESPONSE: 6 timing
+			 * floats (ms) defining the session timeline,
+			 * then the current session schedule entry.
+			 *
+			 * The 6 blocks encode session boundaries in
+			 * a cumulative millisecond timeline:
+			 *   b1 = base
+			 *   b2 = b3 = b4 = base + 3000
+			 *   b5 = base + 3000 + duration_ms
+			 *   b6 = base + 3000 + duration_ms + overtime_ms
+			 */
 			bb_init(&wb);
 			if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0 &&
 			    wr_u8(&wb, 0) == 0) {
+				const struct SessionDef *cur =
+				    &s->sessions[s->session.session_index];
 				int k;
 				float grip = s->session.grip_level > 0
 				    ? s->session.grip_level : 1.0f;
+				float base = (float)(
+				    s->session.phase_started_ms > 0
+				    ? s->session.phase_started_ms : 100);
+				float dur_ms = (float)(cur->duration_min
+				    * 60) * 1000.0f;
+				float ot_ms = 120.0f * 1000.0f;
+				uint16_t sched_field =
+				    cur->session_type == 10 ? 80 : 3;
 
-				/* 3 copies of session time as f32. */
-				for (k = 0; k < 3; k++) {
-					(void)wr_u8(&wb, 1);
-					(void)wr_f32(&wb,
-					    (float)s->session.weekend_time_s);
-				}
-				/* 3 copies of end time. */
-				for (k = 0; k < 3; k++) {
-					(void)wr_u8(&wb, 1);
-					(void)wr_f32(&wb,
-					    (float)(s->sessions[0].duration_min
-					    * 60));
-				}
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 6);
-				(void)wr_u8(&wb, 0);
 				(void)wr_u8(&wb, 1);
+				(void)wr_f32(&wb, base);
+				for (k = 0; k < 3; k++) {
+					(void)wr_u8(&wb, 1);
+					(void)wr_f32(&wb, base + 3000.0f);
+				}
+				(void)wr_u8(&wb, 1);
+				(void)wr_f32(&wb,
+				    base + 3000.0f + dur_ms);
+				(void)wr_u8(&wb, 1);
+				(void)wr_f32(&wb,
+				    base + 3000.0f + dur_ms + ot_ms);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u8(&wb, cur->hour_of_day);
+				(void)wr_u8(&wb, 0);
+				(void)wr_u8(&wb, 0);
 				(void)wr_f32(&wb, grip);
-				(void)wr_u16(&wb, 3);
-				(void)wr_u16(&wb, 600);
+				(void)wr_u16(&wb, sched_field);
+				(void)wr_u16(&wb,
+				    (uint16_t)(cur->duration_min * 60));
 				(void)wr_u8(&wb, 0);
 				(void)wr_u8(&wb, 0);
 				(void)wr_u16(&wb, 120);
 				(void)wr_u8(&wb, 0);
 				(void)wr_u8(&wb, 0);
 				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				(void)wr_f32(&wb, grip);
+				(void)wr_u8(&wb, cur->session_type);
+				(void)wr_f32(&wb, 1.0f);
 				(void)bcast_send_one(c, wb.data, wb.wpos);
 			}
 			bb_free(&wb);
