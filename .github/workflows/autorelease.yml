@@ -58,6 +58,6 @@ jobs:
         run: |
           ver="${{ steps.version.outputs.version }}"
           gh workflow run release-packages.yml \
-            --ref "$ver" \
+            --ref main \
             -f ref="$ver" \
             -f release_tag="$ver"
