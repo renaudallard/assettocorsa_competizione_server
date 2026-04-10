@@ -270,6 +270,21 @@ config_load(struct Server *s, const char *cfg_dir)
 
 		copy_str(s->track, sizeof(s->track),
 		    json_obj_get_str(event, "track"));
+		/* Strip year suffix (e.g. "_2019") to match the
+		 * internal track ID the game client expects. */
+		{
+			size_t tlen = strlen(s->track);
+			if (tlen >= 5 && s->track[tlen - 5] == '_' &&
+			    s->track[tlen - 4] >= '1' &&
+			    s->track[tlen - 4] <= '2' &&
+			    s->track[tlen - 3] >= '0' &&
+			    s->track[tlen - 3] <= '9' &&
+			    s->track[tlen - 2] >= '0' &&
+			    s->track[tlen - 2] <= '9' &&
+			    s->track[tlen - 1] >= '0' &&
+			    s->track[tlen - 1] <= '9')
+				s->track[tlen - 5] = '\0';
+		}
 
 		sessions = json_obj_get(event, "sessions");
 		n = json_arr_len(sessions);

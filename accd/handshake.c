@@ -81,10 +81,10 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 	if (wr_str_raw(bb, s->track) < 0)
 		return -1;
 
-	/* Separator + assigned car_id. */
+	/* Separator + assigned car_id (wire ID, base 1000). */
 	if (wr_u8(bb, 1) < 0)
 		return -1;
-	if (wr_u16(bb, (uint16_t)c->car_id) < 0)
+	if (wr_u16(bb, s->cars[c->car_id].car_id) < 0)
 		return -1;
 
 	/* Session flags. */
@@ -471,8 +471,8 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 	if (wr_u8(&bb, SRV_HANDSHAKE_RESPONSE) < 0 ||
 	    wr_u16(&bb, (uint16_t)s->udp_port) < 0 ||
 	    wr_u8(&bb, 0x12) < 0 ||
-	    wr_u16(&bb, (uint16_t)s->nconns) < 0 ||
-	    wr_u16(&bb, c->conn_id) < 0 ||
+	    wr_u16(&bb, 0) < 0 ||	/* nconns placeholder */
+	    wr_u16(&bb, s->cars[c->car_id].car_id) < 0 ||
 	    wr_u16(&bb, 0) < 0)
 		goto fail;
 

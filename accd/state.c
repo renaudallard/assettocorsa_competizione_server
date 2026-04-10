@@ -48,7 +48,7 @@ server_init(struct Server *s)
 	s->udp_fd = -1;
 	s->lan_fd = -1;
 	for (int i = 0; i < ACC_MAX_CARS; i++)
-		s->cars[i].car_id = (uint16_t)i;
+		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
 }
 
 void
@@ -163,7 +163,7 @@ server_alloc_car(struct Server *s)
 	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
 		if (!s->cars[i].used) {
 			s->cars[i].used = 1;
-			s->cars[i].car_id = (uint16_t)i;
+			s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
 			return i;
 		}
 	}

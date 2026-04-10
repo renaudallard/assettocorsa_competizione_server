@@ -43,6 +43,7 @@
 
 #define ACC_MAX_BANS		256
 #define ACC_MAX_CARS		64
+#define ACC_CAR_ID_BASE		1000
 #define ACC_MAX_DRIVERS_PER_CAR	4
 #define ACC_MAX_NAME_LEN	64
 #define ACC_TRACK_NAME_LEN	48
