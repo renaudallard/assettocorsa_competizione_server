@@ -1,3 +1,15 @@
+accd (0.1.7) unstable; urgency=medium
+
+  * Restore ban check in handshake (was dropped during parser rewrite).
+  * Reset session to waiting-for-drivers when last client disconnects.
+  * Restore 0x4e rating summary in welcome sequence.
+  * Send 0xfa session type in discovery when waiting for drivers.
+  * Fix standings_seq type to uint32_t matching wire format.
+  * Add session_index bounds check in LAN discovery response.
+  * Log waiting-for-drivers state on session start.
+
+ -- Renaud Allard <renaud@allard.it>  Thu, 10 Apr 2026 07:00:00 +0200
+
 accd (0.1.6) unstable; urgency=medium
 
   * Fix LAN discovery probe and response format (0xbf envelope,
