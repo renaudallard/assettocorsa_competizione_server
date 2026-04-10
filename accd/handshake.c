@@ -773,9 +773,7 @@ reply:
 				int k;
 				float grip = s->session.grip_level > 0
 				    ? s->session.grip_level : 1.0f;
-				float base = (float)(
-				    s->session.phase_started_ms > 0
-				    ? s->session.phase_started_ms : 100);
+				float base = 100.0f;
 				float dur_ms = (float)(cur->duration_min
 				    * 60) * 1000.0f;
 				float ot_ms = 120.0f * 1000.0f;
