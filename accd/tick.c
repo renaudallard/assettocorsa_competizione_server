@@ -37,6 +37,8 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 
 #include "bcast.h"
 #include "io.h"
@@ -60,16 +62,76 @@
 #define CADENCE_KEEPALIVE	20
 #define CADENCE_WEATHER		50
 
-static void
-broadcast_percar(struct Server *s, uint8_t msg_id, int extra_context_byte)
+/*
+ * Write the 63-byte per-car body used by both 0x1e and each
+ * 0x39 batch element.  Layout from FUN_14001a170 / FUN_14001a6a0
+ * in accServer.exe:
+ *
+ *   u16 car_id (+0x150 in the per-car struct)
+ *   u8  seq (+0x2d)
+ *   i32 adjusted_timestamp (+0x3c minus per-peer offset)
+ *   u16 (+0x50, typically 0)
+ *   3 * 12 bytes vec_a / vec_b / vec_c (positions / rotations)
+ *   4 * u8 input_a (+0x2e..+0x31)
+ *   u8 (+0x32)
+ *   u8 (+0x33)
+ *   u16 (+0x36)
+ *   u8 (+0x2c)
+ *   u8 (+0x34)
+ *   u8 (+0x35)
+ *   4 * u8 input_b (+0x48..+0x4b)
+ *   u8 (+0x4c)
+ *   i16 clamped (+0x1ec)
+ */
+static int
+build_percar_body(struct ByteBuf *bb, struct CarEntry *car)
 {
-	int i;
+	int k, ok;
+	int16_t clamped;
+
+	ok = 1;
+	if (wr_u16(bb, car->car_id) < 0) return -1;
+	if (wr_u8(bb, car->rt.packet_seq) < 0) return -1;
+	if (wr_u32(bb, car->rt.client_timestamp_ms) < 0) return -1;
+	if (wr_u16(bb, 0) < 0) return -1;	/* +0x50 */
+
+	for (k = 0; k < 3 && ok; k++)
+		ok = wr_f32(bb, car->rt.vec_a[k]) == 0;
+	for (k = 0; k < 3 && ok; k++)
+		ok = wr_f32(bb, car->rt.vec_b[k]) == 0;
+	for (k = 0; k < 3 && ok; k++)
+		ok = wr_f32(bb, car->rt.vec_c[k]) == 0;
+	for (k = 0; k < 4 && ok; k++)
+		ok = wr_u8(bb, car->rt.input_a[k]) == 0;
+	if (ok) ok = wr_u8(bb, car->rt.scalar_32) == 0;
+	if (ok) ok = wr_u8(bb, car->rt.scalar_33) == 0;
+	if (ok) ok = wr_u16(bb, car->rt.scalar_36) == 0;
+	if (ok) ok = wr_u8(bb, car->rt.scalar_2c) == 0;
+	if (ok) ok = wr_u8(bb, car->rt.scalar_34) == 0;
+	if (ok) ok = wr_u8(bb, car->rt.scalar_35) == 0;
+	for (k = 0; k < 4 && ok; k++)
+		ok = wr_u8(bb, car->rt.input_b[k]) == 0;
+	if (ok) ok = wr_u8(bb, car->rt.scalar_4c) == 0;
+
+	clamped = car->rt.scalar_1ec;
+	if (ok) ok = wr_i16(bb, clamped) == 0;
+	return ok ? 0 : -1;
+}
+
+/*
+ * Fast-rate 0x1e broadcast.  For every car that has received
+ * a fresh 0x1e this tick, send a 64-byte UDP datagram to every
+ * other connected peer.  Layout from FUN_14001a170.
+ */
+static void
+broadcast_percar_fast(struct Server *s)
+{
+	int i, j;
 
 	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
 		struct CarEntry *car = &s->cars[i];
 		struct ByteBuf bb;
 		uint16_t exclude = 0xFFFF;
-		int j;
 
 		if (!car->used || !car->rt.has_data)
 			continue;
@@ -83,46 +145,91 @@ broadcast_percar(struct Server *s, uint8_t msg_id, int extra_context_byte)
 		}
 
 		bb_init(&bb);
-		if (wr_u8(&bb, msg_id) == 0) {
-			if (extra_context_byte) {
-				/* 0x39 slow-rate has one extra context
-				 * byte right after the msg id. */
-				(void)wr_u8(&bb, 0);
-			}
-			/* Rest of the per-car body (skip the msg id
-			 * that build_percar_broadcast would also
-			 * write). */
-			if (wr_u16(&bb, car->car_id) == 0 &&
-			    wr_u8(&bb, car->rt.packet_seq) == 0 &&
-			    wr_u32(&bb, car->rt.client_timestamp_ms) == 0) {
-				int k;
-				int ok = 1;
-
-				for (k = 0; k < 3 && ok; k++)
-					ok = wr_f32(&bb, car->rt.vec_a[k]) == 0;
-				for (k = 0; k < 3 && ok; k++)
-					ok = wr_f32(&bb, car->rt.vec_b[k]) == 0;
-				for (k = 0; k < 3 && ok; k++)
-					ok = wr_f32(&bb, car->rt.vec_c[k]) == 0;
-				for (k = 0; k < 4 && ok; k++)
-					ok = wr_u8(&bb, car->rt.input_a[k]) == 0;
-				if (ok) ok = wr_u8(&bb, car->rt.scalar_32) == 0;
-				if (ok) ok = wr_u8(&bb, car->rt.scalar_33) == 0;
-				if (ok) ok = wr_u16(&bb, car->rt.scalar_36) == 0;
-				if (ok) ok = wr_u8(&bb, car->rt.scalar_2c) == 0;
-				if (ok) ok = wr_u8(&bb, car->rt.scalar_34) == 0;
-				if (ok) ok = wr_u8(&bb, car->rt.scalar_35) == 0;
-				if (ok) ok = wr_u32(&bb, car->rt.scalar_44) == 0;
-				for (k = 0; k < 4 && ok; k++)
-					ok = wr_u8(&bb, car->rt.input_b[k]) == 0;
-				if (ok) ok = wr_u8(&bb, car->rt.scalar_4c) == 0;
-				if (ok) ok = wr_i16(&bb, car->rt.scalar_1ec) == 0;
-				if (ok)
-					(void)bcast_all(s, bb.data,
-					    bb.wpos, exclude);
-			}
+		if (wr_u8(&bb, SRV_PERCAR_FAST_RATE) == 0 &&
+		    build_percar_body(&bb, car) == 0) {
+			(void)bcast_all_udp(s, bb.data, bb.wpos,
+			    exclude);
 		}
 		bb_free(&bb);
+
+		/* Clear the dirty flag now that the update has
+		 * been relayed to all interested peers. */
+		car->rt.has_data = 0;
+	}
+}
+
+/*
+ * Slow-rate 0x39 broadcast.  For every connected peer, emit
+ * one or more UDP datagrams carrying batches of up to 8 other-
+ * car records (header: u8 0x39 + u8 count + count * 63-byte
+ * body).  Layout from FUN_14001a6a0 in accServer.exe.
+ *
+ * Matches the exe's multi-batch loop: if the peer has N > 8
+ * other cars, N/8 + 1 datagrams are sent.  8 is the max count
+ * per batch and is hard-coded in the inner loop of the exe.
+ *
+ * This runs every CADENCE_PERCAR_SLOW ticks (~1 Hz) and is an
+ * unconditional recap (dirty-flag filtering is done by the
+ * fast-rate path only) so newly-joined peers pick up state for
+ * cars that haven't moved since the last tick.
+ */
+#define PERCAR_SLOW_BATCH	8
+
+static void
+broadcast_percar_slow(struct Server *s)
+{
+	int peer_i, car_i;
+
+	if (s->udp_fd < 0)
+		return;
+	for (peer_i = 0; peer_i < ACC_MAX_CARS; peer_i++) {
+		struct Conn *peer = s->conns[peer_i];
+
+		if (peer == NULL || peer->state != CONN_AUTH)
+			continue;
+
+		car_i = 0;
+		while (car_i < ACC_MAX_CARS) {
+			struct ByteBuf bb;
+			uint8_t count;
+			size_t count_off;
+
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_PERCAR_SLOW_RATE) < 0) {
+				bb_free(&bb);
+				break;
+			}
+			count_off = bb.wpos;
+			if (wr_u8(&bb, 0) < 0) {
+				bb_free(&bb);
+				break;
+			}
+			count = 0;
+
+			while (car_i < ACC_MAX_CARS &&
+			    count < PERCAR_SLOW_BATCH) {
+				struct CarEntry *car = &s->cars[car_i];
+
+				car_i++;
+				if (!car->used)
+					continue;
+				if (peer->car_id == car_i - 1)
+					continue;	/* skip self */
+				if (build_percar_body(&bb, car) < 0)
+					break;
+				count++;
+			}
+			bb.data[count_off] = count;
+
+			if (count > 0)
+				(void)sendto(s->udp_fd, bb.data, bb.wpos,
+				    0,
+				    (const struct sockaddr *)&peer->peer,
+				    sizeof(peer->peer));
+			bb_free(&bb);
+			if (count < PERCAR_SLOW_BATCH)
+				break;	/* drained: no more full batches */
+		}
 	}
 }
 
@@ -264,12 +371,12 @@ tick_run(struct Server *s)
 	/* Drive the session phase machine. */
 	session_tick(s);
 
-	/* Fast-rate per-car broadcast (every tick). */
-	broadcast_percar(s, SRV_PERCAR_FAST_RATE, 0);
+	/* Fast-rate per-car broadcast (every tick, UDP). */
+	broadcast_percar_fast(s);
 
-	/* Slow-rate per-car broadcast (lower cadence). */
+	/* Slow-rate per-car batched broadcast (1 Hz, UDP). */
 	if ((s->tick_count % CADENCE_PERCAR_SLOW) == 0)
-		broadcast_percar(s, SRV_PERCAR_SLOW_RATE, 1);
+		broadcast_percar_slow(s);
 
 	/* Keepalive heartbeat: only when no weather broadcasts
 	 * are flowing (the real server uses 0x37 as heartbeat). */
