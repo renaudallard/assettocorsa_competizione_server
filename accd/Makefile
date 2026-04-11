@@ -43,8 +43,10 @@ all: ${PROG}
 
 ${PROG}: ${OBJS}
 	@ICONV=; \
-	if ! echo 'void iconv_open(); int main(){iconv_open();}' | \
-	    ${CC} -x c - -o /dev/null 2>/dev/null; then \
+	if ! printf '%s\n%s\n' '#include <iconv.h>' \
+	    'int main(){iconv_t c=iconv_open("","");iconv_close(c);return 0;}' \
+	    | ${CC} ${ACCD_CFLAGS} ${CFLAGS} ${ACCD_LDFLAGS} ${LDFLAGS} \
+	    -x c - -o /dev/null 2>/dev/null; then \
 	    ICONV="-liconv"; \
 	fi; \
 	echo ${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV ${LIBS}; \
