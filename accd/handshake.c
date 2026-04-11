@@ -179,7 +179,12 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 100) < 0) return -1;
 	if (wr_u32(bb, 15) < 0) return -1;
 
-	/* OnlineRules: formation lap, post-race, weather randomness. */
+	/*
+	 * OnlineRules (14 bytes observed in Kunos capture2):
+	 *   u8 u8 formationLapType shortFormationLap
+	 *   u16 postRaceSeconds u8 weatherRandomness u8 trackMedals
+	 *   6 x u8 flag (all 0x02)
+	 */
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 2) < 0) return -1;	/* formationLapType */
@@ -189,16 +194,17 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 3) < 0) return -1;	/* trackMedalsRequirement */
 	if (wr_u8(bb, 2) < 0) return -1;
 	if (wr_u8(bb, 2) < 0) return -1;
-	if (wr_u8(bb, s->dump_leaderboards ?
-	    s->dump_leaderboards : 2) < 0) return -1;
 	if (wr_u8(bb, 2) < 0) return -1;
 	if (wr_u8(bb, 2) < 0) return -1;
-	if (wr_u8(bb, s->ignore_premature_disconnects ?
-	    s->ignore_premature_disconnects : 2) < 0) return -1;
 	if (wr_u8(bb, 2) < 0) return -1;
 	if (wr_u8(bb, 2) < 0) return -1;
 
-	/* RaceDirectorRules: tickrate / broadcast limits. */
+	/*
+	 * RaceDirectorRules (18 bytes observed):
+	 *   5 x u8 + u32 tickrate + u32 + u32 + u8
+	 */
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
@@ -214,6 +220,334 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 	if (wr_u16(bb, 0) < 0) return -1;
 	if (wr_u16(bb, 0) < 0) return -1;
 	if (wr_u16(bb, 1) < 0) return -1;
+	return 0;
+}
+
+/*
+ * EventEntity body after the str_a trackName.  Observed as a
+ * 136-byte block from a real Kunos capture.  Decompiler does not
+ * have a clean symbol trail for this structure; the bytes mix
+ * CircuitInfo, GraphicsInfo, CarSet, RaceRules and WeatherRules.
+ *
+ * We emit the observed bytes as a stable template.  Dynamic
+ * patching of individual fields (temps, rain, weekend time) is
+ * deferred until the structure is fully reverse-engineered.
+ */
+static int
+write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
+{
+	static const unsigned char tpl[136] = {
+		0x01, 0x20, 0x03, 0x16, 0xa6, 0x67, 0x3f, 0xcd,
+		0xcc, 0xcc, 0x3d, 0x69, 0x8e, 0xec, 0x3d, 0x00,
+		0x00, 0x80, 0x3f, 0x00, 0x05, 0x00, 0x05, 0x00,
+		0x04, 0x00, 0x00, 0xff, 0x01, 0xff, 0xff, 0xff,
+		0xff, 0xff, 0x01, 0x00, 0x01, 0x00, 0xff, 0xff,
+		0x00, 0x00, 0x00, 0x01, 0x01, 0x32, 0x03, 0x00,
+		0x00, 0x00, 0xc0, 0x41, 0x00, 0x00, 0xf0, 0x41,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x9a, 0x99, 0x99, 0x3e, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0xc0, 0x41, 0x00, 0x00, 0x80, 0xbf,
+		0x00, 0x00, 0xa0, 0x40, 0x00, 0x00, 0x70, 0x41,
+		0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0xcd, 0xcc, 0xcc, 0x3e, 0x9a, 0x99, 0x99, 0x3e,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+	};
+
+	(void)s;
+	return bb_append(bb, tpl, sizeof(tpl));
+}
+
+/*
+ * session_mgr_state from FUN_140033890 (31 bytes observed).
+ *   u8 phase
+ *   7 x u8 record-enabled flags (one per session slot)
+ *   session_mgr_tail (FUN_140034f60, 23 bytes) for the current session:
+ *     u8 hour_of_day
+ *     u8 0
+ *     i8 (time_multiplier - 1, i.e. "1x" -> 0)
+ *     f32 1.0 (grip?)
+ *     u16 sched_field (3 for non-race, 80 for race)
+ *     u32 duration_seconds
+ *     u32 overtime_seconds (120 default)
+ *     u8 0
+ *     u8 0
+ *     f32 1.0
+ */
+static int
+write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
+{
+	const struct SessionDef *def;
+	uint16_t sched_field;
+	uint32_t duration_s;
+	int k;
+
+	if (s->session_count == 0)
+		return -1;
+	def = &s->sessions[s->session.session_index];
+	sched_field = def->session_type == 10 ? 80 : 3;
+	duration_s = (uint32_t)def->duration_min * 60u;
+
+	if (wr_u8(bb, (uint8_t)s->session.phase) < 0) return -1;
+	for (k = 0; k < 7; k++)
+		if (wr_u8(bb, 0) < 0) return -1;
+
+	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, (uint8_t)(def->time_multiplier > 0
+	    ? def->time_multiplier - 1 : 0)) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+	if (wr_u16(bb, sched_field) < 0) return -1;
+	if (wr_u32(bb, duration_s) < 0) return -1;
+	if (wr_u32(bb, 120) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+	return 0;
+}
+
+/*
+ * assist_rules + leaderboard section from FUN_140034a40.
+ *   u32 (0x7fffffff)
+ *   u8 int_vec.count (= 3)
+ *   3 x u32 (0x7fffffff)
+ *   u8 cVar8 (= 0 when no session has a +0x204 >= 0)
+ *   u16 entry_count
+ *   per entry: FUN_140034210 leaderboard_record_appender_0x220
+ *   u8 tail1 (= 0)
+ *   u8 tail2 (= 0)
+ */
+static int
+write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
+{
+	int j, d, nc = 0;
+
+	for (j = 0; j < ACC_MAX_CARS; j++)
+		if (s->cars[j].used)
+			nc++;
+
+	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+	if (wr_u8(bb, 3) < 0) return -1;
+	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u16(bb, (uint16_t)nc) < 0) return -1;
+
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct CarEntry *ec = &s->cars[j];
+
+		if (!ec->used)
+			continue;
+
+		/* FUN_140034210: leaderboard_record_appender_0x220. */
+		if (wr_u16(bb, ec->car_id) < 0) return -1;
+		if (wr_u16(bb, (uint16_t)ec->race_number) < 0)
+			return -1;
+		if (wr_u8(bb, ec->car_model) < 0) return -1;
+		if (wr_u8(bb, ec->current_driver_index) < 0)
+			return -1;
+		if (wr_u16(bb, 0) < 0) return -1;	/* +0x1d0 */
+		if (wr_u8(bb, 0) < 0) return -1;	/* pit flag */
+		if (wr_u8(bb, 0) < 0) return -1;	/* rules count */
+		if (wr_u8(bb, ec->driver_count ? ec->driver_count : 1) < 0)
+			return -1;
+
+		for (d = 0; d < (ec->driver_count ? ec->driver_count : 1)
+		    && d < ACC_MAX_DRIVERS_PER_CAR; d++) {
+			struct DriverInfo *dd = &ec->drivers[d];
+
+			if (wr_str_a(bb, dd->steam_id) < 0) return -1;
+			if (wr_str_a(bb, dd->short_name) < 0) return -1;
+			if (wr_str_a(bb, dd->first_name) < 0) return -1;
+			if (wr_str_a(bb, dd->last_name) < 0) return -1;
+			if (wr_u8(bb, dd->driver_category) < 0) return -1;
+			if (wr_u16(bb, dd->nationality) < 0) return -1;
+		}
+
+		if (wr_u16(bb, 0) < 0) return -1;		/* +0x180 */
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;	/* bestLap */
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;	/* lastLap */
+		if (wr_u16(bb, 0) < 0) return -1;		/* +0x1f4 */
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;	/* raceTime */
+		if (wr_u8(bb, 0xFF) < 0) return -1;		/* lapCount */
+		if (wr_u8(bb, 1) < 0) return -1;		/* cVar20 */
+		if (wr_u8(bb, 0) < 0) return -1;		/* best sectors */
+		if (wr_u8(bb, 3) < 0) return -1;		/* last sectors */
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;		/* +0x200 */
+		if (wr_u8(bb, 0) < 0) return -1;		/* +0x201 */
+	}
+
+	/* assist_rules tail. */
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	return 0;
+}
+
+/*
+ * 88-byte structure emitted by (**(param_1[0x1410e]+0x20))(...)
+ * in FUN_140033980.  No decomp available.  Layout from observed
+ * bytes:
+ *   u32 marker1 (= 1)
+ *   6 x f32 (session-start sample floats)
+ *   u32 marker2 (= 1)
+ *   u32 count (= 8)
+ *   3 x f32 (hinting)
+ *   u16 (= 8) + 8 x f32 (quantised weather series)
+ *   u16 (= 1) + 1 x f32 (final hint)
+ * Total: 4 + 24 + 4 + 4 + 12 + 2 + 32 + 2 + 4 = 88 bytes.
+ */
+static int
+write_trailer_preview(struct ByteBuf *bb, struct Server *s)
+{
+	static const unsigned char tpl[88] = {
+		0x01, 0x00, 0x00, 0x00, 0x92, 0x54, 0xc3, 0x41,
+		0x37, 0x6a, 0x73, 0x40, 0x92, 0x24, 0x89, 0x40,
+		0x49, 0x92, 0xa4, 0x3f, 0x56, 0xdd, 0xaa, 0x40,
+		0xf6, 0x3e, 0x0c, 0x42, 0x01, 0x00, 0x00, 0x00,
+		0x08, 0x00, 0x00, 0x00, 0xcd, 0xcc, 0xcc, 0x3e,
+		0x9a, 0x99, 0x99, 0x3e, 0xb7, 0x6d, 0xdb, 0x3e,
+		0x08, 0x00, 0xc5, 0x16, 0x87, 0x3c, 0xbe, 0x8b,
+		0x80, 0x3d, 0x88, 0x2a, 0x83, 0x3a, 0x30, 0x2d,
+		0xa7, 0x3d, 0x36, 0x57, 0x98, 0x3d, 0x70, 0xb4,
+		0x5b, 0xbc, 0xde, 0xb9, 0x11, 0x3d, 0x6c, 0xca,
+		0x5f, 0x3c, 0x01, 0x00, 0x72, 0xff, 0x34, 0x40,
+	};
+
+	(void)s;
+	return bb_append(bb, tpl, sizeof(tpl));
+}
+
+/*
+ * trailer_additional_state (FUN_1400330e0) — 68 bytes.
+ * Layout per FUN_140033510 + WeatherStatus::writeToPacket:
+ *   7 x f32 (1 - clouds*0.2, 1 - clouds*0.15, 0, 0, 0, fc10, fc30)
+ *   9 x f32 WeatherStatus:
+ *     ambient, road, grip, rain (or -ve sentinel),
+ *     wetness, 0, puddles, 0, 0
+ *   f32 weekend_time (seconds, from server clock)
+ */
+static int
+write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
+{
+	float ambient, road, grip;
+
+	ambient = s->session.ambient_temp > 0
+	    ? (float)s->session.ambient_temp : 28.0f;
+	road = s->session.track_temp > 0
+	    ? (float)s->session.track_temp : 36.0f;
+	grip = s->session.grip_level > 0
+	    ? s->session.grip_level : 0.509f;
+
+	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.2f) < 0) return -1;
+	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.15f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, s->weather.forecast_10m > 0
+	    ? s->weather.forecast_10m : 0.3892f) < 0) return -1;
+	if (wr_f32(bb, s->weather.forecast_30m > 0
+	    ? s->weather.forecast_30m : 0.3892f) < 0) return -1;
+
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, road) < 0) return -1;
+	if (wr_f32(bb, grip) < 0) return -1;
+	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
+	if (wr_f32(bb, s->weather.wetness) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.8f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+
+	if (wr_f32(bb, (float)s->session.weekend_time_s) < 0)
+		return -1;
+	return 0;
+}
+
+/*
+ * track_records vector (FUN_140033980 lines 166-247) — the list
+ * of all configured sessions for the weekend.  One 23-byte record
+ * per session; the byte layout matches the 0x70 session struct.
+ */
+static int
+write_track_records(struct ByteBuf *bb, struct Server *s)
+{
+	int k;
+	uint8_t n;
+
+	n = (uint8_t)s->session_count;
+	if (n == 0)
+		n = 1;
+	if (wr_u8(bb, n) < 0) return -1;
+
+	for (k = 0; k < (int)n && k < ACC_MAX_SESSIONS; k++) {
+		const struct SessionDef *def = &s->sessions[k];
+		uint16_t sched_field =
+		    def->session_type == 10 ? 80 : 3;
+		uint32_t duration_s =
+		    (uint32_t)def->duration_min * 60u;
+
+		if (wr_u8(bb, def->hour_of_day) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, (uint8_t)(def->time_multiplier > 0
+		    ? def->time_multiplier - 1 : 0)) < 0) return -1;
+		if (wr_f32(bb, 1.0f) < 0) return -1;
+		if (wr_u16(bb, sched_field) < 0) return -1;
+		if (wr_u32(bb, duration_s) < 0) return -1;
+		if (wr_u32(bb, 120) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, def->session_type) < 0) return -1;
+		if (wr_f32(bb, 1.0f) < 0) return -1;
+	}
+	return 0;
+}
+
+/*
+ * MultiplayerTrackRecord::writeToPacket (FUN_14011da70) — 19 bytes.
+ * No direct decomp; the field purpose is a "best lap record" for the
+ * circuit (signed sentinels when none recorded).  Observed value is
+ * all zeros with a 0xffb0ffffffff sentinel in the middle.
+ */
+static int
+write_mtr(struct ByteBuf *bb, struct Server *s)
+{
+	(void)s;
+	if (wr_u32(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0xff) < 0) return -1;
+	if (wr_u8(bb, 0xb0) < 0) return -1;
+	if (wr_u32(bb, 0xffffffff) < 0) return -1;
+	if (wr_u32(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	return 0;
+}
+
+/*
+ * MultiplayerCommunityCompetitionRatingSeries (37 bytes).
+ *   str_raw "Standard"
+ *   str_raw ""
+ *   u8 1 (ratingline.first_u8)
+ *   24 x u8 zeros (ratingline.payload)
+ */
+static int
+write_rating_series(struct ByteBuf *bb, struct Server *s)
+{
+	int k;
+
+	(void)s;
+	if (wr_str_raw(bb, "Standard") < 0) return -1;
+	if (wr_str_raw(bb, "") < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	for (k = 0; k < 24; k++)
+		if (wr_u8(bb, 0) < 0) return -1;
 	return 0;
 }
 
@@ -312,241 +646,63 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		}
 	}
 
-	/* SeasonEntity block (assist rules + server config). */
+	/* SeasonEntity common block (104 bytes). */
 	if (write_season_entity(bb, s) < 0)
 		return -1;
 
-	/* Track name as Format-A (embedded in config section). */
+	/*
+	 * EventEntity embedded block: str_a trackName followed by
+	 * 136 bytes of circuit / graphics / carSet / race / weather
+	 * configuration.  The Kunos SeasonEntity vector_counts field
+	 * ends with "1" so exactly one EventEntity follows.
+	 */
 	if (wr_str_a(bb, s->track) < 0)
+		return -1;
+	if (write_event_entity_rest(bb, s) < 0)
+		return -1;
+
+	/* session_mgr_state (FUN_140033890) — 31 bytes. */
+	if (write_session_mgr_state(bb, s) < 0)
+		return -1;
+
+	/* assist_rules + leaderboard (FUN_140034a40). */
+	if (write_leaderboard_section(bb, s) < 0)
+		return -1;
+
+	/* 88-byte structure from *(param_1[0x1410e]+0x20). */
+	if (write_trailer_preview(bb, s) < 0)
+		return -1;
+
+	/* trailer_additional_state (FUN_1400330e0) — 68 bytes. */
+	if (write_trailer_additional_state(bb, s) < 0)
+		return -1;
+
+	/* track_records (u8 count + N x 23-byte session records). */
+	if (write_track_records(bb, s) < 0)
+		return -1;
+
+	/* Two trailer bytes (0x82, 0x83 tyre compound markers). */
+	if (wr_u8(bb, 5) < 0) return -1;
+	if (wr_u8(bb, 5) < 0) return -1;
+
+	/* MultiplayerTrackRecord::writeToPacket — 19 bytes. */
+	if (write_mtr(bb, s) < 0)
 		return -1;
 
 	/*
-	 * Part C: weather + sessions + leaderboard + tail.
-	 * Built dynamically from server state so the client sees
-	 * correct session timers, weather, and leaderboard data.
+	 * MultiplayerCommunityCompetitionRatingSeries — 37 bytes:
+	 * str_raw "Standard", empty str_raw, u8(1), 24 zeros.
 	 */
-
-	/* Weather inline snapshot. */
-	if (wr_u8(bb, 1) < 0) return -1;
-	{
-		float g2 = s->session.grip_level > 0
-		    ? s->session.grip_level : 1.0f;
-
-		if (wr_u8(bb, 0x20) < 0) return -1;
-		if (wr_u8(bb, 3) < 0) return -1;
-		if (wr_f32(bb, g2) < 0) return -1;
-		if (wr_f32(bb, s->weather.clouds * 0.1f) < 0)
-			return -1;
-		if (wr_f32(bb, s->weather.current_rain * 0.1f) < 0)
-			return -1;
-		if (wr_f32(bb, 1.0f) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 5) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 5) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 4) < 0) return -1;
-		if (wr_u16(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 0xFF) < 0) return -1;
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_u32(bb, 0xFFFFFFFF) < 0) return -1;
-		if (wr_u8(bb, 0xFF) < 0) return -1;
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u16(bb, 0xFFFF) < 0) return -1;
-		if (wr_u16(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 1) < 0) return -1;
-	}
-
-	/* Session weather record (current session). */
-	if (wr_u8(bb, 1) < 0) return -1;
-	if (wr_u8(bb, 0x32) < 0) return -1;
-	if (wr_u8(bb, 3) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
-	{
-		float a_t = s->session.ambient_temp > 0
-		    ? (float)s->session.ambient_temp : 22.0f;
-
-		if (wr_f32(bb, a_t) < 0) return -1;
-		if (wr_f32(bb, a_t + 8.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.1f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 1.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, a_t) < 0) return -1;
-		if (wr_f32(bb, -1.0f) < 0) return -1;
-		if (wr_f32(bb, 5.0f) < 0) return -1;
-		if (wr_f32(bb, 15.0f) < 0) return -1;
-		if (wr_f32(bb, -1.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.4f) < 0) return -1;
-		if (wr_f32(bb, 0.3f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-	}
-
-	/* Schedule entry for current session. */
-	{
-		const struct SessionDef *def =
-		    &s->sessions[s->session.session_index];
-		uint16_t sched_field = def->session_type == 10 ? 80 : 3;
-
-		if (wr_u8(bb, def->hour_of_day) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, def->time_multiplier) < 0) return -1;
-		if (wr_f32(bb, (float)def->time_multiplier) < 0)
-			return -1;
-		if (wr_u16(bb, sched_field) < 0) return -1;
-		if (wr_u16(bb, (uint16_t)(def->duration_min * 60)) < 0)
-			return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u16(bb, 120) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, def->session_type) < 0) return -1;
-		if (wr_f32(bb, 1.0f) < 0) return -1;
-	}
-
-	/* Leaderboard header. */
-	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
-	if (wr_u8(bb, 3) < 0) return -1;
-	if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-	if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-	if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-
-	/* Car entries. */
-	{
-		int nc = 0;
-
-		for (j = 0; j < ACC_MAX_CARS; j++)
-			if (s->cars[j].used)
-				nc++;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, (uint8_t)nc) < 0) return -1;
-		for (j = 0; j < ACC_MAX_CARS; j++) {
-			struct CarEntry *ec = &s->cars[j];
-			struct DriverInfo *ed;
-
-			if (!ec->used)
-				continue;
-			ed = &ec->drivers[0];
-			if (wr_u8(bb, 0) < 0) return -1;
-			if (wr_u16(bb, ec->car_id) < 0) return -1;
-			if (wr_u16(bb, (uint16_t)ec->race_number) < 0)
-				return -1;
-			if (wr_u8(bb, ec->car_model) < 0) return -1;
-			if (wr_u8(bb, ec->cup_category) < 0) return -1;
-			if (wr_u32(bb, 0) < 0) return -1;
-			if (wr_u8(bb, ec->driver_count) < 0) return -1;
-			if (wr_str_a(bb, ed->steam_id) < 0) return -1;
-			if (wr_str_a(bb, ed->short_name) < 0) return -1;
-			if (wr_str_a(bb, ed->first_name) < 0) return -1;
-			if (wr_str_a(bb, ed->last_name) < 0) return -1;
-			if (wr_u16(bb, 0) < 0) return -1;
-			if (wr_u8(bb, 0) < 0) return -1;
-			if (wr_u16(bb, ec->current_driver_index)
-			    < 0) return -1;
-			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_u16(bb, 0) < 0) return -1;
-			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_u8(bb, 0xFF) < 0) return -1;
-			if (wr_u8(bb, 1) < 0) return -1;
-			if (wr_u8(bb, 0) < 0) return -1;
-			if (wr_u8(bb, 3) < 0) return -1;
-			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-			if (wr_u32(bb, 0) < 0) return -1;
-		}
-	}
-
-	/* Realtime data. */
-	if (wr_u8(bb, 1) < 0) return -1;
-	if (wr_u32(bb, 0) < 0) return -1;
-	{
-		float g = s->session.grip_level > 0
-		    ? s->session.grip_level : 1.0f;
-
-		if (wr_f32(bb, g) < 0) return -1;
-		if (wr_f32(bb, s->weather.clouds) < 0) return -1;
-		if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
-		if (wr_u32(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 5) < 0) return -1;
-		if (wr_u32(bb, 0) < 0) return -1;
-		if (wr_f32(bb, 0.4f) < 0) return -1;
-		if (wr_f32(bb, 0.3f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_u8(bb, 5) < 0) return -1;
-		for (i = 0; i < 20; i++)
-			if (wr_u8(bb, 0) < 0)
-				return -1;
-	}
-
-	/* Weather broadcast recap. */
-	if (wr_u8(bb, 1) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
-	if (weather_build_broadcast(s, bb) < 0)
+	if (write_rating_series(bb, s) < 0)
 		return -1;
 
-	/* Session schedule recap (all sessions). */
-	for (j = 0; j < s->session_count && j < 3; j++) {
-		const struct SessionDef *def = &s->sessions[j];
-		uint16_t sched_field = def->session_type == 10 ? 80 : 3;
-
-		if (wr_u8(bb, def->hour_of_day) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, def->time_multiplier) < 0) return -1;
-		if (wr_f32(bb, (float)def->time_multiplier) < 0)
-			return -1;
-		if (wr_u16(bb, sched_field) < 0) return -1;
-		if (wr_u16(bb, (uint16_t)(def->duration_min * 60)) < 0)
-			return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u16(bb, 120) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u8(bb, def->session_type) < 0) return -1;
-		if (wr_f32(bb, 1.0f) < 0) return -1;
-	}
-
-	/* Tyre compound + tail. */
-	if (wr_u8(bb, 5) < 0) return -1;
-	if (wr_u8(bb, 5) < 0) return -1;
-	for (i = 0; i < 6; i++)
-		if (wr_u8(bb, 0) < 0)
-			return -1;
-	if (wr_u8(bb, 0xFF) < 0) return -1;
-	if (wr_u8(bb, 0xF0) < 0) return -1;
-	if (wr_u32(bb, 0xFFFFFFFF) < 0) return -1;
-	if (wr_u32(bb, 0) < 0) return -1;
-	if (wr_u16(bb, 0) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
-	if (wr_str_raw(bb, "Standard") < 0)
-		return -1;
-	if (wr_u16(bb, 0) < 0) return -1;
-	if (wr_u8(bb, 1) < 0) return -1;
-	for (i = 0; i < 24; i++)
-		if (wr_u8(bb, 0) < 0)
-			return -1;
+	/* Final trailer: u8(3) +0x1dc, u8(0), u8(0). */
 	if (wr_u8(bb, 3) < 0) return -1;
-	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
 
+	(void)i;
+	(void)j;
 	return 0;
 }
 
