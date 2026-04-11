@@ -34,12 +34,21 @@ multiplayer sessions on Linux and OpenBSD, without Wine.
 .Pp
 The welcome trailer
 .Pq Tn 0x0b No response body
-is built entirely from live server state.
-Per-car spawnDefs, the SeasonEntity block (HudRules, AssistRules,
-GraphicsRules, RealismRules, GameplayRules, OnlineRules,
-RaceDirectorRules), weather snapshot, session schedule,
-leaderboard, and tyre compound are all emitted as individual
-fields with no static template blobs.
+is emitted section-for-section to match the byte-exact layout
+of the real Kunos server: per-car spawnDefs (CarInfo + DriverInfo
+array + 27-byte tail), the SeasonEntity common block
+(HudRules, AssistRules, GraphicsRules, RealismRules, GameplayRules,
+OnlineRules, RaceDirectorRules), the EventEntity block, the
+session manager state, the assist_rules + leaderboard section,
+a weather-additional-state block, the per-weekend session
+schedule, and the MultiplayerTrackRecord / RatingSeries tail.
+Per-car and SeasonEntity fields are built dynamically from
+live server state; two sub-structures
+.Pq Tn EventEntity No rest and the
+.Tn 0x1410e
+serializer output
+are still emitted as static byte templates captured from a real
+Kunos welcome.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds

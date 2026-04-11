@@ -14,12 +14,14 @@ session — on Linux and OpenBSD, without Wine.
 The server implements the full ACC multiplayer protocol and can
 host private sessions.  The handshake, reject, and welcome
 response formats have been validated against a real Kunos
-`accServer.exe` 1.10.2 instance, and the welcome trailer is built
-entirely from dynamic server state (no static templates) with
-byte-exact layout derived from the decompiled Kunos binary.
-Real ACC clients connect, the engine starts, the in-game clock
-ticks correctly from the configured hourOfDay, and the car
-drives on track.
+`accServer.exe` 1.10.2 instance, and the welcome trailer has a
+byte-exact layout derived from the decompiled Kunos binary,
+emitted section-for-section via per-section helpers; two of the
+sub-structures (EventEntity rest and the `*(0x1410e+0x20)`
+serializer output) are still static templates captured from a
+real Kunos welcome.  Real ACC clients connect, the engine
+starts, the in-game clock ticks correctly from the configured
+hourOfDay, and the car drives on track.
 
 ### What works
 
@@ -28,17 +30,29 @@ drives on track.
   version check, DriverInfo/CarInfo parsing, connection state
   machine, disconnect notification.  Reject (`0x0c`) and accept
   (`0x0b`) formats validated against real Kunos `accServer.exe`.
-- **Fully dynamic welcome trailer** — the `0x0b` response body is
-  built entirely from server state with no static blobs.  Per-car
-  spawnDefs echo each client's DriverInfo and CarInfo in the
-  correct order (CarInfo first, then DriverInfo array) as required
-  by `FUN_140032c90` in the Kunos binary.  The SeasonEntity block
-  (HudRules + AssistRules + GraphicsRules + RealismRules +
-  GameplayRules + OnlineRules + RaceDirectorRules) is emitted as
-  individual fields matching `FUN_14011e2a0`.  Part C (weather
-  snapshot, session weather record, schedule entry, leaderboard,
-  realtime data, weather broadcast recap, schedule recap, tyre
-  compound) is all built from live server state.
+- **Byte-exact welcome trailer** — the `0x0b` response body is
+  built section-for-section from the real Kunos layout, with
+  per-section helpers in `handshake.c`.  The body consists of:
+  `u32` carIndex, `str_raw` server_name, `str_raw` track,
+  `u8` spawnDef count, per-car spawnDef (CarInfo first, then
+  DriverInfo array, then 27-byte spawnDef tail), `SeasonEntity`
+  common 104 bytes (HudRules + AssistRules + GraphicsRules +
+  RealismRules + GameplayRules + OnlineRules + RaceDirectorRules
+  + 5 u16 vector counts), `EventEntity` (str_a trackName + 136
+  bytes), `session_mgr_state` (31 bytes), `assist_rules` +
+  `leaderboard` section (header + one lb_entry per car + 2 byte
+  tail), an 88-byte block from the unknown `*(0x1410e+0x20)`
+  serializer, `trailer_additional_state` (68 bytes: 7 f32 +
+  9 f32 WeatherStatus + f32 weekend_time), the `track_records`
+  vector (u8 count + per-session 23-byte records), 2 tyre
+  compound markers, `MultiplayerTrackRecord::writeToPacket`,
+  `MultiplayerCommunityCompetitionRatingSeries`, and 3 trailer
+  bytes.  Per-car layouts match `FUN_140032c90`,
+  `FUN_14011c7c0`, `FUN_14011cea0`, `FUN_140034210` in the
+  Kunos binary; the SeasonEntity fields match `FUN_14011e2a0`.
+  The 136-byte `EventEntity` block and the 88-byte
+  `*(0x1410e+0x20)` block are still emitted as static templates
+  captured from a real Kunos welcome.
 - **Post-accept welcome sequence** — `0x28` large state response,
   `0x36` initial leaderboard, `0x37` weather snapshot, and `0x4e`
   rating summary sent immediately after handshake accept, matching
