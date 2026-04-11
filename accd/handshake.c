@@ -551,6 +551,89 @@ write_rating_series(struct ByteBuf *bb, struct Server *s)
 	return 0;
 }
 
+/*
+ * Emit one spawnDef for car slot `car_slot`.  Layout matches
+ * FUN_140032c90 in accServer.exe:
+ *
+ *   u16 car_id (+0x150)
+ *   u8  grid_slot + 1   (from +2 in session car struct)
+ *   u8  grid_slot + 1   (from +3)
+ *   CarInfo::writeToPacket (193 bytes from the stored handshake echo)
+ *   u8  driver_count
+ *   DriverInfo::writeToPacket x driver_count
+ *   u8  active_driver_idx
+ *   u64 timestamp
+ *   u8  flag (+0x153)
+ *   u8  flag (+0x152)
+ *   5 x u8 car_dirt
+ *   5 x u8 damage_zones
+ *   u16 elo
+ *   u32 stability
+ *
+ * Returns 0 on success, -1 if the car has no valid handshake echo
+ * (in which case nothing is written and the caller should skip the
+ * car or fail the containing message build).
+ */
+int
+write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
+{
+	struct CarEntry *ec;
+	struct Conn *owner = NULL;
+	size_t drv_len, ci_off, ci_len;
+	int k;
+	uint8_t slot1;
+
+	if (car_slot < 0 || car_slot >= ACC_MAX_CARS)
+		return -1;
+	ec = &s->cars[car_slot];
+	if (!ec->used)
+		return -1;
+
+	for (k = 0; k < ACC_MAX_CARS; k++) {
+		if (s->conns[k] != NULL &&
+		    s->conns[k]->car_id == car_slot) {
+			owner = s->conns[k];
+			break;
+		}
+	}
+	if (owner == NULL || owner->hs_echo == NULL ||
+	    owner->hs_echo_len == 0)
+		return -1;
+
+	drv_len = parse_driverinfo_len(owner->hs_echo,
+	    owner->hs_echo_len);
+	if (drv_len == 0 || drv_len + 8 > owner->hs_echo_len)
+		return -1;
+	ci_off = drv_len + 8;
+	ci_len = owner->hs_echo_len - ci_off;
+
+	slot1 = (uint8_t)(car_slot + 1);
+	if (wr_u16(bb, ec->car_id) < 0) return -1;
+	if (wr_u8(bb, slot1) < 0) return -1;
+	if (wr_u8(bb, slot1) < 0) return -1;
+
+	if (bb_append(bb, owner->hs_echo + ci_off, ci_len) < 0)
+		return -1;
+
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (bb_append(bb, owner->hs_echo, drv_len) < 0) return -1;
+
+	/* spawnDef tail: active, u64 ts, 2 u8, 5 dirt, 5 damage,
+	 * u16 elo, u32 stability.  All zero for a fresh spawn. */
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u32(bb, 0) < 0) return -1;
+	if (wr_u32(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	for (k = 0; k < 5; k++)
+		if (wr_u8(bb, 0) < 0) return -1;
+	for (k = 0; k < 5; k++)
+		if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u32(bb, 0) < 0) return -1;
+	return 0;
+}
+
 int
 build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 {
@@ -588,61 +671,10 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		if (wr_u8(bb, (uint8_t)nc) < 0)
 			return -1;
 		for (j = 0; j < ACC_MAX_CARS; j++) {
-			struct CarEntry *ec = &s->cars[j];
-			struct Conn *owner = NULL;
-			size_t drv_len, ci_off, ci_len;
-			int k;
-
-			if (!ec->used)
+			if (!s->cars[j].used)
 				continue;
-			for (k = 0; k < ACC_MAX_CARS; k++) {
-				if (s->conns[k] != NULL &&
-				    s->conns[k]->car_id == j) {
-					owner = s->conns[k];
-					break;
-				}
-			}
-			if (owner == NULL || owner->hs_echo == NULL ||
-			    owner->hs_echo_len == 0)
-				continue;
-
-			drv_len = parse_driverinfo_len(owner->hs_echo,
-			    owner->hs_echo_len);
-			if (drv_len == 0 ||
-			    drv_len + 8 > owner->hs_echo_len)
-				continue;
-			ci_off = drv_len + 8;
-			ci_len = owner->hs_echo_len - ci_off;
-
-			/* Header: car_id + 2 flags. */
-			if (wr_u16(bb, ec->car_id) < 0) return -1;
-			if (wr_u8(bb, 1) < 0) return -1;
-			if (wr_u8(bb, 1) < 0) return -1;
-
-			/* CarInfo (from handshake). */
-			if (bb_append(bb, owner->hs_echo + ci_off,
-			    ci_len) < 0)
+			if (write_spawn_def(bb, s, j) < 0)
 				return -1;
-
-			/* Driver count + DriverInfo blob(s). */
-			if (wr_u8(bb, 1) < 0) return -1;
-			if (bb_append(bb, owner->hs_echo, drv_len) < 0)
-				return -1;
-
-			/* Tail: active driver, timestamp, flags,
-			 * tire/damage/elo/stability (all zero on
-			 * a fresh spawn). */
-			if (wr_u8(bb, 0) < 0) return -1;
-			if (wr_u32(bb, 0) < 0) return -1;
-			if (wr_u32(bb, 0) < 0) return -1;
-			if (wr_u8(bb, 0) < 0) return -1;
-			if (wr_u8(bb, 0) < 0) return -1;
-			for (k = 0; k < 5; k++)
-				if (wr_u8(bb, 0) < 0) return -1;
-			for (k = 0; k < 5; k++)
-				if (wr_u8(bb, 0) < 0) return -1;
-			if (wr_u16(bb, 0) < 0) return -1;
-			if (wr_u32(bb, 0) < 0) return -1;
 		}
 	}
 
@@ -737,9 +769,45 @@ fail:
 }
 
 /*
+ * Send a proactive 0x2e (car system) state-sync for every
+ * already-connected car to the new connection `new_conn`.
+ * Matches FUN_14002dcb0 in accServer.exe which iterates the
+ * server's car list and, for each car other than the joiner's,
+ * emits a TCP-framed `u8 0x2e + u16 car_id + u64 last_sys_data`.
+ *
+ * The new joiner uses these messages to populate per-car
+ * damage / fuel / tyre state before any UDP 0x1e position
+ * update arrives, so cars appear with the correct state at
+ * the moment of spawn.
+ */
+static void
+handshake_send_state_sync(struct Conn *new_conn, struct Server *s)
+{
+	int i;
+
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct CarEntry *car = &s->cars[i];
+		struct ByteBuf out;
+
+		if (!car->used)
+			continue;
+		if (i == new_conn->car_id)
+			continue;
+
+		bb_init(&out);
+		if (wr_u8(&out, SRV_CAR_SYSTEM_RELAY) == 0 &&
+		    wr_u16(&out, car->car_id) == 0 &&
+		    wr_u64(&out, car->last_sys_data) == 0)
+			(void)tcp_send_framed(new_conn->fd, out.data,
+			    out.wpos);
+		bb_free(&out);
+	}
+}
+
+/*
  * Send a 0x0b accept response with the welcome trailer.
  * Header: u8(0x0b) + u16(udp_port) + u8(0x12) +
- * u16(nconns) + u16(conn_id) + u16(0).
+ * u16(conn_id) + u32(car_id).
  */
 static int
 handshake_send_accept(struct Conn *c, struct Server *s)
@@ -747,13 +815,20 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 	struct ByteBuf bb;
 	int rc;
 
+	/*
+	 * Header layout (from FUN_14001b820 in accServer.exe):
+	 *   u8  0x0b (msg id)
+	 *   u16 udp_port (from server+0x10)
+	 *   u8  0x12 (from server+0x7d, always 0x12)
+	 *   u16 conn_id (param_4)
+	 *   u32 car_id (param_3, written by FUN_140033980 body)
+	 */
 	bb_init(&bb);
 	if (wr_u8(&bb, SRV_HANDSHAKE_RESPONSE) < 0 ||
 	    wr_u16(&bb, (uint16_t)s->udp_port) < 0 ||
 	    wr_u8(&bb, 0x12) < 0 ||
-	    wr_u16(&bb, 0) < 0 ||	/* nconns placeholder */
-	    wr_u16(&bb, s->cars[c->car_id].car_id) < 0 ||
-	    wr_u16(&bb, 0) < 0)
+	    wr_u16(&bb, c->conn_id) < 0 ||
+	    wr_u32(&bb, (uint32_t)s->cars[c->car_id].car_id) < 0)
 		goto fail;
 
 	if (build_welcome_trailer(&bb, s, c) < 0)
@@ -761,7 +836,12 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 
 	rc = tcp_send_framed(c->fd, bb.data, bb.wpos);
 	bb_free(&bb);
-	return rc;
+	if (rc < 0)
+		return rc;
+
+	/* Proactive state sync for already-connected cars. */
+	handshake_send_state_sync(c, s);
+	return 0;
 fail:
 	bb_free(&bb);
 	return -1;

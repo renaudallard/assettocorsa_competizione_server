@@ -57,4 +57,12 @@ int	handshake_handle(struct Server *s, struct Conn *c,
 int	build_welcome_trailer(struct ByteBuf *bb, struct Server *s,
 		struct Conn *c);
 
+/*
+ * Emit one spawnDef record for the car at `car_slot`.  Used by
+ * the welcome trailer spawnDef loop and by the 0x23 CarInfoResponse
+ * reply.  Returns -1 if the car is not connected or lacks a valid
+ * handshake echo.
+ */
+int	write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot);
+
 #endif /* ACCD_HANDSHAKE_H */
