@@ -51,6 +51,7 @@
 #include "bcast.h"
 #include "chat.h"
 #include "handlers.h"
+#include "handshake.h"
 #include "io.h"
 #include "log.h"
 #include "msg.h"
@@ -348,6 +349,7 @@ h_car_system_update(struct Server *s, struct Conn *c,
 		    (unsigned)c->conn_id, (unsigned)car_id);
 		return 0;
 	}
+	s->cars[c->car_id].last_sys_data = sys_data;
 	log_info("car system: car=%u data=%016llx",
 	    (unsigned)car_id, (unsigned long long)sys_data);
 
@@ -1125,70 +1127,62 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 
 /* ----- UDP 0x22 CAR_INFO_REQUEST -> reply 0x23 ------------------ */
 
-/*
- * Build a per-car entry list record for the welcome trailer or
- * for the 0x23 CAR_INFO_RESPONSE.  The 24-byte layout from
- * §5.6.4c.  Returns 0 on success.
- */
-static int
-build_per_car_record(struct ByteBuf *bb, struct CarEntry *car)
-{
-	if (wr_u8(bb, car->car_model) < 0 ||
-	    wr_u8(bb, car->cup_category) < 0 ||
-	    wr_u8(bb, (uint8_t)(car->driver_count ? car->driver_count : 1)) < 0 ||
-	    wr_u32(bb, (uint32_t)car->race_number) < 0 ||
-	    wr_u16(bb, car->nationality) < 0 ||
-	    wr_u32(bb, (uint32_t)car->car_id) < 0 ||
-	    wr_u32(bb, (uint32_t)(car->default_grid_position < 0 ?
-		0 : car->default_grid_position)) < 0 ||
-	    wr_u8(bb, car->ballast_kg) < 0 ||
-	    wr_u8(bb, car->current_driver_index) < 0 ||
-	    wr_u32(bb, 0) < 0 ||
-	    wr_u8(bb, 0) < 0)
-		return -1;
-	return 0;
-}
-
 int
 h_udp_car_info_request(struct Server *s,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
 	uint8_t msg_id;
-	uint16_t conn_id, car_index;
+	uint16_t target_car_id, requester_conn_id;
 	struct Conn *requester;
 	struct ByteBuf out;
+	int slot;
 
+	/*
+	 * Wire layout from 140027f80 0x22 handler:
+	 *   u8  0x22 (msg id)
+	 *   u16 target_car_id (the car the client wants info about)
+	 *   u16 requester_conn_id
+	 * The server responds with a TCP 0x23 reply containing the
+	 * full spawnDef of the target car (via welcome_per_car_appender
+	 * in the exe; we inline the same layout via write_spawn_def).
+	 */
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
-	    rd_u16(&r, &conn_id) < 0 ||
-	    rd_u16(&r, &car_index) < 0) {
+	    rd_u16(&r, &target_car_id) < 0 ||
+	    rd_u16(&r, &requester_conn_id) < 0) {
 		log_warn("h_udp_car_info_request: short body");
 		return 0;
 	}
 	log_info("Connection %u asks for carInfo %u",
-	    (unsigned)conn_id, (unsigned)car_index);
+	    (unsigned)requester_conn_id, (unsigned)target_car_id);
 
-	requester = server_find_conn(s, conn_id);
+	requester = server_find_conn(s, requester_conn_id);
 	if (requester == NULL) {
 		log_warn("car info request from unknown conn %u",
-		    (unsigned)conn_id);
+		    (unsigned)requester_conn_id);
 		return 0;
 	}
-	if (car_index >= ACC_MAX_CARS || !s->cars[car_index].used) {
+
+	slot = (int)target_car_id - ACC_CAR_ID_BASE;
+	if (slot < 0 || slot >= ACC_MAX_CARS || !s->cars[slot].used) {
 		log_warn("car info request for unknown car %u",
-		    (unsigned)car_index);
+		    (unsigned)target_car_id);
 		return 0;
 	}
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_CAR_INFO_RESPONSE) < 0)
 		goto done;
-	if (build_per_car_record(&out, &s->cars[car_index]) < 0)
+	if (write_spawn_def(&out, s, slot) < 0) {
+		log_warn("car info response: failed to build spawnDef "
+		    "for car_id=%u slot=%d",
+		    (unsigned)target_car_id, slot);
 		goto done;
+	}
 	bcast_send_one(requester, out.data, out.wpos);
 	log_info("Car Info Response sent carId=%u to conn=%u",
-	    (unsigned)car_index, (unsigned)conn_id);
+	    (unsigned)target_car_id, (unsigned)requester_conn_id);
 done:
 	bb_free(&out);
 	return 0;

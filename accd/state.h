@@ -255,6 +255,12 @@ struct CarEntry {
 	/* Race state updated by lap/sector handlers and the
 	 * leaderboard sort. */
 	struct CarRaceState race;
+
+	/* Last observed ACP_CAR_SYSTEM_UPDATE payload (u64 at
+	 * +0x1b0 in the exe's car struct).  Stored so it can be
+	 * replayed to newly-joined clients via a proactive 0x2e
+	 * state sync, matching FUN_14002dcb0 in accServer.exe. */
+	uint64_t	last_sys_data;
 };
 
 /*
