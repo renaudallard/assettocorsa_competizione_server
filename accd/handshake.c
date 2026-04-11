@@ -1054,19 +1054,23 @@ reply:
 						    ec->drivers[0].first_name);
 						(void)wr_str_a(&lb,
 						    ec->drivers[0].last_name);
+						/* Car entry tail matching
+						 * FUN_140032c90 in the exe. */
 						(void)wr_u16(&lb, 0);
 						(void)wr_u8(&lb, 0);
+						(void)wr_u16(&lb,
+						    ec->current_driver_index);
 						(void)wr_i32(&lb, 0x7FFFFFFF);
 						(void)wr_i32(&lb, 0x7FFFFFFF);
-						(void)wr_u8(&lb, 0);
+						(void)wr_u16(&lb, 0);
 						(void)wr_i32(&lb, 0x7FFFFFFF);
+						(void)wr_u8(&lb, 0xFF);
 						(void)wr_u8(&lb, 1);
 						(void)wr_u8(&lb, 0);
 						(void)wr_u8(&lb, 3);
 						(void)wr_i32(&lb, 0x7FFFFFFF);
 						(void)wr_i32(&lb, 0x7FFFFFFF);
 						(void)wr_i32(&lb, 0x7FFFFFFF);
-						(void)wr_u32(&lb, 0);
 						(void)wr_u32(&lb, 0);
 					}
 					(void)bcast_send_one(c, lb.data,
