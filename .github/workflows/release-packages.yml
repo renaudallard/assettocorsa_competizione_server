@@ -84,7 +84,9 @@ jobs:
                       if not line.strip():
                           if block.get("Supported") == "1" and "Version" in block:
                               ver = block["Version"].split()[0]
-                              versions.append(ver)
+                              m = re.match(r"(\d+\.\d+)", ver)
+                              if m:
+                                  versions.append(m.group(1))
                           block = {}
                           continue
                       if ":" in line:
