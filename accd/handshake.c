@@ -532,7 +532,7 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		if (wr_u8(bb, 0) < 0)
 			return -1;
 	if (wr_u8(bb, 0xFF) < 0) return -1;
-	if (wr_u8(bb, 0x30) < 0) return -1;
+	if (wr_u8(bb, 0xF0) < 0) return -1;
 	if (wr_u32(bb, 0xFFFFFFFF) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u16(bb, 0) < 0) return -1;
@@ -541,7 +541,7 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		return -1;
 	if (wr_u16(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 1) < 0) return -1;
-	for (i = 0; i < 22; i++)
+	for (i = 0; i < 24; i++)
 		if (wr_u8(bb, 0) < 0)
 			return -1;
 	if (wr_u8(bb, 3) < 0) return -1;
