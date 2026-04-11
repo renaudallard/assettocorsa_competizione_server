@@ -102,20 +102,14 @@ h_lap_completed(struct Server *s, struct Conn *c,
 		return 0;
 	race = &s->cars[c->car_id].race;
 
-	if (lap_time_ms > 0) {
-		race->lap_count++;
-		race->last_lap_ms = lap_time_ms;
-		if (race->best_lap_ms == 0 ||
-		    lap_time_ms < race->best_lap_ms)
-			race->best_lap_ms = lap_time_ms;
-		race->race_time_ms += lap_time_ms;
-		race->current_lap_ms = 0;
-	}
-	log_info("lap completed: car=%d lap_count=%d time=%d best=%d",
-	    c->car_id, race->lap_count, (int)lap_time_ms,
-	    race->best_lap_ms);
-
-	session_recompute_standings(s);
+	/*
+	 * 0x19 fires on sector/checkpoint crossings, not on full
+	 * lap completion.  Do NOT increment lap_count here; the
+	 * real lap completion arrives as 0x20 ACP_SECTOR_SPLIT bulk
+	 * which carries sector times and a valid lap total.  Track
+	 * current_lap_ms for display and relay the event as 0x1b.
+	 */
+	race->current_lap_ms = lap_time_ms;
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_LAP_BROADCAST) < 0 ||
@@ -125,7 +119,7 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	    wr_u8(&out, quality) < 0)
 		goto out;
 	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
-	log_info("lap: relayed to %d clients", rc);
+	(void)rc;
 out:
 	bb_free(&out);
 	return 0;
@@ -170,10 +164,30 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			return 0;
 		}
 	}
-	log_info("sector split bulk: car=%d field_a=%d count=%u "
-	    "clock=%d car_field=%u",
-	    c->car_id, (int)field_a, (unsigned)split_count,
-	    (int)clock_ms, (unsigned)car_field);
+	/*
+	 * 0x20 is the real lap completion trigger.  Update the
+	 * car's race state with the lap total and sector times.
+	 */
+	{
+		struct CarRaceState *race = &s->cars[c->car_id].race;
+
+		race->lap_count++;
+		race->race_time_ms = clock_ms;
+		if (split_count > 0) {
+			int32_t lap_ms = (int32_t)splits[split_count - 1];
+
+			race->last_lap_ms = lap_ms;
+			if (race->best_lap_ms == 0 ||
+			    lap_ms < race->best_lap_ms)
+				race->best_lap_ms = lap_ms;
+		}
+		race->current_lap_ms = 0;
+	}
+	log_info("lap completed: car=%d lap=%d clock=%d splits=%u",
+	    c->car_id, s->cars[c->car_id].race.lap_count,
+	    (int)clock_ms, (unsigned)split_count);
+
+	session_recompute_standings(s);
 
 	/* Build the transformed 0x3a broadcast. Body:
 	 *   u16 car_id + u8 split_count + u32[count] + i32 clock +
