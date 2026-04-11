@@ -579,38 +579,82 @@ u16  server_name_len + server_name_bytes    (e.g. "ACC Server (please edit setti
 u16  track_name_len  + track_name_bytes     (e.g. "mount_panorama")
 ```
 
-**Trailer body** (after the strings, ~1900 bytes):
+**Trailer body** (after the server_name and track_name strings):
+
+The trailer body starts with a `u8 num_spawn_defs` count followed
+by one spawnDef record per connected car.  Each spawnDef carries
+the full CarInfo and DriverInfo array from the client's handshake
+plus server-side race state:
 
 ```
-u8   separator = 0x01
-u16  car_id                  (server-assigned car ID, starts at 1001)
+u8   num_spawn_defs        (count of active car slots)
+
+FOR EACH active car:
+u16  car_id                (server-assigned, starts at 1001)
 u8   flag_a = 0x01
 u8   flag_b = 0x01
-u32  preRaceWaitingTimeSeconds
-u32  sessionOverTimeSeconds
-i32  raceNumber              (echoed from the client's request)
-u8   carModel                (echoed from the client's request)
-     <~1050 bytes season entity / track data, zero-filled is accepted>
-u8   separator = 0x01
-     <echoed DriverInfo as Format-A strings: first, last, short, category, nationality>
-     <padding + steam_id as Format-A>
-u8   separator = 0x01
-     <AssistRules: 8x u8 assist flags + f32 stability limit + 6x u8 flags>
-     <ServerConfiguration: formation lap, driver swap, latency settings>
-u8   separator = 0x01
-u8   0x00
+     <CarInfo blob>        (variable size: team_name, nationality, car_model,
+                            cup_category, strings; copied from the CarInfo
+                            region of the client's 0x09 handshake)
+u8   driver_count          (typically 1 except during driver swap)
+FOR EACH driver:
+     <DriverInfo blob>     (variable size: first_name, last_name, short_name,
+                            nationality, steam_id Format-A strings + 41 bytes
+                            rating block; copied from the DriverInfo region
+                            of the client's 0x09 handshake)
+u8   active_driver_index   (0-based index into the drivers array)
+u64  spawn_timestamp       (0 on fresh spawn)
+u8   flag_c, u8 flag_d     (0 on fresh spawn)
+u8   tire_dirt[5]          (0-255 per compound, 0 on fresh spawn)
+u8   damage[5]             (0-255 per component, 0 on fresh spawn)
+u16  elo                   (0 on fresh spawn)
+u32  stability             (0 on fresh spawn)
+```
+
+After the spawnDefs comes the **SeasonEntity block** (104 bytes
+for a default configuration):
+
+```
+HudRules         u8[7]          (1 configured slot + 6 unset=2 sentinels)
+AssistRules      u8 u8 f32 f32 u8[6]
+                 (disable_ideal_line, disable_autosteer,
+                  stability_min=0.0, stability_max=1.0,
+                  disable_auto_pit_limiter, disable_auto_gear,
+                  disable_auto_clutch, disable_auto_engine,
+                  disable_auto_wiper, disable_auto_lights;
+                  2 = "unset" sentinel)
+GraphicsRules    u8[6]          (0 5 0 5 0 4 defaults)
+RealismRules     u8 u8 f32 u8 f32 f32 u8[9]
+                 (0 0 grip=0.8 1 fuel=1.0 tyre=0.5 1 1 1 1 1 1 1 1 2)
+GameplayRules    u8 u8 u8 u8 u8 u32   (0 0 2 100 100 15)
+OnlineRules      u8 u8 u8 u8 u16 u8[10]
+                 (0 0 formation_type, short_formation,
+                  post_race_seconds=300, weather_randomness=10,
+                  medals=3, auto_dq, randomize, dump_lb,
+                  dump_entries, race_locked, ignore_disconnects,
+                  misc, misc)
+RaceDirectorRules u8 u8 u8 u32 u32 u32 u8
+                 (0 0 0 count=100 tickrate=3000 fifteen=15
+                  default_formation=3)
+u16 vec_count[5] (4 empty vectors + 1 EventEntity count=1)
+```
+
+After the SeasonEntity block comes the EventEntity section:
+
+```
      <track name as Format-A string>
 u8   separator = 0x01
      <inline weather snapshot: grip, clouds, rain, config fields>
 u8   separator = 0x01
-     <session definitions: per-session temp, duration, weather params>
-     <session schedule: per-session hour, time multiplier, duration>
-     <inline leaderboard: per-car driver names + timing>
+     <session weather record: 24 f32 fields from ambient temp>
+     <current session schedule entry>
+u8   separator = 0x01
+     <leaderboard header + per-car leaderboard entries>
 u8   separator = 0x01
      <per-car realtime data placeholder>
 u8   separator = 0x01
-     <second inline weather snapshot (0x37 format)>
-     <session schedule recap>
+     <weather broadcast recap (0x37 format)>
+     <session schedule recap: all configured sessions>
      <tyre compound name "Standard" + tail padding>
 ```
 

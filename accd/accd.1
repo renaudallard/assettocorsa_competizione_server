@@ -15,7 +15,7 @@
 .\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 .\" PURPOSE ARE DISCLAIMED.
 .\"
-.Dd April 9, 2026
+.Dd April 11, 2026
 .Dt ACCD 1
 .Os
 .Sh NAME
@@ -31,6 +31,15 @@ is a clean-room reimplementation of the Assetto Corsa Competizione
 dedicated server.
 An unmodified ACC game client can connect to it and play private
 multiplayer sessions on Linux and OpenBSD, without Wine.
+.Pp
+The welcome trailer
+.Pq Tn 0x0b No response body
+is built entirely from live server state.
+Per-car spawnDefs, the SeasonEntity block (HudRules, AssistRules,
+GraphicsRules, RealismRules, GameplayRules, OnlineRules,
+RaceDirectorRules), weather snapshot, session schedule,
+leaderboard, and tyre compound are all emitted as individual
+fields with no static template blobs.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds

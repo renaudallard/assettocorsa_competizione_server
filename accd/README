@@ -7,10 +7,16 @@ backend.  See ../notebook-b/NOTEBOOK_B.md for the protocol
 specification this code is working towards.
 
 STATUS
-    Phase 1.  TCP framing layer + handshake parser + handshake response
-    builder + module-level dispatch skeleton for every TCP and UDP
-    message id known to the catalog.  All non-handshake cases are
-    stubs that log the msg id and length but do not yet mutate state.
+    Full protocol implementation.  Handshake, welcome trailer,
+    session state, weather, leaderboard, lap timing, and per-car
+    broadcasts are all dynamic.  The welcome trailer (0x0b) is
+    built entirely from server state with no static templates:
+    spawnDefs per connected car (echoing real DriverInfo/CarInfo),
+    SeasonEntity block (HudRules + AssistRules + GraphicsRules +
+    RealismRules + GameplayRules + OnlineRules + RaceDirectorRules),
+    weather snapshot, session schedule, leaderboard, realtime
+    data, and tyre compound.  Time-of-day ticks from hourOfDay
+    and is broadcast every 5 seconds via 0x37.
 
 BUILD
     make
@@ -47,9 +53,10 @@ SMOKE TESTS
     Accept path (empty server password):
         printf '\x04\x00\x09\x00\x01\x00' | nc -q 1 127.0.0.1 $tcpPort
     expects a 0x0b response with car id and the welcome trailer
-    built dynamically from server state (weather, sessions,
-    leaderboard).  Single-player tested: engine starts, time
-    advances, car drives on track.
+    built entirely from server state (spawnDefs, SeasonEntity,
+    weather, sessions, leaderboard).  Single-player validated
+    against real ACC client: engine starts, in-game clock
+    ticks from configured hourOfDay, car drives on track.
 
 MODULES
     main.c       poll loop, signal handling, server lifecycle
@@ -62,8 +69,10 @@ MODULES
     net.c/h      tcp_listen / udp_bind helpers
     log.c/h      timestamped stderr logger with hexdump
     handshake.c/h  parse 0x09 ACP_REQUEST_CONNECTION, build 0x0b
-                 response with dynamic welcome trailer (weather,
-                 session schedule, leaderboard, realtime data)
+                 response with fully dynamic welcome trailer:
+                 per-car spawnDefs echoing CarInfo/DriverInfo from
+                 each client's handshake, SeasonEntity block, and
+                 Part C (weather, sessions, leaderboard, realtime)
     dispatch.c/h  TCP framed-message dispatch + UDP datagram dispatch
                  with all 21 TCP and 7 UDP cases stubbed out
     chat.c/h     admin chat command parser skeleton

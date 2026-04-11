@@ -14,8 +14,12 @@ session — on Linux and OpenBSD, without Wine.
 The server implements the full ACC multiplayer protocol and can
 host private sessions.  The handshake, reject, and welcome
 response formats have been validated against a real Kunos
-`accServer.exe` 1.10.2 instance.  The server correctly accepts
-connections, assigns car IDs, and begins the session lifecycle.
+`accServer.exe` 1.10.2 instance, and the welcome trailer is built
+entirely from dynamic server state (no static templates) with
+byte-exact layout derived from the decompiled Kunos binary.
+Real ACC clients connect, the engine starts, the in-game clock
+ticks correctly from the configured hourOfDay, and the car
+drives on track.
 
 ### What works
 
@@ -24,16 +28,33 @@ connections, assigns car IDs, and begins the session lifecycle.
   version check, DriverInfo/CarInfo parsing, connection state
   machine, disconnect notification.  Reject (`0x0c`) and accept
   (`0x0b`) formats validated against real Kunos `accServer.exe`.
+- **Fully dynamic welcome trailer** — the `0x0b` response body is
+  built entirely from server state with no static blobs.  Per-car
+  spawnDefs echo each client's DriverInfo and CarInfo in the
+  correct order (CarInfo first, then DriverInfo array) as required
+  by `FUN_140032c90` in the Kunos binary.  The SeasonEntity block
+  (HudRules + AssistRules + GraphicsRules + RealismRules +
+  GameplayRules + OnlineRules + RaceDirectorRules) is emitted as
+  individual fields matching `FUN_14011e2a0`.  Part C (weather
+  snapshot, session weather record, schedule entry, leaderboard,
+  realtime data, weather broadcast recap, schedule recap, tyre
+  compound) is all built from live server state.
 - **Post-accept welcome sequence** — `0x28` large state response,
   `0x36` initial leaderboard, `0x37` weather snapshot, and `0x4e`
   rating summary sent immediately after handshake accept, matching
-  the real server's welcome sequence.
+  the real server's welcome sequence.  The `0x28` timing blocks
+  use the 6-float offset pattern (b1=base, b2=base+3000ms,
+  b5=base+3000+duration_ms, b6=+overtime_ms) required for the
+  client to start the engine.
 - **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
   message types are handled; 34 server-to-client message types are
   implemented (plus 7 ServerMonitor protobuf types).
 - **Per-car state broadcast** — 10 Hz fast-rate (`0x1e`) and 1 Hz
   slow-rate (`0x39`) per-car broadcasts relayed to all other
-  connections.
+  connections.  UDP car updates are matched to connections by the
+  `source_conn_id` field in the packet body, so multiple clients
+  behind the same NAT (e.g. two players on one LAN) are routed
+  correctly.
 - **Session management** — configurable session sequence
   (Practice / Qualifying / Race) with automatic phase transitions,
   session timers, and session advance/restart via admin commands.
@@ -48,8 +69,14 @@ connections, assigns car IDs, and begins the session lifecycle.
   `/ballast`, `/restrictor`, `/clear`, `/connections`.
 - **Penalty system** — per-car penalty queue, pit-speed enforcement
   from telemetry, mandatory pitstop tracking.
-- **Weather** — deterministic sin/cos weather simulator with cloud
-  and rain cycles, broadcast on significant change (`0x37`).
+- **Weather and in-game clock** — deterministic sin/cos weather
+  simulator with cloud and rain cycles, seeded from the session
+  start time so the first tick produces consistent values.  `0x37`
+  weather broadcast fires unconditionally every 5 seconds carrying
+  `weekend_time_s`, which the client uses to drive the sun
+  position and in-game clock display.  `weekend_time_s` is
+  initialized to `hourOfDay * 3600` at session start and advances
+  with the configured `timeMultiplier`.
 - **ServerMonitor protocol** — protobuf message builders for
   session state, car entries, connection entries, leaderboard,
   and realtime updates (available for future broadcasting
