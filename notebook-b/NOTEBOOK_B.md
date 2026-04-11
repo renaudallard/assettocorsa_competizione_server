@@ -265,7 +265,14 @@ Documented for completeness (`HB §III.3.1`): lives in each client's `Users/Docu
 
 ---
 
-## 4. Session state machine
+## 4. Session state machine (external broadcasting API)
+
+This section describes the phase enum exposed by the broadcasting
+SDK (used by overlay tooling).  The **internal** server state machine
+that drives the sim-protocol wire format is a simpler 7-level model
+documented in §5.7; a reimplementation must follow §5.7 on the wire
+and can map to the enum below only when generating broadcasting-SDK
+events.
 
 From `SDK/BroadcastingEnums.cs` (`SessionPhase`):
 
@@ -826,6 +833,193 @@ Rejection reasons observed, each with its own log message:
 | Invalid entry list grid position | corrupt `defaultGridPosition` value in entrylist.json for this car |
 
 A reimplementation that wants to maintain parity should implement **all seven rejection checks**, in roughly the order above, since some depend on state computed by earlier checks (e.g. the full check happens after the password check so you can't probe for "is the server full" without knowing the password).
+
+---
+
+### 5.7 Session phase state machine (internal 7-level model)
+
+The `SessionPhase` enum exposed by `SDK/BroadcastingEnums.cs` (§4) is an
+external broadcasting API mapping.  **Internally the dedicated server
+uses a simpler 7-level phase numbering driven entirely by a pre-computed
+time schedule.**  The internal model is what ends up on the wire in the
+sim protocol, so a reimplementation needs to follow it to keep the
+game client's session display in sync.
+
+#### 5.7.1 Phase numbers
+
+Phase is a `u8` returned by a pure function of the server clock
+(`serverNow`, double milliseconds) and 6 scheduled timestamps stored
+in the session-manager struct:
+
+| Phase | Log string              | Meaning                                     |
+| ----- | ----------------------- | ------------------------------------------- |
+| 1     | `<waiting for drivers>` | No driver connected; slots unset            |
+| 2     | (not logged)            | Intermediate (e.g. pre-formation for races) |
+| 3     | `<pre session>`         | Countdown intro after driver-detected       |
+| 4     | `<session>`             | Active session                              |
+| 5     | `<session overtime>`    | Past scheduled end, grace period            |
+| 6     | `<session completed>`   | Aftercare / results pending                 |
+| 7     | (not logged)            | Sentinel; triggers session-advance          |
+
+Non-race sessions never visit phase 2.  A race uses 2 for pre-formation
+and 3 for the formation lap (gated by `formationLapType`).
+
+#### 5.7.2 Phase computation
+
+```c
+computeCurrentPhase(SessionManager *sm, double serverNow):
+    if (!sm->ts0_valid)                   return 1;  /* waiting        */
+    if (serverNow <  sm->ts0_preStart)    return 1;
+    if (!sm->ts1_valid)                   return 2;
+    if (serverNow <  sm->ts1_phase2Bnd)   return 2;
+    if (sm->flag_override_stop_at_2)      return 2;
+    if (!sm->ts2_valid)                   return 3;  /* pre session    */
+    if (serverNow <  sm->ts2_activeStart) return 3;
+    if (!sm->ts3_valid)                   return 4;  /* session        */
+    if (serverNow <  sm->ts3_activeEnd)   return 4;
+    if (!sm->ts4_valid)                   return 5;  /* overtime       */
+    if (serverNow <  sm->ts4_overtimeEnd) return 5;
+    if (sm->flag_override_stop_at_5)      return 5;
+    if (!sm->ts5_valid)                   return 6;  /* completed      */
+    if (serverNow <  sm->ts5_aftercare)   return 6;
+    return 7;                                         /* advance        */
+```
+
+Phase transitions are therefore **purely time-driven**.  Nothing except
+the clock advances the phase — no driver-ready event, no grid-loaded
+acknowledgement, no client handshake is needed.
+
+#### 5.7.3 Schedule population
+
+When at least one driver is detected during phase 1, the session manager
+populates all 6 schedule slots in one shot:
+
+```
+ts0_preStart     = serverNow - 1.0                               /* backdate */
+ts1_phase2Bnd    = ts0 + preSessionDurationS * 1000
+ts2_activeStart  = ts1                                           /* same for non-race */
+ts3_activeEnd    = ts2 + sessionDurationS * 1000
+ts4_overtimeEnd  = ts3 + overtimeDurationS * 1000
+ts5_aftercare    = ts4 + postSessionDurationS * 1000
+```
+
+**Observed defaults** from a real Kunos Practice (15 min) + Qualifying
+(10 min) capture:
+
+- `preSessionDuration`: ~3000 ms — **hardcoded** for non-race sessions,
+  independent of `preRaceWaitingTimeSeconds`
+- `sessionDuration`: `sessionDurationMinutes * 60000` ms (from config)
+- `overtimeDuration`: 120000 ms (2 min, hardcoded default corresponding
+  to `sessionOverTimeSeconds` in config)
+- `aftercare`: effectively 0 ms when the sole driver has no active laps;
+  configurable via `postQualySeconds` / `postRaceSeconds`
+
+For race sessions, `preRaceWaitingTimeSeconds` from config is used for
+the pre-formation wait, with a minimum clamp of 80 s for public
+multiplayer (logged as
+`preRaceWaitingTimeSeconds (%d) has been set to 80s`).
+
+#### 5.7.4 Phase entry broadcasts
+
+The session tick recomputes the phase every iteration.  When it differs
+from the previously observed phase, the tick emits up to four
+broadcasts inside a single "phase transition" code block, each gated
+differently:
+
+1. **`0x28` SESSION_HEADER** — emitted **unconditionally** to every
+   connection, carrying the full 6-slot schedule plus session metadata
+   (session index, hour of day, time multiplier, duration, session
+   type, grip).  Standard form is 56 bytes; a shorter 32-byte form
+   is used as a one-shot between the old session's last 0x28 and
+   the new session's `startSession()` call, with all 6 time slots
+   absent/zero and the tail carrying next-session metadata.
+
+2. **`0x36` LEADERBOARD_BCAST** — emitted **only when the entry list
+   changed** compared to a snapshot from the previous broadcast.
+   Fires at welcome and at session-advance; does **not** fire on
+   pre_session → session or other within-session phase changes.
+   Entry-list changes (car joining / leaving) also trigger a `0x36`.
+
+3. **`0x37` WEATHER_37** — emitted when `serverNow - last_weather_ms >
+   5000`.  It is a **5-second heartbeat**, not a phase-change broadcast,
+   but it often coincides with phase transitions because both run in
+   the same tick handler.
+
+4. **`0x4e` RATING_SUMMARY** — emitted when
+   `serverNow - last_rating_ms > 81000` **AND** a rating-dirty flag
+   is set.  In a single-client P→Q capture it fires only once (at
+   welcome).  It is not a per-phase-change broadcast.
+
+At the phase 6 → 7 transition (entry into the terminal sentinel), the
+server additionally emits:
+
+5. **`0x3e` SESSION_RESULTS** — unconditional, to every connection.
+   Logged as `Send session results to %d clients (%d byte)`.  Body
+   is a 1-byte result count plus per-car records.
+
+6. **`0x3f` GRID_POSITIONS** (race-only) — emitted **only** when the
+   next session is a race, i.e. at the end of Qualifying preceding a
+   Race.  There is no separate PRE_RACE phase in the internal model;
+   grid positions are computed at the end of Quali and sent via
+   `0x3f` in the 6 → 7 transition block.
+
+Every phase 6 → 7 transition also calls the session-advance path.
+
+#### 5.7.5 Session advance
+
+Session advance:
+
+1. Bumps the session counter modulo `session_count`.
+2. Reads the new session config.
+3. If the new counter wrapped to 0 (end-of-weekend): builds a local
+   `0x3e` results frame, then calls the weekend-reset path which
+   emits `0x4b` welcome-redelivery to every connected client and
+   logs `Event changed` + `Resetting race weekend`.
+4. If the counter did **not** wrap: fast path — no 0x4b, no weekend
+   reset.  The next tick picks up the new counter, triggers the
+   "Session changed: %s -> %s %d" log, and the phase-1 handler calls
+   `startSession()` again once a driver is present.
+
+Between the old session's phase-7 exit and the new session's phase-1→3
+entry, there is a brief window (tens of milliseconds to seconds) in
+which the new session's schedule has `ts0_valid=0`, so the phase
+function returns 1 and the standard phase-1 handler runs.  This is
+what the log line `Detected sessionPhase <session completed> -> <waiting
+for drivers>` documents.  A fresh zeroed `0x28` is emitted during this
+window.
+
+#### 5.7.6 Observed transition timings
+
+From a real Kunos server session (1 client, Practice → Qualifying):
+
+```
+server t   event                                    phase transition
+-------    ---------------------------------------  -----------------
+   0       Starting server                          -
+   0       Event changed, Resetting race weekend    -
+   0       Reset time to first session 0 -> 50400   weekend_time_s = 50400
+ 116 730   1 Driver(s) detected, starting session   1 → 3  (Practice)
+ 119 836   phase 3 → 4 (session) elapsed 3106 ms    3 → 4  (Practice)
+ ... 15 min of Practice ...
+1 019 840  phase 4 → 5 (overtime)                    4 → 5
+1 022 973  phase 5 → 6 (session completed)           5 → 6
+1 022 989  Session completed: Practice/<completed>   emits 0x3e
+1 023 004  Session aftercare over, advancing         session_advance()
+1 023 004  Session changed: Practice -> Qualifying 0 counter bumped
+1 023 004  phase 6 → 1 (new session, unset)          1 (Qualifying)
+1 023 020  1 Driver(s) detected, starting session    1 → 3 (Qualifying)
+1 026 030  phase 3 → 4 (session) elapsed 3010 ms     3 → 4 (Qualifying)
+```
+
+Key durations observed:
+
+- **pre_session**: ~3000 ms (hardcoded for non-race)
+- **session**: as configured by `sessionDurationMinutes`
+- **overtime**: ~3133 ms in this capture — cleared early because the
+  sole driver had no valid lap; nominal 120000 ms
+- **aftercare**: ~16 ms in this capture; configurable via
+  `postQualySeconds` / `postRaceSeconds`
+- **session counter bump and new-session init**: ~16 ms
 
 ---
 
