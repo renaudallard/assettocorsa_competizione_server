@@ -152,10 +152,11 @@ dispatch_tcp(struct Server *s, struct Conn *c)
 /* ----- UDP -------------------------------------------------------- */
 
 /*
- * Find the connection whose peer address matches peer.  This is
- * how inbound UDP messages get associated with an authenticated
- * TCP connection.
+ * Find the connection whose peer address matches peer.  Kept
+ * for potential future use; UDP car updates now match by the
+ * source_conn_id field in the packet body for NAT support.
  */
+__attribute__((unused))
 static struct Conn *
 find_conn_by_peer(struct Server *s, const struct sockaddr_in *peer)
 {

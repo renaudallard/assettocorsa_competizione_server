@@ -68,27 +68,161 @@
 #include "weather.h"
 
 /*
- * Assist rules + server config template (104 bytes).
- * Follows the per-car spawnDefs in the welcome trailer.
- * These values are stable across all Kunos captures.
+ * Walk a DriverInfo blob inside hs_echo and return its length.
+ * Layout (from FUN_14011cea0): 5 Format-A wstrings + 41 fixed bytes
+ * + 1 Format-A wstring (long steam_id).  Each Format-A wstring is
+ * u8(len) + len*4 bytes.  Returns 0 on parse error.
  */
-static const unsigned char assist_rules_tpl[104] = {
-	0x01,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x02,0x00,0x00,0x00,
-	0x00,0x00,0x00,0x80,0x3f,0x02,0x02,0x02,0x02,0x02,0x02,0x00,
-	0x05,0x00,0x05,0x00,0x04,0x00,0x00,0xcd,0xcc,0x4c,0x3f,0x01,
-	0x00,0x00,0x80,0x3f,0x00,0x00,0x00,0x3f,0x01,0x01,0x01,0x01,
-	0x01,0x01,0x01,0x01,0x02,0x00,0x00,0x02,0x64,0x64,0x0f,0x00,
-	0x00,0x00,0x00,0x00,0x02,0x02,0x2c,0x01,0x0a,0x03,0x02,0x02,
-	0x02,0x02,0x02,0x02,0x02,0x02,0x00,0x00,0x00,0x64,0x00,0x00,
-	0x00,0xb8,0x0b,0x00,0x00,0x0f,0x00,0x00,0x00,0x03,0x00,0x00,
-	0x00,0x00,0x00,0x00,0x00,0x00,0x01,0x00
-};
+static size_t
+parse_driverinfo_len(const unsigned char *buf, size_t len)
+{
+	size_t pos = 0;
+	int i;
+
+	for (i = 0; i < 5; i++) {
+		if (pos >= len)
+			return 0;
+		pos += 1 + (size_t)buf[pos] * 4;
+		if (pos > len)
+			return 0;
+	}
+	pos += 41;
+	if (pos > len)
+		return 0;
+	if (pos >= len)
+		return 0;
+	pos += 1 + (size_t)buf[pos] * 4;
+	if (pos > len)
+		return 0;
+	return pos;
+}
+
+/*
+ * Write the 104-byte SeasonEntity block that follows the per-car
+ * spawnDefs in the welcome trailer.  Layout from FUN_14011e2a0
+ * (SeasonEntity::writeToBuf) in accServer.exe:
+ *
+ *   HudRules      (7 u8)
+ *   AssistRules   (2 u8 flags + 2 f32 + 6 u8 flags)
+ *   GraphicsRules (6 u8)
+ *   RealismRules  (2 u8 + f32 grip + u8 + f32 fuel + f32 tyre + 9 u8)
+ *   GameplayRules (5 u8 + u32)
+ *   OnlineRules   (13 u8 including u16 post_race_seconds)
+ *   RaceDirectorRules (3 u8 + 4 u32)
+ *   5 x u16 vector counts (4 empty + 1 event_count=1)
+ *
+ * Most values are server-wide defaults shared by all Kunos setups;
+ * assist/online fields come from the AssistRules and server config.
+ */
+static int
+write_season_entity(struct ByteBuf *bb, struct Server *s)
+{
+	/* HudRules: 1 configured slot + 6 unset sentinels. */
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+
+	/* AssistRules. */
+	if (wr_u8(bb, s->assist.disable_ideal_line ?
+	    s->assist.disable_ideal_line : 2) < 0) return -1;
+	if (wr_u8(bb, s->assist.disable_autosteer ?
+	    s->assist.disable_autosteer : 2) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, s->assist.stability_control_max > 0
+	    ? (float)s->assist.stability_control_max / 100.0f
+	    : 1.0f) < 0) return -1;
+	if (wr_u8(bb, s->assist.disable_auto_pit_limiter ?
+	    s->assist.disable_auto_pit_limiter : 2) < 0) return -1;
+	if (wr_u8(bb, s->assist.disable_auto_gear ?
+	    s->assist.disable_auto_gear : 2) < 0) return -1;
+	if (wr_u8(bb, s->assist.disable_auto_clutch ?
+	    s->assist.disable_auto_clutch : 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;	/* disable_auto_engine */
+	if (wr_u8(bb, 2) < 0) return -1;	/* disable_auto_wiper */
+	if (wr_u8(bb, 2) < 0) return -1;	/* disable_auto_lights */
+
+	/* GraphicsRules: stable defaults. */
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 5) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 5) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 4) < 0) return -1;
+
+	/* RealismRules: observed defaults from captures (grip 0.8,
+	 * fuel 1.0, tyre 0.5, 9 misc flags). */
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_f32(bb, 0.8f) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+	if (wr_f32(bb, 0.5f) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 1) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+
+	/* GameplayRules: defaults (100, 100, 15). */
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 100) < 0) return -1;
+	if (wr_u8(bb, 100) < 0) return -1;
+	if (wr_u32(bb, 15) < 0) return -1;
+
+	/* OnlineRules: formation lap, post-race, weather randomness. */
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;	/* formationLapType */
+	if (wr_u8(bb, 2) < 0) return -1;	/* shortFormationLap */
+	if (wr_u16(bb, 300) < 0) return -1;	/* postRaceSeconds */
+	if (wr_u8(bb, 10) < 0) return -1;	/* weatherRandomness */
+	if (wr_u8(bb, 3) < 0) return -1;	/* trackMedalsRequirement */
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, s->dump_leaderboards ?
+	    s->dump_leaderboards : 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, s->ignore_premature_disconnects ?
+	    s->ignore_premature_disconnects : 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+	if (wr_u8(bb, 2) < 0) return -1;
+
+	/* RaceDirectorRules: tickrate / broadcast limits. */
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u32(bb, 100) < 0) return -1;
+	if (wr_u32(bb, 3000) < 0) return -1;
+	if (wr_u32(bb, 15) < 0) return -1;
+	if (wr_u8(bb, 3) < 0) return -1;
+
+	/* Empty alt-rule vectors (u16 count each), then one
+	 * EventEntity follows so the count is 1. */
+	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u16(bb, 1) < 0) return -1;
+	return 0;
+}
 
 int
 build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 {
 	int i, j;
 
+	(void)c;
 	/* Server name + track name (raw strings). */
 	if (wr_str_raw(bb, s->server_name) < 0)
 		return -1;
@@ -96,11 +230,20 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		return -1;
 
 	/*
-	 * SpawnDefs: one per connected car.  Each spawnDef is
-	 * car_id + flags + the raw handshake echo data that the
-	 * client sent (DriverInfo + CarInfo substructures).  The
-	 * Kunos server re-serializes via a vtable; we echo the
-	 * raw bytes which the client accepts.
+	 * SpawnDefs: one per connected car.  Layout per car (from
+	 * FUN_140032c90 in accServer.exe):
+	 *   u16 car_id, u8 flag1, u8 flag2,
+	 *   CarInfo (193 bytes from handshake),
+	 *   u8 driver_count,
+	 *   DriverInfo (183 bytes from handshake) per driver,
+	 *   u8 active_driver_idx,
+	 *   u64 timestamp, u8 flag, u8 flag,
+	 *   5 tire bytes, 5 damage bytes,
+	 *   u16 elo, u32 stability.
+	 *
+	 * The handshake stores DriverInfo before CarInfo (with 8
+	 * intermediate bytes); the spawnDef wants CarInfo first.
+	 * We split hs_echo and emit in the correct order.
 	 */
 	{
 		int nc = 0;
@@ -113,6 +256,7 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		for (j = 0; j < ACC_MAX_CARS; j++) {
 			struct CarEntry *ec = &s->cars[j];
 			struct Conn *owner = NULL;
+			size_t drv_len, ci_off, ci_len;
 			int k;
 
 			if (!ec->used)
@@ -124,22 +268,52 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 					break;
 				}
 			}
-			if (wr_u16(bb, ec->car_id) < 0)
+			if (owner == NULL || owner->hs_echo == NULL ||
+			    owner->hs_echo_len == 0)
+				continue;
+
+			drv_len = parse_driverinfo_len(owner->hs_echo,
+			    owner->hs_echo_len);
+			if (drv_len == 0 ||
+			    drv_len + 8 > owner->hs_echo_len)
+				continue;
+			ci_off = drv_len + 8;
+			ci_len = owner->hs_echo_len - ci_off;
+
+			/* Header: car_id + 2 flags. */
+			if (wr_u16(bb, ec->car_id) < 0) return -1;
+			if (wr_u8(bb, 1) < 0) return -1;
+			if (wr_u8(bb, 1) < 0) return -1;
+
+			/* CarInfo (from handshake). */
+			if (bb_append(bb, owner->hs_echo + ci_off,
+			    ci_len) < 0)
 				return -1;
+
+			/* Driver count + DriverInfo blob(s). */
 			if (wr_u8(bb, 1) < 0) return -1;
-			if (wr_u8(bb, 1) < 0) return -1;
-			if (owner != NULL && owner->hs_echo != NULL &&
-			    owner->hs_echo_len > 0) {
-				if (bb_append(bb, owner->hs_echo,
-				    owner->hs_echo_len) < 0)
-					return -1;
-			}
+			if (bb_append(bb, owner->hs_echo, drv_len) < 0)
+				return -1;
+
+			/* Tail: active driver, timestamp, flags,
+			 * tire/damage/elo/stability (all zero on
+			 * a fresh spawn). */
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u32(bb, 0) < 0) return -1;
+			if (wr_u32(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			for (k = 0; k < 5; k++)
+				if (wr_u8(bb, 0) < 0) return -1;
+			for (k = 0; k < 5; k++)
+				if (wr_u8(bb, 0) < 0) return -1;
+			if (wr_u16(bb, 0) < 0) return -1;
+			if (wr_u32(bb, 0) < 0) return -1;
 		}
 	}
 
-	/* Assist rules + server config (static). */
-	if (bb_append(bb, assist_rules_tpl,
-	    sizeof(assist_rules_tpl)) < 0)
+	/* SeasonEntity block (assist rules + server config). */
+	if (write_season_entity(bb, s) < 0)
 		return -1;
 
 	/* Track name as Format-A (embedded in config section). */
