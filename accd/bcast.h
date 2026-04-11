@@ -70,4 +70,14 @@ int	bcast_send_one(struct Conn *c, const void *body, size_t len);
 int	bcast_all(struct Server *s, const void *body, size_t len,
 		uint16_t except_conn_id);
 
+/*
+ * Send a raw UDP datagram to every authenticated connection
+ * except the one identified by except_conn_id.  Destination is
+ * each connection's recorded UDP peer address (c->peer).  Used
+ * for 0x1e / 0x39 per-car broadcasts, which the real Kunos
+ * server sends over UDP, not TCP.
+ */
+int	bcast_all_udp(struct Server *s, const void *body, size_t len,
+		uint16_t except_conn_id);
+
 #endif /* ACCD_BCAST_H */

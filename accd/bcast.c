@@ -30,6 +30,8 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <stddef.h>
+#include <sys/types.h>
+#include <sys/socket.h>
 
 #include "bcast.h"
 #include "io.h"
@@ -69,6 +71,33 @@ bcast_all(struct Server *s, const void *body, size_t len,
 			continue;
 		if (bcast_send_one(c, body, len) == 0)
 			sent++;
+	}
+	return sent;
+}
+
+int
+bcast_all_udp(struct Server *s, const void *body, size_t len,
+    uint16_t except_conn_id)
+{
+	int i, sent;
+
+	if (s->udp_fd < 0)
+		return 0;
+	sent = 0;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+
+		if (c == NULL)
+			continue;
+		if (c->state != CONN_AUTH)
+			continue;
+		if (c->conn_id == except_conn_id)
+			continue;
+		if (sendto(s->udp_fd, body, len, 0,
+		    (const struct sockaddr *)&c->peer,
+		    sizeof(c->peer)) < 0)
+			continue;
+		sent++;
 	}
 	return sent;
 }
