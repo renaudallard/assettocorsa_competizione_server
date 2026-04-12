@@ -452,12 +452,12 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * One-shot grid broadcast at PRE_RACE entry.
+	 * One-shot actions on phase transitions.
 	 */
 	if (s->session.phase != *last_phase) {
-		if (s->session.phase == PHASE_PRE_RACE)
+		if (s->session.phase == PHASE_FORMATION)
 			broadcast_grid(s);
-		if (s->session.phase == PHASE_POST_SESSION) {
+		if (s->session.phase == PHASE_COMPLETED) {
 			broadcast_session_results(s);
 			if (!s->session.results_written) {
 				(void)results_write(s);

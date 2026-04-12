@@ -25,6 +25,11 @@
  */
 /*
  * session.c -- session phase machine.
+ *
+ * Implements the Kunos 7-level phase model from FUN_14012e810
+ * (computeCurrentPhase) and FUN_14012e970 (startSession) in
+ * accServer.exe.  Phase transitions are purely time-driven via
+ * 6 scheduled timestamps populated when the first driver connects.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -59,6 +64,7 @@ session_reset(struct Server *s, uint8_t session_index)
 		s->session.phase = PHASE_RESULTS;
 		s->session.session_index = session_index;
 		s->session.phase_started_ms = mono_ms();
+		s->session.ts_valid = 0;
 		log_info("session: no more sessions, entering RESULTS");
 		return;
 	}
@@ -72,9 +78,10 @@ session_reset(struct Server *s, uint8_t session_index)
 		s->session.track_temp = tt;
 	}
 	s->session.session_index = session_index;
-	s->session.phase = PHASE_NONE;
+	s->session.phase = PHASE_WAITING;
 	s->session.phase_started_ms = mono_ms();
 	s->session.standings_seq = 1;
+	s->session.ts_valid = 0;
 	s->session.weekend_time_s =
 	    (uint32_t)s->sessions[session_index].hour_of_day * 3600u;
 
@@ -87,7 +94,7 @@ session_reset(struct Server *s, uint8_t session_index)
 		r->position = (int16_t)(i + 1);
 	}
 
-{
+	{
 		const char *sname = "PRACTICE";
 		uint8_t st = s->sessions[session_index].session_type;
 		if (st == 4) sname = "QUALIFYING";
@@ -95,6 +102,66 @@ session_reset(struct Server *s, uint8_t session_index)
 		log_info("session %u: waiting for drivers (%s)",
 		    (unsigned)session_index, sname);
 	}
+}
+
+/*
+ * Populate the 6 schedule timestamps when the first driver
+ * connects.  Matches FUN_14012e970 (startSession) in the exe:
+ *   ts[0] = now - 1
+ *   ts[1] = ts[0] + preSessionMs  (3000 non-race, config for race)
+ *   ts[2] = ts[1]                 (non-race; race adds formation)
+ *   ts[3] = ts[2] + durationMs
+ *   ts[4] = ts[3] + overtimeMs    (120000 default)
+ *   ts[5] = ts[4] + postSessionMs (5000 default; configurable)
+ */
+static void
+session_start(struct Server *s)
+{
+	const struct SessionDef *def =
+	    &s->sessions[s->session.session_index];
+	uint64_t now = mono_ms();
+	uint64_t pre_ms = def->session_type == 10 ? 10000 : 3000;
+	uint64_t dur_ms = (uint64_t)def->duration_min * 60000ull;
+	uint64_t ot_ms  = 120000;
+	uint64_t post_ms = 5000;
+
+	s->session.ts[0] = now - 1;
+	s->session.ts[1] = s->session.ts[0] + pre_ms;
+	s->session.ts[2] = s->session.ts[1];
+	s->session.ts[3] = s->session.ts[2] + dur_ms;
+	s->session.ts[4] = s->session.ts[3] + ot_ms;
+	s->session.ts[5] = s->session.ts[4] + post_ms;
+	s->session.ts_valid = 1;
+
+	s->session.phase_started_ms = now;
+	log_info("session_start: scheduled slots "
+	    "pre=%llums dur=%llums ot=%llums post=%llums",
+	    (unsigned long long)pre_ms, (unsigned long long)dur_ms,
+	    (unsigned long long)ot_ms, (unsigned long long)post_ms);
+}
+
+/*
+ * Pure function: compute phase from server_now and the 6
+ * schedule timestamps.  Matches FUN_14012e810.
+ */
+static uint8_t
+compute_phase(const struct SessionState *ss, uint64_t now)
+{
+	if (!ss->ts_valid)
+		return PHASE_WAITING;
+	if (now < ss->ts[0])
+		return PHASE_WAITING;
+	if (now < ss->ts[1])
+		return PHASE_FORMATION;
+	if (now < ss->ts[2])
+		return PHASE_PRE_SESSION;
+	if (now < ss->ts[3])
+		return PHASE_SESSION;
+	if (now < ss->ts[4])
+		return PHASE_OVERTIME;
+	if (now < ss->ts[5])
+		return PHASE_COMPLETED;
+	return PHASE_ADVANCE;
 }
 
 int
@@ -109,10 +176,6 @@ session_is_practice_or_qualy(const struct Server *s)
 	return st == 0 || st == 4;	/* P=0, Q=4 */
 }
 
-/*
- * Compare two cars for the current sort order.  Returns < 0 if
- * a should come before b, > 0 otherwise.
- */
 static int
 cmp_cars(const struct Server *s, const struct CarEntry *a,
     const struct CarEntry *b)
@@ -126,8 +189,6 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 		return -1;
 
 	if (session_is_practice_or_qualy(s)) {
-		/* Sorted by best lap time ascending; 0 = no time
-		 * yet, push to bottom. */
 		int32_t la = ra->best_lap_ms;
 		int32_t lb = rb->best_lap_ms;
 
@@ -139,7 +200,6 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 			return -1;
 		return la < lb ? -1 : (la > lb ? 1 : 0);
 	}
-	/* Race: more laps first, then less race time. */
 	if (ra->lap_count != rb->lap_count)
 		return rb->lap_count - ra->lap_count;
 	if (ra->race_time_ms != rb->race_time_ms)
@@ -157,7 +217,6 @@ session_recompute_standings(struct Server *s)
 		if (s->cars[i].used)
 			order[n++] = i;
 	}
-	/* Insertion sort: small N (<= 64) and we want stability. */
 	for (i = 1; i < n; i++) {
 		int key = order[i];
 		j = i - 1;
@@ -184,16 +243,15 @@ const char *
 session_phase_name(uint8_t p)
 {
 	switch (p) {
-	case PHASE_NONE:		return "NONE";
-	case PHASE_PRE_SESSION:		return "PRE_SESSION";
-	case PHASE_STARTING:		return "STARTING";
-	case PHASE_PRACTICE:		return "PRACTICE";
-	case PHASE_QUALIFYING:		return "QUALIFYING";
-	case PHASE_PRE_RACE:		return "PRE_RACE";
-	case PHASE_RACE:		return "RACE";
-	case PHASE_POST_SESSION:	return "POST_SESSION";
-	case PHASE_RESULTS:		return "RESULTS";
-	default:			return "?";
+	case PHASE_WAITING:	return "WAITING";
+	case PHASE_FORMATION:	return "FORMATION";
+	case PHASE_PRE_SESSION:	return "PRE_SESSION";
+	case PHASE_SESSION:	return "SESSION";
+	case PHASE_OVERTIME:	return "OVERTIME";
+	case PHASE_COMPLETED:	return "COMPLETED";
+	case PHASE_ADVANCE:	return "ADVANCE";
+	case PHASE_RESULTS:	return "RESULTS";
+	default:		return "?";
 	}
 }
 
@@ -210,100 +268,54 @@ enter_phase(struct Server *s, uint8_t new_phase)
 	s->session.phase_started_ms = mono_ms();
 }
 
-/*
- * Map session_type byte (0=P, 4=Q, 10=R, see HB IX.6) to the
- * "active" phase.
- */
-static uint8_t
-type_to_active_phase(uint8_t t)
-{
-	switch (t) {
-	case 0:		return PHASE_PRACTICE;
-	case 4:		return PHASE_QUALIFYING;
-	case 10:	return PHASE_RACE;
-	default:	return PHASE_PRACTICE;
-	}
-}
-
 void
 session_tick(struct Server *s)
 {
 	uint64_t now;
-	uint64_t elapsed;
+	uint8_t new_phase;
 	const struct SessionDef *def;
 
 	if (s->session_count == 0)
 		return;
-	if (s->session.phase == PHASE_NONE) {
-		if (s->nconns > 0)
-			enter_phase(s, PHASE_PRE_SESSION);
+	if (s->session.phase == PHASE_RESULTS)
 		return;
-	}
 	if (s->session.session_index >= s->session_count)
 		return;
 
-	/* Reset to waiting when the last driver disconnects. */
-	if (s->nconns == 0 && s->session.phase != PHASE_POST_SESSION &&
+	def = &s->sessions[s->session.session_index];
+	now = mono_ms();
+
+	/* Start the session clock when the first driver connects. */
+	if (s->session.phase == PHASE_WAITING && s->nconns > 0) {
+		session_start(s);
+	}
+
+	/* Reset to waiting when everyone disconnects mid-session. */
+	if (s->nconns == 0 && s->session.phase != PHASE_COMPLETED &&
 	    s->session.phase != PHASE_RESULTS) {
 		log_info("no drivers, resetting session");
 		session_reset(s, s->session.session_index);
 		return;
 	}
 
-	def = &s->sessions[s->session.session_index];
-	now = mono_ms();
-	elapsed = now - s->session.phase_started_ms;
+	/* Compute the new phase from schedule slots. */
+	new_phase = compute_phase(&s->session, now);
+	enter_phase(s, new_phase);
 
-	switch (s->session.phase) {
-	case PHASE_PRE_SESSION:
-		/*
-		 * Spend up to preRaceWaitingTimeSeconds (default 80)
-		 * in PRE_SESSION before opening the active phase.
-		 * For non-race sessions we go directly to active.
-		 */
-		if (elapsed >= 5000) {
-			if (def->session_type == 10)
-				enter_phase(s, PHASE_PRE_RACE);
-			else
-				enter_phase(s, type_to_active_phase(
-				    def->session_type));
-		}
-		break;
-	case PHASE_PRE_RACE:
-		/*
-		 * Race countdown: emit grid positions (0x3f) once,
-		 * then transition to RACE.
-		 */
-		if (!s->session.grid_announced) {
-			s->session.grid_announced = 1;
-			/* Grid broadcast happens from tick.c. */
-			log_info("session: race countdown -- grid positions"
-			    " ready");
-		}
-		if (elapsed >= 10000)
-			enter_phase(s, PHASE_RACE);
-		break;
-	case PHASE_PRACTICE:
-	case PHASE_QUALIFYING:
-	case PHASE_RACE:
+	/* Drive the in-game clock during the active session. */
+	if (s->session.phase == PHASE_SESSION ||
+	    s->session.phase == PHASE_OVERTIME) {
+		uint64_t active_start = s->session.ts[2];
+		uint64_t elapsed = now > active_start
+		    ? now - active_start : 0;
 		s->session.weekend_time_s =
 		    (uint32_t)(def->hour_of_day * 3600 +
 		    elapsed / 1000 * def->time_multiplier);
-		if (def->duration_min > 0 &&
-		    elapsed >= (uint64_t)def->duration_min * 60ull * 1000ull) {
-			enter_phase(s, PHASE_POST_SESSION);
-		}
-		break;
-	case PHASE_POST_SESSION:
-		if (elapsed >= 5000)
-			session_advance(s);
-		break;
-	case PHASE_RESULTS:
-		/* Terminal: nothing more to do. */
-		break;
-	default:
-		break;
 	}
+
+	/* Phase 7 (ADVANCE) triggers session advance. */
+	if (s->session.phase == PHASE_ADVANCE)
+		session_advance(s);
 }
 
 void
@@ -311,7 +323,6 @@ session_advance(struct Server *s)
 {
 	uint8_t next = (uint8_t)(s->session.session_index + 1);
 
-	/* Write results for the current session before advancing. */
 	if (!s->session.results_written) {
 		(void)results_write(s);
 		s->session.results_written = 1;
@@ -321,6 +332,7 @@ session_advance(struct Server *s)
 		log_info("session: weekend complete, entering RESULTS");
 		s->session.phase = PHASE_RESULTS;
 		s->session.phase_started_ms = mono_ms();
+		s->session.ts_valid = 0;
 		return;
 	}
 	session_reset(s, next);

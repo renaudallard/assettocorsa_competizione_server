@@ -53,22 +53,21 @@
 /*
  * Session phase machine.
  *
- * Mirrors the per-session lifecycle defined in HB §IV.  Each
- * configured session in event.json runs through PRE_SESSION ->
- * STARTING -> SESSION (one of P/Q/R) -> POST_SESSION before the
- * server advances to the next session, and finally RESULTS at
- * the end of the weekend.
+ * Matches the accServer.exe internal 7-level phase model
+ * (FUN_14012e810 computeCurrentPhase).  Transitions are purely
+ * time-driven via 6 scheduled timestamps populated in
+ * session_start() when the first driver connects.  Session type
+ * (P/Q/R) is metadata in SessionDef, not a separate phase.
  */
 enum session_phase {
-	PHASE_NONE = 0,
-	PHASE_PRE_SESSION,
-	PHASE_STARTING,
-	PHASE_PRACTICE,
-	PHASE_QUALIFYING,
-	PHASE_PRE_RACE,
-	PHASE_RACE,
-	PHASE_POST_SESSION,
-	PHASE_RESULTS
+	PHASE_WAITING     = 1,	/* no driver connected yet */
+	PHASE_FORMATION   = 2,	/* race pre-formation (intermediate) */
+	PHASE_PRE_SESSION = 3,	/* countdown intro */
+	PHASE_SESSION     = 4,	/* active session (P, Q, or R) */
+	PHASE_OVERTIME    = 5,	/* past scheduled end, grace period */
+	PHASE_COMPLETED   = 6,	/* aftercare / results pending */
+	PHASE_ADVANCE     = 7,	/* sentinel: triggers session-advance */
+	PHASE_RESULTS     = 8,	/* terminal: weekend over */
 };
 
 /* Penalty kinds matching the chat command set. */
@@ -146,6 +145,20 @@ struct SessionState {
 	uint8_t		last_phase;		/* tick.c: detect transitions */
 	int		results_written;	/* one-shot guard */
 	int		grid_announced;		/* one-shot guard */
+
+	/*
+	 * 6 scheduled timestamps (ms, monotonic clock) matching
+	 * the SessionManager in accServer.exe.  Populated by
+	 * session_start() when the first driver connects.
+	 *   ts[0] = pre_start (phase 1→3)
+	 *   ts[1] = phase2_boundary (phase 2→3, race formation)
+	 *   ts[2] = active_start (phase 3→4)
+	 *   ts[3] = active_end (phase 4→5)
+	 *   ts[4] = overtime_end (phase 5→6)
+	 *   ts[5] = aftercare_end (phase 6→7)
+	 */
+	uint64_t	ts[6];
+	int		ts_valid;	/* non-zero once populated */
 };
 
 /*

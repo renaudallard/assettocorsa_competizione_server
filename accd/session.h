@@ -41,7 +41,7 @@
 
 /*
  * Reset the session state to the start of session_index.
- * Clears per-car race state, sets phase to PHASE_PRE_SESSION,
+ * Clears per-car race state, sets phase to PHASE_WAITING,
  * resets the standings sequence number.
  */
 void	session_reset(struct Server *s, uint8_t session_index);
