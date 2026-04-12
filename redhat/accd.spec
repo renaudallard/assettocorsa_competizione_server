@@ -1,5 +1,5 @@
 Name:           accd
-Version:        0.1.0
+Version:        0.2.1
 Release:        1%{?dist}
 Summary:        ACC dedicated server, clean-room reimplementation
 

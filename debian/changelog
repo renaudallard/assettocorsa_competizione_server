@@ -1,3 +1,18 @@
+accd (0.2.1) unstable; urgency=medium
+
+  * Fix 0x28 session_mgr_state first byte to session_index (not phase).
+  * Variable-length per-session records matching exe FUN_140035130.
+  * Fix 7-slot schedule layout matching Kunos wire capture: session end
+    at slot 4, overtime at slot 5 (was off by one).
+  * Per-connection 0x28 build with client clock base (FUN_1400418b0).
+  * Re-broadcast 0x28 on phase transitions.
+  * Enable per-peer timestamp adjustment in 0x1e/0x39 relay using
+    client-to-client pong deltas for correct dead-reckoning.
+  * Compute 0x28 schedule timestamps as absolute client game clock
+    values matching exe formula (ts - server_now + client_ts + RTT/2).
+
+ -- Renaud Allard <renaud@allard.it>  Sat, 12 Apr 2026 18:30:00 +0200
+
 accd (0.1.7) unstable; urgency=medium
 
   * Restore ban check in handshake (was dropped during parser rewrite).
