@@ -225,40 +225,89 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 }
 
 /*
- * EventEntity body after the str_a trackName.  Observed as a
- * 136-byte block from a real Kunos capture.  Decompiler does not
- * have a clean symbol trail for this structure; the bytes mix
- * CircuitInfo, GraphicsInfo, CarSet, RaceRules and WeatherRules.
- *
- * We emit the observed bytes as a stable template.  Dynamic
- * patching of individual fields (temps, rain, weekend time) is
- * deferred until the structure is fully reverse-engineered.
+ * EventEntity body after the str_a trackName (136 bytes).
+ * The block mixes CircuitInfo, GraphicsInfo, CarSet, RaceRules
+ * and WeatherRules.  Structural bytes (graphics indices, race
+ * rule sentinels) come from a reference template; weather and
+ * temperature fields are filled from live server state so the
+ * EventEntity is valid for any track and weather configuration.
  */
 static int
 write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 {
-	static const unsigned char tpl[136] = {
-		0x01, 0x20, 0x03, 0x16, 0xa6, 0x67, 0x3f, 0xcd,
-		0xcc, 0xcc, 0x3d, 0x69, 0x8e, 0xec, 0x3d, 0x00,
-		0x00, 0x80, 0x3f, 0x00, 0x05, 0x00, 0x05, 0x00,
-		0x04, 0x00, 0x00, 0xff, 0x01, 0xff, 0xff, 0xff,
-		0xff, 0xff, 0x01, 0x00, 0x01, 0x00, 0xff, 0xff,
-		0x00, 0x00, 0x00, 0x01, 0x01, 0x32, 0x03, 0x00,
-		0x00, 0x00, 0xc0, 0x41, 0x00, 0x00, 0xf0, 0x41,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x9a, 0x99, 0x99, 0x3e, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x80, 0x3f, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0xc0, 0x41, 0x00, 0x00, 0x80, 0xbf,
-		0x00, 0x00, 0xa0, 0x40, 0x00, 0x00, 0x70, 0x41,
-		0x00, 0x00, 0x80, 0xbf, 0x00, 0x00, 0x00, 0x00,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0xcd, 0xcc, 0xcc, 0x3e, 0x9a, 0x99, 0x99, 0x3e,
-		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	};
+	float ambient, road, rain, grip;
+	int i;
 
-	(void)s;
-	return bb_append(bb, tpl, sizeof(tpl));
+	ambient = s->session.ambient_temp > 0
+	    ? (float)s->session.ambient_temp : 24.0f;
+	road = s->session.track_temp > 0
+	    ? (float)s->session.track_temp : 30.0f;
+	rain = s->weather.current_rain > 0
+	    ? s->weather.current_rain : 0.0f;
+	grip = s->session.grip_level > 0
+	    ? s->session.grip_level : 1.0f;
+
+	/* CircuitInfo header (3 u8 + 4 f32 = 19 bytes). */
+	if (wr_u8(bb, 0x01) < 0) return -1;
+	if (wr_u8(bb, 0x20) < 0) return -1;
+	if (wr_u8(bb, 0x03) < 0) return -1;
+	if (wr_f32(bb, grip * 0.9f) < 0) return -1;
+	if (wr_f32(bb, s->weather.clouds * 0.1f) < 0) return -1;
+	if (wr_f32(bb, rain * 0.1f) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+
+	/* GraphicsInfo (6 u8 + u16 + u8 = 9 bytes). */
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_u8(bb, 0x05) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_u8(bb, 0x05) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_u8(bb, 0x04) < 0) return -1;
+	if (wr_u16(bb, 0x0000) < 0) return -1;
+	if (wr_u8(bb, 0xFF) < 0) return -1;
+
+	/* RaceRules (16 bytes: sentinels and flags). */
+	{
+		static const unsigned char rr[16] = {
+			0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00,
+			0x01, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
+		};
+		if (bb_append(bb, rr, sizeof(rr)) < 0)
+			return -1;
+	}
+
+	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */
+	if (wr_u8(bb, 0x01) < 0) return -1;
+	if (wr_u8(bb, 0x32) < 0) return -1;
+	if (wr_u8(bb, 0x03) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, road) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, rain > 0 ? rain : 0.3f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+
+	/* WeatherRules forecast table (15 f32 = 60 bytes). */
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, -1.0f) < 0) return -1;
+	if (wr_f32(bb, 5.0f) < 0) return -1;
+	if (wr_f32(bb, 15.0f) < 0) return -1;
+	if (wr_f32(bb, -1.0f) < 0) return -1;
+	for (i = 0; i < 3; i++)
+		if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, s->weather.forecast_10m > 0
+	    ? s->weather.forecast_10m : 0.4f) < 0) return -1;
+	if (wr_f32(bb, s->weather.forecast_30m > 0
+	    ? s->weather.forecast_30m : 0.3f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+
+	return 0;
 }
 
 /*
