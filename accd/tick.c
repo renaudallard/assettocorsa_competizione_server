@@ -61,6 +61,7 @@
  *   weather 0x37:   every 50 ticks (5 s)
  */
 #define CADENCE_PERCAR_SLOW	10
+#define CADENCE_SESSION_STATE	10	/* 0x28 every ~1s, matching exe */
 #define CADENCE_KEEPALIVE	20
 #define CADENCE_WEATHER		50
 
@@ -525,37 +526,38 @@ tick_run(struct Server *s)
 	}
 
 	/*
+	 * 0x28 session state per-connection broadcast.
+	 *
+	 * The exe sends 0x28 to every client every tick (~1s)
+	 * as a continuous heartbeat (confirmed by 902-message
+	 * Kunos capture).  Each message is built per-connection
+	 * with a per-client time base from FUN_1400418b0.
+	 */
+	if ((s->tick_count % CADENCE_SESSION_STATE) == 0 &&
+	    s->nconns > 0) {
+		int i;
+
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct Conn *c = s->conns[i];
+			struct ByteBuf bb;
+
+			if (c == NULL || c->state != CONN_AUTH)
+				continue;
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
+			    write_session_mgr_state(&bb, s,
+				c->last_pong_client_ts,
+				c->avg_rtt_ms) == 0)
+				(void)tcp_send_framed(c->fd,
+				    bb.data, bb.wpos);
+			bb_free(&bb);
+		}
+	}
+
+	/*
 	 * One-shot actions on phase transitions.
-	 * The exe re-broadcasts 0x28 whenever the computed phase
-	 * changes (condition 3 in FUN_14002f710 server_tick_tail).
 	 */
 	if (s->session.phase != *last_phase) {
-		/*
-		 * 0x28 per-connection on phase change.  The exe
-		 * builds per-connection with FUN_1400418b0 base.
-		 * f32 = schedule_ts - server_now + client_ts + RTT/2
-		 * = absolute timestamp in the client's game clock.
-		 */
-		{
-			int i;
-
-			for (i = 0; i < ACC_MAX_CARS; i++) {
-				struct Conn *c = s->conns[i];
-				struct ByteBuf bb;
-
-				if (c == NULL || c->state != CONN_AUTH)
-					continue;
-				bb_init(&bb);
-				if (wr_u8(&bb,
-				    SRV_LARGE_STATE_RESPONSE) == 0 &&
-				    write_session_mgr_state(&bb, s,
-					c->last_pong_client_ts,
-					c->avg_rtt_ms) == 0)
-					(void)tcp_send_framed(c->fd,
-					    bb.data, bb.wpos);
-				bb_free(&bb);
-			}
-		}
 		if (s->session.phase == PHASE_FORMATION)
 			broadcast_grid(s);
 		if (s->session.phase == PHASE_COMPLETED) {

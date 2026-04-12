@@ -398,7 +398,7 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 	if (wr_u16(bb, sched_field) < 0) return -1;
 	if (wr_u32(bb, duration_s) < 0) return -1;
 	if (wr_u32(bb, 120) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, def->session_type) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_f32(bb, 1.0f) < 0) return -1;
 	return 0;
