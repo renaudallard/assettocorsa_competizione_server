@@ -331,7 +331,8 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
  *     f32 1.0        (+0x4c)
  */
 int
-write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
+write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
+    uint32_t conn_client_ts, uint32_t conn_rtt)
 {
 	const struct SessionDef *def;
 	uint16_t sched_field;
@@ -352,25 +353,33 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
 	 * 7 per-session-slot records (FUN_140035130).
 	 * Each: u8 valid + conditional f32 timestamp.
 	 *
-	 * The exe computes: (float)(ts - FUN_1400418b0(conn))
-	 * which gives ms relative to the client's clock.  We
-	 * use mono_ms() as base (same clock as ts[]) giving
-	 * ms relative to server-now.  Close enough since
-	 * server-client offset is only RTT/2 (~25ms).
+	 * The exe computes per-connection:
+	 *   (float)(schedule_ts - FUN_1400418b0(conn))
+	 *   = (float)(ts - server_now + RTT/2 + client_ts)
+	 *
+	 * This gives an absolute timestamp in the CLIENT's
+	 * game clock.  The client computes remaining time as:
+	 *   remaining = f32_value - my_current_time
+	 *
+	 * conn_client_ts + conn_rtt/2 is the server's estimate
+	 * of what the client's clock reads right now.
 	 */
 	if (s->session.ts_valid) {
 		struct timespec _ts;
 		double now;
+		double client_adj;
 
 		clock_gettime(CLOCK_MONOTONIC, &_ts);
 		now = (double)_ts.tv_sec * 1000.0 +
 		    (double)_ts.tv_nsec / 1000000.0;
+		client_adj = (double)conn_client_ts +
+		    (double)(conn_rtt / 2);
 
-		/* Slots 0-5: phase boundaries relative to now. */
+		/* Slots 0-5: schedule boundaries in client clock. */
 		for (k = 0; k < 6; k++) {
 			if (wr_u8(bb, 1) < 0) return -1;
 			if (wr_f32(bb, (float)((double)s->session.ts[k]
-			    - now)) < 0) return -1;
+			    - now + client_adj)) < 0) return -1;
 		}
 		/* Slot 6: always invalid. */
 		if (wr_u8(bb, 0) < 0) return -1;
@@ -812,7 +821,7 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		return -1;
 
 	/* session_mgr_state (FUN_140033890). */
-	if (write_session_mgr_state(bb, s) < 0)
+	if (write_session_mgr_state(bb, s, 0, 0) < 0)
 		return -1;
 
 	/* assist_rules + leaderboard (FUN_140034a40). */
@@ -1326,7 +1335,9 @@ reply:
 			 */
 			bb_init(&wb);
 			if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0 &&
-			    write_session_mgr_state(&wb, s) == 0)
+			    write_session_mgr_state(&wb, s,
+				c->last_pong_client_ts,
+				c->avg_rtt_ms) == 0)
 				(void)bcast_send_one(c, wb.data, wb.wpos);
 			bb_free(&wb);
 

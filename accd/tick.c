@@ -530,15 +530,31 @@ tick_run(struct Server *s)
 	 * changes (condition 3 in FUN_14002f710 server_tick_tail).
 	 */
 	if (s->session.phase != *last_phase) {
+		/*
+		 * 0x28 per-connection on phase change.  The exe
+		 * builds per-connection with FUN_1400418b0 base.
+		 * f32 = schedule_ts - server_now + client_ts + RTT/2
+		 * = absolute timestamp in the client's game clock.
+		 */
 		{
-			struct ByteBuf bb;
+			int i;
 
-			bb_init(&bb);
-			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
-			    write_session_mgr_state(&bb, s) == 0)
-				(void)bcast_all(s, bb.data, bb.wpos,
-				    0xFFFF);
-			bb_free(&bb);
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct Conn *c = s->conns[i];
+				struct ByteBuf bb;
+
+				if (c == NULL || c->state != CONN_AUTH)
+					continue;
+				bb_init(&bb);
+				if (wr_u8(&bb,
+				    SRV_LARGE_STATE_RESPONSE) == 0 &&
+				    write_session_mgr_state(&bb, s,
+					c->last_pong_client_ts,
+					c->avg_rtt_ms) == 0)
+					(void)tcp_send_framed(c->fd,
+					    bb.data, bb.wpos);
+				bb_free(&bb);
+			}
 		}
 		if (s->session.phase == PHASE_FORMATION)
 			broadcast_grid(s);
@@ -550,25 +566,6 @@ tick_run(struct Server *s)
 			}
 		}
 		*last_phase = s->session.phase;
-	}
-
-	/*
-	 * Periodic 0x28 session state re-broadcast (5 s).
-	 * The schedule timestamps are relative to mono_ms()
-	 * so each broadcast carries freshly computed offsets.
-	 * The exe uses a game-relative per-connection base
-	 * and only sends on state change; we compensate for
-	 * not having that exact base by periodic refresh.
-	 */
-	if ((s->tick_count % CADENCE_WEATHER) == 0 &&
-	    s->session.ts_valid && s->nconns > 0) {
-		struct ByteBuf bb;
-
-		bb_init(&bb);
-		if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
-		    write_session_mgr_state(&bb, s) == 0)
-			(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
-		bb_free(&bb);
 	}
 
 	/*
