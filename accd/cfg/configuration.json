@@ -1,6 +1,0 @@
-{
-  "tcpPort": 9231,
-  "udpPort": 9232,
-  "maxConnections": 30,
-  "lanDiscovery": 1
-}

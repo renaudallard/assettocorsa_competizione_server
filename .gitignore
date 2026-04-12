@@ -27,3 +27,4 @@ build/
 *.rep.bak
 .vscode/
 .idea/
+accd/cfg/
