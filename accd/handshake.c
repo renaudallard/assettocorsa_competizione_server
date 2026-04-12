@@ -1173,7 +1173,7 @@ reply:
 
 		bb_init(&notify);
 		if (wr_u8(&notify, SRV_CAR_SYSTEM_RELAY) == 0 &&
-		    wr_u16(&notify, (uint16_t)c->car_id) == 0 &&
+		    wr_u16(&notify, s->cars[c->car_id].car_id) == 0 &&
 		    wr_u64(&notify, timestamp_ms) == 0)
 			(void)bcast_all(s, notify.data, notify.wpos,
 			    c->conn_id);
@@ -1183,7 +1183,7 @@ reply:
 		 * u8 sub=1 + u64 timestamp (12 bytes). */
 		bb_init(&notify);
 		if (wr_u8(&notify, SRV_DRIVER_STINT_RELAY) == 0 &&
-		    wr_u16(&notify, (uint16_t)c->car_id) == 0 &&
+		    wr_u16(&notify, s->cars[c->car_id].car_id) == 0 &&
 		    wr_u8(&notify, 1) == 0 &&
 		    wr_u64(&notify, timestamp_ms) == 0)
 			(void)bcast_all(s, notify.data, notify.wpos,

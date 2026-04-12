@@ -195,7 +195,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 *   u16 car_field. */
 	bb_init(&out);
 	if (wr_u8(&out, SRV_SECTOR_SPLITS_RELAY) < 0 ||
-	    wr_u16(&out, (uint16_t)c->car_id) < 0 ||
+	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
 	    wr_u8(&out, split_count) < 0)
 		goto done;
 	for (i = 0; i < split_count; i++)
@@ -252,7 +252,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	 *   u16 flags. */
 	bb_init(&out);
 	if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
-	    wr_u16(&out, (uint16_t)c->car_id) < 0 ||
+	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
 	    wr_u32(&out, (uint32_t)split_time) < 0 ||
 	    wr_u8(&out, flag_b) < 0 ||
 	    wr_u32(&out, (uint32_t)lap_time) < 0 ||
@@ -516,7 +516,7 @@ h_out_of_track(struct Server *s, struct Conn *c,
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
-	    wr_u16(&out, (uint16_t)c->car_id) < 0 ||
+	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
 	    wr_u16(&out, 0) < 0 ||
 	    wr_u32(&out, (uint32_t)ts_raw) < 0)
 		goto out;
@@ -610,7 +610,7 @@ h_damage_zones(struct Server *s, struct Conn *c,
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_DAMAGE_ZONES_RELAY) < 0 ||
-	    wr_u16(&out, (uint16_t)c->car_id) < 0)
+	    wr_u16(&out, s->cars[c->car_id].car_id) < 0)
 		goto out;
 	for (i = 0; i < 5; i++)
 		if (wr_u8(&out, zones[i]) < 0)
@@ -652,7 +652,7 @@ h_car_dirt(struct Server *s, struct Conn *c,
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_CAR_DIRT_RELAY) < 0 ||
-	    wr_u16(&out, (uint16_t)c->car_id) < 0)
+	    wr_u16(&out, s->cars[c->car_id].car_id) < 0)
 		goto out;
 	for (i = 0; i < 5; i++)
 		if (wr_u8(&out, dirt[i]) < 0)

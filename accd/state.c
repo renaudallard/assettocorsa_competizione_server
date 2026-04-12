@@ -126,7 +126,7 @@ conn_drop(struct Server *s, struct Conn *c)
 		/* 0x24 disconnect notify to all other clients. */
 		bb_init(&bb);
 		if (wr_u8(&bb, SRV_CAR_DISCONNECT_NOTIFY) == 0 &&
-		    wr_u16(&bb, (uint16_t)c->car_id) == 0)
+		    wr_u16(&bb, s->cars[c->car_id].car_id) == 0)
 			(void)bcast_all(s, bb.data, bb.wpos, c->conn_id);
 		bb_free(&bb);
 		log_info("Sent car %d disco to %d clients",
