@@ -79,6 +79,13 @@ int	session_is_practice_or_qualy(const struct Server *s);
 uint8_t	session_phase_to_wire(uint8_t p);
 
 /*
+ * Called from the lap completion handler during overtime.
+ * Decrements the cars-still-racing counter; releases the
+ * overtime hold when all cars have finished.
+ */
+void	session_overtime_car_finished(struct Server *s);
+
+/*
  * Human-readable name for a session phase enum value.
  */
 const char *

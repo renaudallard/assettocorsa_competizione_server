@@ -159,6 +159,8 @@ struct SessionState {
 	 */
 	uint64_t	ts[7];
 	int		ts_valid;	/* non-zero once populated */
+	uint8_t		overtime_hold;	/* freeze phase at OVERTIME */
+	int16_t		cars_in_overtime;/* cars still finishing */
 };
 
 /*

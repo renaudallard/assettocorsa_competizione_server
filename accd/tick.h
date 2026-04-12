@@ -40,4 +40,20 @@
 
 void	tick_run(struct Server *s);
 
+/*
+ * Build a 63-byte per-car body used by 0x39 relay.
+ * clock_adj = sender_pong_ts - peer_pong_ts for per-peer
+ * timestamp adjustment.
+ */
+int	build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
+		struct Server *s, int32_t clock_adj);
+
+/*
+ * Event-driven per-car relay.  Called from h_udp_car_update()
+ * after storing the update.  Sends 0x39 (count=1) to all
+ * other authenticated peers.
+ */
+void	relay_car_update(struct Server *s, struct Conn *sender,
+		struct CarEntry *car);
+
 #endif /* ACCD_TICK_H */

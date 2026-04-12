@@ -59,6 +59,7 @@
 #include "prim.h"
 #include "session.h"
 #include "state.h"
+#include "tick.h"
 
 /*
  * Helper: verify that the given carId matches the car slot owned
@@ -190,6 +191,10 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	    (int)clock_ms, (unsigned)split_count);
 
 	session_recompute_standings(s);
+
+	/* During race overtime, count this car as finished. */
+	if (s->session.phase == PHASE_OVERTIME)
+		session_overtime_car_finished(s);
 
 	/* Build the transformed 0x3a broadcast. Body:
 	 *   u16 car_id + u8 split_count + u32[count] + i32 clock +
@@ -1123,6 +1128,9 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 		return 0;
 
 	rt->has_data = 1;
+
+	/* Event-driven relay: immediately send 0x39 to all peers. */
+	relay_car_update(s, c, car);
 	return 0;
 }
 

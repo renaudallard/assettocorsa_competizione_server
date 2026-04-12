@@ -91,7 +91,7 @@
  *             Subtracted from car_ts so the receiver sees
  *             timestamps in its own timebase.  Pass 0 if unknown.
  */
-static int
+int
 build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
     struct Server *s, int32_t clock_adj)
 {
@@ -156,65 +156,41 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 }
 
 /*
- * Fast-rate 0x1e broadcast.  For every car that has received
- * a fresh 0x1e this tick, send a 64-byte UDP datagram to every
- * other connected peer.  Layout from FUN_14001a170.
- *
- * The timestamp at body offset 4..7 (after u8 msgid + u16
- * car_id + u8 seq) is adjusted per-peer: the exe writes
- * `car_ts - FUN_1400418b0(peer)` so the receiver sees
- * timestamps in its own timebase.  We patch the 4 bytes
- * in-place before each sendto rather than rebuilding the
- * whole packet.
+ * Event-driven per-car relay.  Called from h_udp_car_update()
+ * immediately after storing the update.  Sends a single-car
+ * 0x39 batch (count=1) to every other authenticated peer,
+ * matching the exe's relay behavior (0x39 only, never 0x1e
+ * from server, 18 Hz event-driven not periodic).
  */
-static void
-broadcast_percar_fast(struct Server *s)
+void
+relay_car_update(struct Server *s, struct Conn *sender,
+    struct CarEntry *car)
 {
-	int i, j;
+	int j;
 
 	if (s->udp_fd < 0)
 		return;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
-		struct CarEntry *car = &s->cars[i];
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct Conn *peer = s->conns[j];
 		struct ByteBuf bb;
-		uint16_t exclude = 0xFFFF;
-		uint32_t sender_pong_ts = 0;
+		int32_t delta;
 
-		if (!car->used || !car->rt.has_data)
+		if (peer == NULL || peer->state != CONN_AUTH)
+			continue;
+		if (peer == sender)
 			continue;
 
-		for (j = 0; j < ACC_MAX_CARS; j++) {
-			struct Conn *oc = s->conns[j];
-			if (oc != NULL && oc->car_id == i) {
-				exclude = oc->conn_id;
-				sender_pong_ts = oc->last_pong_client_ts;
-				break;
-			}
+		delta = (int32_t)(sender->last_pong_client_ts -
+		    peer->last_pong_client_ts);
+		bb_init(&bb);
+		if (wr_u8(&bb, SRV_PERCAR_SLOW_RATE) == 0 &&
+		    wr_u8(&bb, 1) == 0 &&
+		    build_percar_body(&bb, car, s, delta) == 0) {
+			(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
+			    (const struct sockaddr *)&peer->peer,
+			    sizeof(peer->peer));
 		}
-
-		for (j = 0; j < ACC_MAX_CARS; j++) {
-			struct Conn *peer = s->conns[j];
-			int32_t delta;
-
-			if (peer == NULL || peer->state != CONN_AUTH)
-				continue;
-			if (peer->conn_id == exclude)
-				continue;
-
-			delta = (int32_t)(sender_pong_ts -
-			    peer->last_pong_client_ts);
-			bb_init(&bb);
-			if (wr_u8(&bb, SRV_PERCAR_FAST_RATE) == 0 &&
-			    build_percar_body(&bb, car, s, delta) == 0) {
-				(void)sendto(s->udp_fd, bb.data,
-				    bb.wpos, 0,
-				    (const struct sockaddr *)&peer->peer,
-				    sizeof(peer->peer));
-			}
-			bb_free(&bb);
-		}
-
-		car->rt.has_data = 0;
+		bb_free(&bb);
 	}
 }
 
@@ -458,8 +434,9 @@ tick_run(struct Server *s)
 	/* Drive the session phase machine. */
 	session_tick(s);
 
-	/* Fast-rate per-car broadcast (every tick, UDP). */
-	broadcast_percar_fast(s);
+	/* Per-car relay is event-driven from h_udp_car_update(),
+	 * not periodic.  The 1 Hz recap below is kept for newly-
+	 * joined peers to pick up state for idle cars. */
 
 	/* Slow-rate per-car batched broadcast (1 Hz, UDP). */
 	if ((s->tick_count % CADENCE_PERCAR_SLOW) == 0)

@@ -39,8 +39,10 @@
 #include <string.h>
 #include <time.h>
 
+#include "bcast.h"
 #include "log.h"
 #include "msg.h"
+#include "prim.h"
 #include "results.h"
 #include "session.h"
 #include "state.h"
@@ -176,6 +178,10 @@ compute_phase(const struct SessionState *ss, uint64_t now)
 	if (now < ss->ts[4])
 		return PHASE_SESSION;
 	if (now < ss->ts[5])
+		return PHASE_OVERTIME;
+	/* Exe's flag_override_stop_at_5: hold overtime until all
+	 * cars have finished their lap or the hold is released. */
+	if (ss->overtime_hold)
 		return PHASE_OVERTIME;
 	if (now < ss->ts[6])
 		return PHASE_COMPLETED;
@@ -352,6 +358,20 @@ session_tick(struct Server *s)
 	new_phase = compute_phase(&s->session, now);
 	enter_phase(s, new_phase);
 
+	/* Activate overtime hold for race sessions. */
+	if (new_phase == PHASE_OVERTIME &&
+	    s->session.overtime_hold == 0 &&
+	    def->session_type == 10) {
+		int i, n = 0;
+		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
+		    i++)
+			if (s->cars[i].used)
+				n++;
+		s->session.overtime_hold = 1;
+		s->session.cars_in_overtime = (int16_t)n;
+		log_info("overtime: hold active, %d cars racing", n);
+	}
+
 	/* Drive the in-game clock during the active session. */
 	if (s->session.phase == PHASE_SESSION ||
 	    s->session.phase == PHASE_OVERTIME) {
@@ -368,6 +388,30 @@ session_tick(struct Server *s)
 		session_advance(s);
 }
 
+/*
+ * Called from the lap completion handler when a car finishes
+ * a lap during overtime.  Decrements the cars-in-overtime
+ * counter; when it reaches 0, releases the overtime hold
+ * and adjusts ts[5] to let the phase advance.
+ */
+void
+session_overtime_car_finished(struct Server *s)
+{
+	if (!s->session.overtime_hold)
+		return;
+	if (s->session.cars_in_overtime > 0)
+		s->session.cars_in_overtime--;
+	if (s->session.cars_in_overtime <= 0) {
+		s->session.overtime_hold = 0;
+		s->session.ts[5] = mono_ms() + 5000;
+		s->session.ts[6] = s->session.ts[5] + 5000;
+		log_info("overtime: all cars finished, releasing hold");
+	} else {
+		log_info("overtime: %d cars still racing",
+		    (int)s->session.cars_in_overtime);
+	}
+}
+
 void
 session_advance(struct Server *s)
 {
@@ -379,10 +423,35 @@ session_advance(struct Server *s)
 	}
 
 	if (next >= s->session_count) {
-		log_info("session: weekend complete, entering RESULTS");
-		s->session.phase = PHASE_RESULTS;
-		s->session.phase_started_ms = mono_ms();
-		s->session.ts_valid = 0;
+		/*
+		 * Weekend complete: send 0x40 reset + loop back to
+		 * session 0, matching the exe's resetRaceWeekend path.
+		 * Capture shows 0x40 sent twice, then session resets.
+		 */
+		{
+			struct ByteBuf bb;
+			int k;
+
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_RACE_WEEKEND_RESET) == 0) {
+				/* 12 x f32 weather scaling factors. */
+				for (k = 0; k < 12; k++)
+					(void)wr_f32(&bb, 0.0f);
+				/* Two variable-length forecast vectors
+				 * (count + samples).  Empty for reset. */
+				(void)wr_u16(&bb, 0);
+				(void)wr_u16(&bb, 0);
+				(void)bcast_all(s, bb.data, bb.wpos,
+				    0xFFFF);
+				/* Exe sends it twice. */
+				(void)bcast_all(s, bb.data, bb.wpos,
+				    0xFFFF);
+			}
+			bb_free(&bb);
+		}
+		log_info("session: weekend complete, resetting to "
+		    "session 0");
+		session_reset(s, 0);
 		return;
 	}
 	session_reset(s, next);
