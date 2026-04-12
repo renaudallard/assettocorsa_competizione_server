@@ -59,9 +59,10 @@ hourOfDay, and the car drives on track.
   rating summary sent immediately after handshake accept, matching
   the real server's welcome sequence.  The `0x28` body matches
   FUN_140033890: session_index byte, 7 variable-length per-session
-  records (u8 valid + conditional f32), and 23-byte tail.  Built
-  per-connection with a per-client time base (matching exe's
-  FUN_1400418b0), re-broadcast on phase transitions.
+  records (u8 valid + conditional f32), and 23-byte tail.  Schedule
+  f32 values are absolute timestamps in the client's game clock
+  (`ts - server_now + client_ts + RTT/2`, matching FUN_1400418b0),
+  built per-connection on phase transitions.
 - **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
   message types are handled; 34 server-to-client message types are
   implemented (plus 7 ServerMonitor protobuf types).
