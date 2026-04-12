@@ -351,31 +351,27 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
 	/*
 	 * 7 per-session-slot records (FUN_140035130).
 	 * Each: u8 valid + conditional f32 timestamp.
-	 * When ts_valid, populate 6 schedule boundaries
-	 * as relative offsets from a base time.  Slot 6
-	 * is always invalid (we only have 6 timestamps).
+	 *
+	 * The exe computes: (float)(ts_double - (double)now).
+	 * The f32 on wire is milliseconds relative to the
+	 * server's current time: negative = past, positive =
+	 * future.  The client uses these to compute session
+	 * remaining time and phase boundaries.
 	 */
 	if (s->session.ts_valid) {
-		float base = 100.0f;
-		float pre = def->session_type == 10
-		    ? 10000.0f : 3000.0f;
-		float dur = (float)def->duration_min * 60000.0f;
-		float ot  = 120000.0f;
+		struct timespec _ts;
+		double now;
 
-		/* Slot 0: session start. */
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_f32(bb, base) < 0) return -1;
-		/* Slots 1-3: pre-session boundary. */
-		for (k = 0; k < 3; k++) {
+		clock_gettime(CLOCK_MONOTONIC, &_ts);
+		now = (double)_ts.tv_sec * 1000.0 +
+		    (double)_ts.tv_nsec / 1000000.0;
+
+		/* Slots 0-5: phase boundaries relative to now. */
+		for (k = 0; k < 6; k++) {
 			if (wr_u8(bb, 1) < 0) return -1;
-			if (wr_f32(bb, base + pre) < 0) return -1;
+			if (wr_f32(bb, (float)((double)s->session.ts[k]
+			    - now)) < 0) return -1;
 		}
-		/* Slot 4: active end (duration). */
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_f32(bb, base + pre + dur) < 0) return -1;
-		/* Slot 5: overtime end. */
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_f32(bb, base + pre + dur + ot) < 0) return -1;
 		/* Slot 6: always invalid. */
 		if (wr_u8(bb, 0) < 0) return -1;
 	} else {
