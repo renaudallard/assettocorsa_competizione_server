@@ -340,7 +340,8 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
 	sched_field = def->session_type == 10 ? 80 : 3;
 	duration_s = (uint32_t)def->duration_min * 60u;
 
-	if (wr_u8(bb, (uint8_t)s->session.phase) < 0) return -1;
+	if (wr_u8(bb, session_phase_to_wire(s->session.phase)) < 0)
+		return -1;
 	for (k = 0; k < 7; k++)
 		if (wr_u8(bb, 0) < 0) return -1;
 

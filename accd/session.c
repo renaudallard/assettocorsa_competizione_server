@@ -255,6 +255,36 @@ session_phase_name(uint8_t p)
 	}
 }
 
+/*
+ * Map our internal phase enum (1-8) to the ACC Broadcasting SDK
+ * SessionPhase enum used on the wire and expected by clients:
+ *
+ *   SDK 0 = NONE           (our WAITING)
+ *   SDK 1 = Starting
+ *   SDK 2 = PreFormation   (our FORMATION)
+ *   SDK 3 = FormationLap
+ *   SDK 4 = PreSession     (our PRE_SESSION)
+ *   SDK 5 = Session        (our SESSION and OVERTIME)
+ *   SDK 6 = SessionOver    (our COMPLETED)
+ *   SDK 7 = PostSession    (our ADVANCE)
+ *   SDK 8 = ResultUI       (our RESULTS)
+ */
+uint8_t
+session_phase_to_wire(uint8_t p)
+{
+	switch (p) {
+	case PHASE_WAITING:	return 0;
+	case PHASE_FORMATION:	return 2;
+	case PHASE_PRE_SESSION:	return 4;
+	case PHASE_SESSION:	return 5;
+	case PHASE_OVERTIME:	return 5;
+	case PHASE_COMPLETED:	return 6;
+	case PHASE_ADVANCE:	return 7;
+	case PHASE_RESULTS:	return 8;
+	default:		return 0;
+	}
+}
+
 static void
 enter_phase(struct Server *s, uint8_t new_phase)
 {

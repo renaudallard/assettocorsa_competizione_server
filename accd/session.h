@@ -73,6 +73,12 @@ void	session_recompute_standings(struct Server *s);
 int	session_is_practice_or_qualy(const struct Server *s);
 
 /*
+ * Map internal phase enum to the Broadcasting SDK SessionPhase
+ * value expected by the client on the wire.
+ */
+uint8_t	session_phase_to_wire(uint8_t p);
+
+/*
  * Human-readable name for a session phase enum value.
  */
 const char *
