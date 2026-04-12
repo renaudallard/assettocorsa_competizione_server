@@ -60,7 +60,6 @@
  *   keepalive 0x14: every 20 ticks (2 s)
  *   weather 0x37:   every 50 ticks (5 s)
  */
-#define CADENCE_PERCAR_SLOW	10
 #define CADENCE_SESSION_STATE	10	/* 0x28 every ~1s, matching exe */
 #define CADENCE_KEEPALIVE	10	/* 0x14 every ~1s, matching exe */
 #define CADENCE_WEATHER		50
@@ -209,78 +208,11 @@ relay_car_update(struct Server *s, struct Conn *sender,
  * fast-rate path only) so newly-joined peers pick up state for
  * cars that haven't moved since the last tick.
  */
-#define PERCAR_SLOW_BATCH	8
 
-static void
-broadcast_percar_slow(struct Server *s)
-{
-	int peer_i, car_i;
-
-	if (s->udp_fd < 0)
-		return;
-	for (peer_i = 0; peer_i < ACC_MAX_CARS; peer_i++) {
-		struct Conn *peer = s->conns[peer_i];
-
-		if (peer == NULL || peer->state != CONN_AUTH)
-			continue;
-
-		car_i = 0;
-		while (car_i < ACC_MAX_CARS) {
-			struct ByteBuf bb;
-			uint8_t count;
-			size_t count_off;
-
-			bb_init(&bb);
-			if (wr_u8(&bb, SRV_PERCAR_SLOW_RATE) < 0) {
-				bb_free(&bb);
-				break;
-			}
-			count_off = bb.wpos;
-			if (wr_u8(&bb, 0) < 0) {
-				bb_free(&bb);
-				break;
-			}
-			count = 0;
-
-			while (car_i < ACC_MAX_CARS &&
-			    count < PERCAR_SLOW_BATCH) {
-				struct CarEntry *car = &s->cars[car_i];
-				int32_t delta = 0;
-				int k;
-
-				car_i++;
-				if (!car->used)
-					continue;
-				if (peer->car_id == car_i - 1)
-					continue;	/* skip self */
-				for (k = 0; k < ACC_MAX_CARS; k++) {
-					struct Conn *oc = s->conns[k];
-					if (oc != NULL &&
-					    oc->car_id == car_i - 1) {
-						delta = (int32_t)(
-						    oc->last_pong_client_ts -
-						    peer->last_pong_client_ts);
-						break;
-					}
-				}
-				if (build_percar_body(&bb, car, s,
-				    delta) < 0)
-					break;
-				count++;
-			}
-			bb.data[count_off] = count;
-
-			if (count > 0)
-				(void)sendto(s->udp_fd, bb.data, bb.wpos,
-				    0,
-				    (const struct sockaddr *)&peer->peer,
-				    sizeof(peer->peer));
-			bb_free(&bb);
-			if (count < PERCAR_SLOW_BATCH)
-				break;	/* drained: no more full batches */
-		}
-	}
-}
+/* Per-car relay is fully event-driven from relay_car_update().
+ * The periodic broadcast_percar_slow was removed: the Kunos
+ * capture shows no periodic recap.  Event-driven relay handles
+ * all car state propagation. */
 
 /*
  * Send a 0x14 keepalive to each authenticated connection via
@@ -438,9 +370,8 @@ tick_run(struct Server *s)
 	 * not periodic.  The 1 Hz recap below is kept for newly-
 	 * joined peers to pick up state for idle cars. */
 
-	/* Slow-rate per-car batched broadcast (1 Hz, UDP). */
-	if ((s->tick_count % CADENCE_PERCAR_SLOW) == 0)
-		broadcast_percar_slow(s);
+	/* Per-car relay is fully event-driven from h_udp_car_update.
+	 * No periodic recap: Kunos capture shows none. */
 
 	/* Keepalive 0x14 every ~1s (matching exe capture). */
 	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)

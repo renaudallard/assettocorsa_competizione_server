@@ -196,23 +196,16 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	if (s->session.phase == PHASE_OVERTIME)
 		session_overtime_car_finished(s);
 
-	/* Build the transformed 0x3a broadcast. Body:
-	 *   u16 car_id + u8 split_count + u32[count] + i32 clock +
-	 *   u16 car_field. */
-	bb_init(&out);
-	if (wr_u8(&out, SRV_SECTOR_SPLITS_RELAY) < 0 ||
-	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
-	    wr_u8(&out, split_count) < 0)
-		goto done;
-	for (i = 0; i < split_count; i++)
-		if (wr_u32(&out, splits[i]) < 0)
-			goto done;
-	if (wr_i32(&out, clock_ms) < 0 ||
-	    wr_u16(&out, car_field) < 0)
-		goto done;
-	(void)bcast_all(s, out.data, out.wpos, c->conn_id);
-done:
-	bb_free(&out);
+	/*
+	 * The exe never sends 0x3a (bulk split relay); it only
+	 * sends 0x3b (single split).  Do not broadcast 0x3a.
+	 * The lap state update above is sufficient.
+	 */
+	(void)split_count;
+	(void)splits;
+	(void)clock_ms;
+	(void)car_field;
+	(void)out;
 	return 0;
 }
 

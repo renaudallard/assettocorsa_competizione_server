@@ -375,12 +375,33 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 		client_adj = (double)conn_client_ts +
 		    (double)(conn_rtt / 2);
 
-		/* Slots 0-5: schedule boundaries in client clock.
-		 * Slot 6: aftercare end (invalid for now). */
+		/*
+		 * Slots 0-5 + slot 6 (always invalid).
+		 *
+		 * For race sessions, slots activate progressively
+		 * as phases are reached (capture: initially only 0-1,
+		 * then 2 at formation, then 3-5 at green flag).
+		 * A slot is valid only if its timestamp is in the
+		 * past (the phase boundary has been reached) or if
+		 * it's the NEXT upcoming boundary.
+		 *
+		 * For P/Q, ts[1]=ts[2]=ts[3] so all are past
+		 * by the time SESSION starts, making all 6 valid.
+		 */
 		for (k = 0; k < 6; k++) {
-			if (wr_u8(bb, 1) < 0) return -1;
-			if (wr_f32(bb, (float)((double)s->session.ts[k]
-			    - now + client_adj)) < 0) return -1;
+			int valid = ((double)s->session.ts[k] <=
+			    now + 1.0) ||
+			    (k > 0 && (double)s->session.ts[k - 1] <=
+			    now + 1.0);
+			if (valid) {
+				if (wr_u8(bb, 1) < 0) return -1;
+				if (wr_f32(bb,
+				    (float)((double)s->session.ts[k]
+				    - now + client_adj)) < 0)
+					return -1;
+			} else {
+				if (wr_u8(bb, 0) < 0) return -1;
+			}
 		}
 		if (wr_u8(bb, 0) < 0) return -1;
 	} else {
