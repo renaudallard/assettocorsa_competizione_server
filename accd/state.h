@@ -157,7 +157,7 @@ struct SessionState {
 	 *   ts[4] = overtime_end (phase 5→6)
 	 *   ts[5] = aftercare_end (phase 6→7)
 	 */
-	uint64_t	ts[6];
+	uint64_t	ts[7];
 	int		ts_valid;	/* non-zero once populated */
 };
 

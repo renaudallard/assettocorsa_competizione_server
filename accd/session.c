@@ -125,12 +125,19 @@ session_start(struct Server *s)
 	uint64_t ot_ms  = 120000;
 	uint64_t post_ms = 5000;
 
+	/*
+	 * 7 schedule boundaries matching the exe's sub-objects
+	 * at +0x70..+0x1c0.  For non-race (P/Q), ts[1]=ts[2]=ts[3]
+	 * (no formation lap).  Session end is at ts[4], overtime
+	 * at ts[5].  Verified against Kunos wire capture.
+	 */
 	s->session.ts[0] = now - 1;
 	s->session.ts[1] = s->session.ts[0] + pre_ms;
 	s->session.ts[2] = s->session.ts[1];
-	s->session.ts[3] = s->session.ts[2] + dur_ms;
-	s->session.ts[4] = s->session.ts[3] + ot_ms;
-	s->session.ts[5] = s->session.ts[4] + post_ms;
+	s->session.ts[3] = s->session.ts[2];	/* race: + formation_ms */
+	s->session.ts[4] = s->session.ts[3] + dur_ms;
+	s->session.ts[5] = s->session.ts[4] + ot_ms;
+	s->session.ts[6] = s->session.ts[5] + post_ms;
 	s->session.ts_valid = 1;
 
 	s->session_start_ms = now;
@@ -142,8 +149,16 @@ session_start(struct Server *s)
 }
 
 /*
- * Pure function: compute phase from server_now and the 6
+ * Pure function: compute phase from server_now and the 7
  * schedule timestamps.  Matches FUN_14012e810.
+ *
+ * ts[0]: lobby start
+ * ts[1]: pre-session end
+ * ts[2]: formation end (= ts[1] non-race)
+ * ts[3]: formation lap end (= ts[2] non-race)
+ * ts[4]: session end (active duration)
+ * ts[5]: overtime end
+ * ts[6]: aftercare end
  */
 static uint8_t
 compute_phase(const struct SessionState *ss, uint64_t now)
@@ -157,10 +172,12 @@ compute_phase(const struct SessionState *ss, uint64_t now)
 	if (now < ss->ts[2])
 		return PHASE_PRE_SESSION;
 	if (now < ss->ts[3])
-		return PHASE_SESSION;
+		return PHASE_PRE_SESSION;	/* race formation */
 	if (now < ss->ts[4])
-		return PHASE_OVERTIME;
+		return PHASE_SESSION;
 	if (now < ss->ts[5])
+		return PHASE_OVERTIME;
+	if (now < ss->ts[6])
 		return PHASE_COMPLETED;
 	return PHASE_ADVANCE;
 }
@@ -338,7 +355,7 @@ session_tick(struct Server *s)
 	/* Drive the in-game clock during the active session. */
 	if (s->session.phase == PHASE_SESSION ||
 	    s->session.phase == PHASE_OVERTIME) {
-		uint64_t active_start = s->session.ts[2];
+		uint64_t active_start = s->session.ts[3];
 		uint64_t elapsed = now > active_start
 		    ? now - active_start : 0;
 		s->session.weekend_time_s =

@@ -375,13 +375,13 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 		client_adj = (double)conn_client_ts +
 		    (double)(conn_rtt / 2);
 
-		/* Slots 0-5: schedule boundaries in client clock. */
+		/* Slots 0-5: schedule boundaries in client clock.
+		 * Slot 6: aftercare end (invalid for now). */
 		for (k = 0; k < 6; k++) {
 			if (wr_u8(bb, 1) < 0) return -1;
 			if (wr_f32(bb, (float)((double)s->session.ts[k]
 			    - now + client_adj)) < 0) return -1;
 		}
-		/* Slot 6: always invalid. */
 		if (wr_u8(bb, 0) < 0) return -1;
 	} else {
 		/* No schedule yet: all slots invalid. */
