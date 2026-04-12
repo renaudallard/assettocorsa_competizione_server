@@ -314,6 +314,10 @@ config_load(struct Server *s, const char *cfg_dir)
 			else
 				d->session_type = 0;
 		}
+		s->pre_race_waiting_s = (uint16_t)json_obj_get_int(
+		    event, "preRaceWaitingTimeSeconds", 80);
+		s->session_overtime_s = (uint16_t)json_obj_get_int(
+		    event, "sessionOverTimeSeconds", 120);
 		s->session.ambient_temp = (uint8_t)json_obj_get_int(
 		    event, "ambientTemp", 22);
 		s->session.track_temp = (uint8_t)(

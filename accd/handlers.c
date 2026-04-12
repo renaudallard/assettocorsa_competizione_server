@@ -128,84 +128,87 @@ out:
 	return 0;
 }
 
-/* ----- 0x20 ACP_SECTOR_SPLIT (bulk) -> broadcast 0x3a ------------ */
+/* ----- 0x20 ACP_SECTOR_SPLIT ------------------------------------ */
+/*
+ * True wire format (12 bytes):
+ *   u8 msg_id + i32 sector_time_ms + u8 sector_index +
+ *   i32 clock_ms + u16 car_field
+ *
+ * sector_index: 0/1/2 for the three track sectors.
+ * sector_time_ms: time for this sector only (not cumulative).
+ * clock_ms: total race time.
+ *
+ * Lap completion: track sector times and increment lap_count
+ * when sector_index wraps back to 0 (i.e. the car crossed
+ * the start/finish line after completing all 3 sectors).
+ *
+ * The exe never relays 0x3a (bulk); it only sends 0x3b
+ * (single split relay) from the 0x21 handler.
+ */
 
 int
 h_sector_split_bulk(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
-	uint8_t msg_id;
-	int32_t field_a, clock_ms;
-	uint8_t split_count;
+	uint8_t msg_id, sector_index;
+	int32_t sector_time_ms, clock_ms;
 	uint16_t car_field;
-	uint32_t splits[16];
-	int i;
-	struct ByteBuf out;
+	struct CarRaceState *race;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
-	    rd_i32(&r, &field_a) < 0 ||
-	    rd_u8(&r, &split_count) < 0 ||
+	    rd_i32(&r, &sector_time_ms) < 0 ||
+	    rd_u8(&r, &sector_index) < 0 ||
 	    rd_i32(&r, &clock_ms) < 0 ||
 	    rd_u16(&r, &car_field) < 0) {
-		log_warn("h_sector_split_bulk: short header from conn=%u",
+		log_warn("h_sector_split: short body from conn=%u",
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	if (c->car_id < 0)
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	if (split_count > 16) {
-		log_warn("Received split with unreasonable count %u "
-		    "from conn=%u",
-		    (unsigned)split_count, (unsigned)c->conn_id);
-		return 0;
-	}
-	for (i = 0; i < split_count; i++) {
-		if (rd_u32(&r, &splits[i]) < 0) {
-			log_warn("ACP_SECTOR_SPLIT: short split data");
-			return 0;
-		}
-	}
+	race = &s->cars[c->car_id].race;
+
+	/* Store per-sector time. */
+	if (sector_index < 3)
+		race->sector_ms[sector_index] = sector_time_ms;
+	race->race_time_ms = clock_ms;
+
 	/*
-	 * 0x20 is the real lap completion trigger.  Update the
-	 * car's race state with the lap total and sector times.
+	 * Sector 0 crossing means the car just completed a full
+	 * lap (start/finish line).  Compute full lap time as sum
+	 * of all 3 sectors.
 	 */
-	{
-		struct CarRaceState *race = &s->cars[c->car_id].race;
+	if (sector_index == 0 && race->sector_ms[0] > 0 &&
+	    race->sector_ms[1] > 0 && race->sector_ms[2] > 0) {
+		int32_t lap_ms = race->sector_ms[0] +
+		    race->sector_ms[1] + race->sector_ms[2];
 
 		race->lap_count++;
-		race->race_time_ms = clock_ms;
-		if (split_count > 0) {
-			int32_t lap_ms = (int32_t)splits[split_count - 1];
-
-			race->last_lap_ms = lap_ms;
-			if (race->best_lap_ms == 0 ||
-			    lap_ms < race->best_lap_ms)
-				race->best_lap_ms = lap_ms;
-		}
+		race->last_lap_ms = lap_ms;
+		if (race->best_lap_ms == 0 ||
+		    lap_ms < race->best_lap_ms)
+			race->best_lap_ms = lap_ms;
 		race->current_lap_ms = 0;
+
+		log_info("lap completed: car=%d lap=%d time=%dms "
+		    "clock=%d sector=%u",
+		    c->car_id, race->lap_count, (int)lap_ms,
+		    (int)clock_ms, (unsigned)sector_index);
+
+		session_recompute_standings(s);
+
+		if (s->session.phase == PHASE_OVERTIME)
+			session_overtime_car_finished(s);
+	} else {
+		log_info("sector split: car=%d sector=%u time=%dms "
+		    "clock=%d",
+		    c->car_id, (unsigned)sector_index,
+		    (int)sector_time_ms, (int)clock_ms);
 	}
-	log_info("lap completed: car=%d lap=%d clock=%d splits=%u",
-	    c->car_id, s->cars[c->car_id].race.lap_count,
-	    (int)clock_ms, (unsigned)split_count);
 
-	session_recompute_standings(s);
-
-	/* During race overtime, count this car as finished. */
-	if (s->session.phase == PHASE_OVERTIME)
-		session_overtime_car_finished(s);
-
-	/*
-	 * The exe never sends 0x3a (bulk split relay); it only
-	 * sends 0x3b (single split).  Do not broadcast 0x3a.
-	 * The lap state update above is sufficient.
-	 */
-	(void)split_count;
-	(void)splits;
-	(void)clock_ms;
-	(void)car_field;
-	(void)out;
+	/* No 0x3a relay (exe never sends it). */
 	return 0;
 }
 
@@ -510,13 +513,20 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		    c->car_id);
 		return 0;
 	}
+	/* Capture shows exe only relays force=1 (actual out-of-track),
+	 * not force=0 (boundary crossing). */
+	if (force != 1) {
+		(void)out;
+		(void)rc;
+		return 0;
+	}
 	log_info("out-of-track: car=%d force=%u ts=%d",
 	    c->car_id, (unsigned)force, (int)ts_raw);
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
 	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
-	    wr_u16(&out, 0) < 0 ||
+	    wr_u16(&out, (uint16_t)force) < 0 ||
 	    wr_u32(&out, (uint32_t)ts_raw) < 0)
 		goto out;
 	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
@@ -614,7 +624,8 @@ h_damage_zones(struct Server *s, struct Conn *c,
 	for (i = 0; i < 5; i++)
 		if (wr_u8(&out, zones[i]) < 0)
 			goto out;
-	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	/* Capture confirms 0x44 is sent via UDP, not TCP. */
+	rc = bcast_all_udp(s, out.data, out.wpos, c->conn_id);
 	log_info("Updated %d clients with new damage zones for car %d",
 	    rc, c->car_id);
 out:
@@ -622,7 +633,7 @@ out:
 	return 0;
 }
 
-/* ----- 0x46 ACP_CAR_DIRT_UPDATE -> broadcast 0x46 --------------- */
+/* ----- 0x46 ACP_CAR_DIRT_UPDATE (store only, no relay) ---------- */
 
 int
 h_car_dirt(struct Server *s, struct Conn *c,
@@ -631,8 +642,6 @@ h_car_dirt(struct Server *s, struct Conn *c,
 	struct Reader r;
 	uint8_t msg_id, dirt[5];
 	int i;
-	struct ByteBuf out;
-	int rc;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0)
@@ -646,20 +655,9 @@ h_car_dirt(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0)
 		return 0;
-	log_info("car dirt: car=%d [%u,%u,%u,%u,%u]",
-	    c->car_id, dirt[0], dirt[1], dirt[2], dirt[3], dirt[4]);
-
-	bb_init(&out);
-	if (wr_u8(&out, SRV_CAR_DIRT_RELAY) < 0 ||
-	    wr_u16(&out, s->cars[c->car_id].car_id) < 0)
-		goto out;
-	for (i = 0; i < 5; i++)
-		if (wr_u8(&out, dirt[i]) < 0)
-			goto out;
-	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
-	(void)rc;
-out:
-	bb_free(&out);
+	/* Capture shows Kunos never relays 0x46 dirt. Store only. */
+	(void)s;
+	(void)dirt;
 	return 0;
 }
 
@@ -906,7 +904,32 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 		log_warn("h_driver_stint_reset: short body");
 		return 0;
 	}
+	if (c->car_id < 0)
+		return 0;
 	log_info("Receives driver stint reset for car %d", c->car_id);
+
+	/*
+	 * Relay 0x4f to all other clients.  Two variants:
+	 * force=0: short (4 bytes) u8 id + u16 car_id + u8(0)
+	 * force=1: long (12 bytes) u8 id + u16 car_id + u8(1)
+	 *          + u32(0) + f32 stint_time
+	 */
+	{
+		struct ByteBuf out;
+
+		bb_init(&out);
+		if (wr_u8(&out, SRV_DRIVER_STINT_RELAY) == 0 &&
+		    wr_u16(&out, s->cars[c->car_id].car_id) == 0 &&
+		    wr_u8(&out, force) == 0) {
+			if (force) {
+				(void)wr_u32(&out, 0);
+				(void)wr_f32(&out, 0.0f);
+			}
+			(void)bcast_all(s, out.data, out.wpos,
+			    c->conn_id);
+		}
+		bb_free(&out);
+	}
 	return 0;
 }
 

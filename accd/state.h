@@ -335,6 +335,8 @@ struct Server {
 	struct AssistRules	assist;
 	struct BanList		bans;
 	uint8_t			bop_version;
+	uint16_t		pre_race_waiting_s; /* preRaceWaitingTimeSeconds */
+	uint16_t		session_overtime_s; /* sessionOverTimeSeconds */
 	char			cfg_dir[256];	/* for saving bans */
 
 	/* timing */

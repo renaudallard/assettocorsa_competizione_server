@@ -122,9 +122,10 @@ session_start(struct Server *s)
 	const struct SessionDef *def =
 	    &s->sessions[s->session.session_index];
 	uint64_t now = mono_ms();
-	uint64_t pre_ms = def->session_type == 10 ? 10000 : 3000;
+	uint64_t pre_ms = def->session_type == 10
+	    ? (uint64_t)s->pre_race_waiting_s * 1000ull : 3000;
 	uint64_t dur_ms = (uint64_t)def->duration_min * 60000ull;
-	uint64_t ot_ms  = 120000;
+	uint64_t ot_ms  = (uint64_t)s->session_overtime_s * 1000ull;
 	uint64_t post_ms = 5000;
 
 	/*
