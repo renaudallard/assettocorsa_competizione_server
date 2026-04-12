@@ -109,7 +109,17 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 		}
 	}
 
-	adj_ts = car->rt.client_timestamp_ms - (uint32_t)clock_adj;
+	/*
+	 * The exe subtracts a per-peer clock offset from car_ts
+	 * (FUN_1400418b0) but that offset requires the server to
+	 * use a game-relative timer, not the monotonic clock.
+	 * Our mono_ms is time-since-boot which is incompatible
+	 * with client timestamps that start near zero.  Pass the
+	 * raw client timestamp unchanged; the u16 rtt_hint field
+	 * gives the receiver enough information for dead-reckoning.
+	 */
+	adj_ts = car->rt.client_timestamp_ms;
+	(void)clock_adj;
 
 	ok = 1;
 	if (wr_u16(bb, car->car_id) < 0) return -1;
