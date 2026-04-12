@@ -152,6 +152,7 @@ conn_drop(struct Server *s, struct Conn *c)
 		 * standings_seq and trigger a 0x36 rebroadcast
 		 * to the remaining clients on the next tick. */
 		session_recompute_standings(s);
+		s->session.standings_seq++;
 	}
 	free(c);
 }
