@@ -255,17 +255,23 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 
 	case ACP_PONG_PHYSICS: {	/* 0x16 */
 		/*
-		 * Client echoes the server timestamp from 0x14.
-		 * Compute round-trip time and maintain an exponential
-		 * moving average per connection.  The avg_rtt is
-		 * written into the per-car broadcast u16 (+0x50)
-		 * field so the receiving client can dead-reckon the
-		 * remote car's position forward by half the RTT.
-		 * Matches FUN_1400420e0 in accServer.exe.
+		 * Client echoes the server timestamp from 0x14 plus
+		 * its own client-side timestamp.  Compute RTT and
+		 * clock offset per FUN_1400420e0 in accServer.exe.
+		 *
+		 * Wire: u8 0x16 + u16 conn_id + u32 srv_ts_echo +
+		 *        u32 client_ts.
+		 *
+		 * RTT = server_now - srv_ts_echo.
+		 * clock_offset = server_now - (avg_rtt/2 + client_ts).
+		 *
+		 * The offset is subtracted from car timestamps in
+		 * the per-peer 0x1e broadcast so the receiver sees
+		 * timestamps in its own timebase.
 		 */
 		struct Reader pr;
 		uint16_t pong_conn = 0;
-		uint32_t pong_srv_ts = 0;
+		uint32_t pong_srv_ts = 0, pong_client_ts = 0;
 		struct Conn *pc;
 		struct timespec pts;
 		uint32_t now_ms, rtt;
@@ -274,6 +280,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		(void)rd_skip(&pr, 1);		/* msg_id */
 		(void)rd_u16(&pr, &pong_conn);
 		(void)rd_u32(&pr, &pong_srv_ts);
+		(void)rd_u32(&pr, &pong_client_ts);
 
 		pc = server_find_conn(s, pong_conn);
 		if (pc == NULL)
@@ -290,6 +297,9 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			pc->avg_rtt_ms = rtt;
 		else
 			pc->avg_rtt_ms = (pc->avg_rtt_ms * 7 + rtt) / 8;
+
+		pc->clock_offset_ms = (int32_t)(now_ms -
+		    (pc->avg_rtt_ms / 2 + pong_client_ts));
 		return;
 	}
 

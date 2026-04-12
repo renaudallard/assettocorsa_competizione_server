@@ -84,19 +84,20 @@
  *   u8 (+0x4c)
  *   i16 clamped (+0x1ec)
  */
+/*
+ * @clock_adj: per-peer clock offset (from pong RTT computation).
+ *             Subtracted from car_ts so the receiver sees
+ *             timestamps in its own timebase.  Pass 0 if unknown.
+ */
 static int
 build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
-    struct Server *s)
+    struct Server *s, int32_t clock_adj)
 {
 	int k, ok;
 	int16_t clamped;
 	uint16_t rtt_hint = 0;
+	uint32_t adj_ts;
 
-	/* Find the driving connection's avg RTT for the +0x50
-	 * dead-reckoning hint.  FUN_1400420e0 in accServer.exe
-	 * stores the avg RTT at car +0x50 after each pong; the
-	 * broadcast writes it as u16 so receivers can extrapolate
-	 * the position forward by half-RTT. */
 	for (k = 0; k < ACC_MAX_CARS; k++) {
 		struct Conn *oc = s->conns[k];
 		if (oc != NULL && oc->car_id ==
@@ -107,10 +108,12 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 		}
 	}
 
+	adj_ts = car->rt.client_timestamp_ms - (uint32_t)clock_adj;
+
 	ok = 1;
 	if (wr_u16(bb, car->car_id) < 0) return -1;
 	if (wr_u8(bb, car->rt.packet_seq) < 0) return -1;
-	if (wr_u32(bb, car->rt.client_timestamp_ms) < 0) return -1;
+	if (wr_u32(bb, adj_ts) < 0) return -1;
 	if (wr_u16(bb, rtt_hint) < 0) return -1;
 
 	for (k = 0; k < 3 && ok; k++)
@@ -140,12 +143,21 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
  * Fast-rate 0x1e broadcast.  For every car that has received
  * a fresh 0x1e this tick, send a 64-byte UDP datagram to every
  * other connected peer.  Layout from FUN_14001a170.
+ *
+ * The timestamp at body offset 4..7 (after u8 msgid + u16
+ * car_id + u8 seq) is adjusted per-peer: the exe writes
+ * `car_ts - FUN_1400418b0(peer)` so the receiver sees
+ * timestamps in its own timebase.  We patch the 4 bytes
+ * in-place before each sendto rather than rebuilding the
+ * whole packet.
  */
 static void
 broadcast_percar_fast(struct Server *s)
 {
 	int i, j;
 
+	if (s->udp_fd < 0)
+		return;
 	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
 		struct CarEntry *car = &s->cars[i];
 		struct ByteBuf bb;
@@ -155,23 +167,33 @@ broadcast_percar_fast(struct Server *s)
 			continue;
 
 		for (j = 0; j < ACC_MAX_CARS; j++) {
-			struct Conn *c = s->conns[j];
-			if (c != NULL && c->car_id == i) {
-				exclude = c->conn_id;
+			struct Conn *oc = s->conns[j];
+			if (oc != NULL && oc->car_id == i) {
+				exclude = oc->conn_id;
 				break;
 			}
 		}
 
-		bb_init(&bb);
-		if (wr_u8(&bb, SRV_PERCAR_FAST_RATE) == 0 &&
-		    build_percar_body(&bb, car, s) == 0) {
-			(void)bcast_all_udp(s, bb.data, bb.wpos,
-			    exclude);
-		}
-		bb_free(&bb);
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			struct Conn *peer = s->conns[j];
 
-		/* Clear the dirty flag now that the update has
-		 * been relayed to all interested peers. */
+			if (peer == NULL || peer->state != CONN_AUTH)
+				continue;
+			if (peer->conn_id == exclude)
+				continue;
+
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_PERCAR_FAST_RATE) == 0 &&
+			    build_percar_body(&bb, car, s,
+				peer->clock_offset_ms) == 0) {
+				(void)sendto(s->udp_fd, bb.data,
+				    bb.wpos, 0,
+				    (const struct sockaddr *)&peer->peer,
+				    sizeof(peer->peer));
+			}
+			bb_free(&bb);
+		}
+
 		car->rt.has_data = 0;
 	}
 }
@@ -233,7 +255,8 @@ broadcast_percar_slow(struct Server *s)
 					continue;
 				if (peer->car_id == car_i - 1)
 					continue;	/* skip self */
-				if (build_percar_body(&bb, car, s) < 0)
+				if (build_percar_body(&bb, car, s,
+				    peer->clock_offset_ms) < 0)
 					break;
 				count++;
 			}
