@@ -39,7 +39,8 @@ hourOfDay, and the car drives on track.
   common 104 bytes (HudRules + AssistRules + GraphicsRules +
   RealismRules + GameplayRules + OnlineRules + RaceDirectorRules
   + 5 u16 vector counts), `EventEntity` (str_a trackName + 136
-  bytes), `session_mgr_state` (31 bytes), `assist_rules` +
+  bytes), `session_mgr_state` (variable-length: session_index +
+  7 conditional per-session records + 23-byte tail), `assist_rules` +
   `leaderboard` section (header + one lb_entry per car + 2 byte
   tail), an 88-byte block from the unknown `*(0x1410e+0x20)`
   serializer, `trailer_additional_state` (68 bytes: 7 f32 +
@@ -56,10 +57,10 @@ hourOfDay, and the car drives on track.
 - **Post-accept welcome sequence** — `0x28` large state response,
   `0x36` initial leaderboard, `0x37` weather snapshot, and `0x4e`
   rating summary sent immediately after handshake accept, matching
-  the real server's welcome sequence.  The `0x28` timing blocks
-  use the 6-float offset pattern (b1=base, b2=base+3000ms,
-  b5=base+3000+duration_ms, b6=+overtime_ms) required for the
-  client to start the engine.
+  the real server's welcome sequence.  The `0x28` body matches
+  FUN_140033890: session_index byte, 7 variable-length per-session
+  records (u8 valid + conditional f32), and 23-byte tail.  Re-broadcast
+  on every phase transition.
 - **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
   message types are handled; 34 server-to-client message types are
   implemented (plus 7 ServerMonitor protobuf types).

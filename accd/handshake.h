@@ -66,6 +66,15 @@ int	build_welcome_trailer(struct ByteBuf *bb, struct Server *s,
 int	write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot);
 
 /*
+ * Emit the session_mgr_state block (FUN_140033890): session_index
+ * byte, 7 variable-length per-session records (FUN_140035130),
+ * 23-byte tail (FUN_140034f60).  Used by the welcome trailer
+ * (0x0b body), standalone 0x28 post-accept, and 0x28 re-broadcast
+ * on phase transitions.
+ */
+int	write_session_mgr_state(struct ByteBuf *bb, struct Server *s);
+
+/*
  * Emit the assist_rules + leaderboard section from FUN_140034a40
  * in accServer.exe.  Used by the welcome trailer (0x0b body) and
  * by the standalone 0x36 leaderboard broadcast (prefixed with

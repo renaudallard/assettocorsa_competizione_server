@@ -311,22 +311,26 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 }
 
 /*
- * session_mgr_state from FUN_140033890 (31 bytes observed).
- *   u8 phase
- *   7 x u8 record-enabled flags (one per session slot)
- *   session_mgr_tail (FUN_140034f60, 23 bytes) for the current session:
- *     u8 hour_of_day
- *     u8 0
- *     i8 (time_multiplier - 1, i.e. "1x" -> 0)
- *     f32 1.0 (grip?)
- *     u16 sched_field (3 for non-race, 80 for race)
- *     u32 duration_seconds
- *     u32 overtime_seconds (120 default)
- *     u8 0
- *     u8 0
- *     f32 1.0
+ * session_mgr_state from FUN_140033890.
+ *
+ * Layout:
+ *   u8 session_index (from +0x14122, NOT the phase)
+ *   7 x per-session record (FUN_140035130, variable-length):
+ *     u8 valid
+ *     if valid: f32 (timestamp - base)
+ *   23-byte tail (FUN_140034f60):
+ *     u8 hour_of_day (+0x28)
+ *     u8 0           (+0x2c)
+ *     i8 time_multiplier - 1 (+0x30)
+ *     f32 grip       (+0x34)
+ *     u16 sched_field (+0x38)
+ *     u32 duration_s  (+0x3c)
+ *     u32 overtime_s  (+0x40)
+ *     u8 0           (+0x44)
+ *     u8 0           (+0x48)
+ *     f32 1.0        (+0x4c)
  */
-static int
+int
 write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
 {
 	const struct SessionDef *def;
@@ -340,11 +344,47 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
 	sched_field = def->session_type == 10 ? 80 : 3;
 	duration_s = (uint32_t)def->duration_min * 60u;
 
-	if (wr_u8(bb, session_phase_to_wire(s->session.phase)) < 0)
+	/* First byte: session index (NOT phase). */
+	if (wr_u8(bb, s->session.session_index) < 0)
 		return -1;
-	for (k = 0; k < 7; k++)
-		if (wr_u8(bb, 0) < 0) return -1;
 
+	/*
+	 * 7 per-session-slot records (FUN_140035130).
+	 * Each: u8 valid + conditional f32 timestamp.
+	 * When ts_valid, populate 6 schedule boundaries
+	 * as relative offsets from a base time.  Slot 6
+	 * is always invalid (we only have 6 timestamps).
+	 */
+	if (s->session.ts_valid) {
+		float base = 100.0f;
+		float pre = def->session_type == 10
+		    ? 10000.0f : 3000.0f;
+		float dur = (float)def->duration_min * 60000.0f;
+		float ot  = 120000.0f;
+
+		/* Slot 0: session start. */
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_f32(bb, base) < 0) return -1;
+		/* Slots 1-3: pre-session boundary. */
+		for (k = 0; k < 3; k++) {
+			if (wr_u8(bb, 1) < 0) return -1;
+			if (wr_f32(bb, base + pre) < 0) return -1;
+		}
+		/* Slot 4: active end (duration). */
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_f32(bb, base + pre + dur) < 0) return -1;
+		/* Slot 5: overtime end. */
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_f32(bb, base + pre + dur + ot) < 0) return -1;
+		/* Slot 6: always invalid. */
+		if (wr_u8(bb, 0) < 0) return -1;
+	} else {
+		/* No schedule yet: all slots invalid. */
+		for (k = 0; k < 7; k++)
+			if (wr_u8(bb, 0) < 0) return -1;
+	}
+
+	/* 23-byte tail (FUN_140034f60). */
 	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, (uint8_t)(def->time_multiplier > 0
@@ -1283,86 +1323,15 @@ reply:
 			struct ByteBuf wb;
 
 			/*
-			 * 0x28 SRV_LARGE_STATE_RESPONSE.  Layout from
-			 * reference (56 bytes after msg_id):
-			 *   [0]     u8 sessionIndex
-			 *   [1..30] 6 schedule slots × (u8 valid + f32 ts)
-			 *   [31]    u8 validity flag
-			 *   [32]    u8 hour_of_day
-			 *   [33..35] 3 u8 padding
-			 *   [36..39] f32 time_multiplier
-			 *   [40]    u8 (3 or sched marker)
-			 *   [41..42] u16 session_duration_seconds
-			 *   [43..45] 3 u8
-			 *   [46]    u8 overtime_seconds (120)
-			 *   [47..50] 4 u8
-			 *   [51]    u8 session_type
-			 *   [52..54] 3 u8
-			 *   [55]    u8 grip high byte
+			 * 0x28 SRV_LARGE_STATE_RESPONSE.
+			 * Body is FUN_140033890: session_index +
+			 * 7 variable-length per-session records +
+			 * 23-byte tail.  Reuse write_session_mgr_state.
 			 */
 			bb_init(&wb);
-			if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0) {
-				const struct SessionDef *cur =
-				    &s->sessions[s->session.session_index];
-				int k;
-				float base = 100.0f;
-				float dur_ms = (float)(cur->duration_min
-				    * 60) * 1000.0f;
-				float ot_ms = 120.0f * 1000.0f;
-
-				/* [0] sessionIndex */
-				(void)wr_u8(&wb, s->session.session_index);
-				/* [1..30] 6 schedule slots */
-				(void)wr_u8(&wb, 1);
-				(void)wr_f32(&wb, base);
-				for (k = 0; k < 3; k++) {
-					(void)wr_u8(&wb, 1);
-					(void)wr_f32(&wb, base + 3000.0f);
-				}
-				(void)wr_u8(&wb, 1);
-				(void)wr_f32(&wb,
-				    base + 3000.0f + dur_ms);
-				(void)wr_u8(&wb, 1);
-				(void)wr_f32(&wb,
-				    base + 3000.0f + dur_ms + ot_ms);
-				/* [31] validity */
-				(void)wr_u8(&wb, 0);
-				/* [32] hour_of_day */
-				(void)wr_u8(&wb, cur->hour_of_day);
-				/* [33..35] 3 padding */
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				/* [36..39] f32 time_multiplier */
-				(void)wr_f32(&wb,
-				    (float)cur->time_multiplier);
-				/* [40] sched marker */
-				(void)wr_u8(&wb,
-				    cur->session_type == 10 ? 80 : 3);
-				/* [41..42] u16 duration_seconds */
-				(void)wr_u16(&wb,
-				    (uint16_t)(cur->duration_min * 60));
-				/* [43..45] 3 u8 */
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				/* [46] u8 overtime_seconds */
-				(void)wr_u8(&wb, 120);
-				/* [47..50] 4 u8 */
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				/* [51] u8 session_type */
-				(void)wr_u8(&wb, cur->session_type);
-				/* [52..54] 3 u8 */
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				(void)wr_u8(&wb, 0);
-				/* [55] u8 grip high byte */
-				(void)wr_u8(&wb, 0x3f);
+			if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0 &&
+			    write_session_mgr_state(&wb, s) == 0)
 				(void)bcast_send_one(c, wb.data, wb.wpos);
-			}
 			bb_free(&wb);
 
 			/*

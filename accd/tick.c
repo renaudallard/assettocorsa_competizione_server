@@ -506,8 +506,20 @@ tick_run(struct Server *s)
 
 	/*
 	 * One-shot actions on phase transitions.
+	 * The exe re-broadcasts 0x28 whenever the computed phase
+	 * changes (condition 3 in FUN_14002f710 server_tick_tail).
 	 */
 	if (s->session.phase != *last_phase) {
+		{
+			struct ByteBuf bb;
+
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
+			    write_session_mgr_state(&bb, s) == 0)
+				(void)bcast_all(s, bb.data, bb.wpos,
+				    0xFFFF);
+			bb_free(&bb);
+		}
 		if (s->session.phase == PHASE_FORMATION)
 			broadcast_grid(s);
 		if (s->session.phase == PHASE_COMPLETED) {
