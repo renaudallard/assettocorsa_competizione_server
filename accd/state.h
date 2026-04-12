@@ -279,6 +279,8 @@ struct Conn {
 	struct ByteBuf	tx;		/* not yet used; for batched sends */
 	unsigned char	*hs_echo;	/* raw handshake body to echo in trailer */
 	size_t		 hs_echo_len;
+	uint32_t	keepalive_sent_ms;	/* server mono ms when last 0x14 sent */
+	uint32_t	avg_rtt_ms;		/* exponential avg round-trip (from 0x16 pong) */
 };
 
 /*

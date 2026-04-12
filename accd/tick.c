@@ -85,16 +85,33 @@
  *   i16 clamped (+0x1ec)
  */
 static int
-build_percar_body(struct ByteBuf *bb, struct CarEntry *car)
+build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
+    struct Server *s)
 {
 	int k, ok;
 	int16_t clamped;
+	uint16_t rtt_hint = 0;
+
+	/* Find the driving connection's avg RTT for the +0x50
+	 * dead-reckoning hint.  FUN_1400420e0 in accServer.exe
+	 * stores the avg RTT at car +0x50 after each pong; the
+	 * broadcast writes it as u16 so receivers can extrapolate
+	 * the position forward by half-RTT. */
+	for (k = 0; k < ACC_MAX_CARS; k++) {
+		struct Conn *oc = s->conns[k];
+		if (oc != NULL && oc->car_id ==
+		    (int)(car->car_id - ACC_CAR_ID_BASE)) {
+			rtt_hint = (uint16_t)(oc->avg_rtt_ms > 65535
+			    ? 65535 : oc->avg_rtt_ms);
+			break;
+		}
+	}
 
 	ok = 1;
 	if (wr_u16(bb, car->car_id) < 0) return -1;
 	if (wr_u8(bb, car->rt.packet_seq) < 0) return -1;
 	if (wr_u32(bb, car->rt.client_timestamp_ms) < 0) return -1;
-	if (wr_u16(bb, 0) < 0) return -1;	/* +0x50 */
+	if (wr_u16(bb, rtt_hint) < 0) return -1;
 
 	for (k = 0; k < 3 && ok; k++)
 		ok = wr_f32(bb, car->rt.vec_a[k]) == 0;
@@ -147,7 +164,7 @@ broadcast_percar_fast(struct Server *s)
 
 		bb_init(&bb);
 		if (wr_u8(&bb, SRV_PERCAR_FAST_RATE) == 0 &&
-		    build_percar_body(&bb, car) == 0) {
+		    build_percar_body(&bb, car, s) == 0) {
 			(void)bcast_all_udp(s, bb.data, bb.wpos,
 			    exclude);
 		}
@@ -216,7 +233,7 @@ broadcast_percar_slow(struct Server *s)
 					continue;
 				if (peer->car_id == car_i - 1)
 					continue;	/* skip self */
-				if (build_percar_body(&bb, car) < 0)
+				if (build_percar_body(&bb, car, s) < 0)
 					break;
 				count++;
 			}
