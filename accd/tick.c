@@ -320,7 +320,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		bb_init(&bb);
 		if (wr_u8(&bb, msg_id) == 0 &&
 		    wr_u32(&bb, srv_ms) == 0 &&
-		    wr_u16(&bb, 0) == 0 &&
+		    wr_u16(&bb, c->conn_id) == 0 &&
 		    wr_u16(&bb, 0) == 0 &&
 		    wr_u16(&bb, 0) == 0 &&
 		    wr_u8(&bb, 2) == 0 &&
