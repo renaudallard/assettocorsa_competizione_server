@@ -72,8 +72,7 @@ int	write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot);
  * (0x0b body), standalone 0x28 post-accept, and 0x28 re-broadcast
  * on phase transitions.
  */
-int	write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
-		int base_ms);
+int	write_session_mgr_state(struct ByteBuf *bb, struct Server *s);
 
 /*
  * Emit the assist_rules + leaderboard section from FUN_140034a40

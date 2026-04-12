@@ -331,8 +331,7 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
  *     f32 1.0        (+0x4c)
  */
 int
-write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
-    int base_ms)
+write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
 {
 	const struct SessionDef *def;
 	uint16_t sched_field;
@@ -353,18 +352,25 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 	 * 7 per-session-slot records (FUN_140035130).
 	 * Each: u8 valid + conditional f32 timestamp.
 	 *
-	 * The exe computes per-connection:
-	 *   (float)((double)ts - (double)FUN_1400418b0(conn))
-	 * where FUN_1400418b0 returns the connection's estimated
-	 * current time in ms.  base_ms is the caller's per-
-	 * connection time base.
+	 * The exe computes: (float)(ts - FUN_1400418b0(conn))
+	 * which gives ms relative to the client's clock.  We
+	 * use mono_ms() as base (same clock as ts[]) giving
+	 * ms relative to server-now.  Close enough since
+	 * server-client offset is only RTT/2 (~25ms).
 	 */
 	if (s->session.ts_valid) {
-		/* Slots 0-5: phase boundaries relative to base. */
+		struct timespec _ts;
+		double now;
+
+		clock_gettime(CLOCK_MONOTONIC, &_ts);
+		now = (double)_ts.tv_sec * 1000.0 +
+		    (double)_ts.tv_nsec / 1000000.0;
+
+		/* Slots 0-5: phase boundaries relative to now. */
 		for (k = 0; k < 6; k++) {
 			if (wr_u8(bb, 1) < 0) return -1;
 			if (wr_f32(bb, (float)((double)s->session.ts[k]
-			    - (double)base_ms)) < 0) return -1;
+			    - now)) < 0) return -1;
 		}
 		/* Slot 6: always invalid. */
 		if (wr_u8(bb, 0) < 0) return -1;
@@ -806,16 +812,8 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 		return -1;
 
 	/* session_mgr_state (FUN_140033890). */
-	{
-		struct timespec _now;
-		int base;
-
-		clock_gettime(CLOCK_MONOTONIC, &_now);
-		base = (int)((uint64_t)_now.tv_sec * 1000 +
-		    (uint64_t)_now.tv_nsec / 1000000);
-		if (write_session_mgr_state(bb, s, base) < 0)
-			return -1;
-	}
+	if (write_session_mgr_state(bb, s) < 0)
+		return -1;
 
 	/* assist_rules + leaderboard (FUN_140034a40). */
 	if (write_leaderboard_section(bb, s) < 0)
@@ -1326,20 +1324,11 @@ reply:
 			 * 7 variable-length per-session records +
 			 * 23-byte tail.  Reuse write_session_mgr_state.
 			 */
-			{
-				struct timespec _now;
-				int base;
-
-				clock_gettime(CLOCK_MONOTONIC, &_now);
-				base = (int)((uint64_t)_now.tv_sec * 1000 +
-				    (uint64_t)_now.tv_nsec / 1000000);
-				bb_init(&wb);
-				if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0 &&
-				    write_session_mgr_state(&wb, s, base) == 0)
-					(void)bcast_send_one(c, wb.data,
-					    wb.wpos);
-				bb_free(&wb);
-			}
+			bb_init(&wb);
+			if (wr_u8(&wb, SRV_LARGE_STATE_RESPONSE) == 0 &&
+			    write_session_mgr_state(&wb, s) == 0)
+				(void)bcast_send_one(c, wb.data, wb.wpos);
+			bb_free(&wb);
 
 			/*
 			 * 0x36 initial leaderboard snapshot.  Body is
