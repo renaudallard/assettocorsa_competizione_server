@@ -59,14 +59,17 @@ hourOfDay, and the car drives on track.
   rating summary sent immediately after handshake accept, matching
   the real server's welcome sequence.  The `0x28` body matches
   FUN_140033890: session_index byte, 7 variable-length per-session
-  records (u8 valid + conditional f32), and 23-byte tail.  Re-broadcast
-  on every phase transition.
+  records (u8 valid + conditional f32), and 23-byte tail.  Built
+  per-connection with a per-client time base (matching exe's
+  FUN_1400418b0), re-broadcast on phase transitions.
 - **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
   message types are handled; 34 server-to-client message types are
   implemented (plus 7 ServerMonitor protobuf types).
 - **Per-car state broadcast** — 10 Hz fast-rate (`0x1e`) and 1 Hz
   slow-rate (`0x39`) per-car broadcasts relayed to all other
-  connections.  UDP car updates are matched to connections by the
+  connections via UDP.  Per-peer timestamp adjustment using
+  client-to-client pong deltas for correct dead-reckoning.
+  UDP car updates are matched to connections by the
   `source_conn_id` field in the packet body, so multiple clients
   behind the same NAT (e.g. two players on one LAN) are routed
   correctly.
