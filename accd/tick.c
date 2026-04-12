@@ -62,6 +62,7 @@
  */
 #define CADENCE_PERCAR_SLOW	10
 #define CADENCE_KEEPALIVE	20
+#define CADENCE_SESSION_STATE	50
 #define CADENCE_WEATHER		50
 
 /*
@@ -550,6 +551,24 @@ tick_run(struct Server *s)
 			}
 		}
 		*last_phase = s->session.phase;
+	}
+
+	/*
+	 * Periodic 0x28 session state re-broadcast.  The schedule
+	 * timestamps are relative to NOW so the client needs fresh
+	 * values to update its session countdown timer.  The exe
+	 * re-broadcasts whenever FUN_14012e060 detects a state
+	 * change; we approximate with a 5-second cadence.
+	 */
+	if ((s->tick_count % CADENCE_SESSION_STATE) == 0 &&
+	    s->session.ts_valid && s->nconns > 0) {
+		struct ByteBuf bb;
+
+		bb_init(&bb);
+		if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
+		    write_session_mgr_state(&bb, s) == 0)
+			(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+		bb_free(&bb);
 	}
 
 	/*
