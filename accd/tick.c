@@ -37,6 +37,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <time.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -274,12 +275,54 @@ broadcast_percar_slow(struct Server *s)
 	}
 }
 
+/*
+ * Send a 0x14 keepalive to each authenticated connection via
+ * UDP.  The exe (FUN_140029b20) sends this per-peer over UDP;
+ * the client replies with 0x16 pong only to UDP keepalives.
+ * If sent via TCP (our old path), the client ignores it and
+ * never pongs, so clock_offset_ms stays 0 and per-peer
+ * timestamp adjustment is a no-op.
+ *
+ * Body: u8 0x14 + u32 server_ms + additional timing hints.
+ * We send a minimal version with the server timestamp.
+ */
 static void
 broadcast_keepalive(struct Server *s, uint8_t msg_id)
 {
-	unsigned char buf[1] = { msg_id };
+	int i;
+	struct timespec ts;
+	uint32_t srv_ms;
+	struct ByteBuf bb;
 
-	(void)bcast_all(s, buf, sizeof(buf), 0xFFFF);
+	if (s->udp_fd < 0)
+		return;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	srv_ms = (uint32_t)((uint64_t)ts.tv_sec * 1000 +
+	    (uint64_t)ts.tv_nsec / 1000000);
+
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+
+		if (c == NULL || c->state != CONN_AUTH)
+			continue;
+		c->keepalive_sent_ms = srv_ms;
+
+		bb_init(&bb);
+		if (wr_u8(&bb, msg_id) == 0 &&
+		    wr_u32(&bb, srv_ms) == 0 &&
+		    wr_u16(&bb, 0) == 0 &&
+		    wr_u16(&bb, 0) == 0 &&
+		    wr_u16(&bb, 0) == 0 &&
+		    wr_u8(&bb, 2) == 0 &&
+		    wr_u8(&bb, 4) == 0 &&
+		    wr_u8(&bb, 100) == 0 &&
+		    wr_u8(&bb, 100) == 0) {
+			(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
+			    (const struct sockaddr *)&c->peer,
+			    sizeof(c->peer));
+		}
+		bb_free(&bb);
+	}
 }
 
 /*

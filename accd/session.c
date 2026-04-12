@@ -290,9 +290,11 @@ session_tick(struct Server *s)
 		session_start(s);
 	}
 
-	/* Reset to waiting when everyone disconnects mid-session. */
+	/* Reset to waiting when everyone disconnects mid-session.
+	 * Only log once (WAITING check prevents re-logging each tick). */
 	if (s->nconns == 0 && s->session.phase != PHASE_COMPLETED &&
-	    s->session.phase != PHASE_RESULTS) {
+	    s->session.phase != PHASE_RESULTS &&
+	    s->session.phase != PHASE_WAITING) {
 		log_info("no drivers, resetting session");
 		session_reset(s, s->session.session_index);
 		return;
