@@ -64,6 +64,7 @@
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
+#include "session.h"
 #include "state.h"
 #include "weather.h"
 
@@ -319,7 +320,7 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s)
  *   u8 tail1 (= 0)
  *   u8 tail2 (= 0)
  */
-static int
+int
 write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
 	int j, d, nc = 0;
@@ -1144,6 +1145,16 @@ reply:
 	    (unsigned)c->conn_id, s->udp_port);
 
 	/*
+	 * Recompute standings now that the new car has been added
+	 * so the server-tick loop notices the standings_seq bump
+	 * on its next pass and broadcasts a fresh 0x36 leaderboard
+	 * to every connected client.  Without this, existing peers
+	 * never learn that the new player's car joined the session
+	 * and their "N/N" UI stays stuck at 1/1.
+	 */
+	session_recompute_standings(s);
+
+	/*
 	 * After a successful accept, fan out 0x2e new-client-
 	 * joined notify to every OTHER already-connected client.
 	 * This lets them add the joining car to their local entry
@@ -1245,73 +1256,22 @@ reply:
 			}
 			bb_free(&wb);
 
-			/* 0x36 initial leaderboard snapshot. */
+			/*
+			 * 0x36 initial leaderboard snapshot.  Body is
+			 * `u8 0x36 + write_leaderboard_section output`,
+			 * matching FUN_14002f710 in accServer.exe which
+			 * prefixes 0x36 onto the same FUN_140034a40
+			 * assist_rules+leaderboard block emitted inside
+			 * the welcome trailer.
+			 */
 			{
 				struct ByteBuf lb;
-				int j, nc = 0;
 
 				bb_init(&lb);
 				if (wr_u8(&lb, SRV_LEADERBOARD_BCAST) == 0 &&
-				    wr_u32(&lb, s->session.standings_seq) == 0) {
-					(void)wr_u8(&lb, 3);
-					(void)wr_i32(&lb, 0x7FFFFFFF);
-					(void)wr_i32(&lb, 0x7FFFFFFF);
-					(void)wr_i32(&lb, 0x7FFFFFFF);
-					(void)wr_u8(&lb, 0);
-
-					for (j = 0; j < ACC_MAX_CARS &&
-					    j < s->max_connections; j++)
-						if (s->cars[j].used) nc++;
-					(void)wr_u8(&lb, (uint8_t)nc);
-
-					for (j = 0; j < ACC_MAX_CARS &&
-					    j < s->max_connections; j++) {
-						struct CarEntry *ec =
-						    &s->cars[j];
-
-						if (!ec->used) continue;
-						(void)wr_u8(&lb, 0);
-						(void)wr_u16(&lb,
-						    ec->car_id);
-						(void)wr_u16(&lb,
-						    (uint16_t)ec->race_number);
-						(void)wr_u8(&lb,
-						    ec->car_model);
-						(void)wr_u8(&lb,
-						    ec->cup_category);
-						(void)wr_u32(&lb, 0);
-						(void)wr_u8(&lb,
-						    ec->driver_count);
-						(void)wr_str_a(&lb,
-						    ec->drivers[0].steam_id);
-						(void)wr_str_a(&lb,
-						    ec->drivers[0].short_name);
-						(void)wr_str_a(&lb,
-						    ec->drivers[0].first_name);
-						(void)wr_str_a(&lb,
-						    ec->drivers[0].last_name);
-						/* Car entry tail matching
-						 * FUN_140032c90 in the exe. */
-						(void)wr_u16(&lb, 0);
-						(void)wr_u8(&lb, 0);
-						(void)wr_u16(&lb,
-						    ec->current_driver_index);
-						(void)wr_i32(&lb, 0x7FFFFFFF);
-						(void)wr_i32(&lb, 0x7FFFFFFF);
-						(void)wr_u16(&lb, 0);
-						(void)wr_i32(&lb, 0x7FFFFFFF);
-						(void)wr_u8(&lb, 0xFF);
-						(void)wr_u8(&lb, 1);
-						(void)wr_u8(&lb, 0);
-						(void)wr_u8(&lb, 3);
-						(void)wr_i32(&lb, 0x7FFFFFFF);
-						(void)wr_i32(&lb, 0x7FFFFFFF);
-						(void)wr_i32(&lb, 0x7FFFFFFF);
-						(void)wr_u32(&lb, 0);
-					}
+				    write_leaderboard_section(&lb, s) == 0)
 					(void)bcast_send_one(c, lb.data,
 					    lb.wpos);
-				}
 				bb_free(&lb);
 			}
 

@@ -38,6 +38,7 @@
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
+#include "session.h"
 #include "state.h"
 
 void
@@ -146,6 +147,11 @@ conn_drop(struct Server *s, struct Conn *c)
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
 		s->cars[c->car_id].used = 0;
 		c->car_id = -1;
+		/* Dropping a car shifts everyone's leaderboard
+		 * position, so recompute standings to bump
+		 * standings_seq and trigger a 0x36 rebroadcast
+		 * to the remaining clients on the next tick. */
+		session_recompute_standings(s);
 	}
 	free(c);
 }

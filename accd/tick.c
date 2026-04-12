@@ -41,6 +41,7 @@
 #include <sys/socket.h>
 
 #include "bcast.h"
+#include "handshake.h"
 #include "io.h"
 #include "log.h"
 #include "msg.h"
@@ -243,38 +244,22 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 
 /*
  * Build and emit the SRV_LEADERBOARD_BCAST (0x36) when the
- * standings have changed.  Body: u32 session_meta + per-car
- * minimal records (car_id + position + lap_count + last_lap +
- * best_lap).  This is a simplified version of the binary's
- * leaderboard record; full SRV_LEADERBOARD_UPDATE (0x07)
- * protobuf carries the rich version.
+ * standings have changed.  Matches FUN_14002f710 in accServer.exe:
+ * the body is `u8 0x36 + FUN_140034a40 output` (the same leaderboard
+ * section embedded in the welcome trailer), so we reuse the shared
+ * write_leaderboard_section helper from handshake.c instead of
+ * hand-rolling a simplified record.
  */
 static void
 broadcast_leaderboard(struct Server *s)
 {
 	struct ByteBuf bb;
-	int i, n = 0;
 
 	bb_init(&bb);
-	if (wr_u8(&bb, SRV_LEADERBOARD_BCAST) < 0 ||
-	    wr_u32(&bb, s->session.standings_seq) < 0)
+	if (wr_u8(&bb, SRV_LEADERBOARD_BCAST) < 0)
 		goto done;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
-		if (s->cars[i].used)
-			n++;
-	if (wr_u8(&bb, (uint8_t)n) < 0)
+	if (write_leaderboard_section(&bb, s) < 0)
 		goto done;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
-		struct CarEntry *car = &s->cars[i];
-		if (!car->used)
-			continue;
-		if (wr_u16(&bb, car->car_id) < 0 ||
-		    wr_u16(&bb, (uint16_t)car->race.position) < 0 ||
-		    wr_i32(&bb, car->race.lap_count) < 0 ||
-		    wr_i32(&bb, car->race.last_lap_ms) < 0 ||
-		    wr_i32(&bb, car->race.best_lap_ms) < 0)
-			goto done;
-	}
 	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
 	log_info("Updated leaderboard for %d clients", s->nconns);
 done:
