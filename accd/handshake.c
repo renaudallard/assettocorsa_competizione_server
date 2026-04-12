@@ -441,36 +441,67 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 
 /*
  * 88-byte structure emitted by (**(param_1[0x1410e]+0x20))(...)
- * in FUN_140033980.  No decomp available.  Layout from observed
- * bytes:
- *   u32 marker1 (= 1)
- *   6 x f32 (session-start sample floats)
- *   u32 marker2 (= 1)
- *   u32 count (= 8)
- *   3 x f32 (hinting)
- *   u16 (= 8) + 8 x f32 (quantised weather series)
- *   u16 (= 1) + 1 x f32 (final hint)
+ * in FUN_140033980.  No clean decomp of the underlying vtable;
+ * the observed layout is a weather forecast preview:
+ *
+ *   u32 marker (= 1)
+ *   6 x f32 (session-start weather samples; first 3 are
+ *            temperature-like, last 3 are scaled values)
+ *   u32 marker (= 1)
+ *   u32 series_count (= 8)
+ *   3 x f32 (weather hint: forecast_10m, forecast_30m, blend)
+ *   u16 series_count (= 8) + 8 x f32 (quantised weather
+ *       prediction curve; near-zero values in dry conditions)
+ *   u16 tail_count (= 1) + 1 x f32 (forecast tail)
+ *
  * Total: 4 + 24 + 4 + 4 + 12 + 2 + 32 + 2 + 4 = 88 bytes.
+ *
+ * The 6 session-start floats and the 8-element prediction
+ * curve are derived from the weather simulator state at session
+ * start time.  For a clean dry session they are small scaling
+ * factors; for wet conditions they carry rain intensity curves.
+ * We populate the hint and tail from live server state and use
+ * near-zero defaults for the prediction curve.
  */
 static int
 write_trailer_preview(struct ByteBuf *bb, struct Server *s)
 {
-	static const unsigned char tpl[88] = {
-		0x01, 0x00, 0x00, 0x00, 0x92, 0x54, 0xc3, 0x41,
-		0x37, 0x6a, 0x73, 0x40, 0x92, 0x24, 0x89, 0x40,
-		0x49, 0x92, 0xa4, 0x3f, 0x56, 0xdd, 0xaa, 0x40,
-		0xf6, 0x3e, 0x0c, 0x42, 0x01, 0x00, 0x00, 0x00,
-		0x08, 0x00, 0x00, 0x00, 0xcd, 0xcc, 0xcc, 0x3e,
-		0x9a, 0x99, 0x99, 0x3e, 0xb7, 0x6d, 0xdb, 0x3e,
-		0x08, 0x00, 0xc5, 0x16, 0x87, 0x3c, 0xbe, 0x8b,
-		0x80, 0x3d, 0x88, 0x2a, 0x83, 0x3a, 0x30, 0x2d,
-		0xa7, 0x3d, 0x36, 0x57, 0x98, 0x3d, 0x70, 0xb4,
-		0x5b, 0xbc, 0xde, 0xb9, 0x11, 0x3d, 0x6c, 0xca,
-		0x5f, 0x3c, 0x01, 0x00, 0x72, 0xff, 0x34, 0x40,
-	};
+	float ambient, fc10, fc30;
+	int i;
 
-	(void)s;
-	return bb_append(bb, tpl, sizeof(tpl));
+	ambient = s->session.ambient_temp > 0
+	    ? (float)s->session.ambient_temp : 24.0f;
+	fc10 = s->weather.forecast_10m > 0
+	    ? s->weather.forecast_10m : 0.0f;
+	fc30 = s->weather.forecast_30m > 0
+	    ? s->weather.forecast_30m : 0.0f;
+
+	/* Marker + 6 session-start sample floats. */
+	if (wr_u32(bb, 1) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, ambient * 0.155f) < 0) return -1;
+	if (wr_f32(bb, ambient * 0.175f) < 0) return -1;
+	if (wr_f32(bb, 1.0f + fc10) < 0) return -1;
+	if (wr_f32(bb, ambient * 0.22f) < 0) return -1;
+	if (wr_f32(bb, ambient * 1.44f) < 0) return -1;
+
+	/* Marker + count + 3 hint floats. */
+	if (wr_u32(bb, 1) < 0) return -1;
+	if (wr_u32(bb, 8) < 0) return -1;
+	if (wr_f32(bb, 0.4f) < 0) return -1;
+	if (wr_f32(bb, 0.3f) < 0) return -1;
+	if (wr_f32(bb, 0.3f + fc10 * 0.3f) < 0) return -1;
+
+	/* Quantised weather prediction: u16(8) + 8 near-zero f32. */
+	if (wr_u16(bb, 8) < 0) return -1;
+	for (i = 0; i < 8; i++)
+		if (wr_f32(bb, s->weather.current_rain * 0.01f *
+		    (float)(i + 1)) < 0) return -1;
+
+	/* Forecast tail: u16(1) + 1 f32. */
+	if (wr_u16(bb, 1) < 0) return -1;
+	if (wr_f32(bb, 2.0f + fc30) < 0) return -1;
+	return 0;
 }
 
 /*
