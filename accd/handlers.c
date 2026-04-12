@@ -119,7 +119,8 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	    wr_i32(&out, lap_time_ms) < 0 ||
 	    wr_u8(&out, quality) < 0)
 		goto out;
-	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
+	/* Exe sends to ALL including sender (confirmed by capture). */
+	rc = bcast_all(s, out.data, out.wpos, 0xFFFF);
 	(void)rc;
 out:
 	bb_free(&out);

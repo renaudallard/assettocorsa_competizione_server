@@ -62,7 +62,7 @@
  */
 #define CADENCE_PERCAR_SLOW	10
 #define CADENCE_SESSION_STATE	10	/* 0x28 every ~1s, matching exe */
-#define CADENCE_KEEPALIVE	20
+#define CADENCE_KEEPALIVE	10	/* 0x14 every ~1s, matching exe */
 #define CADENCE_WEATHER		50
 
 /*
@@ -341,11 +341,11 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		bb_init(&bb);
 		if (wr_u8(&bb, msg_id) == 0 &&
 		    wr_u32(&bb, srv_ms) == 0 &&
-		    wr_u16(&bb, c->conn_id) == 0 &&
-		    wr_u16(&bb, 0) == 0 &&
-		    wr_u16(&bb, 0) == 0 &&
-		    wr_u8(&bb, 2) == 0 &&
-		    wr_u8(&bb, 4) == 0 &&
+		    wr_u16(&bb, (uint16_t)c->avg_rtt_ms) == 0 &&
+		    wr_u16(&bb, (uint16_t)c->avg_rtt_ms) == 0 &&
+		    wr_u16(&bb, (uint16_t)c->avg_rtt_ms) == 0 &&
+		    wr_u8(&bb, 0) == 0 &&
+		    wr_u8(&bb, 0) == 0 &&
 		    wr_u8(&bb, 100) == 0 &&
 		    wr_u8(&bb, 100) == 0) {
 			(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
@@ -419,44 +419,32 @@ done:
 
 /*
  * Build and emit the SRV_SESSION_RESULTS (0x3e) at the end of
- * a session.  Body: u8 result_count + per-car { u8 + u8 + u8 +
- * u32 + u16 + u32 + u32 + u8 + u8 + u32 } header.
+ * a session.  Capture shows the body is: u8 0x3e +
+ * write_session_mgr_state + write_leaderboard_section, the same
+ * format as the welcome trailer's session+leaderboard block.
  */
 static void
 broadcast_session_results(struct Server *s)
 {
-	struct ByteBuf bb;
-	int i, n = 0;
+	int i;
 
-	bb_init(&bb);
-	if (wr_u8(&bb, SRV_SESSION_RESULTS) < 0)
-		goto done;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
-		if (s->cars[i].used)
-			n++;
-	if (wr_u8(&bb, (uint8_t)n) < 0)
-		goto done;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
-		struct CarEntry *car = &s->cars[i];
-		if (!car->used)
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+		struct ByteBuf bb;
+
+		if (c == NULL || c->state != CONN_AUTH)
 			continue;
-		if (wr_u8(&bb, (uint8_t)car->race.position) < 0 ||
-		    wr_u8(&bb, car->cup_category) < 0 ||
-		    wr_u8(&bb, car->driver_count) < 0 ||
-		    wr_u32(&bb, (uint32_t)car->race.lap_count) < 0 ||
-		    wr_u16(&bb, car->car_id) < 0 ||
-		    wr_u32(&bb, (uint32_t)car->race.best_lap_ms) < 0 ||
-		    wr_u32(&bb, (uint32_t)car->race.race_time_ms) < 0 ||
-		    wr_u8(&bb, 0) < 0 ||
-		    wr_u8(&bb, 0) < 0 ||
-		    wr_u32(&bb, (uint32_t)car->race.last_lap_ms) < 0)
-			goto done;
+		bb_init(&bb);
+		if (wr_u8(&bb, SRV_SESSION_RESULTS) == 0 &&
+		    write_session_mgr_state(&bb, s,
+			c->last_pong_client_ts,
+			c->avg_rtt_ms) == 0 &&
+		    write_leaderboard_section(&bb, s) == 0) {
+			(void)tcp_send_framed(c->fd, bb.data, bb.wpos);
+		}
+		bb_free(&bb);
 	}
-	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
-	log_info("Send session results to %d clients (%zu byte)",
-	    s->nconns, bb.wpos);
-done:
-	bb_free(&bb);
+	log_info("Send session results to %d clients", s->nconns);
 }
 
 void
@@ -477,52 +465,19 @@ tick_run(struct Server *s)
 	if ((s->tick_count % CADENCE_PERCAR_SLOW) == 0)
 		broadcast_percar_slow(s);
 
-	/* Keepalive heartbeat: only when no weather broadcasts
-	 * are flowing (the real server uses 0x37 as heartbeat). */
-	if ((s->tick_count % CADENCE_KEEPALIVE) == 0 &&
-	    (s->tick_count % CADENCE_WEATHER) != 0)
+	/* Keepalive 0x14 every ~1s (matching exe capture). */
+	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
 		broadcast_keepalive(s, SRV_KEEPALIVE_14);
 
 	/*
 	 * Leaderboard rebroadcast on standings change.
+	 * Capture shows 0x4e rating summary is only sent on
+	 * connection events (3 total over 20 min), not on
+	 * every standings change.  Decouple from leaderboard.
 	 */
 	if (s->session.standings_seq != *last_standings_seq) {
 		*last_standings_seq = s->session.standings_seq;
 		broadcast_leaderboard(s);
-		/*
-		 * 0x4e periodic per-connection rating summary
-		 * broadcast: per-row record with conn id, two
-		 * i16 ratings * 10, sentinel u32, format-A name.
-		 */
-		{
-			struct ByteBuf bb;
-			int j, n = 0;
-			int ok = 1;
-
-			for (j = 0; j < ACC_MAX_CARS; j++)
-				if (s->conns[j] != NULL &&
-				    s->conns[j]->state == CONN_AUTH)
-					n++;
-			bb_init(&bb);
-			ok = wr_u8(&bb, SRV_RATING_SUMMARY) == 0;
-			ok = ok && wr_u8(&bb, (uint8_t)n) == 0;
-			for (j = 0; j < ACC_MAX_CARS && ok; j++) {
-				struct Conn *cn = s->conns[j];
-				if (cn == NULL ||
-				    cn->state != CONN_AUTH)
-					continue;
-				ok = ok && wr_u16(&bb, cn->conn_id) == 0;
-				ok = ok && wr_u8(&bb, 0) == 0;
-				ok = ok && wr_i16(&bb, 0) == 0;
-				ok = ok && wr_i16(&bb, 0) == 0;
-				ok = ok && wr_u32(&bb, 0xffffffff) == 0;
-				ok = ok && wr_str_a(&bb, "") == 0;
-			}
-			if (ok)
-				(void)bcast_all(s, bb.data, bb.wpos,
-				    0xFFFF);
-			bb_free(&bb);
-		}
 	}
 
 	/*
