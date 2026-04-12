@@ -263,8 +263,11 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 *        u32 client_ts.
 		 *
 		 * RTT = server_now - srv_ts_echo.
-		 * clock_offset = server_now - (avg_rtt/2 + client_ts).
+		 * clock_offset = game_ms - (avg_rtt/2 + client_ts).
 		 *
+		 * The exe uses a game-relative timer (starts near 0)
+		 * so the offset is a small correction (~rtt/2).  We
+		 * derive game_ms from mono_ms - session_start_ms.
 		 * The offset is subtracted from car timestamps in
 		 * the per-peer 0x1e broadcast so the receiver sees
 		 * timestamps in its own timebase.
@@ -274,7 +277,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		uint32_t pong_srv_ts = 0, pong_client_ts = 0;
 		struct Conn *pc;
 		struct timespec pts;
-		uint32_t now_ms, rtt;
+		uint32_t now_ms, rtt, game_ms;
 
 		rd_init(&pr, buf, len);
 		(void)rd_skip(&pr, 1);		/* msg_id */
@@ -298,8 +301,19 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		else
 			pc->avg_rtt_ms = (pc->avg_rtt_ms * 7 + rtt) / 8;
 
-		pc->clock_offset_ms = (int32_t)(now_ms -
-		    (pc->avg_rtt_ms / 2 + pong_client_ts));
+		/*
+		 * Compute clock_offset using game-relative time
+		 * so the result is a small value (~rtt/2) rather
+		 * than a huge monotonic offset.  Guard against
+		 * session_start_ms not yet set (first driver).
+		 */
+		if (s->session_start_ms > 0) {
+			game_ms = (uint32_t)((uint64_t)pts.tv_sec * 1000 +
+			    (uint64_t)pts.tv_nsec / 1000000 -
+			    (uint32_t)s->session_start_ms);
+			pc->clock_offset_ms = (int32_t)(game_ms -
+			    (pc->avg_rtt_ms / 2 + pong_client_ts));
+		}
 		return;
 	}
 

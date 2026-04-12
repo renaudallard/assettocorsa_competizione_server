@@ -133,6 +133,7 @@ session_start(struct Server *s)
 	s->session.ts[5] = s->session.ts[4] + post_ms;
 	s->session.ts_valid = 1;
 
+	s->session_start_ms = now;
 	s->session.phase_started_ms = now;
 	log_info("session_start: scheduled slots "
 	    "pre=%llums dur=%llums ot=%llums post=%llums",

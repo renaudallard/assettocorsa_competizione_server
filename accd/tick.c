@@ -110,16 +110,17 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	}
 
 	/*
-	 * The exe subtracts a per-peer clock offset from car_ts
-	 * (FUN_1400418b0) but that offset requires the server to
-	 * use a game-relative timer, not the monotonic clock.
-	 * Our mono_ms is time-since-boot which is incompatible
-	 * with client timestamps that start near zero.  Pass the
-	 * raw client timestamp unchanged; the u16 rtt_hint field
-	 * gives the receiver enough information for dead-reckoning.
+	 * Per-peer timestamp adjustment matching FUN_14001a170:
+	 * adjusted_ts = car_ts - peer_clock_offset.
+	 *
+	 * clock_offset is computed in the pong handler using
+	 * game-relative time (mono_ms - session_start_ms) so
+	 * the value is a small correction (~rtt/2), not a huge
+	 * monotonic offset.  This lets the receiving client
+	 * dead-reckon correctly across the network.
 	 */
-	adj_ts = car->rt.client_timestamp_ms;
-	(void)clock_adj;
+	adj_ts = (uint32_t)((int32_t)car->rt.client_timestamp_ms
+	    - clock_adj);
 
 	ok = 1;
 	if (wr_u16(bb, car->car_id) < 0) return -1;
