@@ -110,14 +110,17 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	}
 
 	/*
-	 * Per-peer timestamp adjustment matching FUN_14001a170:
-	 * adjusted_ts = car_ts - peer_clock_offset.
+	 * Per-peer timestamp adjustment matching FUN_14001a170.
 	 *
-	 * clock_offset is computed in the pong handler using
-	 * game-relative time (mono_ms - session_start_ms) so
-	 * the value is a small correction (~rtt/2), not a huge
-	 * monotonic offset.  This lets the receiving client
-	 * dead-reckon correctly across the network.
+	 * clock_adj = sender_pong_ts - peer_pong_ts: the delta
+	 * between the two clients' game clocks as observed from
+	 * their most recent pong exchanges.  Subtracting it from
+	 * car_ts converts from sender timebase to peer timebase,
+	 * enabling correct dead-reckoning on the receiver.
+	 *
+	 * This uses client-to-client timestamps only, avoiding
+	 * the server clock entirely, so it works regardless of
+	 * the server's monotonic clock epoch.
 	 */
 	adj_ts = (uint32_t)((int32_t)car->rt.client_timestamp_ms
 	    - clock_adj);
@@ -174,6 +177,7 @@ broadcast_percar_fast(struct Server *s)
 		struct CarEntry *car = &s->cars[i];
 		struct ByteBuf bb;
 		uint16_t exclude = 0xFFFF;
+		uint32_t sender_pong_ts = 0;
 
 		if (!car->used || !car->rt.has_data)
 			continue;
@@ -182,22 +186,25 @@ broadcast_percar_fast(struct Server *s)
 			struct Conn *oc = s->conns[j];
 			if (oc != NULL && oc->car_id == i) {
 				exclude = oc->conn_id;
+				sender_pong_ts = oc->last_pong_client_ts;
 				break;
 			}
 		}
 
 		for (j = 0; j < ACC_MAX_CARS; j++) {
 			struct Conn *peer = s->conns[j];
+			int32_t delta;
 
 			if (peer == NULL || peer->state != CONN_AUTH)
 				continue;
 			if (peer->conn_id == exclude)
 				continue;
 
+			delta = (int32_t)(sender_pong_ts -
+			    peer->last_pong_client_ts);
 			bb_init(&bb);
 			if (wr_u8(&bb, SRV_PERCAR_FAST_RATE) == 0 &&
-			    build_percar_body(&bb, car, s,
-				peer->clock_offset_ms) == 0) {
+			    build_percar_body(&bb, car, s, delta) == 0) {
 				(void)sendto(s->udp_fd, bb.data,
 				    bb.wpos, 0,
 				    (const struct sockaddr *)&peer->peer,
@@ -261,14 +268,26 @@ broadcast_percar_slow(struct Server *s)
 			while (car_i < ACC_MAX_CARS &&
 			    count < PERCAR_SLOW_BATCH) {
 				struct CarEntry *car = &s->cars[car_i];
+				int32_t delta = 0;
+				int k;
 
 				car_i++;
 				if (!car->used)
 					continue;
 				if (peer->car_id == car_i - 1)
 					continue;	/* skip self */
+				for (k = 0; k < ACC_MAX_CARS; k++) {
+					struct Conn *oc = s->conns[k];
+					if (oc != NULL &&
+					    oc->car_id == car_i - 1) {
+						delta = (int32_t)(
+						    oc->last_pong_client_ts -
+						    peer->last_pong_client_ts);
+						break;
+					}
+				}
 				if (build_percar_body(&bb, car, s,
-				    peer->clock_offset_ms) < 0)
+				    delta) < 0)
 					break;
 				count++;
 			}

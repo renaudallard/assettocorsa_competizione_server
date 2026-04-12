@@ -295,6 +295,7 @@ struct Conn {
 	uint32_t	keepalive_sent_ms;	/* server mono ms when last 0x14 sent */
 	uint32_t	avg_rtt_ms;		/* exponential avg round-trip (from 0x16 pong) */
 	int32_t		clock_offset_ms;	/* server_now - (rtt/2 + client_ts) */
+	uint32_t	last_pong_client_ts;	/* client_ts from most recent 0x16 pong */
 };
 
 /*
