@@ -62,24 +62,31 @@ hourOfDay, and the car drives on track.
   records (u8 valid + conditional f32), and 23-byte tail.  Schedule
   f32 values are absolute timestamps in the client's game clock
   (`ts - server_now + client_ts + RTT/2`, matching FUN_1400418b0),
-  built per-connection on phase transitions.
+  built per-connection, sent every ~1s as a continuous heartbeat
+  (verified against 902-message Kunos capture).  Progressive slot
+  activation for race sessions (slots enable as phases are reached).
 - **Full message dispatch** — all 22 TCP and 7 UDP client-to-server
-  message types are handled; 34 server-to-client message types are
-  implemented (plus 7 ServerMonitor protobuf types).
-- **Per-car state broadcast** — 10 Hz fast-rate (`0x1e`) and 1 Hz
-  slow-rate (`0x39`) per-car broadcasts relayed to all other
-  connections via UDP.  Per-peer timestamp adjustment using
-  client-to-client pong deltas for correct dead-reckoning.
-  UDP car updates are matched to connections by the
-  `source_conn_id` field in the packet body, so multiple clients
-  behind the same NAT (e.g. two players on one LAN) are routed
-  correctly.
+  message types are handled; 17 TCP and 3 UDP server-to-client
+  message types implemented (plus 7 ServerMonitor protobuf types).
+  Transport (TCP vs UDP) verified byte-for-byte against Kunos
+  capture for every message type.
+- **Event-driven per-car relay** — incoming `0x1e` car updates are
+  immediately relayed as `0x39` to all other peers via UDP (~18 Hz),
+  matching the exe's event-driven architecture.  Per-peer timestamp
+  adjustment using client-to-client pong deltas for correct
+  dead-reckoning.  UDP car updates matched to connections by
+  `source_conn_id` for NAT support.
 - **Session management** — configurable session sequence
   (Practice / Qualifying / Race) with automatic phase transitions,
   session timers, and session advance/restart via admin commands.
+  `preRaceWaitingTimeSeconds` and `sessionOverTimeSeconds` parsed
+  from `event.json`.  Dynamic overtime hold for race sessions
+  (freezes at overtime until all cars finish their lap).  Weekend
+  reset (`0x40`) loops back to session 0 after race ends.
 - **Leaderboard and standings** — real-time standings recomputation
   on lap completion, leaderboard broadcast (`0x36`), grid positions
-  at race start (`0x3f`), session results at session end (`0x3e`).
+  at race start (`0x3f`), session results at session end (`0x3e`
+  with full `session_mgr_state` + `leaderboard_section` body).
 - **Results file writer** — `results/YYMMDD_HHMMSS_<type>.json`
   written at session end, matching the stock server schema.
 - **Admin commands** — full set via in-game chat or the stdin
@@ -106,7 +113,8 @@ hourOfDay, and the car drives on track.
   accepted; others are rejected.
 - **LAN discovery** — UDP 8999 broadcast response so clients on
   the same network find the server automatically.
-- **Rating summary** — periodic `0x4e` per-connection broadcast.
+- **Rating summary** — `0x4e` per-connection broadcast on
+  connection events (matching Kunos cadence).
 - **BoP updates** — `0x53` broadcast on ballast/restrictor changes.
 - **Driver swap** — full endurance-style driver swap state machine
   for multi-driver entries, with `&swap` chat command and `0x47` /
