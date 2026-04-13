@@ -211,13 +211,13 @@ interoperability of an independently created program.
 ├── accd/                    The C implementation (24 modules).
 │   ├── main.c               Poll loop + signal handling + lifecycle.
 │   ├── bans.{c,h}           Persistent kick / ban list.
-│   ├── bcast.{c,h}          Broadcast helpers (tier-1 direct relay).
+│   ├── bcast.{c,h}          Broadcast helpers (TCP + UDP relay).
 │   ├── chat.{c,h}           Admin chat commands + penalty dispatch.
 │   ├── config.{c,h}         JSON config reader (UTF-16 LE or UTF-8).
 │   ├── console.{c,h}        stdin admin console (poll-driven).
 │   ├── dispatch.{c,h}       TCP / UDP message dispatchers.
 │   ├── entrylist.{c,h}      entrylist.json reader.
-│   ├── handlers.{c,h}       Per-msg-id handlers (21 TCP + 7 UDP).
+│   ├── handlers.{c,h}       Per-msg-id handlers (22 TCP + 4 UDP).
 │   ├── handshake.{c,h}      ACP_REQUEST_CONNECTION + 0x0b + welcome.
 │   ├── io.{c,h}             Byte buffer + TCP framing layer.
 │   ├── json.{c,h}           Recursive-descent JSON parser.
@@ -229,10 +229,11 @@ interoperability of an independently created program.
 │   ├── pb.{c,h}             Minimal write-only protobuf encoder.
 │   ├── penalty.{c,h}        Per-car penalty queue.
 │   ├── prim.{c,h}           Primitive readers / writers + strings.
+│   ├── probe.c              Standalone protocol probe tool.
 │   ├── results.{c,h}        Session results JSON writer.
 │   ├── session.{c,h}        Session phase machine + standings sort.
 │   ├── state.{c,h}          Per-conn / global server state structs.
-│   ├── tick.{c,h}           Periodic tick + leaderboard broadcasts.
+│   ├── tick.{c,h}           Event-driven relay + periodic broadcasts.
 │   ├── weather.{c,h}        Deterministic sin/cos weather simulator.
 │   └── Makefile
 ├── debian/                  Debian/Ubuntu packaging.
@@ -240,7 +241,7 @@ interoperability of an independently created program.
 └── .github/workflows/       CI: autorelease + multi-distro packaging.
 ```
 
-The implementation is **24 modules and ~10,000 lines of portable
+The implementation is **24 modules and ~12,000 lines of portable
 C99**, with no dependencies beyond libc, iconv, and libm.
 
 ## Building
