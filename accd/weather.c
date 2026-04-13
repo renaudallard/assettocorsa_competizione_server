@@ -71,14 +71,14 @@ weather_init(struct Server *s, float base_clouds, float base_rain,
 	if (rain < 0.0f) rain = 0.0f;
 	if (rain > 1.0f) rain = 1.0f;
 
+	s->weather.wind_speed = 0.1f;
+	s->weather.wind_direction = 0.0f;
 	s->weather.clouds = clouds;
 	s->weather.current_rain = rain;
 	s->weather.target_rain = rain;
-	s->weather.wetness = rain;
+	s->weather.track_wetness = rain > 0.0f ? 0.7f : 0.0f;
 	s->weather.dry_line_wetness = 0;
 	s->weather.puddles = 0;
-	s->weather.forecast_10m = rain;
-	s->weather.forecast_30m = rain;
 	s->weather.last_step_ms = 0;
 }
 
@@ -117,20 +117,21 @@ weather_step(struct Server *s)
 	s->weather.target_rain = new_rain;
 	/* current_rain chases target_rain at ~10% per step. */
 	s->weather.current_rain += (new_rain - s->weather.current_rain) * 0.1f;
-	/* wetness follows rain with a slow lag. */
-	s->weather.wetness += (s->weather.current_rain -
-	    s->weather.wetness) * 0.05f;
-	if (s->weather.wetness > 1.0f) s->weather.wetness = 1.0f;
-	if (s->weather.wetness < 0.0f) s->weather.wetness = 0.0f;
+	/* track_wetness follows rain with a slow lag. */
+	s->weather.track_wetness += (s->weather.current_rain -
+	    s->weather.track_wetness) * 0.05f;
+	if (s->weather.track_wetness > 1.0f) s->weather.track_wetness = 1.0f;
+	if (s->weather.track_wetness < 0.0f) s->weather.track_wetness = 0.0f;
 
-	s->weather.forecast_10m = new_rain;
-	s->weather.forecast_30m = new_rain;
+	/* Wind drifts slowly. */
+	s->weather.wind_direction += (float)(sin(t / 1800.0) * 2.0);
+	s->weather.wind_speed = (float)(0.1 + 0.1 * sin(t / 2400.0));
 
 	/* Significant change threshold: 5% in clouds or rain. */
 	if (dc * dc > 0.0025f || dr * dr > 0.0025f) {
 		log_debug("weather: clouds=%.2f rain=%.2f wet=%.2f "
 		    "t=%.0fs", s->weather.clouds,
-		    s->weather.current_rain, s->weather.wetness,
+		    s->weather.current_rain, s->weather.track_wetness,
 		    (double)s->session.weekend_time_s);
 		return 1;
 	}
@@ -155,13 +156,16 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, s->weather.forecast_10m) < 0) return -1;
-	if (wr_f32(bb, s->weather.forecast_30m) < 0) return -1;
+	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
+	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
 
 	/*
-	 * 9 × f32 WeatherStatus: ambient_temp, road_temp,
-	 * grip, rain_intensity, wetness, dry_line_wetness,
-	 * puddles, forecast_10m, forecast_30m.
+	 * 9 x f32 WeatherStatus (FUN_14011e930).
+	 * Wire order from struct offsets:
+	 *   0x28 ambientTemp, 0x2c roadTemp, 0x30 windSpeed,
+	 *   0x34 windDirection, 0x3c cloudLevel, 0x38 rainLevel,
+	 *   0x40 trackWetness, 0x44 dryLineWetness, 0x48 trackPuddles
+	 * (note 0x3c before 0x38)
 	 */
 	{
 		float ambient = s->session.ambient_temp > 0
@@ -171,20 +175,13 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 		if (wr_f32(bb, ambient) < 0) return -1;
 		if (wr_f32(bb, road) < 0) return -1;
 	}
-	/*
-	 * WeatherStatus::serialize writes 9 f32s from struct
-	 * offsets 0x28-0x48 in non-sequential order:
-	 * 0x28, 0x2c, 0x30, 0x34, 0x3c, 0x38, 0x40, 0x44, 0x48
-	 * (note 0x3c before 0x38 -- wetness before rain).
-	 */
-	if (wr_f32(bb, s->session.grip_level > 0
-	    ? s->session.grip_level : 1.0f) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
+	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
 	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
+	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
 	if (wr_f32(bb, s->weather.dry_line_wetness) < 0) return -1;
-	if (wr_f32(bb, s->weather.wetness) < 0) return -1;
 	if (wr_f32(bb, s->weather.puddles) < 0) return -1;
-	if (wr_f32(bb, s->weather.forecast_10m) < 0) return -1;
-	if (wr_f32(bb, s->weather.forecast_30m) < 0) return -1;
 
 	/* Trailing f32 timestamp. */
 	if (wr_f32(bb, (float)s->session.weekend_time_s) < 0)

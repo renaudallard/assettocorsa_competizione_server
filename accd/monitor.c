@@ -218,7 +218,7 @@ monitor_build_session_state(struct ByteBuf *bb, const struct Server *s)
 		return -1;
 	if (pb_w_float(bb, PB_SS_RAIN_LEVEL, s->weather.current_rain) < 0)
 		return -1;
-	if (pb_w_float(bb, PB_SS_TRACK_WETNESS, s->weather.wetness) < 0)
+	if (pb_w_float(bb, PB_SS_TRACK_WETNESS, s->weather.track_wetness) < 0)
 		return -1;
 	if (pb_w_float(bb, PB_SS_DRY_LINE_WETNESS,
 	    s->weather.dry_line_wetness) < 0)
@@ -226,10 +226,10 @@ monitor_build_session_state(struct ByteBuf *bb, const struct Server *s)
 	if (pb_w_float(bb, PB_SS_TRACK_PUDDLES, s->weather.puddles) < 0)
 		return -1;
 	if (pb_w_float(bb, PB_SS_RAIN_FORECAST_10MIN,
-	    s->weather.forecast_10m) < 0)
+	    s->weather.current_rain) < 0)
 		return -1;
 	if (pb_w_float(bb, PB_SS_RAIN_FORECAST_30MIN,
-	    s->weather.forecast_30m) < 0)
+	    s->weather.current_rain) < 0)
 		return -1;
 	if (pb_w_int32(bb, PB_SS_CARS_CONNECTED, s->nconns) < 0)
 		return -1;

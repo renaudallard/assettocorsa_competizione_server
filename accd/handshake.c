@@ -300,10 +300,10 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_f32(bb, -1.0f) < 0) return -1;
 	for (i = 0; i < 3; i++)
 		if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, s->weather.forecast_10m > 0
-	    ? s->weather.forecast_10m : 0.4f) < 0) return -1;
-	if (wr_f32(bb, s->weather.forecast_30m > 0
-	    ? s->weather.forecast_30m : 0.3f) < 0) return -1;
+	if (wr_f32(bb, s->weather.current_rain > 0
+	    ? s->weather.current_rain : 0.4f) < 0) return -1;
+	if (wr_f32(bb, s->weather.current_rain > 0
+	    ? s->weather.current_rain : 0.3f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 
@@ -539,10 +539,10 @@ write_trailer_preview(struct ByteBuf *bb, struct Server *s)
 
 	ambient = s->session.ambient_temp > 0
 	    ? (float)s->session.ambient_temp : 24.0f;
-	fc10 = s->weather.forecast_10m > 0
-	    ? s->weather.forecast_10m : 0.0f;
-	fc30 = s->weather.forecast_30m > 0
-	    ? s->weather.forecast_30m : 0.0f;
+	fc10 = s->weather.current_rain > 0
+	    ? s->weather.current_rain : 0.0f;
+	fc30 = s->weather.current_rain > 0
+	    ? s->weather.current_rain : 0.0f;
 
 	/* Marker + 6 session-start sample floats. */
 	if (wr_u32(bb, 1) < 0) return -1;
@@ -598,16 +598,16 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, s->weather.forecast_10m > 0
-	    ? s->weather.forecast_10m : 0.3892f) < 0) return -1;
-	if (wr_f32(bb, s->weather.forecast_30m > 0
-	    ? s->weather.forecast_30m : 0.3892f) < 0) return -1;
+	if (wr_f32(bb, s->weather.current_rain > 0
+	    ? s->weather.current_rain : 0.3892f) < 0) return -1;
+	if (wr_f32(bb, s->weather.current_rain > 0
+	    ? s->weather.current_rain : 0.3892f) < 0) return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
 	if (wr_f32(bb, grip) < 0) return -1;
 	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
-	if (wr_f32(bb, s->weather.wetness) < 0) return -1;
+	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.8f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;

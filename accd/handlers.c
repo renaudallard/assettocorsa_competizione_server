@@ -170,6 +170,18 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		return 0;
 	race = &s->cars[c->car_id].race;
 
+	/*
+	 * Formation lap flag (exe car+0x200): the first 0x20 from
+	 * each car is the formation lap completion.  Drop it silently
+	 * and set the flag so subsequent splits count normally.
+	 */
+	if (!race->formation_lap_done) {
+		race->formation_lap_done = 1;
+		log_info("Car %d did not finish the formation lap, "
+		    "won't count his first split", c->car_id);
+		return 0;
+	}
+
 	/* Store per-sector time. */
 	if (sector_index < 3)
 		race->sector_ms[sector_index] = sector_time_ms;

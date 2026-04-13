@@ -114,6 +114,7 @@ struct CarRaceState {
 	uint8_t		mandatory_pit_served;
 	uint8_t		current_tyres;
 	uint8_t		out_of_track_latched;
+	uint8_t		formation_lap_done;	/* exe car+0x200 flag */
 	struct PenaltyQueue	pen;
 };
 
@@ -165,16 +166,22 @@ struct SessionState {
 
 /*
  * Per-server weather snapshot.
+ *
+ * Wire order in 0x37 (FUN_14011e930, struct offsets
+ * 0x28,0x2c,0x30,0x34,0x3c,0x38,0x40,0x44,0x48):
+ *   ambientTemp, roadTemp, windSpeed, windDirection,
+ *   cloudLevel, rainLevel, trackWetness,
+ *   dryLineWetness, trackPuddles
  */
 struct WeatherStatus {
+	float		wind_speed;	/* m/s or normalized */
+	float		wind_direction;	/* degrees, unclamped */
 	float		clouds;		/* 0..1 */
 	float		current_rain;	/* 0..1 */
 	float		target_rain;	/* 0..1 */
-	float		wetness;	/* 0..1 */
+	float		track_wetness;	/* 0..1 */
 	float		dry_line_wetness;
 	float		puddles;
-	float		forecast_10m;
-	float		forecast_30m;
 	uint64_t	last_step_ms;
 };
 
