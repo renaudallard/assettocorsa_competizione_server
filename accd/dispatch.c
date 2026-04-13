@@ -309,6 +309,25 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		else
 			pc->avg_rtt_ms = (pc->avg_rtt_ms * 7 + rtt) / 8;
 
+		/*
+		 * On the FIRST pong, send a fresh 0x28 with the
+		 * now-correct client time base.  The welcome
+		 * sequence 0x28 had client_ts=0 (no pong yet),
+		 * giving the client a ~1min timer offset from
+		 * menu/loading time.
+		 */
+		if (pc->last_pong_client_ts == 0 &&
+		    s->session.ts_valid) {
+			struct ByteBuf bb;
+
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
+			    write_session_mgr_state(&bb, s,
+				pong_client_ts, rtt) == 0)
+				(void)tcp_send_framed(pc->fd,
+				    bb.data, bb.wpos);
+			bb_free(&bb);
+		}
 		pc->last_pong_client_ts = pong_client_ts;
 		return;
 	}

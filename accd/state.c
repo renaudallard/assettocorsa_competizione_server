@@ -146,12 +146,16 @@ conn_drop(struct Server *s, struct Conn *c)
 		s->nconns--;
 	}
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
+		/*
+		 * Mark the car slot as unused so it can be
+		 * reallocated, but preserve the race state
+		 * (lap times, position) so the car stays in
+		 * the leaderboard if they had valid laps.
+		 * The Kunos server keeps disconnected cars
+		 * in the standings.
+		 */
 		s->cars[c->car_id].used = 0;
 		c->car_id = -1;
-		/* Dropping a car shifts everyone's leaderboard
-		 * position, so recompute standings to bump
-		 * standings_seq and trigger a 0x36 rebroadcast
-		 * to the remaining clients on the next tick. */
 		session_recompute_standings(s);
 		s->session.standings_seq++;
 	}

@@ -171,16 +171,20 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	race = &s->cars[c->car_id].race;
 
 	/*
-	 * Formation lap flag (exe car+0x200): the first 0x20 from
-	 * each car is the formation lap completion.  Drop it silently
-	 * and set the flag so subsequent splits count normally.
+	 * Formation lap flag (exe car+0x200): in RACE sessions only,
+	 * the first 0x20 from each car is the formation/out-lap
+	 * completion.  Drop it and set the flag so subsequent splits
+	 * count normally.  P/Q sessions have no formation lap.
 	 */
-	if (!race->formation_lap_done) {
+	if (!race->formation_lap_done &&
+	    s->session.session_index < s->session_count &&
+	    s->sessions[s->session.session_index].session_type == 10) {
 		race->formation_lap_done = 1;
 		log_info("Car %d did not finish the formation lap, "
 		    "won't count his first split", c->car_id);
 		return 0;
 	}
+	race->formation_lap_done = 1;
 
 	/* Store per-sector time. */
 	if (sector_index < 3)
