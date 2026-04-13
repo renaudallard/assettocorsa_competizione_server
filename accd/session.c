@@ -40,6 +40,7 @@
 #include <time.h>
 
 #include "bcast.h"
+#include "handshake.h"
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
@@ -431,17 +432,10 @@ session_advance(struct Server *s)
 		 */
 		{
 			struct ByteBuf bb;
-			int k;
 
 			bb_init(&bb);
-			if (wr_u8(&bb, SRV_RACE_WEEKEND_RESET) == 0) {
-				/* 12 x f32 weather scaling factors. */
-				for (k = 0; k < 12; k++)
-					(void)wr_f32(&bb, 0.0f);
-				/* Two variable-length forecast vectors
-				 * (count + samples).  Empty for reset. */
-				(void)wr_u16(&bb, 0);
-				(void)wr_u16(&bb, 0);
+			if (wr_u8(&bb, SRV_RACE_WEEKEND_RESET) == 0 &&
+			    write_trailer_preview(&bb, s) == 0) {
 				(void)bcast_all(s, bb.data, bb.wpos,
 				    0xFFFF);
 				/* Exe sends it twice. */

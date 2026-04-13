@@ -114,11 +114,12 @@ conn_drop(struct Server *s, struct Conn *c)
 		bb_init(&bb);
 		if (wr_u8(&bb, SRV_RATING_SUMMARY) == 0 &&
 		    wr_u8(&bb, 1) == 0 &&
-		    wr_u16(&bb, c->conn_id) == 0 &&
+		    wr_u16(&bb, s->cars[c->car_id].car_id) == 0 &&
 		    wr_u8(&bb, 0) == 0 &&
 		    wr_i16(&bb, 0) == 0 &&
 		    wr_i16(&bb, 0) == 0 &&
-		    wr_u32(&bb, 0xFFFFFFFF) == 0 &&
+		    wr_i16(&bb, -1) == 0 &&
+		    wr_i16(&bb, -1) == 0 &&
 		    wr_str_a(&bb, drv->steam_id) == 0)
 			(void)tcp_send_framed(c->fd, bb.data, bb.wpos);
 		bb_free(&bb);

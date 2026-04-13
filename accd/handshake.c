@@ -420,8 +420,8 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 	if (wr_u32(bb, duration_s) < 0) return -1;
 	if (wr_u32(bb, s->session_overtime_s > 0
 	    ? s->session_overtime_s : 120) < 0) return -1;
-	if (wr_u8(bb, def->session_type) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, def->session_type) < 0) return -1;
 	if (wr_f32(bb, 1.0f) < 0) return -1;
 	return 0;
 }
@@ -531,8 +531,8 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
  * We populate the hint and tail from live server state and use
  * near-zero defaults for the prediction curve.
  */
-static int
-write_trailer_preview(struct ByteBuf *bb, struct Server *s)
+int
+write_trailer_preview(struct ByteBuf *bb, const struct Server *s)
 {
 	float ambient, fc10, fc30;
 	int i;
@@ -555,14 +555,14 @@ write_trailer_preview(struct ByteBuf *bb, struct Server *s)
 
 	/* Marker + count + 3 hint floats. */
 	if (wr_u32(bb, 1) < 0) return -1;
-	if (wr_u32(bb, 8) < 0) return -1;
+	if (wr_u32(bb, 5) < 0) return -1;
 	if (wr_f32(bb, 0.4f) < 0) return -1;
 	if (wr_f32(bb, 0.3f) < 0) return -1;
 	if (wr_f32(bb, 0.3f + fc10 * 0.3f) < 0) return -1;
 
-	/* Quantised weather prediction: u16(8) + 8 near-zero f32. */
-	if (wr_u16(bb, 8) < 0) return -1;
-	for (i = 0; i < 8; i++)
+	/* Quantised weather prediction: u16(5) + 5 f32 (capture). */
+	if (wr_u16(bb, 5) < 0) return -1;
+	for (i = 0; i < 5; i++)
 		if (wr_f32(bb, s->weather.current_rain * 0.01f *
 		    (float)(i + 1)) < 0) return -1;
 
@@ -671,7 +671,7 @@ write_mtr(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0xff) < 0) return -1;
-	if (wr_u8(bb, 0xb0) < 0) return -1;
+	if (wr_u8(bb, 0xf0) < 0) return -1;
 	if (wr_u32(bb, 0xffffffff) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
@@ -1390,18 +1390,41 @@ reply:
 			bb_free(&wb);
 
 			/* 0x4e rating summary. */
-			bb_init(&wb);
-			if (wr_u8(&wb, SRV_RATING_SUMMARY) == 0 &&
-			    wr_u8(&wb, 1) == 0 &&
-			    wr_u16(&wb, c->conn_id) == 0 &&
-			    wr_u8(&wb, 0) == 0 &&
-			    wr_i16(&wb, 0) == 0 &&
-			    wr_i16(&wb, 0) == 0 &&
-			    wr_u32(&wb, 0xFFFFFFFF) == 0 &&
-			    wr_str_a(&wb,
-				s->cars[c->car_id].drivers[0].steam_id) == 0)
-				(void)bcast_send_one(c, wb.data, wb.wpos);
-			bb_free(&wb);
+			/*
+			 * 0x4e: per-entry u16 car_id + u8(0) +
+			 * i16 sa + i16 tr + i16(-1) + i16(-1) +
+			 * str_a steam_id.  Send ALL cars to ALL
+			 * clients (capture confirms).
+			 */
+			{
+				int j, nc = 0;
+				int ok = 1;
+
+				for (j = 0; j < ACC_MAX_CARS; j++)
+					if (s->cars[j].used)
+						nc++;
+				bb_init(&wb);
+				ok = wr_u8(&wb, SRV_RATING_SUMMARY) == 0;
+				ok = ok && wr_u8(&wb, (uint8_t)nc) == 0;
+				for (j = 0; j < ACC_MAX_CARS && ok; j++) {
+					if (!s->cars[j].used)
+						continue;
+					ok = ok && wr_u16(&wb,
+					    s->cars[j].car_id) == 0;
+					ok = ok && wr_u8(&wb, 0) == 0;
+					ok = ok && wr_i16(&wb, 0) == 0;
+					ok = ok && wr_i16(&wb, 0) == 0;
+					ok = ok && wr_i16(&wb, -1) == 0;
+					ok = ok && wr_i16(&wb, -1) == 0;
+					ok = ok && wr_str_a(&wb,
+					    s->cars[j].drivers[0]
+					    .steam_id) == 0;
+				}
+				if (ok)
+					(void)bcast_all(s, wb.data,
+					    wb.wpos, 0xFFFF);
+				bb_free(&wb);
+			}
 		}
 
 		log_debug("welcome sequence sent: 0x2e+0x4f bcast + "
