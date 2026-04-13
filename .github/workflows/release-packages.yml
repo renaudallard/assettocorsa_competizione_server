@@ -571,7 +571,7 @@ jobs:
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
       - name: Build on FreeBSD
-        uses: cross-platform-actions/action@v0.31.0
+        uses: cross-platform-actions/action@v1.0.0
         with:
           operating_system: freebsd
           version: "${{ needs.detect-versions.outputs.freebsd_version }}"
