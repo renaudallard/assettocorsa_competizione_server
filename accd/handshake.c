@@ -468,8 +468,34 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		if (wr_u8(bb, ec->current_driver_index) < 0)
 			return -1;
 		if (wr_u16(bb, 0) < 0) return -1;	/* +0x1d0 */
-		if (wr_u8(bb, 0) < 0) return -1;	/* pit flag */
-		if (wr_u8(bb, 0) < 0) return -1;	/* rules count */
+
+		/*
+		 * Active penalty indicator (exe +0xC8/+0xCC):
+		 * u8 flag (0=none, 1=active penalty follows)
+		 * if flag: u16 penalty_type + u32 penalty_value
+		 *
+		 * Penalty queue (exe +0x208..+0x210 vector):
+		 * u8 count + count x i32 penalty entries
+		 */
+		{
+			struct PenaltyQueue *pq = &ec->race.pen;
+			int pi;
+
+			if (pq->count > 0 && !pq->slots[0].served) {
+				if (wr_u8(bb, 1) < 0) return -1;
+				if (wr_u16(bb,
+				    (uint16_t)pq->slots[0].kind) < 0)
+					return -1;
+				if (wr_u32(bb, 0) < 0) return -1;
+			} else {
+				if (wr_u8(bb, 0) < 0) return -1;
+			}
+			if (wr_u8(bb, pq->count) < 0) return -1;
+			for (pi = 0; pi < pq->count; pi++)
+				if (wr_i32(bb,
+				    (int32_t)pq->slots[pi].kind) < 0)
+					return -1;
+		}
 		if (wr_u8(bb, ec->driver_count ? ec->driver_count : 1) < 0)
 			return -1;
 
