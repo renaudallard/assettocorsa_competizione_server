@@ -2,26 +2,41 @@
   <img src="logo.svg" alt="accd" width="640"/>
 </p>
 
+<p align="center">
+  <a href="https://github.com/renaudallard/assettocorsa_competizione_server/releases/latest">
+    <img src="https://img.shields.io/github/v/release/renaudallard/assettocorsa_competizione_server?label=version&style=flat-square" alt="Latest Release"/>
+  </a>
+  <a href="https://github.com/renaudallard/assettocorsa_competizione_server/actions">
+    <img src="https://img.shields.io/github/actions/workflow/status/renaudallard/assettocorsa_competizione_server/autorelease.yml?style=flat-square&label=build" alt="Build Status"/>
+  </a>
+  <img src="https://img.shields.io/badge/lang-C99-blue?style=flat-square" alt="C99"/>
+  <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20OpenBSD%20%7C%20FreeBSD-green?style=flat-square" alt="Platforms"/>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-BSD--2--Clause-orange?style=flat-square" alt="License"/>
+  </a>
+</p>
+
+---
+
 # accd — ACC dedicated server, clean-room reimplementation
 
 An independent reimplementation of the Assetto Corsa Competizione
 dedicated server, built so an unmodified ACC game client (Steam,
 current build) can connect to it and play a private multiplayer
-session — on Linux and OpenBSD, without Wine.
+session — on **Linux**, **OpenBSD**, and **FreeBSD**, without Wine.
 
 ## Status
 
-The server implements the full ACC multiplayer protocol and can
-host private sessions.  The handshake, reject, and welcome
-response formats have been validated against a real Kunos
-`accServer.exe` 1.10.2 instance, and the welcome trailer has a
-byte-exact layout derived from the decompiled Kunos binary,
-emitted section-for-section via per-section helpers; two of the
-sub-structures (EventEntity rest and the `*(0x1410e+0x20)`
-serializer output) are still static templates captured from a
-real Kunos welcome.  Real ACC clients connect, the engine
-starts, the in-game clock ticks correctly from the configured
-hourOfDay, and the car drives on track.
+**Multiplayer works.** Two or more ACC clients connect, see each
+other on track at full speed, complete laps, and race through
+Practice, Qualifying, and Race sessions with a working countdown
+timer, leaderboard, and session transitions.
+
+Protocol correctness has been verified byte-for-byte against a
+full 20-minute Kunos `accServer.exe` capture (101,897 packets,
+2 players, P+Q+R on Misano).  All 20 server-to-client message
+types match the stock server's transport (TCP vs UDP), cadence,
+and wire format.
 
 ### What works
 
@@ -133,13 +148,21 @@ hourOfDay, and the car drives on track.
 ### Known limitations
 
 - No public lobby registration (`registerToLobby` is always 0).
-- No Championship Points / CP rating system.
+- No Championship Points / CP / SA rating tracking.
+- Car-to-car collisions are client-side physics; the server relays
+  positions but does not arbitrate contact.
+- Two welcome trailer sub-structures (EventEntity, `*(0x1410e+0x20)`)
+  are still static templates.
+
+### Protocol specification
 
 The clean-room protocol specification in
 [`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) documents
 the full wire protocol: transport framing, string encodings,
 connection state machine, all client and server message IDs with
 byte-exact wire formats, and the ServerMonitor protobuf schema.
+
+---
 
 ## Scope
 
@@ -150,6 +173,8 @@ byte-exact wire formats, and the ServerMonitor protobuf schema.
   requires talking to Kunos infrastructure. This server is always
   `registerToLobby: 0`. Join is by direct IP via `serverList.json`
   on the client side.
+
+---
 
 ## Legal posture
 
@@ -526,6 +551,8 @@ Accept path (correct version `0x100`, empty password, should get
 printf '\x04\x00\x09\x00\x01\x00' | nc -q 1 127.0.0.1 9232 | xxd
 # expects: large response starting with 0b 0f 24 ...
 ```
+
+---
 
 ## Contributing
 
