@@ -485,20 +485,64 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 			if (wr_u16(bb, dd->nationality) < 0) return -1;
 		}
 
-		if (wr_u16(bb, 0) < 0) return -1;		/* +0x180 */
-		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;	/* bestLap */
-		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;	/* lastLap */
-		if (wr_u16(bb, 0) < 0) return -1;		/* +0x1f4 */
-		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;	/* raceTime */
-		if (wr_u8(bb, 0xFF) < 0) return -1;		/* lapCount */
-		if (wr_u8(bb, 1) < 0) return -1;		/* cVar20 */
-		if (wr_u8(bb, 0) < 0) return -1;		/* best sectors */
-		if (wr_u8(bb, 3) < 0) return -1;		/* last sectors */
-		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-		if (wr_i32(bb, 0x7FFFFFFF) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;		/* +0x200 */
-		if (wr_u8(bb, 0) < 0) return -1;		/* +0x201 */
+		/*
+		 * Timing fields + sector encoding.
+		 * cVar20=1: no real data, u32 sentinels.
+		 * cVar20=0: real data, u16 sector values.
+		 * Each sector list: u8 count + values.
+		 */
+		{
+			struct CarRaceState *race = &ec->race;
+			int has_data = (race->best_lap_ms > 0);
+
+			if (wr_u16(bb, 0) < 0) return -1;
+			if (wr_i32(bb, has_data
+			    ? race->best_lap_ms : 0x7FFFFFFF) < 0)
+				return -1;
+			if (wr_i32(bb, has_data
+			    ? race->last_lap_ms : 0x7FFFFFFF) < 0)
+				return -1;
+			if (wr_u16(bb, 0) < 0) return -1;
+			if (wr_i32(bb, has_data
+			    ? race->race_time_ms : 0x7FFFFFFF) < 0)
+				return -1;
+			if (wr_u8(bb, has_data
+			    ? (uint8_t)race->lap_count : 0xFF) < 0)
+				return -1;
+			if (has_data) {
+				int si;
+				/* cVar20=0, real data, u16 encoding */
+				if (wr_u8(bb, 0) < 0) return -1;
+				/* best sectors */
+				if (wr_u8(bb, 3) < 0) return -1;
+				for (si = 0; si < 3; si++)
+					if (wr_u16(bb, (uint16_t)(
+					    race->best_sectors_ms[si] > 0
+					    ? race->best_sectors_ms[si]
+					    : race->sector_ms[si])) < 0)
+						return -1;
+				/* last sectors */
+				if (wr_u8(bb, 3) < 0) return -1;
+				for (si = 0; si < 3; si++)
+					if (wr_u16(bb, (uint16_t)(
+					    race->sector_ms[si])) < 0)
+						return -1;
+			} else {
+				/* cVar20=1, sentinel, u32 encoding */
+				if (wr_u8(bb, 1) < 0) return -1;
+				if (wr_u8(bb, 0) < 0) return -1;
+				if (wr_u8(bb, 3) < 0) return -1;
+				if (wr_i32(bb, 0x7FFFFFFF) < 0)
+					return -1;
+				if (wr_i32(bb, 0x7FFFFFFF) < 0)
+					return -1;
+				if (wr_i32(bb, 0x7FFFFFFF) < 0)
+					return -1;
+			}
+			if (wr_u8(bb, race->formation_lap_done) < 0)
+				return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+		}
 	}
 
 	/* assist_rules tail. */
