@@ -1,3 +1,20 @@
+accd (0.2.3) unstable; urgency=medium
+
+  * Fix 0x37 weather fields: correct wire order matching FUN_14011e930
+    (windSpeed, windDirection, cloudLevel, rainLevel, trackWetness).
+  * Formation lap flag: drop first 0x20 per car (exe car+0x200).
+  * Leaderboard dual sector encoding: u16 with real data, u32 sentinels.
+  * Fix 0x28 tail byte swap (session_type and zero were reversed).
+  * Fix MTR byte 0xb0 to 0xf0.
+  * Trailer preview: 5 predictions not 8 (76 bytes matching capture).
+  * 0x4e rating summary: use car_id, all cars, i16(-1) sentinels.
+  * 0x40 weekend reset: use write_trailer_preview body.
+  * Fix critical heap overflow in driver swap handlers.
+  * Add bounds checks on car_id in 6 handlers.
+  * Fix entrylist car_id base for force_entry_list mode.
+
+ -- Renaud Allard <renaud@allard.it>  Sun, 13 Apr 2026 17:00:00 +0200
+
 accd (0.2.2) unstable; urgency=medium
 
   * Event-driven per-car relay via 0x39 (~18Hz, matching exe capture).
