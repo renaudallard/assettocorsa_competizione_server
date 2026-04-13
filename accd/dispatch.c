@@ -142,6 +142,14 @@ dispatch_tcp(struct Server *s, struct Conn *c)
 			log_warn("tcp: framing error from fd %d", c->fd);
 			return -1;
 		}
+		/*
+		 * INVARIANT: body aliases c->rx.data.  No handler
+		 * may append to or recv() into c->rx during dispatch,
+		 * as bb_reserve could realloc the backing buffer and
+		 * invalidate body.  All current handlers only read
+		 * from body via rd_init (which copies the pointer)
+		 * and write to separate local ByteBufs.
+		 */
 		rc = dispatch_one_tcp(s, c, body, len);
 		bb_consume(&c->rx, consumed);
 		if (rc < 0)
