@@ -214,6 +214,9 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		    (int)clock_ms, (unsigned)sector_index);
 
 		session_recompute_standings(s);
+		/* Force leaderboard rebroadcast even if positions
+		 * didn't change (lap count/time updated). */
+		s->session.standings_seq++;
 
 		if (s->session.phase == PHASE_OVERTIME)
 			session_overtime_car_finished(s);
