@@ -189,7 +189,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		struct CarEntry *car = &s->cars[i];
 		size_t dj, dn;
 
-		car->car_id = (uint16_t)i;
+		car->car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
 		/*
 		 * Entrylist entries are templates -- the actual
 		 * `used` flag is set when a client claims this

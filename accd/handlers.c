@@ -68,7 +68,7 @@
 static int
 check_car_owner(struct Conn *c, uint16_t wire_car_id)
 {
-	if (c->car_id < 0)
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return -1;
 	/* Compare against the wire ID (base 1001), not the slot index. */
 	return ((uint16_t)(ACC_CAR_ID_BASE + c->car_id) == wire_car_id) ? 0 : -1;
@@ -508,7 +508,7 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	if (c->car_id < 0) {
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS) {
 		log_warn("received ACP_OUT_OF_TRACK, but no car %d found",
 		    c->car_id);
 		return 0;
@@ -612,7 +612,7 @@ h_damage_zones(struct Server *s, struct Conn *c,
 			return 0;
 		}
 	}
-	if (c->car_id < 0)
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	log_info("damage zones: car=%d [%u,%u,%u,%u,%u]",
 	    c->car_id, zones[0], zones[1], zones[2], zones[3], zones[4]);
@@ -653,7 +653,7 @@ h_car_dirt(struct Server *s, struct Conn *c,
 			return 0;
 		}
 	}
-	if (c->car_id < 0)
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	/* Capture shows Kunos never relays 0x46 dirt. Store only. */
 	(void)s;
@@ -710,7 +710,7 @@ h_update_driver_swap_state(struct Server *s, struct Conn *c,
 		    (unsigned)car_id, c->car_id, (unsigned)c->conn_id);
 		return 0;
 	}
-	car = &s->cars[car_id];
+	car = &s->cars[c->car_id];
 	if (rd_u8(&r, &dcnt) < 0)
 		return 0;
 	if (dcnt > car->driver_count)
@@ -749,7 +749,7 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 		log_warn("h_execute_driver_swap: short body");
 		return 0;
 	}
-	if (c->car_id < 0) {
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS) {
 		log_warn("ACP_EXECUTE_DRIVER_SWAP, but no car controlled "
 		    "for connection %u", (unsigned)c->conn_id);
 		result = 1;
@@ -764,7 +764,7 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 		goto reply;
 	}
 
-	car = &s->cars[car_id];
+	car = &s->cars[c->car_id];
 
 	/* Validate: target driver must exist and differ from current. */
 	if (swap_code >= car->driver_count) {
@@ -846,7 +846,7 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 		    (unsigned)car_id, c->car_id);
 		return 0;
 	}
-	car = &s->cars[car_id];
+	car = &s->cars[c->car_id];
 
 	switch (sub_state) {
 	case 2:
@@ -904,7 +904,7 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 		log_warn("h_driver_stint_reset: short body");
 		return 0;
 	}
-	if (c->car_id < 0)
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	log_info("Receives driver stint reset for car %d", c->car_id);
 
