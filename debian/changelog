@@ -1,3 +1,28 @@
+accd (0.2.2) unstable; urgency=medium
+
+  * Event-driven per-car relay via 0x39 (~18Hz, matching exe capture).
+  * 0x28 session state sent every ~1s as continuous heartbeat.
+  * Progressive slot activation for race sessions.
+  * 0x3e session results: full session_mgr_state + leaderboard body.
+  * 0x20 sector split: fix field parsing (sector_time + sector_index).
+  * 0x1b lap broadcast includes sender (matching capture).
+  * 0x44 damage relay via UDP (was TCP).
+  * 0x4f driver stint relay implemented.
+  * 0x40 weekend reset with loop to session 0.
+  * Dynamic overtime hold for race sessions.
+  * Parse preRaceWaitingTimeSeconds and sessionOverTimeSeconds.
+  * 0x14 keepalive at 1s with ping/jitter fields.
+  * 0x3c out-of-track: filter force=1 only, write actual value.
+  * Remove 0x3a bulk split relay (exe never sends it).
+  * Remove 0x46 dirt broadcast (exe never relays it).
+  * Fix 0x37 weather field order (0x3c before 0x38).
+  * Fix critical heap overflow in driver swap handlers (wire car_id
+    used as array index).
+  * Add bounds checks on car_id in 6 handlers.
+  * Fix entrylist car_id base for force_entry_list mode.
+
+ -- Renaud Allard <renaud@allard.it>  Sun, 13 Apr 2026 01:00:00 +0200
+
 accd (0.2.1) unstable; urgency=medium
 
   * Fix 0x28 session_mgr_state first byte to session_index (not phase).
