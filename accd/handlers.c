@@ -196,26 +196,11 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 * (end of sector 3 = lap complete).  sector_index 0 and 1
 	 * are the intermediate sector boundaries.  Compute full
 	 * lap time as sum of all 3 sectors.
-	 *
-	 * The first full lap (out-lap from pits) is not counted
-	 * in ACC convention.  Skip it so the HUD shows lap 1 on
-	 * the first real timed lap.
 	 */
 	if (sector_index == 2 && race->sector_ms[0] > 0 &&
 	    race->sector_ms[1] > 0 && race->sector_ms[2] > 0) {
 		int32_t lap_ms = race->sector_ms[0] +
 		    race->sector_ms[1] + race->sector_ms[2];
-
-		if (!race->out_lap_done) {
-			race->out_lap_done = 1;
-			race->sector_ms[0] = 0;
-			race->sector_ms[1] = 0;
-			race->sector_ms[2] = 0;
-			log_info("out-lap completed: car=%d time=%dms "
-			    "clock=%d (not counted)",
-			    c->car_id, (int)lap_ms, (int)clock_ms);
-			return 0;
-		}
 
 		race->lap_count++;
 		race->last_lap_ms = lap_ms;
