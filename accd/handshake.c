@@ -547,16 +547,21 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 			return -1;
 		if (wr_u32(bb, (uint32_t)race->last_lap_ms) < 0)
 			return -1;
-		/* +0x1f4 u16: semantic unknown. Capture shows 0
-		 * for cars without completed laps. */
-		if (wr_u16(bb, 0) < 0) return -1;
+		/*
+		 * +0x1f4 u16: completed lap count (THIS is the
+		 * field the HUD "LAP X" reads).  Capture confirms
+		 * it increments 1, 2, 3... as laps finish.
+		 */
+		if (wr_u16(bb, (uint16_t)race->lap_count) < 0)
+			return -1;
 		if (wr_u32(bb, (uint32_t)race->race_time_ms) < 0)
 			return -1;
-		{
-			uint8_t lc = race->lap_count > 255
-			    ? 255 : (uint8_t)race->lap_count;
-			if (wr_u8(bb, lc) < 0) return -1;
-		}
+		/*
+		 * +0x1f8 u8: current-lap ordinal (not completed
+		 * count).  Resets to 0 on line crossing, increments
+		 * as sectors pass.  0xFF = no lap.
+		 */
+		if (wr_u8(bb, 0) < 0) return -1;
 
 		/*
 		 * Sectors: single wide_flag byte, then best and last
