@@ -441,140 +441,175 @@ int
 write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
 	int j, d, nc = 0;
+	uint8_t cvar8 = 0;
 
 	for (j = 0; j < ACC_MAX_CARS; j++)
-		if (s->cars[j].used)
+		if (s->cars[j].used) {
 			nc++;
+			/* exe cVar8: set if any car has +0x204 >= 0
+			 * (formation lap completed / active). */
+			if (s->cars[j].race.formation_lap_done)
+				cvar8 = 1;
+		}
 
+	/* Outer FUN_140034a40 prefix. */
 	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
 	if (wr_u8(bb, 3) < 0) return -1;
 	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
 	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
 	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, cvar8) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)nc) < 0) return -1;
 
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		struct CarEntry *ec = &s->cars[j];
+		struct CarRaceState *race;
+		struct PenaltyQueue *pq;
+		int pi;
 
 		if (!ec->used)
 			continue;
+		race = &ec->race;
+		pq = &race->pen;
 
-		/* FUN_140034210: leaderboard_record_appender_0x220. */
+		/*
+		 * FUN_140034210 per-car record, byte-exact.
+		 * +0x50 u16 car_id
+		 * +0x54 u16 race_number
+		 * +0x58 u8  car_model
+		 * +0x5c u8  cup_category
+		 * +0x1d0 u16
+		 */
 		if (wr_u16(bb, ec->car_id) < 0) return -1;
 		if (wr_u16(bb, (uint16_t)ec->race_number) < 0)
 			return -1;
 		if (wr_u8(bb, ec->car_model) < 0) return -1;
-		if (wr_u8(bb, ec->current_driver_index) < 0)
-			return -1;
-		if (wr_u16(bb, 0) < 0) return -1;	/* +0x1d0 */
+		if (wr_u8(bb, ec->cup_category) < 0) return -1;
+		if (wr_u16(bb, 0) < 0) return -1;
 
 		/*
-		 * Active penalty indicator (exe +0xC8 int kind,
-		 * +0xCC f32 remaining value):
-		 * u8 flag (0=none, 1=active penalty follows)
-		 * if flag: u16 penalty_kind + f32 remaining_time
-		 *
-		 * Pending penalty queue (exe +0x208..+0x210):
-		 * u8 count + count x i32 penalty entries
+		 * Active penalty block (+0xC8 u16 kind, +0xCC f32):
+		 * u8 flag; if flag: u16 kind + f32 remaining.
 		 */
-		{
-			struct PenaltyQueue *pq = &ec->race.pen;
-			int pi;
-
-			if (pq->count > 0 && !pq->slots[0].served) {
-				/* Active penalty: kind + remaining time
-				 * (for DT: laps to serve; for S&G/TP:
-				 * seconds countdown). */
-				float remaining = (float)
-				    pq->slots[0].laps_remaining;
-				if (wr_u8(bb, 1) < 0) return -1;
-				if (wr_u16(bb,
-				    (uint16_t)pq->slots[0].kind) < 0)
-					return -1;
-				if (wr_f32(bb, remaining) < 0) return -1;
-			} else {
-				if (wr_u8(bb, 0) < 0) return -1;
-			}
-			if (wr_u8(bb, pq->count) < 0) return -1;
-			for (pi = 0; pi < pq->count; pi++)
-				if (wr_i32(bb,
-				    (int32_t)pq->slots[pi].kind) < 0)
-					return -1;
-		}
-		if (wr_u8(bb, ec->driver_count ? ec->driver_count : 1) < 0)
-			return -1;
-
-		for (d = 0; d < (ec->driver_count ? ec->driver_count : 1)
-		    && d < ACC_MAX_DRIVERS_PER_CAR; d++) {
-			struct DriverInfo *dd = &ec->drivers[d];
-
-			if (wr_str_a(bb, dd->steam_id) < 0) return -1;
-			if (wr_str_a(bb, dd->short_name) < 0) return -1;
-			if (wr_str_a(bb, dd->first_name) < 0) return -1;
-			if (wr_str_a(bb, dd->last_name) < 0) return -1;
-			if (wr_u8(bb, dd->driver_category) < 0) return -1;
-			if (wr_u16(bb, dd->nationality) < 0) return -1;
-		}
-
-		/*
-		 * Timing fields + sector encoding.
-		 * cVar20=1: no real data, u32 sentinels.
-		 * cVar20=0: real data, u16 sector values.
-		 * Each sector list: u8 count + values.
-		 */
-		{
-			struct CarRaceState *race = &ec->race;
-			int has_data = (race->best_lap_ms > 0);
-
-			if (wr_u16(bb, 0) < 0) return -1;
-			if (wr_i32(bb, has_data
-			    ? race->best_lap_ms : 0x7FFFFFFF) < 0)
+		if (pq->count > 0 && !pq->slots[0].served) {
+			float remaining = (float)pq->slots[0].laps_remaining;
+			if (wr_u8(bb, 1) < 0) return -1;
+			if (wr_u16(bb, (uint16_t)pq->slots[0].kind) < 0)
 				return -1;
-			if (wr_i32(bb, has_data
-			    ? race->last_lap_ms : 0x7FFFFFFF) < 0)
-				return -1;
-			if (wr_u16(bb, 0) < 0) return -1;
-			if (wr_i32(bb, has_data
-			    ? race->race_time_ms : 0x7FFFFFFF) < 0)
-				return -1;
-			if (wr_u8(bb, has_data
-			    ? (uint8_t)race->lap_count : 0xFF) < 0)
-				return -1;
-			if (has_data) {
-				int si;
-				/* cVar20=0, real data, u16 encoding */
-				if (wr_u8(bb, 0) < 0) return -1;
-				/* best sectors */
-				if (wr_u8(bb, 3) < 0) return -1;
-				for (si = 0; si < 3; si++)
-					if (wr_u16(bb, (uint16_t)(
-					    race->best_sectors_ms[si] > 0
-					    ? race->best_sectors_ms[si]
-					    : race->sector_ms[si])) < 0)
-						return -1;
-				/* last sectors */
-				if (wr_u8(bb, 3) < 0) return -1;
-				for (si = 0; si < 3; si++)
-					if (wr_u16(bb, (uint16_t)(
-					    race->sector_ms[si])) < 0)
-						return -1;
-			} else {
-				/* cVar20=1, sentinel, u32 encoding */
-				if (wr_u8(bb, 1) < 0) return -1;
-				if (wr_u8(bb, 0) < 0) return -1;
-				if (wr_u8(bb, 3) < 0) return -1;
-				if (wr_i32(bb, 0x7FFFFFFF) < 0)
-					return -1;
-				if (wr_i32(bb, 0x7FFFFFFF) < 0)
-					return -1;
-				if (wr_i32(bb, 0x7FFFFFFF) < 0)
-					return -1;
-			}
-			if (wr_u8(bb, race->formation_lap_done) < 0)
-				return -1;
+			if (wr_f32(bb, remaining) < 0) return -1;
+		} else {
 			if (wr_u8(bb, 0) < 0) return -1;
 		}
+
+		/* cVar8-gated +0x204 byte (formation state). */
+		if (cvar8)
+			if (wr_u8(bb, race->formation_lap_done) < 0)
+				return -1;
+
+		/* Pending penalty queue: u8 count + N x i32. */
+		if (wr_u8(bb, pq->count) < 0) return -1;
+		for (pi = 0; pi < pq->count; pi++)
+			if (wr_i32(bb, (int32_t)pq->slots[pi].kind) < 0)
+				return -1;
+
+		/* Drivers. */
+		{
+			uint8_t dcount = ec->driver_count;
+			if (dcount == 0)
+				dcount = 1;
+			if (dcount > ACC_MAX_DRIVERS_PER_CAR)
+				dcount = ACC_MAX_DRIVERS_PER_CAR;
+			if (wr_u8(bb, dcount) < 0) return -1;
+			for (d = 0; d < dcount; d++) {
+				struct DriverInfo *dd = &ec->drivers[d];
+				if (wr_str_a(bb, dd->steam_id) < 0)
+					return -1;
+				if (wr_str_a(bb, dd->short_name) < 0)
+					return -1;
+				if (wr_str_a(bb, dd->first_name) < 0)
+					return -1;
+				if (wr_str_a(bb, dd->last_name) < 0)
+					return -1;
+				if (wr_u8(bb, dd->driver_category) < 0)
+					return -1;
+				if (wr_u16(bb, dd->nationality) < 0)
+					return -1;
+			}
+		}
+
+		/*
+		 * Timing: raw values, no sentinel gating.
+		 * +0x180 u16, +0x1d4 u32 best_lap, +0x1b0 u32 last_lap,
+		 * +0x1f4 u16, +0x1f0 u32 race_time, +0x1f8 u8 lap_count.
+		 */
+		if (wr_u16(bb, 0) < 0) return -1;
+		if (wr_u32(bb, (uint32_t)race->best_lap_ms) < 0)
+			return -1;
+		if (wr_u32(bb, (uint32_t)race->last_lap_ms) < 0)
+			return -1;
+		if (wr_u16(bb, 0) < 0) return -1;
+		if (wr_u32(bb, (uint32_t)race->race_time_ms) < 0)
+			return -1;
+		{
+			uint8_t lc = race->lap_count > 255
+			    ? 255 : (uint8_t)race->lap_count;
+			if (wr_u8(bb, lc) < 0) return -1;
+		}
+
+		/*
+		 * Sectors: single wide_flag byte, then best and last
+		 * vectors (count + values).  wide_flag=1 if any value
+		 * exceeds 0xFFFF; all values then serialized as u32.
+		 */
+		{
+			int si;
+			int best_n = 0, last_n = 0;
+			uint8_t wide_flag = 0;
+
+			for (si = 0; si < 3; si++) {
+				if (race->best_sectors_ms[si] > 0) {
+					best_n = si + 1;
+					if (race->best_sectors_ms[si] > 0xFFFF)
+						wide_flag = 1;
+				}
+				if (race->sector_ms[si] > 0) {
+					last_n = si + 1;
+					if (race->sector_ms[si] > 0xFFFF)
+						wide_flag = 1;
+				}
+			}
+
+			if (wr_u8(bb, wide_flag) < 0) return -1;
+			if (wr_u8(bb, (uint8_t)best_n) < 0) return -1;
+			for (si = 0; si < best_n; si++) {
+				int32_t v = race->best_sectors_ms[si];
+				if (wide_flag) {
+					if (wr_u32(bb, (uint32_t)v) < 0)
+						return -1;
+				} else {
+					if (wr_u16(bb, (uint16_t)(v > 0xFFFF
+					    ? 0xFFFF : v)) < 0)
+						return -1;
+				}
+			}
+			if (wr_u8(bb, (uint8_t)last_n) < 0) return -1;
+			for (si = 0; si < last_n; si++) {
+				int32_t v = race->sector_ms[si];
+				if (wide_flag) {
+					if (wr_u32(bb, (uint32_t)v) < 0)
+						return -1;
+				} else {
+					if (wr_u16(bb, (uint16_t)(v > 0xFFFF
+					    ? 0xFFFF : v)) < 0)
+						return -1;
+				}
+			}
+		}
+
+		/* Tail: u8 +0x200, u8 +0x201. */
+		if (wr_u8(bb, race->formation_lap_done) < 0)
+			return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
 	}
 
 	/* assist_rules tail. */
