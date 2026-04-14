@@ -192,11 +192,12 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	race->race_time_ms = clock_ms;
 
 	/*
-	 * Sector 0 crossing means the car just completed a full
-	 * lap (start/finish line).  Compute full lap time as sum
-	 * of all 3 sectors.
+	 * sector_index = 2 is the start/finish line crossing
+	 * (end of sector 3 = lap complete).  sector_index 0 and 1
+	 * are the intermediate sector boundaries.  Compute full
+	 * lap time as sum of all 3 sectors.
 	 */
-	if (sector_index == 0 && race->sector_ms[0] > 0 &&
+	if (sector_index == 2 && race->sector_ms[0] > 0 &&
 	    race->sector_ms[1] > 0 && race->sector_ms[2] > 0) {
 		int32_t lap_ms = race->sector_ms[0] +
 		    race->sector_ms[1] + race->sector_ms[2];
