@@ -547,10 +547,9 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 			return -1;
 		if (wr_u32(bb, (uint32_t)race->last_lap_ms) < 0)
 			return -1;
-		/* +0x1f4 u16: current lap number (1-indexed).
-		 * Client HUD "Lap X/Y" uses this. 0 means no lap. */
-		if (wr_u16(bb, (uint16_t)(race->lap_count + 1)) < 0)
-			return -1;
+		/* +0x1f4 u16: semantic unknown. Capture shows 0
+		 * for cars without completed laps. */
+		if (wr_u16(bb, 0) < 0) return -1;
 		if (wr_u32(bb, (uint32_t)race->race_time_ms) < 0)
 			return -1;
 		{
