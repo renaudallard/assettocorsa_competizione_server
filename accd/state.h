@@ -115,6 +115,7 @@ struct CarRaceState {
 	uint8_t		current_tyres;
 	uint8_t		out_of_track_latched;
 	uint8_t		formation_lap_done;	/* exe car+0x200 flag */
+	uint8_t		out_lap_done;		/* first lap from pits */
 	struct PenaltyQueue	pen;
 };
 
