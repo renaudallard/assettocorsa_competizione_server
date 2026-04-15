@@ -427,10 +427,19 @@ lobby_send_drivers_update(struct LobbyClient *l)
 	 * byte).  Verified against Kunos: `0c 00 + ts(4) + 0(2) +
 	 * session(4) + 0(2)` = 14 bytes wire = u16 length 12 + 12 body.
 	 */
+	/*
+	 * Drivers update body: 11-byte preamble + u8 driver_count.
+	 * For 0 drivers (idle server) Kunos sends 12 bytes total.
+	 * Per-driver records (u32 car_id + wstring name + u8 idx)
+	 * follow the count when count > 0; we only ever send 0 from
+	 * accd today (no plumbing for connected-driver enumeration
+	 * into the lobby module yet).
+	 */
 	struct ByteBuf bb;
 	int rc;
 	bb_init(&bb);
-	if (lobby_write_preamble(&bb, l, 0xd1) < 0) {
+	if (lobby_write_preamble(&bb, l, 0xd1) < 0 ||
+	    wr_u8(&bb, l->last_driver_count) < 0) {
 		bb_free(&bb);
 		return -1;
 	}
