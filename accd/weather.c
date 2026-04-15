@@ -141,49 +141,53 @@ weather_step(struct Server *s)
 int
 weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 {
+	float ambient, road;
+
 	if (wr_u8(bb, SRV_WEATHER_STATUS) < 0)
 		return -1;
 
+	ambient = s->session.ambient_temp > 0
+	    ? (float)s->session.ambient_temp : 22.0f;
+	road = s->session.track_temp > 0
+	    ? (float)s->session.track_temp : ambient + 4.0f;
+
 	/*
-	 * 7 × f32 weather scaling factors.  Probing the real server
-	 * shows these are floats (not u32 zeros): the first two
-	 * correlate with cloud/rain levels, the last two with
-	 * forecast values.
+	 * 17 × f32 body, layout reverse-engineered from a Kunos
+	 * accServer.exe v1.10.2 capture:
+	 *
+	 *   [0]  grip estimation (current)
+	 *   [1]  grip green-flag (constant from randomizeGreenFlagTriggers)
+	 *   [2..4] reserved (always 0)
+	 *   [5]  track wetness (current)
+	 *   [6]  track wetness (target/mirror of [5])
+	 *   [7]  ambient temp °C
+	 *   [8]  road temp °C
+	 *   [9]  cloud level (0..1)
+	 *   [10] wind direction (degrees, signed)
+	 *   [11] rain level (0..1)
+	 *   [12] wind speed
+	 *   [13] dry-line wetness / puddles factor
+	 *   [14..15] reserved (always 0)
+	 *   [16] weekend time (seconds, as f32)
 	 */
 	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.3f) < 0) return -1;
-	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.4f) < 0)
-		return -1;
+	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.4f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
-
-	/*
-	 * 9 x f32 WeatherStatus (FUN_14011e930).
-	 * Wire order from struct offsets:
-	 *   0x28 ambientTemp, 0x2c roadTemp, 0x30 windSpeed,
-	 *   0x34 windDirection, 0x3c cloudLevel, 0x38 rainLevel,
-	 *   0x40 trackWetness, 0x44 dryLineWetness, 0x48 trackPuddles
-	 * (note 0x3c before 0x38)
-	 */
-	{
-		float ambient = s->session.ambient_temp > 0
-		    ? (float)s->session.ambient_temp : 22.0f;
-		float road = s->session.track_temp > 0
-		    ? (float)s->session.track_temp : 26.0f;
-		if (wr_f32(bb, ambient) < 0) return -1;
-		if (wr_f32(bb, road) < 0) return -1;
-	}
-	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
 	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
-	if (wr_f32(bb, s->weather.dry_line_wetness) < 0) return -1;
-	if (wr_f32(bb, s->weather.puddles) < 0) return -1;
+	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
 
-	/* Trailing f32 timestamp. */
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, road) < 0) return -1;
+	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
+	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
+	if (wr_f32(bb, s->weather.dry_line_wetness) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+
 	if (wr_f32(bb, (float)s->session.weekend_time_s) < 0)
 		return -1;
 	return 0;

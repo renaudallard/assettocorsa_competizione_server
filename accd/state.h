@@ -168,11 +168,10 @@ struct SessionState {
 /*
  * Per-server weather snapshot.
  *
- * Wire order in 0x37 (FUN_14011e930, struct offsets
- * 0x28,0x2c,0x30,0x34,0x3c,0x38,0x40,0x44,0x48):
- *   ambientTemp, roadTemp, windSpeed, windDirection,
- *   cloudLevel, rainLevel, trackWetness,
- *   dryLineWetness, trackPuddles
+ * Wire order in 0x37 (verified against Kunos accServer.exe v1.10.2
+ * capture, see weather_build_broadcast for the full 17-float layout):
+ *   ambient, road, clouds, wind_dir, rain, wind_speed,
+ *   dry_line_wetness, ...
  */
 struct WeatherStatus {
 	float		wind_speed;	/* m/s or normalized */

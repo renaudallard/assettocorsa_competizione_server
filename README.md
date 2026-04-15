@@ -58,8 +58,10 @@ and wire format.
   7 conditional per-session records + 23-byte tail), `assist_rules` +
   `leaderboard` section (header + one lb_entry per car + 2 byte
   tail), an 88-byte block from the unknown `*(0x1410e+0x20)`
-  serializer, `trailer_additional_state` (68 bytes: 7 f32 +
-  9 f32 WeatherStatus + f32 weekend_time), the `track_records`
+  serializer, `trailer_additional_state` (68 bytes: 7 f32 grip +
+  9 f32 WeatherStatus + f32 weekend_time, with the WeatherStatus
+  block in the Kunos-verified order ambient/road/clouds/wind_dir/
+  rain/wind_speed/dry_line/0/0), the `track_records`
   vector (u8 count + per-session 23-byte records), 2 tyre
   compound markers, `MultiplayerTrackRecord::writeToPacket`,
   `MultiplayerCommunityCompetitionRatingSeries`, and 3 trailer
