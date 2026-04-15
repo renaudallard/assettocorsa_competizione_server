@@ -548,13 +548,12 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		if (wr_u32(bb, (uint32_t)race->last_lap_ms) < 0)
 			return -1;
 		/*
-		 * +0x1f4 u16: HUD displays (value - 1), showing "-"
-		 * when result <= 1.  To show "1" during the first
-		 * driving lap (lap_count=0), write lap_count + 2.
-		 * Kunos writes lap_count which is why its HUD shows
-		 * "-" until the 2nd completed lap.
+		 * +0x1f4 u16: completed lap count.  HUD displays
+		 * the value directly but shows "-" for 0 and 1
+		 * (ACC treats the out-lap and first partial lap
+		 * as invalid).  This matches Kunos behavior.
 		 */
-		if (wr_u16(bb, (uint16_t)(race->lap_count + 2)) < 0)
+		if (wr_u16(bb, (uint16_t)race->lap_count) < 0)
 			return -1;
 		if (wr_u32(bb, (uint32_t)race->race_time_ms) < 0)
 			return -1;
