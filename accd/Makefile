@@ -19,6 +19,7 @@ OBJS =		main.o \
 		io.o \
 		json.o \
 		lan.o \
+		lobby.o \
 		log.o \
 		monitor.o \
 		net.o \
@@ -90,6 +91,9 @@ json.o: json.c json.h
 
 lan.o: lan.c lan.h io.h log.h msg.h prim.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c lan.c
+
+lobby.o: lobby.c lobby.h io.h log.h prim.h state.h
+	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c lobby.c
 
 log.o: log.c log.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c log.c

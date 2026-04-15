@@ -252,7 +252,13 @@ main(int argc, char **argv)
 	log_info("config: tcp=%d udp=%d max=%d lan=%d track=\"%s\"",
 	    srv.tcp_port, srv.udp_port, srv.max_connections,
 	    srv.lan_discovery, srv.track);
-	log_info("policy: registerToLobby forced 0 (private MP only)");
+	if (srv.register_to_lobby) {
+		log_info("policy: registerToLobby=1 (will register with "
+		    "Kunos kson backend)");
+		srv.lobby.state = LOBBY_DISCONNECTED;
+	} else {
+		log_info("policy: registerToLobby=0 (private MP only)");
+	}
 
 	srv.tcp_fd = tcp_listen(srv.tcp_port);
 	srv.udp_fd = udp_bind(srv.udp_port);
@@ -311,6 +317,16 @@ main(int argc, char **argv)
 			pfds[npfds].revents = 0;
 			npfds++;
 		}
+		{
+			int lfd = lobby_poll_fd(&srv.lobby);
+			if (lfd >= 0 && npfds < POLL_SLOTS) {
+				pfds[npfds].fd = lfd;
+				pfds[npfds].events =
+				    lobby_poll_events(&srv.lobby);
+				pfds[npfds].revents = 0;
+				npfds++;
+			}
+		}
 
 		timeout_ms = ms_until_next_tick(last_tick_ms, mono_ms());
 		r = poll(pfds, (nfds_t)npfds, timeout_ms);
@@ -346,6 +362,11 @@ main(int argc, char **argv)
 			if (!(pfds[i].revents & (POLLIN | POLLHUP | POLLERR)))
 				continue;
 			fd = pfds[i].fd;
+			if (fd == lobby_poll_fd(&srv.lobby)) {
+				lobby_handle_io(&srv.lobby, &srv,
+				    pfds[i].revents);
+				continue;
+			}
 			c = NULL;
 			for (slot2 = 0; slot2 < ACC_MAX_CARS; slot2++) {
 				if (srv.conns[slot2] != NULL &&
@@ -360,6 +381,7 @@ main(int argc, char **argv)
 			    handle_tcp_client(&srv, c) < 0)
 				conn_drop(&srv, c);
 		}
+		lobby_tick(&srv.lobby, &srv);
 
 		/* Sweep connections marked for disconnect (kick/ban
 		 * or failed sends) that had no poll events this

@@ -49,6 +49,7 @@ server_init(struct Server *s)
 	s->udp_fd = -1;
 	s->lan_fd = -1;
 	s->allow_auto_dq = 1;
+	lobby_init(&s->lobby);
 	for (int i = 0; i < ACC_MAX_CARS; i++)
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
 }
@@ -166,6 +167,13 @@ conn_drop(struct Server *s, struct Conn *c)
 		s->session.standings_seq++;
 	}
 	free(c);
+	{
+		int j, n = 0;
+		for (j = 0; j < ACC_MAX_CARS; j++)
+			if (s->cars[j].used)
+				n++;
+		lobby_notify_drivers_changed(&s->lobby, (uint8_t)n);
+	}
 }
 
 struct Conn *

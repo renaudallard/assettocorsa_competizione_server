@@ -39,6 +39,7 @@
 #include <netinet/in.h>
 
 #include "io.h"
+#include "lobby.h"
 #include "msg.h"
 
 #define ACC_MAX_BANS		256
@@ -333,6 +334,8 @@ struct Server {
 	int		ignore_premature_disconnects;
 	int		dump_leaderboards;
 	int		force_entry_list;
+	int		register_to_lobby;	/* settings.json knob */
+	struct LobbyClient	lobby;
 	/*
 	 * allowAutoDQ from settings.json (default 1).  When set to 0,
 	 * auto-DQ for failure to serve a DT/SG within 3 laps is

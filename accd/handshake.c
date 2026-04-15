@@ -1413,6 +1413,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 	{
 		struct CarEntry *lcar = &s->cars[c->car_id];
 		struct DriverInfo *ldrv = &lcar->drivers[0];
+		int j, n = 0;
 
 		log_info("handshake accepted: fd=%d conn_id=%u car_id=%d "
 		    "race#=%d model=%u",
@@ -1422,6 +1423,9 @@ handshake_handle(struct Server *s, struct Conn *c,
 		    ldrv->first_name, ldrv->last_name,
 		    ldrv->short_name,
 		    (unsigned)ldrv->driver_category, ldrv->steam_id);
+		for (j = 0; j < ACC_MAX_CARS; j++)
+			if (s->cars[j].used) n++;
+		lobby_notify_drivers_changed(&s->lobby, (uint8_t)n);
 	}
 
 reply:
