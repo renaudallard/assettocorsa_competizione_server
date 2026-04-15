@@ -201,18 +201,27 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	    race->sector_ms[1] > 0 && race->sector_ms[2] > 0) {
 		int32_t lap_ms = race->sector_ms[0] +
 		    race->sector_ms[1] + race->sector_ms[2];
+		int invalid = race->out_of_track_latched;
 
 		race->lap_count++;
 		race->last_lap_ms = lap_ms;
-		if (race->best_lap_ms == 0 ||
-		    lap_ms < race->best_lap_ms)
+		/*
+		 * Only valid laps (no force=1 ACP_OUT_OF_TRACK during
+		 * the lap) update the personal best.  Matches official
+		 * Kunos server behavior: track-limit violations void
+		 * the lap time but the lap counter still ticks.
+		 */
+		if (!invalid &&
+		    (race->best_lap_ms == 0 || lap_ms < race->best_lap_ms))
 			race->best_lap_ms = lap_ms;
 		race->current_lap_ms = 0;
+		race->out_of_track_latched = 0;
 
 		log_info("lap completed: car=%d lap=%d time=%dms "
-		    "clock=%d sector=%u",
+		    "clock=%d sector=%u%s",
 		    c->car_id, race->lap_count, (int)lap_ms,
-		    (int)clock_ms, (unsigned)sector_index);
+		    (int)clock_ms, (unsigned)sector_index,
+		    invalid ? " (INVALID)" : "");
 
 		session_recompute_standings(s);
 		/* Force leaderboard rebroadcast even if positions
@@ -540,6 +549,12 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		(void)rc;
 		return 0;
 	}
+	/*
+	 * Latch the off-track for the current lap so the next lap
+	 * completion in h_sector_split_bulk knows not to update
+	 * best_lap_ms.  The latch is cleared when the lap finishes.
+	 */
+	s->cars[c->car_id].race.out_of_track_latched = 1;
 	log_info("out-of-track: car=%d force=%u ts=%d",
 	    c->car_id, (unsigned)force, (int)ts_raw);
 
