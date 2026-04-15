@@ -240,37 +240,59 @@ lobby_send_framed(struct LobbyClient *l, const void *body, size_t len)
 }
 
 static int
-lobby_send_init_blob(struct LobbyClient *l)
+lobby_send_init_blob(struct LobbyClient *l, uint16_t tcp_port)
 {
-	unsigned char zeros[LOBBY_INIT_BLOB_SZ];
-	memset(zeros, 0, sizeof(zeros));
-	/* Mirror the two visible non-zero values in Kunos's blob: tcp port
-	 * and a small-int that may be a packet size hint.  Most other
-	 * bytes look like uninitialized stack on Wine, so zero is fine. */
-	zeros[0] = 0x10;
-	zeros[1] = 0x24;
-	return lobby_send_framed(l, zeros, sizeof(zeros));
+	/*
+	 * The session-init blob is sent RAW (no u16 length prefix).
+	 * Kunos sends 256 bytes of mostly uninitialized stack memory
+	 * with the local TCP port at offset 0.  We send 256 zeros
+	 * with the same port hint.  Bypass lobby_send_framed.
+	 */
+	unsigned char buf[LOBBY_INIT_BLOB_SZ];
+	ssize_t n;
+
+	memset(buf, 0, sizeof(buf));
+	buf[0] = (unsigned char)(tcp_port & 0xff);
+	buf[1] = (unsigned char)((tcp_port >> 8) & 0xff);
+
+	n = write(l->fd, buf, sizeof(buf));
+	if (n < 0) {
+		log_warn("lobby: init write: %s", strerror(errno));
+		return -1;
+	}
+	return 0;
 }
+
+static int lobby_write_preamble(struct ByteBuf *bb, struct LobbyClient *l);
 
 static int
 lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 {
 	struct ByteBuf bb;
-	uint64_t now;
 	uint8_t i, sess_count;
 	size_t name_len, track_len;
 	int rc;
 
 	bb_init(&bb);
-	now = lobby_now_ms();
 
-	/* Preamble: u32 ts_low + u16 0 + u32 session_id + u8 0 + u8 msg_id */
-	if (wr_u32(&bb, (uint32_t)now) < 0) goto err;
-	if (wr_u16(&bb, 0) < 0) goto err;
-	if (wr_u32(&bb, l->session_id) < 0) goto err;
-	if (wr_u8(&bb, 0) < 0) goto err;
+	/*
+	 * Preamble (12 bytes) + msg_id 0x44 at body[11] + 2 sub bytes
+	 * at body[12..13] (`01 2b`, semantics unknown but constant).
+	 */
+	if (lobby_write_preamble(&bb, l) < 0) goto err;
+	/*
+	 * Overwrite the last preamble byte (was u16 0 at body[10..11])
+	 * with the msg_id pair: body[10] = 0, body[11] = 0x44.  The
+	 * preamble already wrote `00 00` there so we just need to
+	 * patch byte 11 = 0x44 — easier: just append 0x44, 0x01, 0x2b
+	 * here since the preamble fills bytes 0..11 with the second 0
+	 * already at position 10..11.  Hmm — we need byte 11 = 0x44,
+	 * not 0.  So back up one byte and rewrite.
+	 */
+	if (bb.wpos < 1) goto err;
+	bb.wpos -= 1;	/* drop the last byte of the preamble's u16 0 */
 	if (wr_u8(&bb, LOBBY_MSG_REGISTER) < 0) goto err;
-	if (wr_u8(&bb, 1) < 0) goto err;
+	if (wr_u8(&bb, 0x01) < 0) goto err;
 	if (wr_u8(&bb, 0x2b) < 0) goto err;
 
 	if (wr_u32(&bb, (uint32_t)s->tcp_port) < 0) goto err;
@@ -349,47 +371,66 @@ err:
 	return -1;
 }
 
+/*
+ * Build the 12-byte preamble shared by every framed kson message:
+ *   u32 ts + u16 0 + u32 session_id + u16 0
+ * Specific message types append their own bytes after this.
+ */
 static int
-lobby_send_short_msg(struct LobbyClient *l, uint8_t msg_id, uint8_t extra)
+lobby_write_preamble(struct ByteBuf *bb, struct LobbyClient *l)
 {
-	struct ByteBuf bb;
-	uint64_t now;
-	int rc;
-
-	bb_init(&bb);
-	now = lobby_now_ms();
-	if (wr_u32(&bb, (uint32_t)now) < 0 ||
-	    wr_u16(&bb, 0) < 0 ||
-	    wr_u32(&bb, l->session_id) < 0 ||
-	    wr_u8(&bb, 0) < 0 ||
-	    wr_u8(&bb, msg_id) < 0 ||
-	    wr_u8(&bb, 0) < 0 ||
-	    wr_u8(&bb, extra) < 0) {
-		bb_free(&bb);
-		return -1;
-	}
-	rc = lobby_send_framed(l, bb.data, bb.wpos);
-	bb_free(&bb);
-	return rc;
+	uint32_t now = (uint32_t)lobby_now_ms();
+	if (wr_u32(bb, now) < 0) return -1;
+	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u32(bb, l->session_id) < 0) return -1;
+	if (wr_u16(bb, 0) < 0) return -1;
+	return 0;
 }
 
 static int
 lobby_send_drivers_update(struct LobbyClient *l)
 {
-	if (lobby_send_short_msg(l, LOBBY_MSG_DRIVERS,
-	    l->last_driver_count) < 0)
+	/*
+	 * Drivers update is exactly the 12-byte preamble (no msg_id
+	 * byte).  Verified against Kunos: `0c 00 + ts(4) + 0(2) +
+	 * session(4) + 0(2)` = 14 bytes wire = u16 length 12 + 12 body.
+	 */
+	struct ByteBuf bb;
+	int rc;
+	bb_init(&bb);
+	if (lobby_write_preamble(&bb, l) < 0) {
+		bb_free(&bb);
 		return -1;
-	log_info("lobby: drivers=%u", (unsigned)l->last_driver_count);
-	return 0;
+	}
+	rc = lobby_send_framed(l, bb.data, bb.wpos);
+	bb_free(&bb);
+	if (rc == 0)
+		log_info("lobby: drivers=%u",
+		    (unsigned)l->last_driver_count);
+	return rc;
 }
 
 static int
 lobby_send_keepalive(struct LobbyClient *l)
 {
-	if (lobby_send_short_msg(l, LOBBY_MSG_KEEPALIVE, 0x0d) < 0)
+	/*
+	 * Keepalive is preamble + u8 0 + u8 0x0d (msg_id at body[13]).
+	 * Verified against Kunos: `0e 00 + ts + 0 + session + 0 0 0 0d`.
+	 */
+	struct ByteBuf bb;
+	int rc;
+	bb_init(&bb);
+	if (lobby_write_preamble(&bb, l) < 0 ||
+	    wr_u8(&bb, 0) < 0 ||
+	    wr_u8(&bb, LOBBY_MSG_KEEPALIVE) < 0) {
+		bb_free(&bb);
 		return -1;
-	l->last_keepalive_ms = lobby_now_ms();
-	return 0;
+	}
+	rc = lobby_send_framed(l, bb.data, bb.wpos);
+	bb_free(&bb);
+	if (rc == 0)
+		l->last_keepalive_ms = lobby_now_ms();
+	return rc;
 }
 
 static void
@@ -447,7 +488,7 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 			return;
 		}
 		log_info("lobby: TCP connected");
-		if (lobby_send_init_blob(l) < 0 ||
+		if (lobby_send_init_blob(l, (uint16_t)s->tcp_port) < 0 ||
 		    lobby_send_registration(l, s) < 0) {
 			lobby_disconnect(l, "send register failed");
 			return;
