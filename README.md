@@ -110,8 +110,11 @@ and wire format.
   console: `/admin`, `/next`, `/restart`, `/kick`, `/ban`, `/dq`,
   time penalties (`/tp5`, `/tp15`, drive-through, stop-and-go),
   `/ballast`, `/restrictor`, `/clear`, `/connections`.
-- **Penalty system** — per-car penalty queue, pit-speed enforcement
-  from telemetry, mandatory pitstop tracking.
+- **Penalty system** — per-car penalty queue, mandatory pitstop
+  tracking, 3-lap deadline countdown for DT/SG with auto-DQ on
+  miss (downgradable via `allowAutoDQ: 0`), pit-exit detection
+  for DT/SG service, and pit-lane speeding auto-DQ from telemetry
+  (terminal — not downgradable, matching Kunos 1.8.11+).
 - **Weather and in-game clock** — deterministic sin/cos weather
   simulator with cloud and rain cycles, seeded from the session
   start time so the first tick produces consistent values.  `0x37`

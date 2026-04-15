@@ -538,11 +538,17 @@ h_car_location_update(struct Server *s, struct Conn *c,
 			float vz = car->rt.vec_c[2];
 			float speed = sqrtf(vx * vx + vy * vy + vz * vz);
 
+			/*
+			 * Kunos classifies pit-lane speeding as
+			 * reckless driving and disqualifies the car
+			 * outright; allowAutoDQ does not downgrade
+			 * this since 1.8.11.  Use PEN_DQ, not PEN_DT.
+			 */
 			if (speed > 22.5f && !race->pit_crossing_latched) {
 				log_info("PITLANE SPEEDING for car #%d "
-				    "speed=%.1f m/s", car->race_number,
-				    speed);
-				penalty_enqueue(s, c->car_id, PEN_DT, 0);
+				    "speed=%.1f m/s -> DQ",
+				    car->race_number, speed);
+				penalty_enqueue(s, c->car_id, PEN_DQ, 0);
 				race->pit_crossing_latched = 1;
 			}
 		}
@@ -647,6 +653,7 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	float game_ts;
 	int32_t value;
 
+	(void)s;
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u8(&r, &force) < 0 ||
