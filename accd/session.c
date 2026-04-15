@@ -368,18 +368,35 @@ session_tick(struct Server *s)
 	new_phase = compute_phase(&s->session, now);
 	enter_phase(s, new_phase);
 
-	/* Activate overtime hold for race sessions. */
+	/*
+	 * Activate overtime hold for race sessions only when there is
+	 * actually somebody to wait for: at least one driver on track
+	 * (not in pit/garage) AND with at least one valid lap.  If
+	 * everyone is sitting in the garage with no completed lap,
+	 * holding overtime serves no purpose — just let the schedule
+	 * advance to the next session immediately.
+	 */
 	if (new_phase == PHASE_OVERTIME &&
 	    s->session.overtime_hold == 0 &&
 	    def->session_type == 10) {
-		int i, n = 0;
+		int i, racing = 0;
 		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
-		    i++)
-			if (s->cars[i].used)
-				n++;
-		s->session.overtime_hold = 1;
-		s->session.cars_in_overtime = (int16_t)n;
-		log_info("overtime: hold active, %d cars racing", n);
+		    i++) {
+			if (!s->cars[i].used)
+				continue;
+			if (s->cars[i].race.lap_count > 0 &&
+			    !s->cars[i].race.in_pit)
+				racing++;
+		}
+		if (racing > 0) {
+			s->session.overtime_hold = 1;
+			s->session.cars_in_overtime = (int16_t)racing;
+			log_info("overtime: hold active, %d cars racing",
+			    racing);
+		} else {
+			log_info("overtime: no car racing on track, "
+			    "skipping hold");
+		}
 	}
 
 	/* Drive the in-game clock during the active session. */
