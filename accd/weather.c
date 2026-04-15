@@ -44,41 +44,34 @@
 #define WX_CYCLE_PERIOD_S	(24.0 * 3600.0)
 #define WX_RAIN_PHASE		1.7	/* rain peaks ~6h after midday */
 
+static float
+clamp01(float v)
+{
+	if (v < 0.0f) return 0.0f;
+	if (v > 1.0f) return 1.0f;
+	return v;
+}
+
 void
 weather_init(struct Server *s, float base_clouds, float base_rain,
     int randomness, uint32_t start_time_s)
 {
-	double t = (double)start_time_s;
-	float clouds, rain;
+	(void)start_time_s;
 
-	(void)randomness;
-	(void)base_clouds;
-	(void)base_rain;
+	s->weather.base_clouds = clamp01(base_clouds);
+	s->weather.base_rain = clamp01(base_rain);
+	s->weather.randomness = (uint8_t)(randomness < 0 ? 0
+	    : (randomness > 7 ? 7 : randomness));
 
-	/*
-	 * Compute initial cloud/rain from the same sine wave that
-	 * weather_step uses, evaluated at the session start time.
-	 * This ensures the first weather_step sees zero delta and
-	 * won't fire a spurious broadcast during client loading.
-	 */
-	clouds = (float)(0.3 + 0.3 * sin(t / 3600.0 * 1.5));
-	if (clouds < 0.0f) clouds = 0.0f;
-	if (clouds > 1.0f) clouds = 1.0f;
-
-	rain = clouds > 0.5f
-	    ? (float)(0.4 * (sin(t / 3600.0 + WX_RAIN_PHASE) + 1.0))
-	    : 0.0f;
-	if (rain < 0.0f) rain = 0.0f;
-	if (rain > 1.0f) rain = 1.0f;
-
-	s->weather.wind_speed = 0.1f;
+	s->weather.clouds = s->weather.base_clouds;
+	s->weather.current_rain = s->weather.base_rain;
+	s->weather.target_rain = s->weather.base_rain;
+	s->weather.track_wetness = s->weather.base_rain > 0.0f
+	    ? s->weather.base_rain * 0.7f : 0.0f;
+	s->weather.dry_line_wetness = 0.0f;
+	s->weather.puddles = 0.0f;
+	s->weather.wind_speed = 0.0f;
 	s->weather.wind_direction = 0.0f;
-	s->weather.clouds = clouds;
-	s->weather.current_rain = rain;
-	s->weather.target_rain = rain;
-	s->weather.track_wetness = rain > 0.0f ? 0.7f : 0.0f;
-	s->weather.dry_line_wetness = 0;
-	s->weather.puddles = 0;
 	s->weather.last_step_ms = 0;
 }
 
@@ -86,48 +79,55 @@ int
 weather_step(struct Server *s)
 {
 	double t;
-	float new_clouds, new_rain;
+	float new_clouds, new_rain, span;
 	float dc, dr;
 
-	/* Use the session weekend time as the simulation clock. */
+	/*
+	 * randomness=0 freezes the weather at its baseline.  This is
+	 * exactly what event.json "weatherRandomness": 0 means in
+	 * Kunos and what most operators want for predictable races.
+	 */
+	if (s->weather.randomness == 0)
+		return 0;
+
 	t = (double)s->session.weekend_time_s;
 
 	/*
-	 * Cloud cycle: a slow sin wave between 0 and 0.6 with
-	 * a 4-hour period plus a small offset from the rain phase.
+	 * Drift band: ~0.05 per randomness step on each side of the
+	 * baseline (so randomness=1 gives a ±0.05 wobble, randomness=7
+	 * a ±0.35 wobble).  The cycle period stays in the 30-90 min
+	 * range so changes are perceptible but not jarring.
 	 */
-	new_clouds = (float)(0.3 + 0.3 * sin(t / 3600.0 * 1.5));
-	if (new_clouds < 0.0f) new_clouds = 0.0f;
-	if (new_clouds > 1.0f) new_clouds = 1.0f;
-
+	span = 0.05f * (float)s->weather.randomness;
+	new_clouds = clamp01(s->weather.base_clouds +
+	    span * (float)sin(t / 1800.0));
 	/*
-	 * Rain follows clouds with a 30-minute lag, ramping
-	 * smoothly toward the cloud level when it's high enough.
+	 * Rain only develops if base_rain > 0 OR clouds happen to
+	 * climb above ~0.7 during the drift.  This matches the
+	 * Kunos rule: cloudLevel gates rain chance.
 	 */
-	new_rain = new_clouds > 0.5f
-	    ? (float)(0.4 * (sin(t / 3600.0 + WX_RAIN_PHASE) + 1.0))
-	    : 0.0f;
-	if (new_rain < 0.0f) new_rain = 0.0f;
-	if (new_rain > 1.0f) new_rain = 1.0f;
+	if (s->weather.base_rain > 0.0f) {
+		new_rain = clamp01(s->weather.base_rain +
+		    span * (float)sin(t / 2400.0 + WX_RAIN_PHASE));
+	} else if (new_clouds > 0.7f) {
+		new_rain = clamp01((new_clouds - 0.7f) * 0.5f);
+	} else {
+		new_rain = 0.0f;
+	}
 
 	dc = new_clouds - s->weather.clouds;
 	dr = new_rain - s->weather.target_rain;
 
 	s->weather.clouds = new_clouds;
 	s->weather.target_rain = new_rain;
-	/* current_rain chases target_rain at ~10% per step. */
 	s->weather.current_rain += (new_rain - s->weather.current_rain) * 0.1f;
-	/* track_wetness follows rain with a slow lag. */
 	s->weather.track_wetness += (s->weather.current_rain -
 	    s->weather.track_wetness) * 0.05f;
-	if (s->weather.track_wetness > 1.0f) s->weather.track_wetness = 1.0f;
-	if (s->weather.track_wetness < 0.0f) s->weather.track_wetness = 0.0f;
+	s->weather.track_wetness = clamp01(s->weather.track_wetness);
 
-	/* Wind drifts slowly. */
 	s->weather.wind_direction += (float)(sin(t / 1800.0) * 2.0);
 	s->weather.wind_speed = (float)(0.1 + 0.1 * sin(t / 2400.0));
 
-	/* Significant change threshold: 5% in clouds or rain. */
 	if (dc * dc > 0.0025f || dr * dr > 0.0025f) {
 		log_debug("weather: clouds=%.2f rain=%.2f wet=%.2f "
 		    "t=%.0fs", s->weather.clouds,

@@ -184,6 +184,14 @@ struct WeatherStatus {
 	float		dry_line_wetness;
 	float		puddles;
 	uint64_t	last_step_ms;
+	/*
+	 * Configured baselines from event.json.  weather_step drifts
+	 * around these (bounded) instead of running its own free-form
+	 * sine.  randomness=0 holds them constant; 1+ allows drift.
+	 */
+	float		base_clouds;
+	float		base_rain;
+	uint8_t		randomness;
 };
 
 /*
