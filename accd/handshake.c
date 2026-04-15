@@ -413,8 +413,13 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 	/* 23-byte tail (FUN_140034f60). */
 	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
-	if (wr_u8(bb, (uint8_t)(def->time_multiplier > 0
-	    ? def->time_multiplier - 1 : 0)) < 0) return -1;
+	/*
+	 * Tail byte +2: 1 for race sessions, 0 for P/Q.  Verified
+	 * across 1640 captured 0x28 frames (Kunos accServer.exe
+	 * v1.10.2): the byte is a session-class flag, not the
+	 * time multiplier as we previously assumed.
+	 */
+	if (wr_u8(bb, def->session_type == 10 ? 1 : 0) < 0) return -1;
 	if (wr_f32(bb, 1.0f) < 0) return -1;
 	if (wr_u16(bb, sched_field) < 0) return -1;
 	if (wr_u32(bb, duration_s) < 0) return -1;
