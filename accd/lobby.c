@@ -288,7 +288,11 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 
 	if (wr_u32(&bb, (uint32_t)s->max_connections) < 0) goto err;
 
-	/* Magic block — copied verbatim from capture; semantics unknown. */
+	/*
+	 * Magic block (post-config): verified byte-exact from a
+	 * 178-byte Kunos registration (v1.10.2): `ff fa` then six
+	 * bytes whose semantic is unknown but never observed to vary.
+	 */
 	{
 		static const unsigned char magic1[] = {
 			0xff, 0xfa, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00
@@ -296,9 +300,15 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 		if (bb_append(&bb, magic1, sizeof(magic1)) < 0) goto err;
 	}
 
+	/*
+	 * Session block: u8 weatherRandomness + u8 sessionCount, then
+	 * each 10-byte session: u8 type, u8 day_of_weekend, u8 hour,
+	 * u8 dur_min, u8 pad, u16 pre_race_s, u16 overtime_s, u8 1.
+	 */
 	sess_count = s->session_count;
+	if (wr_u8(&bb, (uint8_t)(s->weather.randomness & 0xff)) < 0)
+		goto err;
 	if (wr_u8(&bb, sess_count) < 0) goto err;
-	if (wr_u8(&bb, 0) < 0) goto err;
 	for (i = 0; i < sess_count; i++) {
 		const struct SessionDef *d = &s->sessions[i];
 		uint16_t pre_race = d->session_type == 10 ? 80 : 3;
@@ -311,17 +321,16 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 		if (wr_u16(&bb, pre_race) < 0) goto err;
 		if (wr_u16(&bb, s->session_overtime_s > 0
 		    ? s->session_overtime_s : 120) < 0) goto err;
-		if (wr_u16(&bb, 0x0100) < 0) goto err;
+		if (wr_u8(&bb, 1) < 0) goto err;
 	}
 
-	{
-		static const unsigned char magic2[] = {
-			0x00, 0x00, 0x40, 0x00, 0x4b
-		};
-		if (bb_append(&bb, magic2, sizeof(magic2)) < 0) goto err;
-	}
-
-	if (wr_u8(&bb, 64) < 0) goto err;
+	/*
+	 * Token block: 2 magic zero bytes then u16-length-prefixed
+	 * token_a (64 alphanumerics — server fingerprint, regenerated
+	 * per launch) and u16-length-prefixed token_b (10 alphanumerics).
+	 */
+	if (wr_u16(&bb, 0) < 0) goto err;
+	if (wr_u16(&bb, 64) < 0) goto err;
 	if (bb_append(&bb, l->token_a, 64) < 0) goto err;
 	if (wr_u16(&bb, 10) < 0) goto err;
 	if (bb_append(&bb, l->token_b, 10) < 0) goto err;
@@ -427,11 +436,6 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 	if (l->fd < 0)
 		return;
 
-	if (revents & (POLLERR | POLLHUP | POLLNVAL)) {
-		lobby_disconnect(l, "POLLHUP/ERR from peer");
-		return;
-	}
-
 	if (l->state == LOBBY_CONNECTING && (revents & POLLOUT)) {
 		int err = 0;
 		socklen_t slen = sizeof(err);
@@ -452,27 +456,36 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 		return;
 	}
 
+	/*
+	 * Read first, ALWAYS — POLLHUP can arrive in the same poll
+	 * iteration as POLLIN when the lobby acks then closes, and
+	 * if we drop on HUP without reading we lose the ack and
+	 * miss the REGISTERED transition.
+	 */
 	if (revents & POLLIN) {
 		unsigned char buf[4096];
 		ssize_t n = read(l->fd, buf, sizeof(buf));
-		if (n == 0) {
-			lobby_disconnect(l, "peer closed");
-			return;
-		}
-		if (n < 0) {
-			if (errno == EAGAIN || errno == EINTR)
-				return;
+		if (n > 0) {
+			lobby_handle_rx(l, buf, (size_t)n);
+			if (l->state == LOBBY_REGISTERING) {
+				lobby_set_state(l, LOBBY_REGISTERED);
+				l->consecutive_fails = 0;
+				log_info("lobby: RegisterToLobby "
+				    "succeeded");
+				(void)lobby_send_drivers_update(l);
+			}
+		} else if (n == 0) {
+			/* EOF — fall through to the HUP/disconnect path. */
+			revents |= POLLHUP;
+		} else if (errno != EAGAIN && errno != EINTR) {
 			lobby_disconnect(l, strerror(errno));
 			return;
 		}
-		lobby_handle_rx(l, buf, (size_t)n);
+	}
 
-		if (l->state == LOBBY_REGISTERING) {
-			lobby_set_state(l, LOBBY_REGISTERED);
-			l->consecutive_fails = 0;
-			log_info("lobby: RegisterToLobby succeeded");
-			(void)lobby_send_drivers_update(l);
-		}
+	if (revents & (POLLERR | POLLHUP | POLLNVAL)) {
+		lobby_disconnect(l, "POLLHUP/ERR from peer");
+		return;
 	}
 }
 
