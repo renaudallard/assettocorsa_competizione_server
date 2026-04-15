@@ -217,6 +217,33 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		race->current_lap_ms = 0;
 		race->out_of_track_latched = 0;
 
+		/*
+		 * Count down the service deadline on every active
+		 * DT/SG penalty.  When the front entry hits zero
+		 * laps remaining and is still unserved, auto-DQ the
+		 * car (Disqualified_IgnoredMandatoryPit).  Walk all
+		 * slots so a queued second penalty also progresses.
+		 */
+		{
+			struct PenaltyQueue *pq = &race->pen;
+			int pi;
+			int dq_now = 0;
+
+			for (pi = 0; pi < pq->count; pi++) {
+				if (pq->slots[pi].laps_remaining > 0) {
+					pq->slots[pi].laps_remaining--;
+					if (pq->slots[pi].laps_remaining == 0
+					    && !pq->slots[pi].served)
+						dq_now = 1;
+				}
+			}
+			if (dq_now && !race->disqualified) {
+				log_info("Car %d failed to serve penalty "
+				    "in 3 laps -> DQ", c->car_id);
+				penalty_enqueue(s, c->car_id, PEN_DQ, 0);
+			}
+		}
+
 		log_info("lap completed: car=%d lap=%d time=%dms "
 		    "clock=%d sector=%u%s",
 		    c->car_id, race->lap_count, (int)lap_ms,
@@ -483,6 +510,7 @@ h_car_location_update(struct Server *s, struct Conn *c,
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
 		struct CarEntry *car = &s->cars[c->car_id];
 		struct CarRaceState *race = &car->race;
+		uint8_t was_in_pit = race->in_pit;
 
 		race->in_pit = (location == 2 || location == 3 ||
 		    location == 4) ? 1 : 0;
@@ -503,6 +531,25 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		}
 		if (location == 1)
 			race->pit_crossing_latched = 0;
+
+		/*
+		 * Pit-lane exit: if the front penalty is a DT/SG, mark
+		 * it served.  We don't separately validate stop time
+		 * for SG vs DT — any exit consumes the front penalty.
+		 * Refinement (timing the box stop) would require a
+		 * pit-entry timestamp we don't currently track.
+		 */
+		if (was_in_pit && !race->in_pit && race->pen.count > 0) {
+			uint8_t k = race->pen.slots[0].kind;
+			if (k == PEN_DT || k == PEN_DTC ||
+			    k == PEN_SG10 || k == PEN_SG10C ||
+			    k == PEN_SG20 || k == PEN_SG20C ||
+			    k == PEN_SG30 || k == PEN_SG30C) {
+				log_info("Car %d served %s on pit exit",
+				    c->car_id, penalty_name(k));
+				penalty_serve_front(s, c->car_id);
+			}
+		}
 	}
 
 	bb_init(&out);
@@ -579,25 +626,38 @@ h_report_penalty(struct Server *s, struct Conn *c,
 {
 	struct Reader r;
 	uint8_t msg_id, force, ptype;
-	uint64_t ts_raw;
+	int32_t pad;
+	float game_ts;
 	int32_t value;
-
-	(void)s;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u8(&r, &force) < 0 ||
 	    rd_u8(&r, &ptype) < 0 ||
-	    rd_u64(&r, &ts_raw) < 0 ||
+	    rd_i32(&r, &pad) < 0 ||
+	    rd_f32(&r, &game_ts) < 0 ||
 	    rd_i32(&r, &value) < 0) {
 		log_warn("h_report_penalty: short body from conn=%u",
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	log_info("report penalty: conn=%u force=%u type=%u ts=%llu value=%d",
-	    (unsigned)c->conn_id, (unsigned)force, (unsigned)ptype,
-	    (unsigned long long)ts_raw, (int)value);
-	/* TODO: store in per-car penalty queue. */
+	(void)pad;
+	log_info("report penalty: conn=%u car=%d force=%u type=%u "
+	    "game_ts=%.3f value=%d",
+	    (unsigned)c->conn_id, c->car_id, (unsigned)force,
+	    (unsigned)ptype, game_ts, (int)value);
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
+		return 0;
+	/*
+	 * 0x41 is a client-side report: the client telemetry triggered
+	 * a self-detected penalty (track cut, pitlane speeding, etc.).
+	 * The server is the authority and decides whether to escalate.
+	 * Authoritative server-side detection is implemented elsewhere
+	 * (h_position_update for pitlane speeding, h_out_of_track for
+	 * track-limit invalidation).  Logging the client report is
+	 * enough for now; we don't blindly trust it to enqueue a real
+	 * penalty.  Escalation thresholds need exe analysis.
+	 */
 	return 0;
 }
 

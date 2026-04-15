@@ -214,6 +214,14 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (!b->used)
 		return -1;
 
+	/*
+	 * DQ'd cars always sort below non-DQ'd cars regardless of
+	 * laps or time.  Among DQ'd cars, fall through to lap/time
+	 * order so the relative ranking is stable.
+	 */
+	if (ra->disqualified != rb->disqualified)
+		return ra->disqualified ? 1 : -1;
+
 	if (session_is_practice_or_qualy(s)) {
 		int32_t la = ra->best_lap_ms;
 		int32_t lb = rb->best_lap_ms;

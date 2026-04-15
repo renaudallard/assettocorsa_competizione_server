@@ -83,12 +83,26 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t kind, int collision)
 	switch (kind) {
 	case PEN_DT:
 	case PEN_DTC:
+	case PEN_SG10:
+	case PEN_SG10C:
+	case PEN_SG20:
+	case PEN_SG20C:
+	case PEN_SG30:
+	case PEN_SG30C:
+		/*
+		 * Drive-through and stop-and-go must be served within
+		 * 3 racing laps, else the car is auto-DQ'd.  Time
+		 * penalties (TP) are added to the total at session end
+		 * and don't have a service deadline.
+		 */
 		e->laps_remaining = 3;
 		break;
 	default:
 		e->laps_remaining = 0;
 		break;
 	}
+	if (kind == PEN_DQ)
+		s->cars[car_id].race.disqualified = 1;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	e->issued_ms = (uint64_t)ts.tv_sec * 1000ull +
 	    (uint64_t)ts.tv_nsec / 1000000ull;
