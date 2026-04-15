@@ -359,14 +359,20 @@ main(int argc, char **argv)
 			int fd;
 			int slot2;
 
-			if (!(pfds[i].revents & (POLLIN | POLLHUP | POLLERR)))
-				continue;
 			fd = pfds[i].fd;
 			if (fd == lobby_poll_fd(&srv.lobby)) {
-				lobby_handle_io(&srv.lobby, &srv,
-				    pfds[i].revents);
+				/*
+				 * Lobby cares about POLLOUT (connect
+				 * completion) too, not just POLLIN.
+				 */
+				if (pfds[i].revents & (POLLIN | POLLOUT |
+				    POLLHUP | POLLERR | POLLNVAL))
+					lobby_handle_io(&srv.lobby, &srv,
+					    pfds[i].revents);
 				continue;
 			}
+			if (!(pfds[i].revents & (POLLIN | POLLHUP | POLLERR)))
+				continue;
 			c = NULL;
 			for (slot2 = 0; slot2 < ACC_MAX_CARS; slot2++) {
 				if (srv.conns[slot2] != NULL &&
