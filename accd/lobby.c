@@ -441,7 +441,14 @@ lobby_send_keepalive(struct LobbyClient *l)
 	struct ByteBuf bb;
 	int rc;
 	bb_init(&bb);
+	/*
+	 * Keepalive body: 11-byte preamble + u8 0 + u8 0 + u8 0x0d.
+	 * Total body 14 bytes (Kunos verified).  The first two zeros
+	 * are not the msg_id — they sit between preamble and the
+	 * keepalive marker 0x0d.
+	 */
 	if (lobby_write_preamble(&bb, l, 0xf2) < 0 ||
+	    wr_u8(&bb, 0) < 0 ||
 	    wr_u8(&bb, 0) < 0 ||
 	    wr_u8(&bb, LOBBY_MSG_KEEPALIVE) < 0) {
 		bb_free(&bb);
@@ -477,17 +484,52 @@ lobby_disconnect(struct LobbyClient *l, const char *reason)
 	lobby_set_state(l, LOBBY_BACKOFF);
 }
 
-static void
-lobby_handle_rx(struct LobbyClient *l, const unsigned char *p, size_t n)
+static const char *
+lobby_reject_reason(uint8_t code)
 {
-	(void)l; (void)p; (void)n;
+	switch (code) {
+	case 0: return "accepted";
+	case 1: return "outdated server";
+	case 2: return "wrong version / wrong port";
+	case 3: return "blocked by backend";
+	case 4: return "rejected (unknown reason)";
+	case 5: return "unsupported platform (Wine?)";
+	case 6: return "did not respond on public IP";
+	default: return "rejected (unmapped)";
+	}
+}
+
+/*
+ * Returns 1 if the response indicates a successful registration,
+ * 0 if rejected (state machine should disable / report), -1 if
+ * unrecognised (treat as transient).
+ */
+static int
+lobby_parse_response(struct LobbyClient *l, const unsigned char *p, size_t n)
+{
+	(void)l;
 	/*
-	 * Lobby acks are tiny: 4-byte ack after registration
-	 * (`02 00 ef 00`) and 3-byte ack after each keepalive
-	 * (`01 00 fd`).  We don't act on them today beyond
-	 * confirming the connection is alive and bumping the
-	 * REGISTERING -> REGISTERED transition on the first ack.
+	 * Registration response is `02 00 ef NN` (4 bytes).  NN is
+	 * the case-byte read by FUN_140048660 in accServer.exe to
+	 * map to a human error string. NN==0 means accepted.
+	 * Keepalive ack is `01 00 fd` (3 bytes).
 	 */
+	if (n >= 4 && p[0] == 0x02 && p[1] == 0x00 && p[2] == 0xef) {
+		uint8_t code = p[3];
+		if (code == 0) {
+			log_info("lobby: registration accepted");
+			return 1;
+		}
+		log_warn("lobby: registration rejected code=%u (%s)",
+		    (unsigned)code, lobby_reject_reason(code));
+		return 0;
+	}
+	if (n >= 3 && p[0] == 0x01 && p[1] == 0x00 && p[2] == 0xfd) {
+		/* keepalive ack */
+		return -1;
+	}
+	log_debug("lobby: unrecognised response, %zu bytes", n);
+	return -1;
 }
 
 void
@@ -528,16 +570,26 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 		unsigned char buf[4096];
 		ssize_t n = read(l->fd, buf, sizeof(buf));
 		if (n > 0) {
-			lobby_handle_rx(l, buf, (size_t)n);
+			int rc = lobby_parse_response(l, buf, (size_t)n);
 			if (l->state == LOBBY_REGISTERING) {
-				lobby_set_state(l, LOBBY_REGISTERED);
-				l->consecutive_fails = 0;
-				log_info("lobby: RegisterToLobby "
-				    "succeeded");
-				(void)lobby_send_drivers_update(l);
+				if (rc == 1) {
+					lobby_set_state(l, LOBBY_REGISTERED);
+					l->consecutive_fails = 0;
+					log_info("lobby: RegisterToLobby "
+					    "succeeded");
+					(void)lobby_send_drivers_update(l);
+				} else if (rc == 0) {
+					/*
+					 * Hard rejection — don't keep
+					 * retrying every 10s, give up.
+					 */
+					log_warn("lobby: hard reject; "
+					    "disabling lobby client");
+					lobby_set_state(l,
+					    LOBBY_PERMANENTLY_DISABLED);
+				}
 			}
 		} else if (n == 0) {
-			/* EOF — fall through to the HUP/disconnect path. */
 			revents |= POLLHUP;
 		} else if (errno != EAGAIN && errno != EINTR) {
 			lobby_disconnect(l, strerror(errno));
