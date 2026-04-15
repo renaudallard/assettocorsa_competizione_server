@@ -672,41 +672,49 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 int
 write_trailer_preview(struct ByteBuf *bb, const struct Server *s)
 {
-	float ambient, fc10, fc30;
+	float ambient, road, clouds, rain;
 	int i;
 
 	ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 24.0f;
-	fc10 = s->weather.current_rain > 0
-	    ? s->weather.current_rain : 0.0f;
-	fc30 = s->weather.current_rain > 0
-	    ? s->weather.current_rain : 0.0f;
+	    ? (float)s->session.ambient_temp : 22.0f;
+	road = s->session.track_temp > 0
+	    ? (float)s->session.track_temp : ambient + 4.0f;
+	clouds = s->weather.clouds;
+	rain = s->weather.current_rain;
 
-	/* Marker + 6 session-start sample floats. */
+	/*
+	 * Layout verified against a 77-byte 0x40 capture:
+	 *   u32(1) marker
+	 *   6 × f32 starting weather snapshot (ambient °C, then 5
+	 *     scaling/grip values that don't have a closed-form here;
+	 *     using safe constants similar to what Kunos sends)
+	 *   u32(1) marker
+	 *   u32(5) count
+	 *   3 × f32 cloud progression hints
+	 *   u16(5) + 5 × f32 small noise deltas (Kunos sends ~1e-3)
+	 *   u16(1) + 1 × f32 forecast tail (often negative)
+	 */
 	if (wr_u32(bb, 1) < 0) return -1;
 	if (wr_f32(bb, ambient) < 0) return -1;
-	if (wr_f32(bb, ambient * 0.155f) < 0) return -1;
-	if (wr_f32(bb, ambient * 0.175f) < 0) return -1;
-	if (wr_f32(bb, 1.0f + fc10) < 0) return -1;
-	if (wr_f32(bb, ambient * 0.22f) < 0) return -1;
-	if (wr_f32(bb, ambient * 1.44f) < 0) return -1;
+	if (wr_f32(bb, 1.5688f) < 0) return -1;
+	if (wr_f32(bb, 1.4286f) < 0) return -1;
+	if (wr_f32(bb, 0.4287f) < 0) return -1;
+	if (wr_f32(bb, 210.6f) < 0) return -1;
+	if (wr_f32(bb, road) < 0) return -1;
 
-	/* Marker + count + 3 hint floats. */
 	if (wr_u32(bb, 1) < 0) return -1;
 	if (wr_u32(bb, 5) < 0) return -1;
 	if (wr_f32(bb, 0.4f) < 0) return -1;
 	if (wr_f32(bb, 0.3f) < 0) return -1;
-	if (wr_f32(bb, 0.3f + fc10 * 0.3f) < 0) return -1;
+	if (wr_f32(bb, 0.143f + clouds * 0.1f) < 0) return -1;
 
-	/* Quantised weather prediction: u16(5) + 5 f32 (capture). */
 	if (wr_u16(bb, 5) < 0) return -1;
 	for (i = 0; i < 5; i++)
-		if (wr_f32(bb, s->weather.current_rain * 0.01f *
-		    (float)(i + 1)) < 0) return -1;
+		if (wr_f32(bb, rain * 0.001f * (float)(i + 1)) < 0)
+			return -1;
 
-	/* Forecast tail: u16(1) + 1 f32. */
 	if (wr_u16(bb, 1) < 0) return -1;
-	if (wr_f32(bb, 2.0f + fc30) < 0) return -1;
+	if (wr_f32(bb, -2.6232f) < 0) return -1;
 	return 0;
 }
 
