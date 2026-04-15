@@ -280,7 +280,8 @@ lobby_send_init_blob(struct LobbyClient *l, uint16_t tcp_port)
 	return 0;
 }
 
-static int lobby_write_preamble(struct ByteBuf *bb, struct LobbyClient *l);
+static int lobby_write_preamble(struct ByteBuf *bb, struct LobbyClient *l,
+    uint8_t type);
 
 static int
 lobby_send_registration(struct LobbyClient *l, const struct Server *s)
@@ -293,21 +294,10 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	bb_init(&bb);
 
 	/*
-	 * Preamble (12 bytes) + msg_id 0x44 at body[11] + 2 sub bytes
-	 * at body[12..13] (`01 2b`, semantics unknown but constant).
+	 * Preamble (11 bytes, type=0xc8 register) then msg_id 0x44 +
+	 * 2 sub bytes (`01 2b`).
 	 */
-	if (lobby_write_preamble(&bb, l) < 0) goto err;
-	/*
-	 * Overwrite the last preamble byte (was u16 0 at body[10..11])
-	 * with the msg_id pair: body[10] = 0, body[11] = 0x44.  The
-	 * preamble already wrote `00 00` there so we just need to
-	 * patch byte 11 = 0x44 — easier: just append 0x44, 0x01, 0x2b
-	 * here since the preamble fills bytes 0..11 with the second 0
-	 * already at position 10..11.  Hmm — we need byte 11 = 0x44,
-	 * not 0.  So back up one byte and rewrite.
-	 */
-	if (bb.wpos < 1) goto err;
-	bb.wpos -= 1;	/* drop the last byte of the preamble's u16 0 */
+	if (lobby_write_preamble(&bb, l, 0xc8) < 0) goto err;
 	if (wr_u8(&bb, LOBBY_MSG_REGISTER) < 0) goto err;
 	if (wr_u8(&bb, 0x01) < 0) goto err;
 	if (wr_u8(&bb, 0x2b) < 0) goto err;
@@ -396,17 +386,25 @@ err:
 }
 
 /*
- * Build the 12-byte preamble shared by every framed kson message:
- *   u32 ts + u16 0 + u32 session_id + u16 0
- * Specific message types append their own bytes after this.
+ * Build the 11-byte preamble shared by every framed kson message:
+ *   u8 0x3a   (magic)
+ *   u8 type   (0xc8 register, 0xd1 drivers, 0xf2 keepalive)
+ *   u32 0x7   (protocol version, constant)
+ *   u32 0x6   (session id, lobby-assigned in real Kunos but constant 6
+ *              works since the field is mostly opaque to the client)
+ *   u8 0      (separator)
+ * The msg_id byte (e.g. 0x44 register) and any payload follow.
+ *
+ * Reverse-engineered from FUN_1400448c0 in accServer.exe v1.10.2.
  */
 static int
-lobby_write_preamble(struct ByteBuf *bb, struct LobbyClient *l)
+lobby_write_preamble(struct ByteBuf *bb, struct LobbyClient *l, uint8_t type)
 {
-	if (wr_u32(bb, lobby_uptime_ms()) < 0) return -1;
-	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0x3a) < 0) return -1;
+	if (wr_u8(bb, type) < 0) return -1;
+	if (wr_u32(bb, 7) < 0) return -1;
 	if (wr_u32(bb, l->session_id) < 0) return -1;
-	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
 	return 0;
 }
 
@@ -421,7 +419,7 @@ lobby_send_drivers_update(struct LobbyClient *l)
 	struct ByteBuf bb;
 	int rc;
 	bb_init(&bb);
-	if (lobby_write_preamble(&bb, l) < 0) {
+	if (lobby_write_preamble(&bb, l, 0xd1) < 0) {
 		bb_free(&bb);
 		return -1;
 	}
@@ -443,7 +441,7 @@ lobby_send_keepalive(struct LobbyClient *l)
 	struct ByteBuf bb;
 	int rc;
 	bb_init(&bb);
-	if (lobby_write_preamble(&bb, l) < 0 ||
+	if (lobby_write_preamble(&bb, l, 0xf2) < 0 ||
 	    wr_u8(&bb, 0) < 0 ||
 	    wr_u8(&bb, LOBBY_MSG_KEEPALIVE) < 0) {
 		bb_free(&bb);
