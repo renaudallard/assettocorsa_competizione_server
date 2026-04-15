@@ -90,6 +90,7 @@
 #define LOBBY_RETRY_MS		10000	/* matches Kunos 10s interval */
 #define LOBBY_BACKOFF_MAX_MS	300000
 #define LOBBY_KEEPALIVE_MS	30000
+#define LOBBY_SESSION_UPDATE_MS	20000	/* push at least every 20 s */
 #define LOBBY_INIT_BLOB_SZ	256
 
 /* msg ids observed on the wire (server -> lobby direction). */
@@ -451,6 +452,68 @@ lobby_send_drivers_update(struct LobbyClient *l)
 	return rc;
 }
 
+/*
+ * Sample current session state into l->last_session_*.  Called right
+ * before sending 0xcb so the wire reflects the live phase.  Kunos
+ * code: FUN_1400482b0 reads sessionManager+0x268 (sessionType), calls
+ * computeCurrentPhase, and takes time_remaining as a double in ms
+ * then divides by DAT_14014bd20 (= 1000.0 — ms to seconds) and casts
+ * to i16.  We use the same scaling from s->session.time_remaining_ms.
+ */
+static void
+lobby_sample_session(struct LobbyClient *l, const struct Server *s)
+{
+	int32_t trem_ms = s->session.time_remaining_ms;
+	int32_t trem_s;
+	uint8_t stype = 0;
+
+	if (s->session.session_index < s->session_count)
+		stype = s->sessions[s->session.session_index].session_type;
+	if (trem_ms < 0)
+		trem_ms = 0;
+	trem_s = trem_ms / 1000;
+	if (trem_s > INT16_MAX)
+		trem_s = INT16_MAX;
+	l->last_session_type = stype;
+	l->last_session_phase = s->session.phase;
+	l->last_session_time_s = (int16_t)trem_s;
+}
+
+static int
+lobby_send_session_update(struct LobbyClient *l, const struct Server *s)
+{
+	/*
+	 * Session update body: 11-byte preamble + u8 sessionType +
+	 * u8 phase + i16 time_remaining_seconds + u8 0.  Total 16 bytes.
+	 * Type 0xcb, reverse-engineered from FUN_1400482b0 (v1.10.2).
+	 */
+	struct ByteBuf bb;
+	int rc;
+
+	lobby_sample_session(l, s);
+	bb_init(&bb);
+	if (lobby_write_preamble(&bb, l, 0xcb) < 0 ||
+	    wr_u8(&bb, l->last_session_type) < 0 ||
+	    wr_u8(&bb, l->last_session_phase) < 0 ||
+	    wr_u16(&bb, (uint16_t)l->last_session_time_s) < 0 ||
+	    wr_u8(&bb, 0) < 0) {
+		bb_free(&bb);
+		return -1;
+	}
+	rc = lobby_send_framed(l, bb.data, bb.wpos);
+	bb_free(&bb);
+	if (rc == 0) {
+		l->last_session_update_ms = lobby_now_ms();
+		l->session_dirty = 0;
+		log_info("lobby: Sent session update to lobby (type=%u "
+		    "phase=%u trem=%ds)",
+		    (unsigned)l->last_session_type,
+		    (unsigned)l->last_session_phase,
+		    (int)l->last_session_time_s);
+	}
+	return rc;
+}
+
 static int
 lobby_send_keepalive(struct LobbyClient *l)
 {
@@ -557,8 +620,6 @@ lobby_parse_response(struct LobbyClient *l, const unsigned char *p, size_t n)
 void
 lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 {
-	(void)s;
-
 	if (l->fd < 0)
 		return;
 
@@ -600,6 +661,13 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 					log_info("lobby: RegisterToLobby "
 					    "succeeded");
 					(void)lobby_send_drivers_update(l);
+					/*
+					 * Kunos pushes a session update
+					 * immediately after "Lobby accepted
+					 * connection" — without it the lobby
+					 * drops us after ~38 s.
+					 */
+					(void)lobby_send_session_update(l, s);
 				} else if (rc == 0) {
 					/*
 					 * Hard rejection — don't keep
@@ -652,13 +720,15 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 			(void)lobby_send_drivers_update(l);
 			l->drivers_dirty = 0;
 		}
+		if (l->session_dirty ||
+		    now - l->last_session_update_ms >= LOBBY_SESSION_UPDATE_MS)
+			(void)lobby_send_session_update(l, s);
 		if (now - l->last_keepalive_ms >= LOBBY_KEEPALIVE_MS)
 			(void)lobby_send_keepalive(l);
 		break;
 	default:
 		break;
 	}
-	(void)s;
 }
 
 void

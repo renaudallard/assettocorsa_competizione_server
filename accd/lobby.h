@@ -70,6 +70,10 @@ struct LobbyClient {
 	int		drivers_dirty;		/* need to push driver count */
 	int		session_dirty;		/* need to push session phase */
 	uint8_t		last_driver_count;
+	uint8_t		last_session_type;
+	uint8_t		last_session_phase;
+	int16_t		last_session_time_s;
+	uint64_t	last_session_update_ms;
 	char		token_a[65];	/* 64 alphanum + NUL */
 	char		token_b[11];	/* 10 alphanum + NUL */
 	unsigned char	*rx_buf;
