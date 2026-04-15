@@ -326,11 +326,14 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	if (wr_u16(&bb, 10) < 0) goto err;
 	if (bb_append(&bb, l->token_b, 10) < 0) goto err;
 
-	rc = lobby_send_framed(l, bb.data, bb.wpos);
-	bb_free(&bb);
-	if (rc == 0)
-		log_info("lobby: sent registration for %s (%zu bytes)",
-		    s->track, bb.wpos);
+	{
+		size_t sent = bb.wpos;
+		rc = lobby_send_framed(l, bb.data, bb.wpos);
+		bb_free(&bb);
+		if (rc == 0)
+			log_info("lobby: sent registration for %s "
+			    "(%zu bytes)", s->track, sent);
+	}
 	return rc;
 err:
 	bb_free(&bb);
