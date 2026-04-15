@@ -261,14 +261,45 @@ lobby_send_init_blob(struct LobbyClient *l, uint16_t tcp_port)
 {
 	/*
 	 * The session-init blob is sent RAW (no u16 length prefix).
-	 * Kunos sends 256 bytes of mostly uninitialized stack memory
-	 * with the local TCP port at offset 0.  We send 256 zeros
-	 * with the same port hint.  Bypass lobby_send_framed.
+	 * Five separate Kunos accServer.exe captures with mutated
+	 * configs revealed many byte positions are CONSTANT — this
+	 * is a structured handshake, not stack garbage.  Bytes that
+	 * vary across runs (Wine pointer values from ASLR) are zero
+	 * here; the constants are the bytes we believe the lobby
+	 * actually validates.
 	 */
+	static const unsigned char init_template[256] = {
+	/*  0 */ 0x00,0x00, 0x45,0x0d, 0xff,0x7f, 0x00,0x00,
+	/*  8 */ 0x00,0x00, 0x7e,0xfe, 0xff,0x7f, 0x00,0x00,
+	/* 16 */ 0,0,0,0, 0,0,0,0, 0x01,0,0,0, 0,0,0,0,
+	/* 32 */ 0x40,0x00, 0x00, 0xff,0xff,0x7f, 0x00,0x00,
+	/* 40 */ 0xfe,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+	/* 48 */ 0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,
+	/* 64 */ 0x02,0x00, 0x03, 0x8d, 0x83,0x99,0x9e,0xb2,
+	/* 72 */ 0,0,0,0,0,0,0,0,  0,0,0,0,
+	/* 84 */ 0x01,0x00, 0x01,0x00,
+	/* 88 */ 0,0,0,0, 0xff,0x7f,0,0,
+	/* 96 */ 0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,
+	/*112 */ 0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,
+	/*128 */ 0x0a,0xba, 0,0, 0xff,0x6f, 0,0,
+	/*136 */ 0,0,0,0,0,0,0,0,
+	/*144 */ 0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,
+	/*160 */ 0,0, 0x7e,0xfe, 0xff,0x7f, 0,0,
+	/*168 */ 0,0,0,0,0,0,0,0,
+	/*176 */ 0x8c,0x43, 0x04, 0x40, 0x01,0,0,0,
+	/*184 */ 0,0,0,0,0,0,0,0,
+	/*192 */ 0xd8,0xfa, 0x2a, 0xff,0xff,0x7f, 0,0,
+	/*200 */ 0,0,0,0,0,0,0,0,
+	/*208 */ 0,0,0,0,0,0,0,0,
+	/*216 */ 0xfe,0xff,0xff,0xff,0xff,0xff,0xff,0xff,
+	/*224 */ 0,0,0,0,0,0,0,0,  0,0,0,0,0,0,0,0,
+	/*240 */ 0xa9,0x2b, 0x00, 0x40, 0x01,0,0,0,
+	/*248 */ 0,0,0,0,0,0,0,0,
+	};
 	unsigned char buf[LOBBY_INIT_BLOB_SZ];
 	ssize_t n;
 
-	memset(buf, 0, sizeof(buf));
+	memcpy(buf, init_template, sizeof(buf));
 	buf[0] = (unsigned char)(tcp_port & 0xff);
 	buf[1] = (unsigned char)((tcp_port >> 8) & 0xff);
 
@@ -474,6 +505,8 @@ lobby_disconnect(struct LobbyClient *l, const char *reason)
 	free(l->rx_buf);
 	l->rx_buf = NULL;
 	l->rx_len = l->rx_cap = 0;
+	if (l->state == LOBBY_PERMANENTLY_DISABLED)
+		return;	/* sticky terminal state */
 	l->consecutive_fails++;
 	backoff = LOBBY_RETRY_MS;
 	if (l->consecutive_fails > 3)
