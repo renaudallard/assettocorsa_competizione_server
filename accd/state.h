@@ -335,6 +335,10 @@ struct Server {
 	int		dump_leaderboards;
 	int		force_entry_list;
 	int		register_to_lobby;	/* settings.json knob */
+	int		max_car_slots;		/* settings.json maxCarSlots,
+						 * clamped per rating reqs;
+						 * sent to lobby (Kunos clamps
+						 * to 10 without rating reqs) */
 	struct LobbyClient	lobby;
 	/*
 	 * allowAutoDQ from settings.json (default 1).  When set to 0,

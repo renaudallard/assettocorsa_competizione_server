@@ -106,6 +106,21 @@ lobby_now_ms(void)
 	    (uint64_t)ts.tv_nsec / 1000000ull;
 }
 
+/*
+ * Time since lobby_init in milliseconds.  Kunos sends small ts
+ * values in registration / drivers / keepalive (capture shows
+ * ~510000 ms = 8 minutes), suggesting process-uptime not absolute
+ * monotonic. We use lobby-module uptime so values stay <2^31 even
+ * on long-running servers and match the magnitude Kunos sends.
+ */
+static uint32_t lobby_epoch_ms;
+
+static uint32_t
+lobby_uptime_ms(void)
+{
+	return (uint32_t)(lobby_now_ms() - lobby_epoch_ms);
+}
+
 static void
 lobby_random_token(char *out, size_t n)
 {
@@ -142,6 +157,8 @@ lobby_init(struct LobbyClient *l)
 	lobby_random_token(l->token_a, sizeof(l->token_a));
 	lobby_random_token(l->token_b, sizeof(l->token_b));
 	l->state = LOBBY_DISABLED;
+	if (lobby_epoch_ms == 0)
+		lobby_epoch_ms = (uint32_t)lobby_now_ms();
 }
 
 void
@@ -308,7 +325,14 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	if (wr_u8(&bb, (uint8_t)track_len) < 0) goto err;
 	if (bb_append(&bb, s->track, track_len) < 0) goto err;
 
-	if (wr_u32(&bb, (uint32_t)s->max_connections) < 0) goto err;
+	/*
+	 * Lobby field is maxCarSlots (rated player capacity), NOT
+	 * the TCP max_connections.  Kunos sends 10 here when no
+	 * rating requirements are configured.  Sending the wrong
+	 * field made the lobby reject our registration with
+	 * ack-status 0x04 instead of 0x00.
+	 */
+	if (wr_u32(&bb, (uint32_t)s->max_car_slots) < 0) goto err;
 
 	/*
 	 * Magic block (post-config): verified byte-exact from a
@@ -379,8 +403,7 @@ err:
 static int
 lobby_write_preamble(struct ByteBuf *bb, struct LobbyClient *l)
 {
-	uint32_t now = (uint32_t)lobby_now_ms();
-	if (wr_u32(bb, now) < 0) return -1;
+	if (wr_u32(bb, lobby_uptime_ms()) < 0) return -1;
 	if (wr_u16(bb, 0) < 0) return -1;
 	if (wr_u32(bb, l->session_id) < 0) return -1;
 	if (wr_u16(bb, 0) < 0) return -1;

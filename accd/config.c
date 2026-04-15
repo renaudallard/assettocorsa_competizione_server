@@ -264,6 +264,21 @@ config_load(struct Server *s, const char *cfg_dir)
 		    "allowAutoDQ", s->allow_auto_dq);
 		s->register_to_lobby = json_obj_get_int(settings,
 		    "registerToLobby", s->register_to_lobby);
+		s->max_car_slots = json_obj_get_int(settings,
+		    "maxCarSlots", 10);
+		/*
+		 * Kunos clamps maxCarSlots based on rating requirements
+		 * (10 without any, +3 per trackMedal, +up to 17 from SA
+		 * 70).  We replicate the lower bound only — operators
+		 * setting higher values without rating reqs would have
+		 * the lobby silently re-clamp them anyway.
+		 */
+		if (s->max_car_slots > 10 &&
+		    json_obj_get_int(settings, "trackMedalsRequirement", 0)
+		    < 3 &&
+		    json_obj_get_int(settings, "safetyRatingRequirement", 0)
+		    < 70)
+			s->max_car_slots = 10;
 		json_free(settings);
 	}
 
