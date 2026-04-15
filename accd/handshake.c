@@ -512,17 +512,16 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		}
 
 		/*
-		 * cVar8-gated section: 5 bytes when cvar8=1.
-		 * Verified against capture: byte-exact diff between two
-		 * 0x36 frames identical except for cvar8 shows a 5-byte
-		 * insert here (u8 formation_done + u32 trailing field —
-		 * likely a lap timestamp; we emit 0 for the u32 since
-		 * the client accepts it).
+		 * cVar8-gated section: 5 bytes when cvar8=1.  Verified
+		 * byte-exact against capture: u32 (lap-related field,
+		 * unknown semantic, sent as 0) followed by u8 formation
+		 * flag.  Order matters — the original v1 of this fix
+		 * had them swapped and corrupted lap_count / best_lap.
 		 */
 		if (cvar8) {
+			if (wr_u32(bb, 0) < 0) return -1;
 			if (wr_u8(bb, race->formation_lap_done) < 0)
 				return -1;
-			if (wr_u32(bb, 0) < 0) return -1;
 		}
 
 		/* Pending penalty queue: u8 count + N x i32. */
