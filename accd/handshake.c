@@ -718,43 +718,38 @@ write_trailer_preview(struct ByteBuf *bb, const struct Server *s)
 }
 
 /*
- * trailer_additional_state (FUN_1400330e0) — 68 bytes.
- * Layout per FUN_140033510 + WeatherStatus::writeToPacket:
- *   7 x f32 (1 - clouds*0.2, 1 - clouds*0.15, 0, 0, 0, fc10, fc30)
- *   9 x f32 WeatherStatus:
- *     ambient, road, grip, rain (or -ve sentinel),
- *     wetness, 0, puddles, 0, 0
- *   f32 weekend_time (seconds, from server clock)
+ * trailer_additional_state (FUN_1400330e0) — 68 bytes total
+ * (17 f32).  Identical wire layout to the periodic 0x37 weather
+ * broadcast — see weather_build_broadcast and the v1.10.2 capture
+ * comment there.  The cockpit/HUD reads the welcome's value, the
+ * external view picks up live 0x37, so keeping these in lockstep
+ * matters or the two views show different weather.
  */
 static int
 write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 {
-	float ambient, road, grip;
+	float ambient, road;
 
 	ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 28.0f;
+	    ? (float)s->session.ambient_temp : 22.0f;
 	road = s->session.track_temp > 0
-	    ? (float)s->session.track_temp : 36.0f;
-	grip = s->session.grip_level > 0
-	    ? s->session.grip_level : 0.509f;
+	    ? (float)s->session.track_temp : ambient + 4.0f;
 
-	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.2f) < 0) return -1;
-	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.15f) < 0) return -1;
+	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.3f) < 0) return -1;
+	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.4f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain > 0
-	    ? s->weather.current_rain : 0.3892f) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain > 0
-	    ? s->weather.current_rain : 0.3892f) < 0) return -1;
+	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
+	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
-	if (wr_f32(bb, grip) < 0) return -1;
+	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
 	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
-	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
-	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, 0.8f) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
+	if (wr_f32(bb, s->weather.dry_line_wetness) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 
