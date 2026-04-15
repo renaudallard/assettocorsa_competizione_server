@@ -333,6 +333,7 @@ Server identity and passwords:
     "adminPassword": "my-admin-pass",
     "spectatorPassword": "",
     "maxCarSlots": 30,
+    "allowAutoDQ": 1,
     "configVersion": 1
 }
 ```
@@ -342,6 +343,11 @@ Server identity and passwords:
   elevate to admin rights (kick, ban, penalties, etc.).
 - `spectatorPassword` — alternative that admits the client as a
   spectator.
+- `allowAutoDQ` — `1` (default): cars that fail to serve a
+  drive-through or stop&go within 3 laps are auto-DQ'd.  `0`:
+  the auto-DQ is downgraded to a 30-second stop&go so race
+  control can review.  Reckless-driving DQs (issued via `/dq`)
+  are not affected.
 
 #### event.json
 

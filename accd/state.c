@@ -48,6 +48,7 @@ server_init(struct Server *s)
 	s->tcp_fd = -1;
 	s->udp_fd = -1;
 	s->lan_fd = -1;
+	s->allow_auto_dq = 1;
 	for (int i = 0; i < ACC_MAX_CARS; i++)
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
 }

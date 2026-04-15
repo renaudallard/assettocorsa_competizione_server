@@ -238,9 +238,26 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 				}
 			}
 			if (dq_now && !race->disqualified) {
-				log_info("Car %d failed to serve penalty "
-				    "in 3 laps -> DQ", c->car_id);
-				penalty_enqueue(s, c->car_id, PEN_DQ, 0);
+				/*
+				 * allowAutoDQ=0 in settings.json downgrades
+				 * the failure-to-serve auto-DQ to an SG30
+				 * so race control can review.  Note: since
+				 * Kunos 1.8.11 reckless-driving DQs are not
+				 * downgradable; that path is /dq only.
+				 */
+				if (s->allow_auto_dq) {
+					log_info("Car %d failed to serve "
+					    "penalty in 3 laps -> DQ",
+					    c->car_id);
+					penalty_enqueue(s, c->car_id,
+					    PEN_DQ, 0);
+				} else {
+					log_info("Car %d failed to serve "
+					    "penalty in 3 laps -> SG30 "
+					    "(allowAutoDQ=0)", c->car_id);
+					penalty_enqueue(s, c->car_id,
+					    PEN_SG30, 0);
+				}
 			}
 		}
 

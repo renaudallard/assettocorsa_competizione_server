@@ -260,6 +260,8 @@ config_load(struct Server *s, const char *cfg_dir)
 		    s->ignore_premature_disconnects);
 		s->dump_leaderboards = json_obj_get_int(settings,
 		    "dumpLeaderboards", s->dump_leaderboards);
+		s->allow_auto_dq = json_obj_get_int(settings,
+		    "allowAutoDQ", s->allow_auto_dq);
 		json_free(settings);
 	}
 

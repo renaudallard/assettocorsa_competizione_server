@@ -325,6 +325,14 @@ struct Server {
 	int		ignore_premature_disconnects;
 	int		dump_leaderboards;
 	int		force_entry_list;
+	/*
+	 * allowAutoDQ from settings.json (default 1).  When set to 0,
+	 * auto-DQ for failure to serve a DT/SG within 3 laps is
+	 * downgraded to a 30-second stop&go so race control can
+	 * review.  Reckless-driving and pit-speeding DQs are not
+	 * affected (matches Kunos 1.8.11+ behavior).
+	 */
+	int		allow_auto_dq;
 
 	/* runtime */
 	int		tcp_fd;
