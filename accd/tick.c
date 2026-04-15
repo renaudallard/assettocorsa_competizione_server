@@ -326,33 +326,53 @@ done:
 }
 
 /*
- * Build and emit the SRV_SESSION_RESULTS (0x3e) at the end of
- * a session.  Capture shows the body is: u8 0x3e +
- * write_session_mgr_state + write_leaderboard_section, the same
- * format as the welcome trailer's session+leaderboard block.
+ * Build and emit SRV_SESSION_RESULTS (0x3e) at end of session.
+ *
+ * Wire format verified against an accServer.exe v1.10.2 81-min
+ * race capture: u8 0x3e + u8 result_count + result_count × (
+ * 23-byte session tail + per-car leaderboard record).  Each
+ * result entry carries the tail of the session it documents
+ * (P/Q/R differ by hour, duration, type).  Sizes scale 235 →
+ * 468 → 706 bytes for 1 → 2 → 3 completed sessions.
+ *
+ * For now we emit the current car state for every completed
+ * session — a proper implementation would snapshot the
+ * leaderboard at session end.  result_count is session_index+1
+ * when called at end-of-session.
  */
 static void
 broadcast_session_results(struct Server *s)
 {
-	int i;
+	int i, n;
+	uint8_t result_count;
+
+	if (s->session_count == 0)
+		return;
+	result_count = (uint8_t)(s->session.session_index + 1);
+	if (result_count > s->session_count)
+		result_count = s->session_count;
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct Conn *c = s->conns[i];
 		struct ByteBuf bb;
+		int ok = 1;
 
 		if (c == NULL || c->state != CONN_AUTH)
 			continue;
 		bb_init(&bb);
-		if (wr_u8(&bb, SRV_SESSION_RESULTS) == 0 &&
-		    write_session_mgr_state(&bb, s,
-			c->last_pong_client_ts,
-			c->avg_rtt_ms) == 0 &&
-		    write_leaderboard_section(&bb, s) == 0) {
-			(void)tcp_send_framed(c->fd, bb.data, bb.wpos);
+		ok = ok && wr_u8(&bb, SRV_SESSION_RESULTS) == 0;
+		ok = ok && wr_u8(&bb, result_count) == 0;
+		for (n = 0; n < result_count && ok; n++) {
+			ok = ok && write_session_tail(&bb,
+			    &s->sessions[n], s->session_overtime_s) == 0;
+			ok = ok && write_leaderboard_section(&bb, s) == 0;
 		}
+		if (ok)
+			(void)tcp_send_framed(c->fd, bb.data, bb.wpos);
 		bb_free(&bb);
 	}
-	log_info("Send session results to %d clients", s->nconns);
+	log_info("Send session results to %d clients (count=%u)",
+	    s->nconns, (unsigned)result_count);
 }
 
 void

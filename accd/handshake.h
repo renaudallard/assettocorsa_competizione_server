@@ -76,6 +76,15 @@ int	write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 		uint32_t conn_client_ts, uint32_t conn_rtt);
 
 /*
+ * Emit only the 23-byte session tail (FUN_140034f60) for a given
+ * SessionDef.  Used by 0x28 (via write_session_mgr_state) and
+ * 0x3e session results, which embeds one tail per completed
+ * session before each per-car leaderboard record.
+ */
+int	write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
+		uint16_t session_overtime_s);
+
+/*
  * Emit the assist_rules + leaderboard section from FUN_140034a40
  * in accServer.exe.  Used by the welcome trailer (0x0b body) and
  * by the standalone 0x36 leaderboard broadcast (prefixed with

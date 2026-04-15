@@ -331,6 +331,27 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
  *     f32 1.0        (+0x4c)
  */
 int
+write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
+    uint16_t session_overtime_s)
+{
+	uint16_t sched_field = def->session_type == 10 ? 80 : 3;
+	uint32_t duration_s = (uint32_t)def->duration_min * 60u;
+
+	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, def->session_type == 10 ? 1 : 0) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+	if (wr_u16(bb, sched_field) < 0) return -1;
+	if (wr_u32(bb, duration_s) < 0) return -1;
+	if (wr_u32(bb, session_overtime_s > 0 ? session_overtime_s : 120) < 0)
+		return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, def->session_type) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+	return 0;
+}
+
+int
 write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
     uint32_t conn_client_ts, uint32_t conn_rtt)
 {
@@ -410,25 +431,9 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 			if (wr_u8(bb, 0) < 0) return -1;
 	}
 
-	/* 23-byte tail (FUN_140034f60). */
-	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
-	/*
-	 * Tail byte +2: 1 for race sessions, 0 for P/Q.  Verified
-	 * across 1640 captured 0x28 frames (Kunos accServer.exe
-	 * v1.10.2): the byte is a session-class flag, not the
-	 * time multiplier as we previously assumed.
-	 */
-	if (wr_u8(bb, def->session_type == 10 ? 1 : 0) < 0) return -1;
-	if (wr_f32(bb, 1.0f) < 0) return -1;
-	if (wr_u16(bb, sched_field) < 0) return -1;
-	if (wr_u32(bb, duration_s) < 0) return -1;
-	if (wr_u32(bb, s->session_overtime_s > 0
-	    ? s->session_overtime_s : 120) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
-	if (wr_u8(bb, def->session_type) < 0) return -1;
-	if (wr_f32(bb, 1.0f) < 0) return -1;
-	return 0;
+	(void)sched_field;
+	(void)duration_s;
+	return write_session_tail(bb, def, s->session_overtime_s);
 }
 
 /*
