@@ -548,11 +548,13 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		if (wr_u32(bb, (uint32_t)race->last_lap_ms) < 0)
 			return -1;
 		/*
-		 * +0x1f4 u16: completed lap count (THIS is the
-		 * field the HUD "LAP X" reads).  Capture confirms
-		 * it increments 1, 2, 3... as laps finish.
+		 * +0x1f4 u16: current lap number for HUD display.
+		 * Kunos writes completed_laps, causing the HUD to
+		 * show "-" during the first driving lap.  We write
+		 * lap_count + 1 so the HUD shows "1" while driving
+		 * the first lap (better than Kunos).
 		 */
-		if (wr_u16(bb, (uint16_t)race->lap_count) < 0)
+		if (wr_u16(bb, (uint16_t)(race->lap_count + 1)) < 0)
 			return -1;
 		if (wr_u32(bb, (uint32_t)race->race_time_ms) < 0)
 			return -1;
