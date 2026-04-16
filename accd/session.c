@@ -356,14 +356,23 @@ session_tick(struct Server *s)
 	}
 
 	/*
-	 * Hold session state when everyone disconnects mid-session.
-	 * Kunos does NOT reset; it lets the session clock keep running
-	 * so the public lobby listing stays in its current phase
-	 * instead of disappearing.  The schedule timestamps keep
-	 * ticking; compute_phase below will naturally move through
-	 * OVERTIME / COMPLETED / ADVANCE if time passes without a
-	 * driver coming back.
+	 * No drivers around: reset to the FIRST configured session
+	 * (typically Practice) and go to WAITING.  This matches
+	 * Kunos ("No drivers around, resetting session / Reset time
+	 * to first session / sessionPhase <...> -> <waiting for
+	 * drivers>").  Sends a 0xcb with phase=1 which keeps the
+	 * public lobby listing as a joinable Practice server,
+	 * instead of cycling through OVERTIME / COMPLETED where the
+	 * server disappears from the public server list.
 	 */
+	if (s->nconns == 0 &&
+	    (s->session.session_index != 0 ||
+	     s->session.phase != PHASE_WAITING)) {
+		log_info("no drivers, resetting to first session");
+		session_reset(s, 0);
+		lobby_notify_session_changed(&s->lobby);
+		return;
+	}
 
 	/* Compute the new phase from schedule slots. */
 	new_phase = compute_phase(&s->session, now);

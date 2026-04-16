@@ -27,9 +27,8 @@
  * lobby.h -- Kunos kson lobby client.
  *
  * Connects to the Kunos backend at 131.153.158.178:909 and
- * registers our server so that the public lobby (and trackers
- * like https://acc-status.jonatan.net/servers) list it.  Active
- * only when settings.json has "registerToLobby": 1.
+ * registers our server so that the public lobby lists it.
+ * Active only when settings.json has "registerToLobby": 1.
  *
  * Wire format reverse-engineered from a captured Kunos
  * accServer.exe v1.10.2 session.  Each TCP message is u16 LE
