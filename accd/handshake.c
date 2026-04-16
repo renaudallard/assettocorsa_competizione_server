@@ -444,23 +444,29 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	int32_t sess_best_lap = INT32_MAX;
 	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
 
+	/*
+	 * Session-best counters scan ALL cars, including those whose
+	 * slot is currently unused: conn_drop preserves race state
+	 * on disconnect so a driver who set the fastest lap and
+	 * then left still contributes to the 'session best' shown
+	 * on the standings sidebar.  Entry count (nc) and cvar8
+	 * still only consider live cars.
+	 */
 	for (j = 0; j < ACC_MAX_CARS; j++) {
-		struct CarRaceState *r;
+		struct CarRaceState *r = &s->cars[j].race;
 
-		if (!s->cars[j].used)
-			continue;
-		nc++;
-		/* exe cVar8: set if any car has +0x204 >= 0
-		 * (formation lap completed / active). */
-		if (s->cars[j].race.formation_lap_done)
-			cvar8 = 1;
-		r = &s->cars[j].race;
 		if (r->best_lap_ms > 0 && r->best_lap_ms < sess_best_lap)
 			sess_best_lap = r->best_lap_ms;
 		for (d = 0; d < 3; d++)
 			if (r->best_sectors_ms[d] > 0 &&
 			    r->best_sectors_ms[d] < sess_best_sec[d])
 				sess_best_sec[d] = r->best_sectors_ms[d];
+
+		if (!s->cars[j].used)
+			continue;
+		nc++;
+		if (r->formation_lap_done)
+			cvar8 = 1;
 	}
 
 	/*
