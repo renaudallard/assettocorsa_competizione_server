@@ -517,13 +517,29 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 		trem_s = INT16_MAX;
 	l->last_session_type = stype;
 	/*
-	 * Lobby expects the SDK SessionPhase enum (0 = NONE, 2 =
-	 * Formation, 4 = PreSession, 5 = Session, 6 = Completed),
-	 * not our internal PHASE_* enum.  Sending the raw internal
-	 * value (e.g. PHASE_FORMATION=2 during a Practice session)
-	 * triggers Kunos to drop the registration after ~16 s.
+	 * Lobby phase byte == Kunos computeCurrentPhase (FUN_14012e810)
+	 * return value, 1..7:
+	 *   1 WAITING, 2 FORMATION, 3 PRE-1, 4 PRE-2 (race formation
+	 *   lap), 5 SESSION, 6 OVERTIME, 7 COMPLETED.
+	 * This is NOT the SDK broadcasting SessionPhase that goes on
+	 * the 0x28 client broadcast (session_phase_to_wire).  Previous
+	 * attempt sent that SDK mapping to the lobby and the phase
+	 * never matched reality — e.g. WAITING went out as 0, which
+	 * Kunos treats as "no active session".
 	 */
-	l->last_session_phase = session_phase_to_wire(s->session.phase);
+	{
+		uint8_t p;
+		switch (s->session.phase) {
+		case PHASE_WAITING:     p = 1; break;
+		case PHASE_FORMATION:   p = 2; break;
+		case PHASE_PRE_SESSION: p = 3; break;
+		case PHASE_SESSION:     p = 5; break;
+		case PHASE_OVERTIME:    p = 6; break;
+		case PHASE_COMPLETED:   p = 7; break;
+		default:                p = 1; break;
+		}
+		l->last_session_phase = p;
+	}
 	l->last_session_time_s = (int16_t)trem_s;
 }
 
