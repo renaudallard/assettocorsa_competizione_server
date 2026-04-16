@@ -501,14 +501,15 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		}
 
 		/*
-		 * cVar8-gated section: 5 bytes when cvar8=1.  Verified
-		 * byte-exact against capture: u32 (lap-related field,
-		 * unknown semantic, sent as 0) followed by u8 formation
-		 * flag.  Order matters — the original v1 of this fix
-		 * had them swapped and corrupted lap_count / best_lap.
+		 * cVar8-gated section: 1 byte when cvar8=1.  Per
+		 * FUN_140034210 the gated block is just u8 low byte of
+		 * +0x204 (current-sector index, only valid when at
+		 * least one car has an active lap).  Prior version
+		 * emitted u32+u8 (5 bytes) from a mis-read of the
+		 * decomp — rare in practice because cvar8 only fires
+		 * mid-session.
 		 */
 		if (cvar8) {
-			if (wr_u32(bb, 0) < 0) return -1;
 			if (wr_u8(bb, race->formation_lap_done) < 0)
 				return -1;
 		}
