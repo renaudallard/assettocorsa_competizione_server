@@ -441,7 +441,17 @@ tick_run(struct Server *s)
 	 * One-shot actions on phase transitions.
 	 */
 	if (s->session.phase != *last_phase) {
-		if (s->session.phase == PHASE_FORMATION)
+		/*
+		 * 0x3f grid positions fire once per race only.  P/Q
+		 * sessions also pass through PHASE_FORMATION on the
+		 * way to SESSION, but Kunos does not emit 0x3f there
+		 * (kunos_wine_full_race capture, P session: no 0x3f
+		 * on the wire).  Gate by race session type.
+		 */
+		if (s->session.phase == PHASE_FORMATION &&
+		    s->session_count > 0 &&
+		    s->sessions[s->session.session_index]
+			.session_type == 10)
 			broadcast_grid(s);
 		if (s->session.phase == PHASE_COMPLETED) {
 			broadcast_session_results(s);
