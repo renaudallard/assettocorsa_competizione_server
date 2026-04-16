@@ -60,9 +60,13 @@
  *   keepalive 0x14: every 20 ticks (2 s)
  *   weather 0x37:   every 50 ticks (5 s)
  */
-#define CADENCE_SESSION_STATE	20	/* 0x28 every ~2 s, matches Kunos
-					 * (2573 msgs over 4860 s in 81-min
-					 * replay = 1 per 1.89 s) */
+#define CADENCE_SESSION_STATE	12	/* 0x28 every ~1.2 s.  81-min
+					 * replay averaged 1/1.89 s because
+					 * most of it was idle; the 14-min
+					 * single-active-session replay
+					 * showed the active-driver cadence
+					 * is closer to 1/1.2 s (740-912
+					 * msgs over 900 s). */
 #define CADENCE_KEEPALIVE	10	/* 0x14 every ~1 s, matching exe */
 #define CADENCE_WEATHER		50
 #define CADENCE_LEADERBOARD	750	/* 0x36 every ~75 s, matches Kunos
