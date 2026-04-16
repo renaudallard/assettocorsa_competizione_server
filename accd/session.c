@@ -400,6 +400,30 @@ session_tick(struct Server *s)
 		}
 	}
 
+	/*
+	 * Release an active overtime hold when every on-track car
+	 * has left (disconnect mid-overtime).  Without this the
+	 * race session can be stuck in OVERTIME forever if the
+	 * holding drivers vanish without completing another lap.
+	 */
+	if (s->session.overtime_hold) {
+		int i, still_racing = 0;
+		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
+		    i++) {
+			if (!s->cars[i].used)
+				continue;
+			if (s->cars[i].race.lap_count > 0 &&
+			    !s->cars[i].race.in_pit)
+				still_racing++;
+		}
+		if (still_racing == 0) {
+			log_info("overtime: all racing cars left, "
+			    "releasing hold");
+			s->session.overtime_hold = 0;
+			s->session.cars_in_overtime = 0;
+		}
+	}
+
 	/* Drive the in-game clock during the active session. */
 	if (s->session.phase == PHASE_SESSION ||
 	    s->session.phase == PHASE_OVERTIME) {
