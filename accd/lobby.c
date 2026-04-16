@@ -422,42 +422,74 @@ lobby_write_preamble(struct ByteBuf *bb, struct LobbyClient *l, uint8_t type)
 }
 
 static int
-lobby_send_drivers_update(struct LobbyClient *l)
+lobby_send_drivers_update(struct LobbyClient *l, const struct Server *s)
 {
 	/*
-	 * Drivers update is exactly the 12-byte preamble (no msg_id
-	 * byte).  Verified against Kunos: `0c 00 + ts(4) + 0(2) +
-	 * session(4) + 0(2)` = 14 bytes wire = u16 length 12 + 12 body.
-	 */
-	/*
-	 * Drivers update body: 11-byte preamble + u8 driver_count.
-	 * For 0 drivers (idle server) Kunos sends 12 bytes total.
-	 * Per-driver records (u32 car_id + wstring name + u8 idx)
-	 * follow the count when count > 0; we only ever send 0 from
-	 * accd today (no plumbing for connected-driver enumeration
-	 * into the lobby module yet).
+	 * Drivers update body (FUN_1400473f0):
+	 *   11-byte preamble (type 0xd1)
+	 *   u8  count        -- cars with at least one connected driver
+	 *   count × {
+	 *       u32 car_id
+	 *       wstring-B name         (u16 units + units × u16 UTF-16)
+	 *       u8  current-driver idx
+	 *   }
+	 * Idle server: count=0, no per-entry block, 12-byte body.
 	 */
 	struct ByteBuf bb;
-	int rc;
+	uint8_t nc = 0;
+	int j, rc;
+	int ok;
+
+	for (j = 0; j < ACC_MAX_CARS; j++)
+		if (s->cars[j].used && s->cars[j].driver_count > 0)
+			nc++;
+
 	bb_init(&bb);
-	if (lobby_write_preamble(&bb, l, 0xd1) < 0 ||
-	    /*
-	     * Drivers count must be 0 in our wire body until we can
-	     * append per-driver records (u32 car_id + wstring name +
-	     * u8 idx) the way Kunos does.  Sending a non-zero count
-	     * with no records makes the lobby drop the connection
-	     * within ~30 s of the dirty notify.  Verified on celeborn
-	     * 2026-04-16.
-	     */
-	    wr_u8(&bb, 0) < 0) {
+	ok = lobby_write_preamble(&bb, l, 0xd1) == 0
+	    && wr_u8(&bb, nc) == 0;
+	for (j = 0; ok && j < ACC_MAX_CARS; j++) {
+		const struct CarEntry *c = &s->cars[j];
+		const struct DriverInfo *dv;
+		char name[ACC_MAX_NAME_LEN * 2 + 2];
+		size_t nlen;
+
+		if (!c->used || c->driver_count == 0)
+			continue;
+		dv = &c->drivers[c->current_driver_index %
+		    ACC_MAX_DRIVERS_PER_CAR];
+		snprintf(name, sizeof(name), "%s %s",
+		    dv->first_name[0] ? dv->first_name : "Driver",
+		    dv->last_name[0] ? dv->last_name : "");
+		nlen = strlen(name);
+		if (nlen > 0xFFFE)
+			nlen = 0xFFFE;
+		/*
+		 * kson string = u16 utf8_byte_len + N UTF-8 bytes
+		 * (FUN_14004d240 transcodes wchar→UTF-8 via
+		 * FUN_14004cdd0 then writes the byte length as u16).
+		 * Our internal names are already UTF-8 so we just
+		 * emit length + bytes.  wr_str_b (which emits UTF-16
+		 * units) is NOT the right format here — that was the
+		 * first attempt and caused Kunos to drop us ~30 s
+		 * after the first drivers=1 notify.
+		 */
+		ok = wr_u32(&bb, c->car_id) == 0
+		    && wr_u16(&bb, (uint16_t)nlen) == 0
+		    && bb_append(&bb, name, nlen) == 0
+		    && wr_u8(&bb, c->current_driver_index) == 0;
+	}
+	if (!ok) {
 		bb_free(&bb);
 		return -1;
 	}
-	rc = lobby_send_framed(l, bb.data, bb.wpos);
-	bb_free(&bb);
-	if (rc == 0)
-		log_info("lobby: drivers=%u",
-		    (unsigned)l->last_driver_count);
+	{
+		size_t sz = bb.wpos;
+		rc = lobby_send_framed(l, bb.data, bb.wpos);
+		bb_free(&bb);
+		if (rc == 0)
+			log_info("lobby: drivers=%u (%zu B body)",
+			    (unsigned)nc, sz);
+	}
 	return rc;
 }
 
@@ -676,7 +708,7 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 					l->consecutive_fails = 0;
 					log_info("lobby: RegisterToLobby "
 					    "succeeded");
-					(void)lobby_send_drivers_update(l);
+					(void)lobby_send_drivers_update(l, s);
 				} else if (rc == 0) {
 					/*
 					 * Hard rejection — don't keep
@@ -726,7 +758,7 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 		break;
 	case LOBBY_REGISTERED:
 		if (l->drivers_dirty) {
-			(void)lobby_send_drivers_update(l);
+			(void)lobby_send_drivers_update(l, s);
 			l->drivers_dirty = 0;
 		}
 		/*
