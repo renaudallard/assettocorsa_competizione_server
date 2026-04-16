@@ -218,6 +218,15 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		race->out_of_track_latched = 0;
 
 		/*
+		 * Report to the Kunos lobby so the server stays listed
+		 * as actively racing.  Only valid laps — invalid laps
+		 * would bump the ghost best-lap on their side.
+		 */
+		if (!invalid)
+			lobby_notify_lap(&s->lobby,
+			    s->cars[c->car_id].car_id, lap_ms);
+
+		/*
 		 * Count down the service deadline on every active
 		 * DT/SG penalty.  When the front entry hits zero
 		 * laps remaining and is still unserved, auto-DQ the
