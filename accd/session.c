@@ -355,15 +355,15 @@ session_tick(struct Server *s)
 		session_start(s);
 	}
 
-	/* Reset to waiting when everyone disconnects mid-session.
-	 * Only log once (WAITING check prevents re-logging each tick). */
-	if (s->nconns == 0 && s->session.phase != PHASE_COMPLETED &&
-	    s->session.phase != PHASE_RESULTS &&
-	    s->session.phase != PHASE_WAITING) {
-		log_info("no drivers, resetting session");
-		session_reset(s, s->session.session_index);
-		return;
-	}
+	/*
+	 * Hold session state when everyone disconnects mid-session.
+	 * Kunos does NOT reset; it lets the session clock keep running
+	 * so the public lobby listing stays in its current phase
+	 * instead of disappearing.  The schedule timestamps keep
+	 * ticking; compute_phase below will naturally move through
+	 * OVERTIME / COMPLETED / ADVANCE if time passes without a
+	 * driver coming back.
+	 */
 
 	/* Compute the new phase from schedule slots. */
 	new_phase = compute_phase(&s->session, now);
