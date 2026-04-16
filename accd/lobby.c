@@ -441,7 +441,15 @@ lobby_send_drivers_update(struct LobbyClient *l)
 	int rc;
 	bb_init(&bb);
 	if (lobby_write_preamble(&bb, l, 0xd1) < 0 ||
-	    wr_u8(&bb, l->last_driver_count) < 0) {
+	    /*
+	     * Drivers count must be 0 in our wire body until we can
+	     * append per-driver records (u32 car_id + wstring name +
+	     * u8 idx) the way Kunos does.  Sending a non-zero count
+	     * with no records makes the lobby drop the connection
+	     * within ~30 s of the dirty notify.  Verified on celeborn
+	     * 2026-04-16.
+	     */
+	    wr_u8(&bb, 0) < 0) {
 		bb_free(&bb);
 		return -1;
 	}
@@ -669,13 +677,6 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 					log_info("lobby: RegisterToLobby "
 					    "succeeded");
 					(void)lobby_send_drivers_update(l);
-					/*
-					 * Kunos pushes a session update
-					 * immediately after "Lobby accepted
-					 * connection" — without it the lobby
-					 * drops us after ~38 s.
-					 */
-					(void)lobby_send_session_update(l, s);
 				} else if (rc == 0) {
 					/*
 					 * Hard rejection — don't keep
@@ -728,9 +729,17 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 			(void)lobby_send_drivers_update(l);
 			l->drivers_dirty = 0;
 		}
-		if (l->session_dirty ||
-		    now - l->last_session_update_ms >= LOBBY_SESSION_UPDATE_MS)
-			(void)lobby_send_session_update(l, s);
+		/*
+		 * Kunos itself does NOT push periodic 0xcb session
+		 * updates — verified by sniffing accServer.exe v1.10.2:
+		 * the only post-registration TCP traffic is the 30 s
+		 * keepalive (msg id 0x0d).  Sending 0xcb during an
+		 * active session caused the lobby to reset our TCP
+		 * after ~110 s (verified on celeborn 2026-04-16).
+		 * Keep the helper in case state-change pushes are
+		 * needed later, but do not fire on the timer.
+		 */
+		(void)s;
 		if (now - l->last_keepalive_ms >= LOBBY_KEEPALIVE_MS)
 			(void)lobby_send_keepalive(l);
 		break;
