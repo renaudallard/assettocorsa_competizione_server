@@ -496,24 +496,12 @@ session_advance(struct Server *s)
 
 	if (next >= s->session_count) {
 		/*
-		 * Weekend complete: send 0x40 reset + loop back to
-		 * session 0, matching the exe's resetRaceWeekend path.
-		 * Capture shows 0x40 sent twice, then session resets.
+		 * Weekend complete: loop back to session 0 silently.
+		 * Kunos does NOT emit 0x40 on the automatic wrap (81-min
+		 * replay saw 8 × 0x3e session-results and 0 × 0x40).
+		 * 0x40 is reserved for the admin /resetWeekend command,
+		 * not the natural end-of-sessions rollover.
 		 */
-		{
-			struct ByteBuf bb;
-
-			bb_init(&bb);
-			if (wr_u8(&bb, SRV_RACE_WEEKEND_RESET) == 0 &&
-			    write_trailer_preview(&bb, s) == 0) {
-				(void)bcast_all(s, bb.data, bb.wpos,
-				    0xFFFF);
-				/* Exe sends it twice. */
-				(void)bcast_all(s, bb.data, bb.wpos,
-				    0xFFFF);
-			}
-			bb_free(&bb);
-		}
 		log_info("session: weekend complete, resetting to "
 		    "session 0");
 		session_reset(s, 0);
