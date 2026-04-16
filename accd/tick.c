@@ -63,6 +63,9 @@
 #define CADENCE_SESSION_STATE	10	/* 0x28 every ~1s, matching exe */
 #define CADENCE_KEEPALIVE	10	/* 0x14 every ~1s, matching exe */
 #define CADENCE_WEATHER		50
+#define CADENCE_LEADERBOARD	450	/* 0x36 every ~45 s, matches Kunos
+					 * (1 / 47 s observed in 14-min
+					 * full-race replay) */
 
 /*
  * Write the 63-byte per-car body used by both 0x1e and each
@@ -403,7 +406,8 @@ tick_run(struct Server *s)
 	 * connection events (3 total over 20 min), not on
 	 * every standings change.  Decouple from leaderboard.
 	 */
-	if (s->session.standings_seq != *last_standings_seq) {
+	if (s->session.standings_seq != *last_standings_seq ||
+	    (s->tick_count % CADENCE_LEADERBOARD) == 0) {
 		*last_standings_seq = s->session.standings_seq;
 		broadcast_leaderboard(s);
 	}
