@@ -545,83 +545,71 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		}
 
 		/*
-		 * Timing: raw values, no sentinel gating.
-		 * +0x180 u16, +0x1d4 u32 best_lap, +0x1b0 u32 last_lap,
-		 * +0x1f4 u16, +0x1f0 u32 race_time, +0x1f8 u8 lap_count.
+		 * Timing fields, in the order FUN_140034210 emits
+		 * them (serializer offsets, not struct offsets):
+		 *   u16 +0x180
+		 *   u32 +0x1d4 best_lap      (0x7fffffff = unset)
+		 *   u32 +0x1b0 last_lap      (0x7fffffff = unset)
+		 *   u16 +0x1f4 lap_count
+		 *   u32 +0x1f0 race_time     (0x7fffffff = unset)
+		 *   u8  +0x1f8 current_lap_ordinal (0xff escape if >=256)
+		 * Kunos uses 0x7fffffff as "no valid value" sentinel —
+		 * client HUD distinguishes "- -:--.---" from zero time.
 		 */
 		if (wr_u16(bb, 0) < 0) return -1;
-		if (wr_u32(bb, (uint32_t)race->best_lap_ms) < 0)
+		if (wr_u32(bb, race->best_lap_ms > 0
+		    ? (uint32_t)race->best_lap_ms : 0x7FFFFFFFu) < 0)
 			return -1;
-		if (wr_u32(bb, (uint32_t)race->last_lap_ms) < 0)
+		if (wr_u32(bb, race->last_lap_ms > 0
+		    ? (uint32_t)race->last_lap_ms : 0x7FFFFFFFu) < 0)
 			return -1;
-		/*
-		 * +0x1f4 u16: completed lap count.  HUD displays
-		 * the value directly but shows "-" for 0 and 1
-		 * (ACC treats the out-lap and first partial lap
-		 * as invalid).  This matches Kunos behavior.
-		 */
 		if (wr_u16(bb, (uint16_t)race->lap_count) < 0)
 			return -1;
-		if (wr_u32(bb, (uint32_t)race->race_time_ms) < 0)
+		if (wr_u32(bb, race->race_time_ms > 0
+		    ? (uint32_t)race->race_time_ms : 0x7FFFFFFFu) < 0)
 			return -1;
-		/*
-		 * +0x1f8 u8: current-lap ordinal (not completed
-		 * count).  Resets to 0 on line crossing, increments
-		 * as sectors pass.  0xFF = no lap.
-		 */
 		if (wr_u8(bb, 0) < 0) return -1;
 
 		/*
-		 * Sectors: single wide_flag byte, then best and last
-		 * vectors (count + values).  wide_flag=1 if any value
-		 * exceeds 0xFFFF; all values then serialized as u32.
+		 * Two vectors per FUN_140034210:
+		 *   list 1 (+0x1b8..+0x1c0): current-lap sector splits
+		 *   list 2 (+0x1d8..+0x1e0): lap-time history
+		 * A single wide_flag covers both; it is 1 if ANY
+		 * value in either list exceeds 0xffff.  When wide=1
+		 * every entry in both lists is a u32; when wide=0
+		 * every entry is a u16 (capped at 0xffff).
+		 *
+		 * For a fresh car with no lap history, Kunos capture
+		 * shows list 1 empty and list 2 populated with three
+		 * 0x7fffffff sentinels (wide_flag=1).  We emit the
+		 * same pattern until per-lap history is tracked.
 		 */
 		{
 			int si;
-			int best_n = 0, last_n = 0;
-			uint8_t wide_flag = 0;
+			int l1_n = 0;
+			int l2_n = 3;	/* placeholder sentinels */
+			uint8_t wide_flag = 1;
 
 			for (si = 0; si < 3; si++) {
-				if (race->best_sectors_ms[si] > 0) {
-					best_n = si + 1;
-					if (race->best_sectors_ms[si] > 0xFFFF)
-						wide_flag = 1;
-				}
-				if (race->sector_ms[si] > 0) {
-					last_n = si + 1;
-					if (race->sector_ms[si] > 0xFFFF)
-						wide_flag = 1;
-				}
+				if (race->sector_ms[si] > 0)
+					l1_n = si + 1;
 			}
 
 			if (wr_u8(bb, wide_flag) < 0) return -1;
-			if (wr_u8(bb, (uint8_t)best_n) < 0) return -1;
-			for (si = 0; si < best_n; si++) {
-				int32_t v = race->best_sectors_ms[si];
-				if (wide_flag) {
-					if (wr_u32(bb, (uint32_t)v) < 0)
-						return -1;
-				} else {
-					if (wr_u16(bb, (uint16_t)(v > 0xFFFF
-					    ? 0xFFFF : v)) < 0)
-						return -1;
-				}
+			if (wr_u8(bb, (uint8_t)l1_n) < 0) return -1;
+			for (si = 0; si < l1_n; si++) {
+				if (wr_u32(bb,
+				    (uint32_t)race->sector_ms[si]) < 0)
+					return -1;
 			}
-			if (wr_u8(bb, (uint8_t)last_n) < 0) return -1;
-			for (si = 0; si < last_n; si++) {
-				int32_t v = race->sector_ms[si];
-				if (wide_flag) {
-					if (wr_u32(bb, (uint32_t)v) < 0)
-						return -1;
-				} else {
-					if (wr_u16(bb, (uint16_t)(v > 0xFFFF
-					    ? 0xFFFF : v)) < 0)
-						return -1;
-				}
+			if (wr_u8(bb, (uint8_t)l2_n) < 0) return -1;
+			for (si = 0; si < l2_n; si++) {
+				if (wr_u32(bb, 0x7FFFFFFFu) < 0)
+					return -1;
 			}
 		}
 
-		/* Tail: u8 +0x200, u8 +0x201. */
+		/* Tail: u8 +0x200 (formation_lap_done), u8 +0x201. */
 		if (wr_u8(bb, race->formation_lap_done) < 0)
 			return -1;
 		if (wr_u8(bb, 0) < 0) return -1;
