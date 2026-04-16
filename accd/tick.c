@@ -60,12 +60,13 @@
  *   keepalive 0x14: every 20 ticks (2 s)
  *   weather 0x37:   every 50 ticks (5 s)
  */
-#define CADENCE_SESSION_STATE	10	/* 0x28 every ~1s, matching exe */
-#define CADENCE_KEEPALIVE	10	/* 0x14 every ~1s, matching exe */
+#define CADENCE_SESSION_STATE	20	/* 0x28 every ~2 s, matches Kunos
+					 * (2573 msgs over 4860 s in 81-min
+					 * replay = 1 per 1.89 s) */
+#define CADENCE_KEEPALIVE	10	/* 0x14 every ~1 s, matching exe */
 #define CADENCE_WEATHER		50
-#define CADENCE_LEADERBOARD	450	/* 0x36 every ~45 s, matches Kunos
-					 * (1 / 47 s observed in 14-min
-					 * full-race replay) */
+#define CADENCE_LEADERBOARD	750	/* 0x36 every ~75 s, matches Kunos
+					 * (65 msgs over 4860 s) */
 
 /*
  * Write the 63-byte per-car body used by both 0x1e and each
