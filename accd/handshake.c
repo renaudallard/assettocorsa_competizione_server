@@ -1521,18 +1521,17 @@ reply:
 
 			/* 0x4e rating summary. */
 			/*
-			 * 0x4e per-entry layout (verified against an
-			 * accServer.exe v1.10.2 86-byte capture for one car):
+			 * 0x4e per-entry layout (kunos_wine_full_race 86-byte
+			 * capture, one car, re-verified 2026-04-16):
 			 *   u16 car_id
 			 *   u8  0
-			 *   i16 safety_rating  (×100, 0 if unset)
-			 *   i16 trackmedal_rating (×100, 0 if unset)
+			 *   u16 safety_rating     (×100, 0 if unset)
+			 *   u16 trackmedal_rating (×100, 0 if unset)
 			 *   i16 -1  (sentinel)
 			 *   i16 -1  (sentinel)
-			 *   u32 extra_rating   (kunos sends a non-zero value;
-			 *                       0 is accepted)
 			 *   str_a steam_id
-			 * Send ALL cars to ALL clients (capture confirms).
+			 * Previous spec had an extra u32 extra_rating before
+			 * the steam_id — the capture does not contain it.
 			 */
 			{
 				int j, nc = 0;
@@ -1550,11 +1549,10 @@ reply:
 					ok = ok && wr_u16(&wb,
 					    s->cars[j].car_id) == 0;
 					ok = ok && wr_u8(&wb, 0) == 0;
-					ok = ok && wr_i16(&wb, 0) == 0;
-					ok = ok && wr_i16(&wb, 0) == 0;
+					ok = ok && wr_u16(&wb, 0) == 0;
+					ok = ok && wr_u16(&wb, 0) == 0;
 					ok = ok && wr_i16(&wb, -1) == 0;
 					ok = ok && wr_i16(&wb, -1) == 0;
-					ok = ok && wr_u32(&wb, 0) == 0;
 					ok = ok && wr_str_a(&wb,
 					    s->cars[j].drivers[0]
 					    .steam_id) == 0;
