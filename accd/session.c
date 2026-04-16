@@ -472,7 +472,11 @@ session_advance(struct Server *s)
 		log_info("session: weekend complete, resetting to "
 		    "session 0");
 		session_reset(s, 0);
+		if (s->nconns > 0)
+			session_start(s);
 		return;
 	}
 	session_reset(s, next);
+	if (s->nconns > 0)
+		session_start(s);
 }
