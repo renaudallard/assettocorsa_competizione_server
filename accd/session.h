@@ -54,6 +54,14 @@ void	session_reset(struct Server *s, uint8_t session_index);
 void	session_tick(struct Server *s);
 
 /*
+ * Populate the 7 schedule timestamps and mark ts_valid.  Called
+ * by the tick on the first driver connect, and by handshake.c
+ * right before the welcome-time 0x28 so its per-session records
+ * are already valid — matches Kunos.
+ */
+void	session_start(struct Server *s);
+
+/*
  * Advance to the next configured session immediately, used
  * by the /next admin command.
  */

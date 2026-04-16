@@ -117,7 +117,7 @@ session_reset(struct Server *s, uint8_t session_index)
  *   ts[4] = ts[3] + overtimeMs    (120000 default)
  *   ts[5] = ts[4] + postSessionMs (5000 default; configurable)
  */
-static void
+void
 session_start(struct Server *s)
 {
 	const struct SessionDef *def =

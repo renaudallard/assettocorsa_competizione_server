@@ -397,32 +397,21 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 		    (double)(conn_rtt / 2);
 
 		/*
-		 * Slots 0-5 + slot 6 (always invalid).
-		 *
-		 * For race sessions, slots activate progressively
-		 * as phases are reached (capture: initially only 0-1,
-		 * then 2 at formation, then 3-5 at green flag).
-		 * A slot is valid only if its timestamp is in the
-		 * past (the phase boundary has been reached) or if
-		 * it's the NEXT upcoming boundary.
-		 *
-		 * For P/Q, ts[1]=ts[2]=ts[3] so all are past
-		 * by the time SESSION starts, making all 6 valid.
+		 * Slots 0-5 valid + slot 6 invalid.  Kunos emits all
+		 * six as soon as session_start has run, regardless of
+		 * whether each boundary has been reached — the f32
+		 * carries the scheduled time projected into the
+		 * client's clock so the client can anticipate upcoming
+		 * phase changes.  Verified against the
+		 * kunos_wine_full_race capture (P session; all six
+		 * slots valid at welcome 0x28).
 		 */
 		for (k = 0; k < 6; k++) {
-			int valid = ((double)s->session.ts[k] <=
-			    now + 1.0) ||
-			    (k > 0 && (double)s->session.ts[k - 1] <=
-			    now + 1.0);
-			if (valid) {
-				if (wr_u8(bb, 1) < 0) return -1;
-				if (wr_f32(bb,
-				    (float)((double)s->session.ts[k]
-				    - now + client_adj)) < 0)
-					return -1;
-			} else {
-				if (wr_u8(bb, 0) < 0) return -1;
-			}
+			if (wr_u8(bb, 1) < 0) return -1;
+			if (wr_f32(bb,
+			    (float)((double)s->session.ts[k]
+			    - now + client_adj)) < 0)
+				return -1;
 		}
 		if (wr_u8(bb, 0) < 0) return -1;
 	} else {
@@ -1490,7 +1479,16 @@ reply:
 		/*
 		 * Post-accept welcome sequence matching the real
 		 * server order: 0x28 + 0x36 + 0x37.
+		 *
+		 * Seed the schedule timestamps now so the first 0x28
+		 * below carries valid per-session records (matches
+		 * Kunos: the tick loop would otherwise not fire
+		 * session_start until the NEXT iteration, leaving
+		 * the welcome 0x28 with all 7 slots invalid).
 		 */
+		if (s->session.phase == PHASE_WAITING && s->nconns > 0 &&
+		    !s->session.ts_valid)
+			session_start(s);
 		{
 			struct ByteBuf wb;
 
