@@ -441,22 +441,46 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
 	int j, d, nc = 0;
 	uint8_t cvar8 = 0;
+	int32_t sess_best_lap = INT32_MAX;
+	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
 
-	for (j = 0; j < ACC_MAX_CARS; j++)
-		if (s->cars[j].used) {
-			nc++;
-			/* exe cVar8: set if any car has +0x204 >= 0
-			 * (formation lap completed / active). */
-			if (s->cars[j].race.formation_lap_done)
-				cvar8 = 1;
-		}
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct CarRaceState *r;
 
-	/* Outer FUN_140034a40 prefix. */
-	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+		if (!s->cars[j].used)
+			continue;
+		nc++;
+		/* exe cVar8: set if any car has +0x204 >= 0
+		 * (formation lap completed / active). */
+		if (s->cars[j].race.formation_lap_done)
+			cvar8 = 1;
+		r = &s->cars[j].race;
+		if (r->best_lap_ms > 0 && r->best_lap_ms < sess_best_lap)
+			sess_best_lap = r->best_lap_ms;
+		for (d = 0; d < 3; d++)
+			if (r->best_sectors_ms[d] > 0 &&
+			    r->best_sectors_ms[d] < sess_best_sec[d])
+				sess_best_sec[d] = r->best_sectors_ms[d];
+	}
+
+	/*
+	 * Outer FUN_140034a40 prefix.
+	 *   u32 session-best lap time ms (0x7fffffff = unset)
+	 *   u8  3 (count of u32s following)
+	 *   3 × u32: session-best sector splits ms (0x7fffffff = unset)
+	 *   u8  cvar8 (any-car-active flag)
+	 *   u16 entry count
+	 *
+	 * Kunos populates these as live counters across all entries.
+	 * We compute them by scanning per-car best_lap / best_sectors.
+	 */
+	if (wr_u32(bb, sess_best_lap == INT32_MAX
+	    ? 0x7FFFFFFFu : (uint32_t)sess_best_lap) < 0) return -1;
 	if (wr_u8(bb, 3) < 0) return -1;
-	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
-	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
-	if (wr_u32(bb, 0x7FFFFFFF) < 0) return -1;
+	for (d = 0; d < 3; d++)
+		if (wr_u32(bb, sess_best_sec[d] == INT32_MAX
+		    ? 0x7FFFFFFFu : (uint32_t)sess_best_sec[d]) < 0)
+			return -1;
 	if (wr_u8(bb, cvar8) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)nc) < 0) return -1;
 
