@@ -330,6 +330,7 @@ enter_phase(struct Server *s, uint8_t new_phase)
 	    session_phase_name(new_phase));
 	s->session.phase = new_phase;
 	s->session.phase_started_ms = mono_ms();
+	lobby_notify_session_changed(&s->lobby);
 }
 
 void

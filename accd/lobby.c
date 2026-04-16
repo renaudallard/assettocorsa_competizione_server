@@ -709,6 +709,13 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 					log_info("lobby: RegisterToLobby "
 					    "succeeded");
 					(void)lobby_send_drivers_update(l, s);
+					/*
+					 * Prime the lobby with our current
+					 * phase so it doesn't show the
+					 * initial "Practice" forever when we
+					 * registered mid-session.
+					 */
+					(void)lobby_send_session_update(l, s);
 				} else if (rc == 0) {
 					/*
 					 * Hard rejection — don't keep
@@ -762,16 +769,16 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 			l->drivers_dirty = 0;
 		}
 		/*
-		 * Kunos itself does NOT push periodic 0xcb session
-		 * updates — verified by sniffing accServer.exe v1.10.2:
-		 * the only post-registration TCP traffic is the 30 s
-		 * keepalive (msg id 0x0d).  Sending 0xcb during an
-		 * active session caused the lobby to reset our TCP
-		 * after ~110 s (verified on celeborn 2026-04-16).
-		 * Keep the helper in case state-change pushes are
-		 * needed later, but do not fire on the timer.
+		 * 0xcb session update — sent only on phase transitions
+		 * (session_dirty flag), NOT on a periodic timer.  Kunos
+		 * itself does not push 0xcb on a timer in the sniffed
+		 * idle window; emitting it every 20 s with a bad phase
+		 * combo previously triggered a reset within ~110 s.
 		 */
-		(void)s;
+		if (l->session_dirty) {
+			(void)lobby_send_session_update(l, s);
+			l->session_dirty = 0;
+		}
 		if (now - l->last_keepalive_ms >= LOBBY_KEEPALIVE_MS)
 			(void)lobby_send_keepalive(l);
 		break;
