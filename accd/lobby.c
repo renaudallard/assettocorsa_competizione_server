@@ -83,6 +83,7 @@
 #include "log.h"
 #include "lobby.h"
 #include "prim.h"
+#include "session.h"
 #include "state.h"
 
 #define LOBBY_HOST_DEFAULT	"131.153.158.178"
@@ -475,7 +476,14 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 	if (trem_s > INT16_MAX)
 		trem_s = INT16_MAX;
 	l->last_session_type = stype;
-	l->last_session_phase = s->session.phase;
+	/*
+	 * Lobby expects the SDK SessionPhase enum (0 = NONE, 2 =
+	 * Formation, 4 = PreSession, 5 = Session, 6 = Completed),
+	 * not our internal PHASE_* enum.  Sending the raw internal
+	 * value (e.g. PHASE_FORMATION=2 during a Practice session)
+	 * triggers Kunos to drop the registration after ~16 s.
+	 */
+	l->last_session_phase = session_phase_to_wire(s->session.phase);
 	l->last_session_time_s = (int16_t)trem_s;
 }
 
