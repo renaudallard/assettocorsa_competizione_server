@@ -37,6 +37,7 @@
 #include <sys/socket.h>
 #include <arpa/inet.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <time.h>
 
 #include "bcast.h"
@@ -378,10 +379,71 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		(void)h_udp_car_info_request(s, buf, len);
 		return;
 
-	case ACP_TIME_EVENT:		/* 0x5e */
-		log_info("udp 0x5e time event from %s:%u (%zu bytes) — TODO",
-		    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port), len);
+	case ACP_TIME_EVENT: {		/* 0x5e */
+		/*
+		 * Client-reported latency check between two peers.  Body
+		 * per FUN_1400250e0 (case 0x5e in the UDP dispatch inside
+		 * FUN_140027f80):
+		 *
+		 *   u8  0x5e
+		 *   u16 source_conn_id
+		 *   u16 target_conn_id
+		 *   u64 latency_raw_ms
+		 *   u8  forward_as_chat   (1 = send 0x2b to target too)
+		 *
+		 * Server looks up both conns.  If forward_as_chat is set
+		 * and both conns exist, logs
+		 *   "CLIENT_TIME_CHECK_CHAT (carId) driver: Latency error: N ms"
+		 * and sends the same message as 0x2b chat to the target.
+		 */
+		struct Reader r;
+		uint8_t msg_id, enable_chat = 0;
+		uint16_t source_conn = 0, target_conn = 0;
+		uint64_t latency_raw = 0;
+		struct Conn *src, *dst;
+
+		rd_init(&r, buf, len);
+		if (rd_u8(&r, &msg_id) < 0 ||
+		    rd_u16(&r, &source_conn) < 0 ||
+		    rd_u16(&r, &target_conn) < 0 ||
+		    rd_u64(&r, &latency_raw) < 0 ||
+		    rd_u8(&r, &enable_chat) < 0) {
+			log_warn("udp 0x5e short from %s:%u",
+			    inet_ntoa(peer->sin_addr),
+			    ntohs(peer->sin_port));
+			return;
+		}
+		src = server_find_conn(s, source_conn);
+		dst = server_find_conn(s, target_conn);
+		log_info("0x5e latency report: %u -> %u = %u ms (chat=%u)",
+		    source_conn, target_conn,
+		    (unsigned)latency_raw, (unsigned)enable_chat);
+		if (enable_chat && src != NULL && dst != NULL) {
+			char body_txt[96];
+			const char *from = "?";
+			struct ByteBuf out;
+
+			if (src->car_id >= 0 &&
+			    src->car_id < ACC_MAX_CARS) {
+				struct CarEntry *car = &s->cars[src->car_id];
+				if (car->driver_count > 0)
+					from = car->drivers[0].last_name;
+			}
+			snprintf(body_txt, sizeof(body_txt),
+			    "Latency error: %u ms",
+			    (unsigned)latency_raw);
+			bb_init(&out);
+			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
+			    wr_str_a(&out, from) == 0 &&
+			    wr_str_a(&out, body_txt) == 0 &&
+			    wr_i32(&out, 0) == 0 &&
+			    wr_u8(&out, 4) == 0)
+				(void)conn_send_framed(dst,
+				    out.data, out.wpos);
+			bb_free(&out);
+		}
 		return;
+	}
 
 	case ACP_ADMIN_QUERY: {		/* 0x5f */
 		/*
