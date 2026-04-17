@@ -624,24 +624,31 @@ lobby_send_keepalive(struct LobbyClient *l, const struct Server *s)
 	/*
 	 * Keepalive body (FUN_140048660 case 6 in accServer.exe):
 	 *   preamble(0xf2)                                  11 bytes
-	 *   u8 load      = (char)(int)(rainLevel * DAT_140150698)
+	 *   u8 load  = (char)(int)(rainLevel * DAT_140150698)
 	 *   u8 0
-	 *   u8 sequence  = (char)(int)(FUN_14011ee30(weather) /
-	 *                  DAT_14014f0d8 / _DAT_140150690)
-	 * Total 14 bytes.  The kson backend tracks these two bytes as
-	 * liveness — constant values (our old hard-coded 0/0/0x0d)
-	 * look frozen to it and the server is delisted once drivers>0
-	 * (idle servers are tolerated; active servers are expected to
-	 * show varying bytes).  The exact scaling constants are not
-	 * decoded, but any plausible time-varying bytes satisfy the
-	 * backend's drift check.
+	 *   u8 seq   = (char)(int)(FUN_14011ee30(weather)
+	 *               / DAT_14014f0d8 / _DAT_140150690)
+	 *
+	 * Constants extracted from the PE .rdata:
+	 *   DAT_140150698 = 100.0
+	 *   DAT_14014f0d8 = 60.0
+	 *   _DAT_140150690 ≈ 1.66666 (5/3)
+	 *   FUN_14011ee30  returns (int) of
+	 *       fmod(weekend_time_s, 86400) * (1/60)
+	 *     = minutes-into-the-in-game-day (0..1439).
+	 *
+	 * So `seq = (int)(min_of_day / 60 / (5/3)) = min_of_day / 100`
+	 * — cycles 0..14 across a 24h in-session day.  Matches the
+	 * exe byte-for-byte (modulo float rounding).
 	 */
 	struct ByteBuf bb;
 	uint8_t load, seq;
+	uint32_t min_of_day;
 	int rc;
 
 	load = (uint8_t)(s->weather.current_rain * 100.0f);
-	seq = (uint8_t)(s->session.weekend_time_s & 0xff);
+	min_of_day = (uint32_t)((s->session.weekend_time_s % 86400) / 60);
+	seq = (uint8_t)(min_of_day / 100);
 
 	bb_init(&bb);
 	if (lobby_write_preamble(&bb, l, 0xf2) < 0 ||
