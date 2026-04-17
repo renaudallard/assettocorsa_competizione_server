@@ -214,6 +214,20 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		if (!invalid &&
 		    (race->best_lap_ms == 0 || lap_ms < race->best_lap_ms))
 			race->best_lap_ms = lap_ms;
+		/*
+		 * Push the completed lap into the ring-buffer history so
+		 * the 0x36 per-car list 2 (+0x1d8) carries real lap times
+		 * instead of 0x7fffffff sentinels.  Invalid laps store the
+		 * sentinel so the HUD shows them as dashed.
+		 */
+		{
+			uint8_t slot = race->lap_history_count
+			    % ACC_LAP_HISTORY;
+			race->lap_history_ms[slot] = invalid
+			    ? (int32_t)0x7FFFFFFF : lap_ms;
+			if (race->lap_history_count < 0xFF)
+				race->lap_history_count++;
+		}
 		race->current_lap_ms = 0;
 		race->out_of_track_latched = 0;
 

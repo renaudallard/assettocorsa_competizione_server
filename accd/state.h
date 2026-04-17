@@ -50,6 +50,7 @@
 #define ACC_TRACK_NAME_LEN	48
 #define ACC_MAX_SESSIONS	16
 #define ACC_MAX_PENALTIES	8
+#define ACC_LAP_HISTORY		16
 
 /*
  * Session phase machine.
@@ -110,6 +111,8 @@ struct CarRaceState {
 	int32_t		sector_ms[3];
 	int32_t		best_sectors_ms[3];
 	int32_t		race_time_ms;
+	int32_t		lap_history_ms[ACC_LAP_HISTORY];
+	uint8_t		lap_history_count;
 	uint8_t		in_pit;
 	uint8_t		pit_crossing_latched;
 	uint8_t		mandatory_pit_served;

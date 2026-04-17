@@ -610,20 +610,47 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		 * every entry in both lists is a u32; when wide=0
 		 * every entry is a u16 (capped at 0xffff).
 		 *
-		 * For a fresh car with no lap history, Kunos capture
-		 * shows list 1 empty and list 2 populated with three
-		 * 0x7fffffff sentinels (wide_flag=1).  We emit the
-		 * same pattern until per-lap history is tracked.
+		 * list 2 holds the last N lap times from the ring
+		 * buffer.  Fresh car (no laps) emits three 0x7fffffff
+		 * sentinels to match the Kunos capture; otherwise we
+		 * replay the completed-lap times so the HUD history
+		 * widget shows real values instead of garbage.
 		 */
 		{
 			int si;
 			int l1_n = 0;
-			int l2_n = 3;	/* placeholder sentinels */
+			int l2_n;
 			uint8_t wide_flag = 1;
+			int32_t l2_buf[ACC_LAP_HISTORY];
 
 			for (si = 0; si < 3; si++) {
 				if (race->sector_ms[si] > 0)
 					l1_n = si + 1;
+			}
+
+			if (race->lap_history_count == 0) {
+				l2_n = 3;
+				l2_buf[0] = (int32_t)0x7FFFFFFF;
+				l2_buf[1] = (int32_t)0x7FFFFFFF;
+				l2_buf[2] = (int32_t)0x7FFFFFFF;
+			} else {
+				int nh = race->lap_history_count
+				    < ACC_LAP_HISTORY
+				    ? race->lap_history_count
+				    : ACC_LAP_HISTORY;
+				int start = race->lap_history_count
+				    <= ACC_LAP_HISTORY
+				    ? 0
+				    : race->lap_history_count
+				    % ACC_LAP_HISTORY;
+				int k;
+
+				l2_n = nh;
+				for (k = 0; k < nh; k++) {
+					int idx = (start + k)
+					    % ACC_LAP_HISTORY;
+					l2_buf[k] = race->lap_history_ms[idx];
+				}
 			}
 
 			if (wr_u8(bb, wide_flag) < 0) return -1;
@@ -635,7 +662,8 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 			}
 			if (wr_u8(bb, (uint8_t)l2_n) < 0) return -1;
 			for (si = 0; si < l2_n; si++) {
-				if (wr_u32(bb, 0x7FFFFFFFu) < 0)
+				if (wr_u32(bb,
+				    (uint32_t)l2_buf[si]) < 0)
 					return -1;
 			}
 		}
