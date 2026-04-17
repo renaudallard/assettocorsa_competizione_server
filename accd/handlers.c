@@ -331,7 +331,8 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 						    c->car_id,
 						    penalty_name(front->kind));
 						penalty_enqueue(s, c->car_id,
-						    PEN_DQ, inherited, 0);
+						    EXE_DQ, 8, 3, 1, 0,
+						    inherited);
 					} else {
 						log_info("Car %d failed to "
 						    "serve %s -> SG30 "
@@ -339,7 +340,8 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 						    c->car_id,
 						    penalty_name(front->kind));
 						penalty_enqueue(s, c->car_id,
-						    PEN_SG30, inherited, 0);
+						    EXE_SG30, 8, 3, 0, 0,
+						    inherited);
 					}
 				}
 			}
@@ -632,12 +634,12 @@ h_car_location_update(struct Server *s, struct Conn *c,
 			 * outright; allowAutoDQ does not downgrade
 			 * this since 1.8.11.  Use PEN_DQ, not PEN_DT.
 			 */
-			if (speed > 22.5f && !race->pit_crossing_latched) {
+			if (speed > 22.22f && !race->pit_crossing_latched) {
 				log_info("PITLANE SPEEDING for car #%d "
 				    "speed=%.1f m/s -> DQ",
 				    car->race_number, speed);
-				penalty_enqueue(s, c->car_id, PEN_DQ,
-				    REASON_PIT_SPEEDING, 0);
+				penalty_enqueue(s, c->car_id, EXE_DQ, 8,
+				    3, 1, 0, REASON_PIT_SPEEDING);
 				race->pit_crossing_latched = 1;
 			}
 		}
@@ -726,8 +728,8 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		    c->car_id, (unsigned)force, (int)ts_raw,
 		    (unsigned)race->cuts_this_lap);
 		if (race->cuts_this_lap == 3) {
-			if (penalty_enqueue(s, c->car_id, PEN_DT,
-			    REASON_CUTTING, 0) == 0)
+			if (penalty_enqueue(s, c->car_id, EXE_DT, 8,
+			    3, 0, 0, REASON_CUTTING) == 0)
 				log_info("auto-DT: car %d 3 cuts this lap",
 				    c->car_id);
 		}

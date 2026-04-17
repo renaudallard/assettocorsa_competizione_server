@@ -63,52 +63,230 @@ penalty_kind_from_string(const char *cmd)
 	return PEN_NONE;
 }
 
-int
-penalty_enqueue(struct Server *s, int car_id, uint8_t kind,
-    uint8_t reason, int collision)
+uint8_t
+penalty_exe_kind_of(uint8_t pen_kind)
+{
+	switch (pen_kind) {
+	case PEN_DT:
+	case PEN_DTC:		return EXE_DT;
+	case PEN_SG10:
+	case PEN_SG10C:		return EXE_SG10;
+	case PEN_SG20:
+	case PEN_SG20C:		return EXE_SG20;
+	case PEN_SG30:
+	case PEN_SG30C:		return EXE_SG30;
+	case PEN_TP5:
+	case PEN_TP15:		return EXE_TP;
+	case PEN_DQ:		return EXE_DQ;
+	default:		return EXE_NONE;
+	}
+}
+
+/*
+ * Translate exe_kind + collision flag to our internal PEN_* enum so
+ * materialized Penalty entries carry the right kind for leaderboard
+ * rendering.  Collision only distinguishes /dt vs /dtc (and /sgXX vs
+ * /sgXXc); all others ignore collision.
+ */
+static uint8_t
+pen_kind_of_exe(uint8_t exe_kind, int collision, int32_t value)
+{
+	switch (exe_kind) {
+	case EXE_DT:	return collision ? PEN_DTC  : PEN_DT;
+	case EXE_SG10:	return collision ? PEN_SG10C : PEN_SG10;
+	case EXE_SG20:	return collision ? PEN_SG20C : PEN_SG20;
+	case EXE_SG30:	return collision ? PEN_SG30C : PEN_SG30;
+	case EXE_TP:	return value >= 15 ? PEN_TP15 : PEN_TP5;
+	case EXE_DQ:	return PEN_DQ;
+	default:	return PEN_NONE;
+	}
+}
+
+/*
+ * Append a materialized Penalty to the car's PenaltyQueue — the
+ * equivalent of FUN_140126b50 in the exe, which pushes a new Penalty
+ * object onto the sheet entry's vector.
+ */
+static void
+penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
+    int collision, int32_t value, uint8_t reason)
 {
 	struct PenaltyQueue *q;
 	struct PenaltyEntry *e;
 	struct timespec ts;
+	uint8_t pen_kind = pen_kind_of_exe(exe_kind, collision, value);
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
-		return -1;
+		return;
 	q = &s->cars[car_id].race.pen;
 	if (q->count >= ACC_MAX_PENALTIES)
-		return -1;
+		return;
 
 	e = &q->slots[q->count++];
-	e->kind = kind;
+	e->kind = pen_kind;
 	e->reason = reason;
 	e->collision = collision ? 1 : 0;
 	e->served = 0;
-	switch (kind) {
-	case PEN_DT:
-	case PEN_DTC:
-	case PEN_SG10:
-	case PEN_SG10C:
-	case PEN_SG20:
-	case PEN_SG20C:
-	case PEN_SG30:
-	case PEN_SG30C:
-		/*
-		 * Drive-through and stop-and-go must be served within
-		 * 3 racing laps, else the car is auto-DQ'd.  Time
-		 * penalties (TP) are added to the total at session end
-		 * and don't have a service deadline.
-		 */
-		e->laps_remaining = 3;
+	switch (exe_kind) {
+	case EXE_DT:
+	case EXE_SG10:
+	case EXE_SG20:
+	case EXE_SG30:
+		e->laps_remaining = 3;	/* serve within 3 laps */
 		break;
 	default:
 		e->laps_remaining = 0;
 		break;
 	}
-	if (kind == PEN_DQ)
+	if (exe_kind == EXE_DQ)
 		s->cars[car_id].race.disqualified = 1;
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	e->issued_ms = (uint64_t)ts.tv_sec * 1000ull +
 	    (uint64_t)ts.tv_nsec / 1000000ull;
-	return 0;
+}
+
+/*
+ * penalty_enqueue — behavioral match for FUN_140125f50.  Maintains
+ * per-car per-exe_kind PenaltySheet state (counter + severity).
+ *
+ * Exe semantics per decomp:
+ *  - EXE_TP (kind 5): counter accumulates `value`.  At 0x100 seconds
+ *    total, escalate to DQ.  Admin /tp5 adds 5, /tp15 adds 15.
+ *  - EXE_DT/SG10/SG20/SG30: first call sets severity without
+ *    materializing; second+ call materializes + steps the ladder.
+ *    Ladder: bVar2=1(DT) → bVar6; bVar2=2/3 → bVar6; bVar2=4 → DQ
+ *    only if force; where bVar6 = (force+2)*2 = 4 (SG30) or 6 (DQ).
+ *  - EXE_DQ: materialize immediately, race->disqualified=1.
+ *
+ * Our deviation from exe: we materialize on the fresh-entry path
+ * too, so admin /dt visibly adds a Penalty on the first call.
+ * The exe's silent-first-call would confuse admins and break the
+ * pre-refactor behavior of the reimpl.
+ */
+int
+penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
+    uint8_t category, int32_t value, int force, int collision,
+    uint8_t reason)
+{
+	struct CarRaceState *race;
+	struct PenaltySheetState *st;
+	struct timespec now_ts;
+	uint64_t now_ms;
+	int iter;
+
+	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
+		return -1;
+	if (exe_kind == EXE_NONE || exe_kind > EXE_DQ)
+		return -1;
+
+	race = &s->cars[car_id].race;
+	clock_gettime(CLOCK_MONOTONIC, &now_ts);
+	now_ms = (uint64_t)now_ts.tv_sec * 1000ull +
+	    (uint64_t)now_ts.tv_nsec / 1000000ull;
+
+	/* Immediate-effect special case: DQ. */
+	if (exe_kind == EXE_DQ) {
+		penalty_materialize(s, car_id, EXE_DQ, collision,
+		    value, reason);
+		st = &race->pen_state[EXE_DQ];
+		st->severity = EXE_DQ;
+		st->category = category;
+		st->issued_ms = now_ms;
+		st->reason = reason;
+		st->counter = value;
+		return 0;
+	}
+
+	/* Post-race time penalty: counter is seconds, threshold 256. */
+	if (exe_kind == EXE_TP) {
+		st = &race->pen_state[EXE_TP];
+		if (st->severity == 0) {
+			st->severity = EXE_TP;
+			st->category = category;
+			st->reason = reason;
+		}
+		st->counter += value;
+		st->issued_ms = now_ms;
+		penalty_materialize(s, car_id, EXE_TP, collision,
+		    value, reason);
+		if (st->counter >= 0x100) {
+			log_info("car %d total TP exceeded 256s -> DQ",
+			    car_id);
+			penalty_materialize(s, car_id, EXE_DQ, 0, 0, reason);
+			race->pen_state[EXE_DQ].severity = EXE_DQ;
+			race->pen_state[EXE_DQ].issued_ms = now_ms;
+		}
+		return 0;
+	}
+
+	/*
+	 * DT/SG ladder — bounded loop mimics exe's `goto LAB_140125fb0`
+	 * pattern, cap iterations so a pathological severity loop can't
+	 * hang the server.
+	 */
+	for (iter = 0; iter < 8; iter++) {
+		st = &race->pen_state[exe_kind];
+
+		if (st->severity == 0) {
+			/*
+			 * Fresh: materialize + set severity (deviation
+			 * from exe — see header comment).  Counter
+			 * initialized to value; the first repeat call
+			 * finds severity != 0 and steps the ladder.
+			 */
+			st->severity = exe_kind;
+			st->category = category;
+			st->issued_ms = now_ms;
+			st->reason = reason;
+			st->counter = value;
+			penalty_materialize(s, car_id, exe_kind,
+			    collision, value, reason);
+			return 0;
+		}
+
+		/*
+		 * Non-fresh: materialize current severity and step the
+		 * ladder.  Unlike TP there's no counter accumulation
+		 * gate for the DT/SG path — each repeat call escalates.
+		 */
+		penalty_materialize(s, car_id, st->severity, collision,
+		    value, reason);
+		st->issued_ms = now_ms;
+
+		{
+			uint8_t bVar2 = st->severity;
+			uint8_t bVar6 = (uint8_t)((force + 2) * 2);
+			/* bVar6 = 4 (SG30) if force=0, 6 (DQ) if force=1 */
+
+			if (bVar2 == EXE_DT) {
+				if (exe_kind > EXE_DT) {
+					exe_kind = bVar6;
+					value = 0;
+					continue;
+				}
+				exe_kind = EXE_SG30;
+				value = 3;
+				continue;
+			}
+			if (bVar2 == EXE_SG10 || bVar2 == EXE_SG20) {
+				exe_kind = bVar6;
+				value = 3;
+				continue;
+			}
+			if (bVar2 == EXE_SG30) {
+				if (force == 0)
+					return 0;
+				exe_kind = EXE_DQ;
+				value = 3;
+				continue;
+			}
+			/* severity 5 or 6 reached: terminal */
+			return 0;
+		}
+	}
+	log_warn("penalty_enqueue: escalation loop overflow car=%d",
+	    car_id);
+	return -1;
 }
 
 void

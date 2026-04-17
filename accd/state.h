@@ -122,6 +122,21 @@ struct PenaltyQueue {
 };
 
 /*
+ * Per-car PenaltySheet state matching FUN_140125f50 in accServer.exe.
+ * Indexed by exe penalty kind (1=DT, 2=SG10, 3=SG20, 4=SG30, 5=TP,
+ * 6=DQ; slot 0 unused).  Reports accumulate the `counter` field; when
+ * it reaches 0x100 the timing module escalates via a new Penalty
+ * append + a ladder step on `severity`.
+ */
+struct PenaltySheetState {
+	int32_t		counter;
+	uint8_t		severity;
+	uint8_t		category;	/* exe local_res20, typically 8 */
+	uint64_t	issued_ms;
+	uint8_t		reason;
+};
+
+/*
  * Per-car race-state runtime info: laps, position, sector splits,
  * pit status.  Updated by 0x19/0x20/0x21/0x32 handlers and read
  * by the leaderboard sort + result writer.
@@ -148,6 +163,7 @@ struct CarRaceState {
 	uint8_t		out_lap_done;		/* first lap from pits */
 	uint8_t		disqualified;		/* PEN_DQ terminal flag */
 	struct PenaltyQueue	pen;
+	struct PenaltySheetState	pen_state[7];	/* exe kind 1..6 */
 };
 
 /*

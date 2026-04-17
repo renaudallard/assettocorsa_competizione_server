@@ -42,10 +42,42 @@
 /* Convert a chat command suffix (e.g. "tp5", "tp5c") to enum. */
 int	penalty_kind_from_string(const char *cmd);
 
-/* Enqueue a penalty for the given car.  Returns 0 on success
- * or -1 if the queue is full / car invalid. */
+/*
+ * Exe penalty kind values used by FUN_140125f50 (param_5), 1..6:
+ * 1=DriveThrough, 2=StopAndGo10, 3=StopAndGo20, 4=StopAndGo30,
+ * 5=PostRaceTime, 6=Disqualified.  Kind 0 = unused slot.
+ */
+enum penalty_exe_kind {
+	EXE_NONE = 0,
+	EXE_DT   = 1,
+	EXE_SG10 = 2,
+	EXE_SG20 = 3,
+	EXE_SG30 = 4,
+	EXE_TP   = 5,
+	EXE_DQ   = 6
+};
+
+/* Map our internal PEN_* enum to the exe penalty kind (1..6). */
+uint8_t	penalty_exe_kind_of(uint8_t pen_kind);
+
+/*
+ * Issue a penalty event matching FUN_140125f50 semantics.
+ *   exe_kind  — 1..6 (see enum penalty_exe_kind)
+ *   category  — exe local_res20, typically 8 for admin/auto events
+ *   value     — counter increment (accumulates to threshold 0x100)
+ *   force     — 0 = normal, 1 = admin-forced (skips certain gates)
+ *   collision — "c" variant of admin command
+ *   reason    — enum penalty_reason for wire translation
+ * Fresh entries initialize counter to `value` and return without
+ * materializing a Penalty.  Existing entries accumulate; when the
+ * counter crosses 0x100 the function appends a Penalty to the car's
+ * PenaltyQueue and steps the severity ladder (DT → SG30/DQ etc.).
+ * Returns 0 on success, -1 on invalid car / queue full.
+ */
 int	penalty_enqueue(struct Server *s, int car_id,
-		uint8_t kind, uint8_t reason, int collision);
+		uint8_t exe_kind, uint8_t category,
+		int32_t value, int force,
+		int collision, uint8_t reason);
 
 /* Translate internal (kind, reason) to the 0..35
  * ServerMonitorPenaltyShortcut wire value. */
