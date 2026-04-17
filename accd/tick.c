@@ -371,6 +371,34 @@ write_result_header(struct ByteBuf *bb, const struct CarEntry *car)
 	uint8_t position = r->position > 0 && r->position < 0xff
 	    ? (uint8_t)r->position : 0;
 	uint8_t drv_minus_one = (uint8_t)(car->current_driver_index - 1);
+	uint32_t penalty_ms = 0;
+	int pi;
+
+	/*
+	 * +0x74 penalty_ms = sum of time penalties the client should
+	 * add to race_time_ms for final standings.  Admin TP5/TP15 are
+	 * unconditional.  An unserved drive-through that the session
+	 * ended on (laps_remaining > 0 at end, hence auto-DQ never
+	 * fired) converts to an 80s time penalty per handbook V.1.8.11.
+	 */
+	for (pi = 0; pi < r->pen.count; pi++) {
+		const struct PenaltyEntry *p = &r->pen.slots[pi];
+		switch (p->kind) {
+		case PEN_TP5:
+			penalty_ms += 5000;
+			break;
+		case PEN_TP15:
+			penalty_ms += 15000;
+			break;
+		case PEN_DT:
+		case PEN_DTC:
+			if (!p->served && p->laps_remaining > 0)
+				penalty_ms += 80000;
+			break;
+		default:
+			break;
+		}
+	}
 
 	if (wr_u8(bb, position) < 0) return -1;		/* +0x50 */
 	if (wr_u8(bb, position) < 0) return -1;		/* +0x54 cup_pos */
@@ -383,7 +411,7 @@ write_result_header(struct ByteBuf *bb, const struct CarEntry *car)
 	    ? (uint32_t)r->race_time_ms : 0) < 0) return -1;	/* +0x68 */
 	if (wr_u8(bb, r->formation_lap_done) < 0) return -1;	/* +0x6c */
 	if (wr_u8(bb, r->disqualified) < 0) return -1;	/* +0x70 */
-	if (wr_u32(bb, 0) < 0) return -1;		/* +0x74 penalty ms */
+	if (wr_u32(bb, penalty_ms) < 0) return -1;	/* +0x74 penalty ms */
 	return 0;
 }
 
