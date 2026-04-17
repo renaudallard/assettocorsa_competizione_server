@@ -768,7 +768,8 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 
 	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.3f) < 0) return -1;
-	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.4f) < 0) return -1;
+	/* Green-flag grip baseline; constant per session (see weather.c). */
+	if (wr_f32(bb, 0.97f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;

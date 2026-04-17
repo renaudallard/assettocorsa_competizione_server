@@ -171,7 +171,13 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	 *   [16] weekend time (seconds, as f32)
 	 */
 	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.3f) < 0) return -1;
-	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.4f) < 0) return -1;
+	/*
+	 * Slot [1] is the green-flag grip baseline.  Kunos initializes
+	 * this once from randomizeGreenFlagTriggers and holds it for the
+	 * session (capture shows 0.97).  Using 1 - clouds*0.4 made it
+	 * drift with the cloud level, which the exe never does.
+	 */
+	if (wr_f32(bb, 0.97f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
