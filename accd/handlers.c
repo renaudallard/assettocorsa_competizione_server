@@ -201,7 +201,18 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	    race->sector_ms[1] > 0 && race->sector_ms[2] > 0) {
 		int32_t lap_ms = race->sector_ms[0] +
 		    race->sector_ms[1] + race->sector_ms[2];
-		int invalid = race->out_of_track_latched;
+		/*
+		 * The u16 car_field trailing every 0x20 carries the
+		 * client's lap-state bitmap.  Bit 0 = HasCut (track
+		 * limits violated), bit 2 = IsOutLap (lap started from
+		 * pit or grid).  Kunos excludes both from the personal
+		 * best.  Our own out_of_track_latched is kept as a
+		 * server-side backstop for hasCut detection.
+		 */
+		int has_cut = (car_field & 0x0001) != 0;
+		int is_out_lap = (car_field & 0x0004) != 0;
+		int invalid = has_cut || is_out_lap ||
+		    race->out_of_track_latched;
 
 		race->lap_count++;
 		race->last_lap_ms = lap_ms;
