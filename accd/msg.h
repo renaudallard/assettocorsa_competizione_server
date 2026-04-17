@@ -127,7 +127,7 @@
 #define SRV_BOP_UPDATE			0x53	/* MultiplayerBOPUpdate */
 #define SRV_SETUP_DATA_RESPONSE		0x56
 #define SRV_DRIVER_SWAP_NOTIFY		0x58
-#define SRV_STATE_RECORD_59		0x59
+#define SRV_DRIVER_HANDOVER_REQ		0x59	/* 4 B body: u16 car + u8 idx */
 #define SRV_CTRL_INFO_REQUEST		0x5b	/* 1-byte probe */
 #define SRV_CONNECTIONS_LIST_ROW	0x5d	/* /connections per-row */
 #define SRV_PERIODIC_UDP		0xbe

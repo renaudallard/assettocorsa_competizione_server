@@ -428,6 +428,26 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			}
 			bb_free(&bb);
 		}
+
+		/*
+		 * Acknowledge the handover request back to the sender
+		 * with SRV_DRIVER_HANDOVER_REQ (0x59).  Matches
+		 * FUN_140027990 in accServer.exe: 4-byte body carrying
+		 * the source car_id and the (driver_index - 1) slot of
+		 * the driver who will take over.  Clients use this to
+		 * display the "handover pending" UI until the matching
+		 * 0x48 ACP_EXECUTE_DRIVER_SWAP is received.
+		 */
+		{
+			struct ByteBuf bb;
+
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_DRIVER_HANDOVER_REQ) == 0 &&
+			    wr_u16(&bb, car->car_id) == 0 &&
+			    wr_u8(&bb, (uint8_t)target) == 0)
+				(void)conn_send_framed(c, bb.data, bb.wpos);
+			bb_free(&bb);
+		}
 		return 1;
 	}
 
