@@ -706,7 +706,35 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			chat_broadcast(s,line, 4);
 		}
 	} else if (chat_prefix(text, "/hellban")) {
-		log_info("admin: /hellban (TODO)");
+		if (chat_parse_int(text + 8, &car_num) == 0) {
+			int car_id = chat_car_by_racenum(s, car_num);
+			struct Conn *cn = NULL;
+			int j;
+
+			if (car_id >= 0)
+				for (j = 0; j < ACC_MAX_CARS; j++)
+					if (s->conns[j] != NULL &&
+					    s->conns[j]->car_id == car_id) {
+						cn = s->conns[j];
+						break;
+					}
+			if (cn != NULL) {
+				char line[80];
+
+				cn->hellbanned = 1;
+				snprintf(line, sizeof(line),
+				    "Car #%d has been hellbanned", car_num);
+				chat_broadcast(s, line, 4);
+				log_info("admin: /hellban %d (conn=%u)",
+				    car_num, (unsigned)cn->conn_id);
+			} else {
+				char line[80];
+				snprintf(line, sizeof(line),
+				    "Couldn't locate connection for car #%d",
+				    car_num);
+				chat_broadcast(s, line, 4);
+			}
+		}
 	} else if (chat_prefix(text, "/report")) {
 		log_info("admin: /report (TODO)");
 	} else if (chat_prefix(text, "/latencymode")) {

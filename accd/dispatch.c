@@ -74,6 +74,22 @@ dispatch_one_tcp(struct Server *s, struct Conn *c,
 		return -1;
 	}
 
+	/*
+	 * Shadow-ban: the /hellban admin command flips c->hellbanned so
+	 * the server silently drops every inbound message from this
+	 * connection (chat, lap, sector, car update, etc).  The client
+	 * keeps seeing outbound broadcasts from others so their UI
+	 * appears normal, but their own actions never propagate.
+	 * Handshake + clean disconnect still pass through so the socket
+	 * isn't wedged.
+	 */
+	if (c->hellbanned && msg_id != ACP_REQUEST_CONNECTION &&
+	    msg_id != ACP_DISCONNECT) {
+		log_debug("tcp: hellban drop msg 0x%02x from conn=%u",
+		    (unsigned)msg_id, (unsigned)c->conn_id);
+		return 0;
+	}
+
 	switch (msg_id) {
 	case ACP_REQUEST_CONNECTION:	/* 0x09 */
 		return handshake_handle(s, c, body, len);
@@ -347,6 +363,13 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		c = server_find_conn(s, src_conn);
 		if (c != NULL)
 			c->peer = *peer;
+		if (c != NULL && c->hellbanned) {
+			/*
+			 * Shadow-banned: don't process or relay the car
+			 * state so other clients see this car frozen.
+			 */
+			return;
+		}
 		(void)h_udp_car_update(s, c, buf, len);
 		return;
 	}
