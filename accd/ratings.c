@@ -190,6 +190,7 @@ ratings_save(struct Server *s)
 		(void)unlink(tmp);
 		return;
 	}
+	log_info("ratings_save: %s", path);
 }
 
 void
