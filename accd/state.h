@@ -84,10 +84,34 @@ enum penalty_kind {
 	PEN_DQ
 };
 
+/*
+ * Reason a penalty was issued.  Combined with penalty_kind this maps
+ * to one of the 36 ServerMonitorPenaltyShortcut values (notebook-b
+ * §12B.4) via penalty_wire_value() for on-wire serialization.
+ */
+enum penalty_reason {
+	REASON_NONE = 0,
+	REASON_CUTTING,
+	REASON_PIT_SPEEDING,
+	REASON_IGNORED_MANDATORY_PIT,
+	REASON_RACE_CONTROL,
+	REASON_PIT_ENTRY,
+	REASON_PIT_EXIT,
+	REASON_WRONG_WAY,
+	REASON_LIGHTS_OFF,
+	REASON_IGNORED_DRIVER_STINT,
+	REASON_EXCEEDED_DRIVER_STINT_LIMIT,
+	REASON_DRIVER_RAN_NO_STINT,
+	REASON_DAMAGED_CAR,
+	REASON_SPEEDING_ON_START,
+	REASON_WRONG_POSITION_ON_START
+};
+
 struct PenaltyEntry {
 	uint8_t		kind;		/* enum penalty_kind */
 	uint8_t		collision;	/* /tp5c vs /tp5 */
 	uint8_t		served;
+	uint8_t		reason;		/* enum penalty_reason */
 	int32_t		laps_remaining;	/* drive-through countdown */
 	uint64_t	issued_ms;
 };

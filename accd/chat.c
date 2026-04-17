@@ -193,7 +193,8 @@ chat_do_penalty(struct Server *s, const char *cmd, const char *args,
 	kind = penalty_kind_from_string(cmd);
 	if (kind == PEN_NONE)
 		return;
-	if (penalty_enqueue(s, car_id, (uint8_t)kind, collision) < 0)
+	if (penalty_enqueue(s, car_id, (uint8_t)kind,
+	    REASON_RACE_CONTROL, collision) < 0)
 		return;
 	penalty_format_chat(chat, sizeof(chat),
 	    (uint8_t)kind, collision, car_num);
@@ -449,7 +450,8 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		if (chat_parse_int(text + 3, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);
 			if (car_id >= 0) {
-				penalty_enqueue(s, car_id, PEN_DQ, 0);
+				penalty_enqueue(s, car_id, PEN_DQ,
+				    REASON_RACE_CONTROL, 0);
 				char chat[128];
 				snprintf(chat, sizeof(chat),
 				    "Car #%d was disqualified by Race Control",

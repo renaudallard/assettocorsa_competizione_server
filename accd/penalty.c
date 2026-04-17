@@ -64,7 +64,8 @@ penalty_kind_from_string(const char *cmd)
 }
 
 int
-penalty_enqueue(struct Server *s, int car_id, uint8_t kind, int collision)
+penalty_enqueue(struct Server *s, int car_id, uint8_t kind,
+    uint8_t reason, int collision)
 {
 	struct PenaltyQueue *q;
 	struct PenaltyEntry *e;
@@ -78,6 +79,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t kind, int collision)
 
 	e = &q->slots[q->count++];
 	e->kind = kind;
+	e->reason = reason;
 	e->collision = collision ? 1 : 0;
 	e->served = 0;
 	switch (kind) {
@@ -165,6 +167,85 @@ penalty_name(uint8_t kind)
 	case PEN_DQ:		return "Disqualified by Race Control";
 	default:		return "?";
 	}
+}
+
+/*
+ * Map internal (kind, reason) to the 0..35 ServerMonitorPenaltyShortcut
+ * wire value documented in notebook-b §12B.4.  Default for unknown
+ * combos is 0 (No_Penalty) — better to emit "no penalty" than a
+ * wrong semantic.
+ */
+uint16_t
+penalty_wire_value(uint8_t kind, uint8_t reason)
+{
+	switch (reason) {
+	case REASON_CUTTING:
+		switch (kind) {
+		case PEN_DT: case PEN_DTC:	return 1;
+		case PEN_SG10: case PEN_SG10C:	return 2;
+		case PEN_SG20: case PEN_SG20C:	return 3;
+		case PEN_SG30: case PEN_SG30C:	return 4;
+		case PEN_DQ:			return 5;
+		}
+		break;
+	case REASON_PIT_SPEEDING:
+		switch (kind) {
+		case PEN_DT: case PEN_DTC:	return 7;
+		case PEN_SG10: case PEN_SG10C:	return 8;
+		case PEN_SG20: case PEN_SG20C:	return 9;
+		case PEN_SG30: case PEN_SG30C:	return 10;
+		case PEN_DQ:			return 11;
+		}
+		break;
+	case REASON_IGNORED_MANDATORY_PIT:
+		if (kind == PEN_DQ) return 13;
+		break;
+	case REASON_RACE_CONTROL:
+		switch (kind) {
+		case PEN_TP5: case PEN_TP15:	return 14;
+		case PEN_DT: case PEN_DTC:	return 15;
+		case PEN_SG10: case PEN_SG10C:	return 16;
+		case PEN_SG20: case PEN_SG20C:	return 17;
+		case PEN_SG30: case PEN_SG30C:	return 18;
+		case PEN_DQ:			return 19;
+		}
+		break;
+	case REASON_PIT_ENTRY:		if (kind == PEN_DQ) return 20; break;
+	case REASON_PIT_EXIT:		if (kind == PEN_DQ) return 21; break;
+	case REASON_WRONG_WAY:		if (kind == PEN_DQ) return 22; break;
+	case REASON_LIGHTS_OFF:		if (kind == PEN_DQ) return 23; break;
+	case REASON_IGNORED_DRIVER_STINT:
+		switch (kind) {
+		case PEN_DT: case PEN_DTC:	return 24;
+		case PEN_SG30: case PEN_SG30C:	return 25;
+		case PEN_DQ:			return 26;
+		}
+		break;
+	case REASON_EXCEEDED_DRIVER_STINT_LIMIT:
+		if (kind == PEN_DQ) return 27;
+		break;
+	case REASON_DRIVER_RAN_NO_STINT:
+		if (kind == PEN_DQ) return 28;
+		break;
+	case REASON_DAMAGED_CAR:
+		if (kind == PEN_DQ) return 29;
+		break;
+	case REASON_SPEEDING_ON_START:
+		switch (kind) {
+		case PEN_DT: case PEN_DTC:	return 30;
+		case PEN_SG30: case PEN_SG30C:	return 31;
+		case PEN_DQ:			return 32;
+		}
+		break;
+	case REASON_WRONG_POSITION_ON_START:
+		switch (kind) {
+		case PEN_DT: case PEN_DTC:	return 33;
+		case PEN_SG30: case PEN_SG30C:	return 34;
+		case PEN_DQ:			return 35;
+		}
+		break;
+	}
+	return 0;	/* No_Penalty */
 }
 
 int

@@ -45,7 +45,12 @@ int	penalty_kind_from_string(const char *cmd);
 /* Enqueue a penalty for the given car.  Returns 0 on success
  * or -1 if the queue is full / car invalid. */
 int	penalty_enqueue(struct Server *s, int car_id,
-		uint8_t kind, int collision);
+		uint8_t kind, uint8_t reason, int collision);
+
+/* Translate internal (kind, reason) to the 0..35
+ * ServerMonitorPenaltyShortcut wire value. */
+uint16_t
+	penalty_wire_value(uint8_t kind, uint8_t reason);
 
 /* Mark the front penalty as served (for stop-and-go / drive-through). */
 void	penalty_serve_front(struct Server *s, int car_id);

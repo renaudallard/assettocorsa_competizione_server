@@ -65,6 +65,7 @@
 #include "io.h"
 #include "log.h"
 #include "msg.h"
+#include "penalty.h"
 #include "prim.h"
 #include "session.h"
 #include "state.h"
@@ -516,7 +517,8 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		if (pq->count > 0 && !pq->slots[0].served) {
 			float remaining = (float)pq->slots[0].laps_remaining;
 			if (wr_u8(bb, 1) < 0) return -1;
-			if (wr_u16(bb, (uint16_t)pq->slots[0].kind) < 0)
+			if (wr_u16(bb, penalty_wire_value(pq->slots[0].kind,
+			    pq->slots[0].reason)) < 0)
 				return -1;
 			if (wr_f32(bb, remaining) < 0) return -1;
 		} else {
@@ -540,7 +542,9 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		/* Pending penalty queue: u8 count + N x i32. */
 		if (wr_u8(bb, pq->count) < 0) return -1;
 		for (pi = 0; pi < pq->count; pi++)
-			if (wr_i32(bb, (int32_t)pq->slots[pi].kind) < 0)
+			if (wr_i32(bb, (int32_t)penalty_wire_value(
+			    pq->slots[pi].kind,
+			    pq->slots[pi].reason)) < 0)
 				return -1;
 
 		/* Drivers. */

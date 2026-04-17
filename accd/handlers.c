@@ -280,35 +280,6 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		race->sector_ms[1] = 0;
 		race->sector_ms[2] = 0;
 		/*
-		 * Tick down the drive-through / stop-and-go service
-		 * deadline.  Three racing laps to serve, else auto-DQ.
-		 * Only the head-of-queue entry ticks — you can't serve
-		 * the next one until the first is cleared.
-		 */
-		if (race->pen.count > 0) {
-			struct PenaltyEntry *front = &race->pen.slots[0];
-			switch (front->kind) {
-			case PEN_DT: case PEN_DTC:
-			case PEN_SG10: case PEN_SG10C:
-			case PEN_SG20: case PEN_SG20C:
-			case PEN_SG30: case PEN_SG30C:
-				if (!front->served && front->laps_remaining > 0) {
-					front->laps_remaining--;
-					if (front->laps_remaining == 0) {
-						log_info("auto-DQ: car %d "
-						    "failed to serve %s",
-						    c->car_id,
-						    penalty_name(front->kind));
-						penalty_enqueue(s, c->car_id,
-						    PEN_DQ, 0);
-					}
-				}
-				break;
-			default:
-				break;
-			}
-		}
-		/*
 		 * Feed the local rating EWMA: clean lap +5 SA, cut -25,
 		 * out-laps skipped.  Keyed by driver steam_id.
 		 */
@@ -327,45 +298,49 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			    s->cars[c->car_id].car_id, lap_ms);
 
 		/*
-		 * Count down the service deadline on every active
-		 * DT/SG penalty.  When the front entry hits zero
-		 * laps remaining and is still unserved, auto-DQ the
-		 * car (Disqualified_IgnoredMandatoryPit).  Walk all
-		 * slots so a queued second penalty also progresses.
+		 * Tick down the front DT/SG entry's service deadline.
+		 * Three racing laps to serve, else auto-DQ (or SG30 if
+		 * allowAutoDQ=0 in settings.json).  Only the front ticks
+		 * — service is sequential, the second penalty can't
+		 * start until the first is cleared.  Reckless-driving
+		 * DQs (Kunos 1.8.11+) are not downgradable but those
+		 * come from h_car_location_update (pit speeding) as
+		 * direct PEN_DQ, not via this serve-deadline path.
 		 */
-		{
-			struct PenaltyQueue *pq = &race->pen;
-			int pi;
-			int dq_now = 0;
-
-			for (pi = 0; pi < pq->count; pi++) {
-				if (pq->slots[pi].laps_remaining > 0) {
-					pq->slots[pi].laps_remaining--;
-					if (pq->slots[pi].laps_remaining == 0
-					    && !pq->slots[pi].served)
-						dq_now = 1;
-				}
+		if (race->pen.count > 0 && !race->disqualified) {
+			struct PenaltyEntry *front = &race->pen.slots[0];
+			int is_dtsg = 0;
+			switch (front->kind) {
+			case PEN_DT: case PEN_DTC:
+			case PEN_SG10: case PEN_SG10C:
+			case PEN_SG20: case PEN_SG20C:
+			case PEN_SG30: case PEN_SG30C:
+				is_dtsg = 1;
+				break;
+			default:
+				break;
 			}
-			if (dq_now && !race->disqualified) {
-				/*
-				 * allowAutoDQ=0 in settings.json downgrades
-				 * the failure-to-serve auto-DQ to an SG30
-				 * so race control can review.  Note: since
-				 * Kunos 1.8.11 reckless-driving DQs are not
-				 * downgradable; that path is /dq only.
-				 */
-				if (s->allow_auto_dq) {
-					log_info("Car %d failed to serve "
-					    "penalty in 3 laps -> DQ",
-					    c->car_id);
-					penalty_enqueue(s, c->car_id,
-					    PEN_DQ, 0);
-				} else {
-					log_info("Car %d failed to serve "
-					    "penalty in 3 laps -> SG30 "
-					    "(allowAutoDQ=0)", c->car_id);
-					penalty_enqueue(s, c->car_id,
-					    PEN_SG30, 0);
+			if (is_dtsg && !front->served &&
+			    front->laps_remaining > 0) {
+				front->laps_remaining--;
+				if (front->laps_remaining == 0) {
+					uint8_t inherited = front->reason;
+					if (s->allow_auto_dq) {
+						log_info("Car %d failed to "
+						    "serve %s -> DQ",
+						    c->car_id,
+						    penalty_name(front->kind));
+						penalty_enqueue(s, c->car_id,
+						    PEN_DQ, inherited, 0);
+					} else {
+						log_info("Car %d failed to "
+						    "serve %s -> SG30 "
+						    "(allowAutoDQ=0)",
+						    c->car_id,
+						    penalty_name(front->kind));
+						penalty_enqueue(s, c->car_id,
+						    PEN_SG30, inherited, 0);
+					}
 				}
 			}
 		}
@@ -661,7 +636,8 @@ h_car_location_update(struct Server *s, struct Conn *c,
 				log_info("PITLANE SPEEDING for car #%d "
 				    "speed=%.1f m/s -> DQ",
 				    car->race_number, speed);
-				penalty_enqueue(s, c->car_id, PEN_DQ, 0);
+				penalty_enqueue(s, c->car_id, PEN_DQ,
+				    REASON_PIT_SPEEDING, 0);
 				race->pit_crossing_latched = 1;
 			}
 		}
@@ -750,7 +726,8 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		    c->car_id, (unsigned)force, (int)ts_raw,
 		    (unsigned)race->cuts_this_lap);
 		if (race->cuts_this_lap == 3) {
-			if (penalty_enqueue(s, c->car_id, PEN_DT, 0) == 0)
+			if (penalty_enqueue(s, c->car_id, PEN_DT,
+			    REASON_CUTTING, 0) == 0)
 				log_info("auto-DT: car %d 3 cuts this lap",
 				    c->car_id);
 		}
