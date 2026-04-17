@@ -889,9 +889,15 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 						log_info("lobby: "
 						    "RegisterToLobby "
 						    "succeeded");
-						(void)lobby_send_drivers_update(
-						    l, s);
+						/*
+						 * Exe order on 0xef accept
+						 * (FUN_140044c10): 0xcb
+						 * session update first,
+						 * then 0xd1 drivers.
+						 */
 						(void)lobby_send_session_update(
+						    l, s);
+						(void)lobby_send_drivers_update(
 						    l, s);
 					} else if (rc == 0) {
 						log_warn("lobby: hard reject;"
