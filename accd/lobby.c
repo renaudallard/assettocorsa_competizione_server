@@ -1122,23 +1122,24 @@ lobby_notify_session_changed(struct LobbyClient *l)
 }
 
 void
-lobby_notify_lap(struct LobbyClient *l, uint16_t car_id, int32_t lap_ms,
-    int32_t race_time_ms)
+lobby_notify_lap(struct LobbyClient *l, uint16_t car_id,
+    uint16_t race_number, int32_t lap_ms, int32_t race_time_ms)
 {
 	/*
-	 * 0xd0 laptime-to-kson (FUN_1400477a0):
+	 * 0xd0 laptime-to-kson (FUN_1400477a0, called from
+	 * FUN_1400142f0 case 0x21):
 	 *   preamble(0xd0)
-	 *   u16 car_id
-	 *   u16 pad0          (caller's `(short)uVar14` — sector count
-	 *                       or flags; always 0 in our lap path)
+	 *   u16 car_id        (carId / grid index)
+	 *   u16 race_number   (exe: `(short)uVar14` where uVar14 =
+	 *                       FUN_140020630(carId, ...) — the
+	 *                       visible race-number lookup)
 	 *   u32 lap_time_ms
-	 *   u32 race_time_ms  (caller's iVar17 = FUN_140042000 = total
-	 *                       race time from the lap record)
+	 *   u32 race_time_ms  (iVar17 = FUN_140042000 = total race
+	 *                       time from the lap record, normalized)
 	 *
-	 * Kunos emits this on every ACP_LAP_COMPLETED; public lobby
-	 * uses it as an active-racing heartbeat AND to populate the
-	 * per-server stats page.  The race_time_ms was previously
-	 * sent as 0 — kson's global stats lost the total-time value.
+	 * The public lobby stats page credits the lap to the
+	 * race_number and shows race_time_ms on its per-session
+	 * view.  We used to send both as 0 — now both are correct.
 	 */
 	struct ByteBuf bb;
 	int rc;
@@ -1148,7 +1149,7 @@ lobby_notify_lap(struct LobbyClient *l, uint16_t car_id, int32_t lap_ms,
 	bb_init(&bb);
 	if (lobby_write_preamble(&bb, l, 0xd0) < 0 ||
 	    wr_u16(&bb, car_id) < 0 ||
-	    wr_u16(&bb, 0) < 0 ||
+	    wr_u16(&bb, race_number) < 0 ||
 	    wr_u32(&bb, (uint32_t)lap_ms) < 0 ||
 	    wr_u32(&bb, (uint32_t)race_time_ms) < 0) {
 		bb_free(&bb);
@@ -1157,7 +1158,8 @@ lobby_notify_lap(struct LobbyClient *l, uint16_t car_id, int32_t lap_ms,
 	rc = lobby_send_framed(l, bb.data, bb.wpos);
 	bb_free(&bb);
 	if (rc == 0)
-		log_info("lobby: Sent laptime to kson: "
-		    "car %u lap %dms race_time %dms",
-		    (unsigned)car_id, (int)lap_ms, (int)race_time_ms);
+		log_info("lobby: Sent laptime to kson: car %u #%u "
+		    "lap %dms race_time %dms",
+		    (unsigned)car_id, (unsigned)race_number,
+		    (int)lap_ms, (int)race_time_ms);
 }

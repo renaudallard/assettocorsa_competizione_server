@@ -295,8 +295,9 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		 */
 		if (!invalid)
 			lobby_notify_lap(&s->lobby,
-			    s->cars[c->car_id].car_id, lap_ms,
-			    race->race_time_ms);
+			    s->cars[c->car_id].car_id,
+			    (uint16_t)s->cars[c->car_id].race_number,
+			    lap_ms, race->race_time_ms);
 
 		/*
 		 * Tick down the front DT/SG entry's service deadline.
