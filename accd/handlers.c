@@ -43,6 +43,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -1313,14 +1314,114 @@ done:
 
 /* ----- 0x5b ACP_CTRL_INFO --------------------------------------- */
 
+/*
+ * Parse the CtrlInfo payload and forward a compact chat summary to
+ * every admin connection.  Wire layout from FUN_14002c1e0 (parser)
+ * + the 0x5b case in FUN_1400142f0 (dispatcher):
+ *
+ *   u32  carId          (wide as u16 on the wire but read as 4)
+ *   str_b car_model     (or display name)
+ *   u8   gpe
+ *   u8   as
+ *   u8   sc_active
+ *   u32  unknown_a      (scalar, possibly setup revision)
+ *   str_b cam_near      (replay camera — chained output only)
+ *   str_b cam_far       (replay camera — chained output only)
+ *   u32  unknown_b
+ *   f32  sc_scale
+ *   u32  setup_id
+ *
+ * Chat format (matches the exe's ostream):
+ *   "Ctrl Info carId N (LastName): model, gpe, as, sc X.XX, no scp"
+ * If the message would exceed 250 bytes the server replaces it with
+ * "Received ctrl info, but message is too long. Please check logs".
+ */
 int
 h_ctrl_info(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
-	(void)s;
-	log_info("ctrl info: conn=%u len=%zu (TODO)",
-	    (unsigned)c->conn_id, len);
-	(void)body;
+	struct Reader r;
+	uint8_t msg_id, gpe = 0, as_flag = 0, sc_active = 0;
+	uint32_t car_id_u32 = 0, scalar_a = 0, scalar_b = 0, setup_id = 0;
+	float sc_scale = 0.0f;
+	char *model = NULL, *cam_near = NULL, *cam_far = NULL;
+	char chat[256];
+	const char *driver_name;
+	size_t off;
+	int i;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 || rd_u32(&r, &car_id_u32) < 0) {
+		log_warn("ctrl info: short header conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	(void)rd_str_b(&r, &model);
+	(void)rd_u8(&r, &gpe);
+	(void)rd_u8(&r, &as_flag);
+	(void)rd_u8(&r, &sc_active);
+	(void)rd_u32(&r, &scalar_a);
+	(void)rd_str_b(&r, &cam_near);
+	(void)rd_str_b(&r, &cam_far);
+	(void)rd_u32(&r, &scalar_b);
+	(void)rd_f32(&r, &sc_scale);
+	(void)rd_u32(&r, &setup_id);
+
+	driver_name = "?";
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
+		struct CarEntry *car = &s->cars[c->car_id];
+		if (car->driver_count > 0)
+			driver_name =
+			    car->drivers[car->current_driver_index
+			    < car->driver_count
+			    ? car->current_driver_index : 0].last_name;
+	}
+
+	off = (size_t)snprintf(chat, sizeof(chat),
+	    "Ctrl Info carId %u (%s): %s",
+	    (unsigned)(car_id_u32 & 0xffff), driver_name,
+	    model ? model : "");
+	if (gpe && off < sizeof(chat))
+		off += (size_t)snprintf(chat + off, sizeof(chat) - off,
+		    ", gpe");
+	if (as_flag && off < sizeof(chat))
+		off += (size_t)snprintf(chat + off, sizeof(chat) - off,
+		    ", as");
+	if (sc_active && off < sizeof(chat))
+		off += (size_t)snprintf(chat + off, sizeof(chat) - off,
+		    ", sc %.2f", (double)sc_scale);
+	if (!gpe && !as_flag && !sc_active && off < sizeof(chat))
+		off += (size_t)snprintf(chat + off, sizeof(chat) - off,
+		    ", running defaults");
+
+	log_info("ctrl info: conn=%u car=%u cam=%s-%s setup=%u",
+	    (unsigned)c->conn_id, (unsigned)(car_id_u32 & 0xffff),
+	    cam_near ? cam_near : "", cam_far ? cam_far : "",
+	    (unsigned)setup_id);
+	(void)scalar_a;
+	(void)scalar_b;
+
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *dst = s->conns[i];
+		struct ByteBuf bb;
+
+		if (dst == NULL || dst->state != CONN_AUTH || !dst->is_admin)
+			continue;
+		bb_init(&bb);
+		if (wr_u8(&bb, SRV_CHAT_OR_STATE) == 0 &&
+		    wr_str_a(&bb, "Race Control") == 0 &&
+		    wr_str_a(&bb, off >= 250
+			? "Received ctrl info, but message is too long. "
+			"Please check logs" : chat) == 0 &&
+		    wr_i32(&bb, 0) == 0 &&
+		    wr_u8(&bb, 4) == 0)
+			(void)conn_send_framed(dst, bb.data, bb.wpos);
+		bb_free(&bb);
+	}
+
+	free(model);
+	free(cam_near);
+	free(cam_far);
 	return 0;
 }
 
