@@ -59,6 +59,7 @@
 #include <time.h>
 
 #include "bcast.h"
+#include "ratings.h"
 #include "bans.h"
 #include "handshake.h"
 #include "io.h"
@@ -1644,16 +1645,22 @@ reply:
 					    s->cars[j].car_id) == 0;
 					ok = ok && wr_u8(&wb, 0) == 0;
 					/*
-					 * Kunos welcome 0x4e per-car body is
+					 * Welcome 0x4e per-car body is
 					 * u16 car_id + u8 0 + u16 SA + u16 TR
-					 * + u32 0xFFFFFFFF + u8 0, confirmed
-					 * from a 14-byte single-car capture.
-					 * Safety / TrackMedal are placeholder
-					 * at 5000 (=50.00) until a rating
-					 * service is wired.
+					 * + u32 0xFFFFFFFF + u8 0 (14-byte
+					 * single-car capture).  Real SA/TR
+					 * values come from the local ratings
+					 * ledger keyed by steam_id.
 					 */
-					ok = ok && wr_u16(&wb, 5000) == 0;
-					ok = ok && wr_u16(&wb, 5000) == 0;
+					{
+						uint16_t sa = 5000, tr = 5000;
+						const char *sid =
+						    s->cars[j].drivers[0]
+						    .steam_id;
+						ratings_get(s, sid, &sa, &tr);
+						ok = ok && wr_u16(&wb, sa) == 0;
+						ok = ok && wr_u16(&wb, tr) == 0;
+					}
 					ok = ok && wr_i16(&wb, -1) == 0;
 					ok = ok && wr_i16(&wb, -1) == 0;
 					ok = ok && wr_u8(&wb, 0) == 0;

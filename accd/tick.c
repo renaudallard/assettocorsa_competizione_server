@@ -42,6 +42,7 @@
 #include <sys/socket.h>
 
 #include "bcast.h"
+#include "ratings.h"
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
@@ -527,8 +528,47 @@ tick_run(struct Server *s)
 				(void)results_write(s);
 				s->session.results_written = 1;
 			}
+			/* Persist the local rating ledger at session end. */
+			ratings_save(s);
 		}
 		*last_phase = s->session.phase;
+	}
+
+	/*
+	 * Periodic 0x4e rating summary: Kunos emits when the "ratings
+	 * dirty" flag is set (~81 s cadence in captures).  We debounce
+	 * the same way — broadcast only when ratings_on_lap has marked
+	 * something dirty and at most once every 10 s.
+	 */
+	if (ratings_is_dirty(s) &&
+	    s->tick_count - s->ratings_last_emit_ms >= 100ull) {
+		struct ByteBuf wb;
+		int j, nc = 0, ok = 1;
+		for (j = 0; j < ACC_MAX_CARS; j++)
+			if (s->cars[j].used)
+				nc++;
+		bb_init(&wb);
+		ok = wr_u8(&wb, SRV_RATING_SUMMARY) == 0;
+		ok = ok && wr_u8(&wb, (uint8_t)nc) == 0;
+		for (j = 0; j < ACC_MAX_CARS && ok; j++) {
+			uint16_t sa = 5000, tr = 5000;
+			if (!s->cars[j].used)
+				continue;
+			ratings_get(s,
+			    s->cars[j].drivers[0].steam_id, &sa, &tr);
+			ok = ok && wr_u16(&wb, s->cars[j].car_id) == 0;
+			ok = ok && wr_u8(&wb, 0) == 0;
+			ok = ok && wr_u16(&wb, sa) == 0;
+			ok = ok && wr_u16(&wb, tr) == 0;
+			ok = ok && wr_i16(&wb, -1) == 0;
+			ok = ok && wr_i16(&wb, -1) == 0;
+			ok = ok && wr_u8(&wb, 0) == 0;
+		}
+		if (ok)
+			(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
+		bb_free(&wb);
+		ratings_clear_dirty(s);
+		s->ratings_last_emit_ms = s->tick_count;
 	}
 
 	/*

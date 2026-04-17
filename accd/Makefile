@@ -26,6 +26,7 @@ OBJS =		main.o \
 		pb.o \
 		penalty.o \
 		prim.o \
+		ratings.o \
 		results.o \
 		session.o \
 		state.o \
@@ -112,6 +113,9 @@ penalty.o: penalty.c penalty.h log.h state.h
 
 prim.o: prim.c prim.h io.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c prim.c
+
+ratings.o: ratings.c ratings.h json.h log.h state.h
+	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c ratings.c
 
 results.o: results.c results.h log.h state.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c results.c

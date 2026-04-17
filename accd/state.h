@@ -51,6 +51,7 @@
 #define ACC_MAX_SESSIONS	16
 #define ACC_MAX_PENALTIES	8
 #define ACC_LAP_HISTORY		16
+#define ACC_RATINGS_MAX		256
 
 /*
  * Session phase machine.
@@ -205,6 +206,17 @@ struct WeatherStatus {
 struct BanList {
 	char	entries[ACC_MAX_BANS][32];
 	int	count;
+};
+
+/*
+ * Local rating ledger entry.  Indexed by steam_id, persisted to
+ * cfg/ratings.json.  Ratings are stored ×100 (5000 = 50.00) to
+ * match the 0x4e wire encoding.
+ */
+struct RatingEntry {
+	char		steam_id[32];
+	uint16_t	sa_x100;
+	uint16_t	tr_x100;
 };
 
 struct AssistRules {
@@ -375,6 +387,11 @@ struct Server {
 	/* timing */
 	uint64_t	tick_count;
 	uint64_t	session_start_ms;
+
+	/* Per-steam_id rating ledger (see ratings.c). */
+	struct RatingEntry	ratings[ACC_RATINGS_MAX];
+	uint8_t			ratings_dirty;
+	uint64_t		ratings_last_emit_ms;
 };
 
 void	server_init(struct Server *s);

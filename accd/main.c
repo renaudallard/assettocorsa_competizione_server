@@ -67,6 +67,7 @@ extern int pledge(const char *promises, const char *execpromises);
 #endif
 
 #include "bans.h"
+#include "ratings.h"
 #include "config.h"
 #include "console.h"
 #include "dispatch.h"
@@ -269,6 +270,7 @@ main(int argc, char **argv)
 	snprintf(srv.cfg_dir, sizeof(srv.cfg_dir), "%s", cfg_dir);
 	bans_init(&srv.bans);
 	bans_load(&srv.bans, cfg_dir);
+	ratings_load(&srv);
 
 	log_info("accd phase 1 starting (pid %d)", (int)getpid());
 	log_info("config: tcp=%d udp=%d max=%d lan=%d track=\"%s\"",
@@ -444,6 +446,7 @@ main(int argc, char **argv)
 	}
 
 	log_info("accd shutting down");
+	ratings_save(&srv);
 	console_close();
 	if (srv.lan_fd >= 0)
 		close(srv.lan_fd);

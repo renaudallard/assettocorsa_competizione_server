@@ -34,6 +34,7 @@
 #include <unistd.h>
 
 #include "bcast.h"
+#include "ratings.h"
 #include "io.h"
 #include "log.h"
 #include "msg.h"
@@ -117,19 +118,23 @@ conn_drop(struct Server *s, struct Conn *c)
 		 * field layout (must match byte-for-byte).
 		 */
 		drv = &s->cars[c->car_id].drivers[0];
-		bb_init(&bb);
-		if (wr_u8(&bb, SRV_RATING_SUMMARY) == 0 &&
-		    wr_u8(&bb, 1) == 0 &&
-		    wr_u16(&bb, s->cars[c->car_id].car_id) == 0 &&
-		    wr_u8(&bb, 0) == 0 &&
-		    wr_i16(&bb, 0) == 0 &&
-		    wr_i16(&bb, 0) == 0 &&
-		    wr_i16(&bb, -1) == 0 &&
-		    wr_i16(&bb, -1) == 0 &&
-		    wr_u32(&bb, 0) == 0 &&
-		    wr_str_a(&bb, drv->steam_id) == 0)
-			(void)conn_send_framed(c, bb.data, bb.wpos);
-		bb_free(&bb);
+		{
+			uint16_t sa = 5000, tr = 5000;
+			ratings_get(s, drv->steam_id, &sa, &tr);
+			bb_init(&bb);
+			if (wr_u8(&bb, SRV_RATING_SUMMARY) == 0 &&
+			    wr_u8(&bb, 1) == 0 &&
+			    wr_u16(&bb, s->cars[c->car_id].car_id) == 0 &&
+			    wr_u8(&bb, 0) == 0 &&
+			    wr_u16(&bb, sa) == 0 &&
+			    wr_u16(&bb, tr) == 0 &&
+			    wr_i16(&bb, -1) == 0 &&
+			    wr_i16(&bb, -1) == 0 &&
+			    wr_u32(&bb, 0) == 0 &&
+			    wr_str_a(&bb, drv->steam_id) == 0)
+				(void)conn_send_framed(c, bb.data, bb.wpos);
+			bb_free(&bb);
+		}
 
 		/* 0x24 disconnect notify to all other clients. */
 		bb_init(&bb);

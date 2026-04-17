@@ -57,6 +57,7 @@
 #include "msg.h"
 #include "penalty.h"
 #include "prim.h"
+#include "ratings.h"
 #include "session.h"
 #include "state.h"
 #include "tick.h"
@@ -282,6 +283,14 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		race->sector_ms[0] = 0;
 		race->sector_ms[1] = 0;
 		race->sector_ms[2] = 0;
+		/*
+		 * Feed the local rating EWMA: clean lap +5 SA, cut -25,
+		 * out-laps skipped.  Keyed by driver steam_id.
+		 */
+		ratings_on_lap(s,
+		    s->cars[c->car_id].drivers[
+			s->cars[c->car_id].current_driver_index
+		    ].steam_id, has_cut, is_out_lap);
 
 		/*
 		 * Report to the Kunos lobby so the server stays listed
