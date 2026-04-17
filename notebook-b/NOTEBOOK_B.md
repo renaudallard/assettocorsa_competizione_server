@@ -2098,6 +2098,30 @@ Other Pass 2.22 resolutions:
 
 The same logic applies to the various scalar bytes (`scalar_32`, `scalar_33`, `scalar_36`, `scalar_2c`, `scalar_34`, `scalar_35`, `scalar_44`, `scalar_4c`, `scalar_1ec`) and the two 4-byte input arrays: the server stores and relays them but never interprets them. Their semantic exists only in the game client.
 
+## 15. Non-sim UDP noise observed in the wild
+
+Real ACC clients send occasional **non-sim-protocol UDP packets** to the game-server port.  Documenting what we've seen so reimplementers don't chase it as a protocol gap:
+
+### 15.1 QUIC v1 Initial packets (msg_id = `0xc3`, body ≈ 1200 bytes)
+
+Byte layout starts:
+
+```
+c3 00 00 00 01 08 78 e7 98 46 bb f3 79 84 ...
+```
+
+- Byte 0 `0xc3` = `0b11000011`: QUIC long-header form, fixed bit, Initial packet type, pn_len=4 (RFC 9000 §17.2).
+- Bytes 1-4 `00 00 00 01`: QUIC v1 version.
+- Byte 5 `0x08`: DCID length = 8.
+- Bytes 6-13: destination connection ID (random).
+- Remaining ~1180 bytes: AES-GCM-encrypted Initial payload (high entropy, as expected).
+
+Observed in bursts of 10+ packets across 2-5 ms from multiple distinct client IPs, consistent with a QUIC client's **Initial-retry storm** when the peer doesn't complete the handshake.  Likely origin: misdirected telemetry / background QUIC probe from the client's process, *not* an ACC sim-protocol feature.
+
+**accServer.exe doesn't handle it either** — neither `FUN_140027f80` (UDP inline handler) nor `FUN_140029250` (LAN discovery handler) compares against `0xc3`.  Stock Kunos servers drop these packets with no reply.  The retry storm dies on its own after the client's Initial retry count is exhausted.
+
+Reimplementations should drop them silently or log at WARN for operator visibility.  Implementing a QUIC responder is not useful — we don't know what application-layer service the client expects on top of the QUIC transport, and the client's handshake will fail on SNI/ALPN mismatch anyway.
+
 **Protocol decoding is now fully closed** for any practical reimplementation purpose. The dedicated server's job is to receive `ACP_CAR_UPDATE` packets and relay them; a reimplementation does the same.
 
 **Newly resolved by Pass 2.20** (recursive smoking-gun search):

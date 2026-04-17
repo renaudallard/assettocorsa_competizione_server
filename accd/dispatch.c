@@ -385,6 +385,23 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 	}
 
 	default:
+		/*
+		 * Observed noise from real ACC clients:
+		 *   msg_id 195 (0xc3) with ~1200-byte body and bytes
+		 *   `c3 00 00 00 01 08 ...` → QUIC v1 Initial packet
+		 *   (RFC 9000: long-header form, fixed bit, Initial
+		 *   type, pn_len=4; version `00 00 00 01` = QUIC v1;
+		 *   DCID length 8; then AES-GCM-encrypted payload).
+		 *   Likely a misdirected telemetry / background QUIC
+		 *   probe from the client; neither accServer.exe's UDP
+		 *   dispatcher nor SMPR handler compares against 0xc3,
+		 *   so stock Kunos drops these too.  Client retries a
+		 *   handful of times then gives up — the bursts are
+		 *   the retry storm, not a sustained stream.
+		 *
+		 * We log WARN deliberately (useful operator signal if
+		 * a *new* unknown id shows up) and drop without reply.
+		 */
 		log_warn("Received unknown UDP paket %u from %s:%u",
 		    (unsigned)msg_id, inet_ntoa(peer->sin_addr),
 		    ntohs(peer->sin_port));
