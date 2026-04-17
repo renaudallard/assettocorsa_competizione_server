@@ -142,13 +142,17 @@ weather.o: weather.c weather.h io.h log.h msg.h prim.h state.h
 probe: probe.c
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} ${ACCD_LDFLAGS} ${LDFLAGS} -o probe probe.c
 
-# Smoke test: spin up accd with a synthetic config, send one
-# ACP_REQUEST_CONNECTION, verify the 0x0b welcome trailer arrives
-# with the expected tail sentinel.  Catches size drift of any
-# write_* block in handshake.c that would otherwise ship broken and
-# make the real ACC client reject with "failed with value 13".
+# Smoke test: spin up accd with a synthetic config, send
+# ACP_REQUEST_CONNECTION variants, verify:
+#   - the 0x0b welcome trailer has the expected size and tail
+#     sentinel (catches size drift of any write_* block in
+#     handshake.c that would otherwise make the real ACC client
+#     reject with "failed with value 13")
+#   - the 0x0c reject reply carries the right code for the right
+#     reason (wrong-version=7, wrong-password=6, accept=0x0b)
 test: ${PROG}
 	python3 tests/smoke_handshake.py
+	python3 tests/smoke_reject_codes.py
 
 clean:
 	rm -f ${PROG} ${OBJS} probe

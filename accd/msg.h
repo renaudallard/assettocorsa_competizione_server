@@ -133,18 +133,24 @@
 #define SRV_PERIODIC_UDP		0xbe
 
 /*
- * Handshake rejection reasons (logged on the server side; sent
- * to the client as part of the 0x0b response).
+ * Handshake rejection reasons — the 1-byte code the server writes
+ * into the SRV_STATE_RECORD_0C reply after a failed 0x09.  Values
+ * match the exe's FUN_14002db30 call sites exactly so the ACC
+ * client displays the right error dialog.  Previous accd values
+ * (1..7) were ad-hoc and only accidentally byte-compatible with
+ * the exe for the version-mismatch case.
  */
 enum reject_reason {
-	REJECT_OK = 0,
-	REJECT_VERSION,
-	REJECT_PASSWORD,
-	REJECT_FULL,
-	REJECT_BANNED,
-	REJECT_KICKED,
-	REJECT_BAD_CAR,
-	REJECT_BAD_GRID
+	REJECT_OK         = 0,	/* not on the wire — "do not reject" */
+	REJECT_KICKED     = 4,
+	REJECT_BANNED     = 5,
+	REJECT_PASSWORD   = 6,
+	REJECT_VERSION_LO = 7,	/* client_ver <= 0xff */
+	REJECT_VERSION_HI = 8,	/* client_ver > 0xff */
+	REJECT_FULL       = 9,	/* sub=0 driver full, sub=1 spectator full */
+	REJECT_CP_RATING  = 10,	/* SA / RC / trackMedals below threshold */
+	REJECT_BAD_CAR    = 11,	/* carModel rejected by entrylist / group */
+	REJECT_BAD_SESSION = 12	/* mid-race, locked preparation, etc. */
 };
 
 /*

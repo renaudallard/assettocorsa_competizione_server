@@ -1054,25 +1054,34 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 }
 
 /*
- * Send a 14-byte 0x0c reject response matching the real server
- * format: u8(0x0c) + u32(server_ver=7) + u8(0) +
- * u16(client_ver_echo) + u16(0) + u16(ACC_PROTOCOL_VERSION) +
- * u16(0).
+ * Send a 14-byte 0x0c reject matching accServer.exe FUN_14002db30:
+ *
+ *   u8  0x0c
+ *   u8  reason   (see enum reject_reason)
+ *   u32 sub      (reason-dependent subcode)
+ *   u32 detail_a (reason-dependent, e.g. received client version
+ *                 for wrong-version, current n_conns for full)
+ *   u32 detail_b (reason-dependent, e.g. server expected version,
+ *                 max slots for full)
+ *
+ * Previous accd wrote u8(0x0c)+u32(7)+u8(0)+u16+u16+u16+u16 which
+ * was only byte-compatible with the exe for the wrong-version
+ * case by coincidence.  A bad password got code 7 on the wire
+ * instead of 6, so the ACC client showed the wrong error dialog.
  */
 static int
-handshake_send_reject(struct Conn *c, uint16_t client_version)
+handshake_send_reject(struct Conn *c, uint8_t reason,
+    uint32_t sub, uint32_t detail_a, uint32_t detail_b)
 {
 	struct ByteBuf bb;
 	int rc;
 
 	bb_init(&bb);
 	if (wr_u8(&bb, SRV_STATE_RECORD_0C) < 0 ||
-	    wr_u32(&bb, 7) < 0 ||
-	    wr_u8(&bb, 0) < 0 ||
-	    wr_u16(&bb, client_version) < 0 ||
-	    wr_u16(&bb, 0) < 0 ||
-	    wr_u16(&bb, ACC_PROTOCOL_VERSION) < 0 ||
-	    wr_u16(&bb, 0) < 0)
+	    wr_u8(&bb, reason) < 0 ||
+	    wr_u32(&bb, sub) < 0 ||
+	    wr_u32(&bb, detail_a) < 0 ||
+	    wr_u32(&bb, detail_b) < 0)
 		goto fail;
 
 	rc = conn_send_framed(c, bb.data, bb.wpos);
@@ -1171,6 +1180,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 	uint16_t client_version;
 	char *password = NULL;
 	enum reject_reason reason = REJECT_OK;
+	uint32_t reject_sub = 0, reject_a = 0, reject_b = 0;
 
 	rd_init(&r, body, len);
 
@@ -1188,7 +1198,10 @@ handshake_handle(struct Server *s, struct Conn *c,
 		    "version %u (server runs %u)",
 		    (unsigned)client_version,
 		    (unsigned)ACC_PROTOCOL_VERSION);
-		reason = REJECT_VERSION;
+		reason = client_version > 0xff
+		    ? REJECT_VERSION_HI : REJECT_VERSION_LO;
+		reject_a = client_version;
+		reject_b = ACC_PROTOCOL_VERSION;
 		goto reply;
 	}
 	if (rd_str_a(&r, &password) < 0) {
@@ -1206,6 +1219,8 @@ handshake_handle(struct Server *s, struct Conn *c,
 	if (s->nconns > s->max_connections) {
 		log_info("rejecting connection: server full");
 		reason = REJECT_FULL;
+		reject_a = (uint32_t)s->nconns;
+		reject_b = (uint32_t)s->max_connections;
 		goto reply;
 	}
 
@@ -1472,10 +1487,13 @@ handshake_handle(struct Server *s, struct Conn *c,
 reply:
 	free(password);
 	if (reason != REJECT_OK) {
-		log_debug("handshake reject: reason=%d client_ver=0x%04x "
-		    "fd=%d", (int)reason, (unsigned)client_version,
-		    c->fd);
-		if (handshake_send_reject(c, client_version) < 0)
+		log_debug("handshake reject: reason=%d sub=%u a=%u b=%u "
+		    "client_ver=0x%04x fd=%d",
+		    (int)reason, (unsigned)reject_sub,
+		    (unsigned)reject_a, (unsigned)reject_b,
+		    (unsigned)client_version, c->fd);
+		if (handshake_send_reject(c, (uint8_t)reason, reject_sub,
+		    reject_a, reject_b) < 0)
 			return -1;
 		return -1;	/* close connection after reject */
 	}
