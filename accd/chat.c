@@ -710,7 +710,22 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/report")) {
 		log_info("admin: /report (TODO)");
 	} else if (chat_prefix(text, "/latencymode")) {
-		log_info("admin: /latencymode (TODO)");
+		int mode;
+		char line[96];
+
+		if (chat_parse_int(text + 12, &mode) < 0) {
+			chat_broadcast(s, "wrong parameters, please use "
+			    "'latencymode n' (with n between 0 and 1)", 4);
+		} else if (mode >= 2) {
+			snprintf(line, sizeof(line),
+			    "unknown latency mode %d", mode);
+			chat_broadcast(s, line, 4);
+		} else {
+			s->latency_mode = (uint8_t)mode;
+			snprintf(line, sizeof(line), "Latency mode: %d", mode);
+			chat_broadcast(s, line, 4);
+			log_info("admin: /latencymode %d", mode);
+		}
 	} else if (chat_prefix(text, "/mp") ||
 	           chat_prefix(text, "/legacy") ||
 	           chat_prefix(text, "/regular")) {
