@@ -239,9 +239,9 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	int i;
 
 	ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 24.0f;
+	    ? (float)s->session.ambient_temp : 22.0f;
 	road = s->session.track_temp > 0
-	    ? (float)s->session.track_temp : 30.0f;
+	    ? (float)s->session.track_temp : ambient + 4.0f;
 	rain = s->weather.current_rain > 0
 	    ? s->weather.current_rain : 0.0f;
 	grip = s->session.grip_level > 0
@@ -285,7 +285,7 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_f32(bb, road) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, rain > 0 ? rain : 0.3f) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 1.0f) < 0) return -1;
 
@@ -300,10 +300,8 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_f32(bb, -1.0f) < 0) return -1;
 	for (i = 0; i < 3; i++)
 		if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain > 0
-	    ? s->weather.current_rain : 0.4f) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain > 0
-	    ? s->weather.current_rain : 0.3f) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 
