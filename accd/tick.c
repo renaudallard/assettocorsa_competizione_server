@@ -343,18 +343,49 @@ done:
 /*
  * Build and emit SRV_SESSION_RESULTS (0x3e) at end of session.
  *
- * Wire format verified against an accServer.exe v1.10.2 81-min
- * race capture: u8 0x3e + u8 result_count + result_count × (
- * 23-byte session tail + per-car leaderboard record).  Each
- * result entry carries the tail of the session it documents
- * (P/Q/R differ by hour, duration, type).  Sizes scale 235 →
- * 468 → 706 bytes for 1 → 2 → 3 completed sessions.
+ * Wire format per accServer.exe FUN_1400197b0 + FUN_1400351f0:
+ *   u8 0x3e
+ *   u8 result_count
+ *   result_count × (23-byte result_header + per-car leaderboard_section)
  *
- * For now we emit the current car state for every completed
- * session — a proper implementation would snapshot the
- * leaderboard at session end.  result_count is session_index+1
- * when called at end-of-session.
+ * The 23-byte result_header is emitted from a per-car results struct
+ * at stride 0x150 in FUN_1400351f0.  Our struct CarRaceState carries
+ * enough to populate all fields except the +0x60 u16 (unknown
+ * semantic, always 0 in welcome scenarios) and +0x74 u32 time penalty
+ * (we don't track cumulative penalty ms yet).
+ *
+ * We used to emit write_session_tail (23 bytes) here — same byte
+ * count matched the 81-min capture sizes (235/468/706 for 1/2/3
+ * completed sessions) but the field semantics were session metadata,
+ * not per-car race results, so any client rendering position / lap
+ * count / best lap from these bytes saw garbage.
+ *
+ * result_count is session_index+1 when called at end-of-session,
+ * matching the observed cumulative behavior.
  */
+static int
+write_result_header(struct ByteBuf *bb, const struct CarEntry *car)
+{
+	const struct CarRaceState *r = &car->race;
+	uint8_t position = r->position > 0 && r->position < 0xff
+	    ? (uint8_t)r->position : 0;
+	uint8_t drv_minus_one = (uint8_t)(car->current_driver_index - 1);
+
+	if (wr_u8(bb, position) < 0) return -1;		/* +0x50 */
+	if (wr_u8(bb, position) < 0) return -1;		/* +0x54 cup_pos */
+	if (wr_u8(bb, drv_minus_one) < 0) return -1;	/* +0x58 drv-1 */
+	if (wr_u32(bb, (uint32_t)r->lap_count) < 0) return -1;	/* +0x5c */
+	if (wr_u16(bb, 0) < 0) return -1;		/* +0x60 unknown */
+	if (wr_u32(bb, r->best_lap_ms > 0
+	    ? (uint32_t)r->best_lap_ms : 0x7FFFFFFFu) < 0) return -1;
+	if (wr_u32(bb, r->race_time_ms > 0
+	    ? (uint32_t)r->race_time_ms : 0) < 0) return -1;	/* +0x68 */
+	if (wr_u8(bb, r->formation_lap_done) < 0) return -1;	/* +0x6c */
+	if (wr_u8(bb, r->disqualified) < 0) return -1;	/* +0x70 */
+	if (wr_u32(bb, 0) < 0) return -1;		/* +0x74 penalty ms */
+	return 0;
+}
+
 static void
 broadcast_session_results(struct Server *s)
 {
@@ -371,15 +402,35 @@ broadcast_session_results(struct Server *s)
 		struct Conn *c = s->conns[i];
 		struct ByteBuf bb;
 		int ok = 1;
+		int j, used = 0;
 
 		if (c == NULL || c->state != CONN_AUTH)
+			continue;
+		for (j = 0; j < ACC_MAX_CARS; j++)
+			if (s->cars[j].used)
+				used++;
+		if (used == 0)
 			continue;
 		bb_init(&bb);
 		ok = ok && wr_u8(&bb, SRV_SESSION_RESULTS) == 0;
 		ok = ok && wr_u8(&bb, result_count) == 0;
+		(void)n;
+		/*
+		 * Emit one result_header per entry then the leaderboard
+		 * section covering every car.  We still iterate
+		 * result_count times (session_index+1) so the byte count
+		 * matches the capture even while we populate per-car
+		 * fields in each 23-byte block.
+		 */
 		for (n = 0; n < result_count && ok; n++) {
-			ok = ok && write_session_tail(&bb,
-			    &s->sessions[n], s->session_overtime_s) == 0;
+			/* Pick the first used car to populate the header;
+			 * for multi-car sessions the leaderboard section
+			 * that follows carries every car's record. */
+			for (j = 0; j < ACC_MAX_CARS; j++)
+				if (s->cars[j].used)
+					break;
+			ok = ok && write_result_header(&bb,
+			    &s->cars[j]) == 0;
 			ok = ok && write_leaderboard_section(&bb, s) == 0;
 		}
 		if (ok)
