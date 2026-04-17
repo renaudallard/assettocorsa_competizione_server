@@ -778,37 +778,52 @@ h_report_penalty(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
-	uint8_t msg_id, force, ptype;
+	uint8_t msg_id, category, kind;
 	uint64_t timestamp;
 	int32_t value;
 
 	(void)s;
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
-	    rd_u8(&r, &force) < 0 ||
-	    rd_u8(&r, &ptype) < 0 ||
+	    rd_u8(&r, &category) < 0 ||
+	    rd_u8(&r, &kind) < 0 ||
 	    rd_u64(&r, &timestamp) < 0 ||
 	    rd_i32(&r, &value) < 0) {
 		log_warn("h_report_penalty: short body from conn=%u",
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	log_info("report penalty: conn=%u car=%d force=%u ptype=%u "
+	/*
+	 * Wire layout per FUN_1400142f0 case 0x41 + FUN_140125f50
+	 * (exe TCP dispatcher, Pass 2026-04-17 decomp):
+	 *   u8  msg_id    = 0x41
+	 *   u8  category  → exe param_4 / local_res20 (reason
+	 *                   marker stored at PenaltySheet +0x58)
+	 *   u8  kind      → exe param_5 (1=DT, 2=SG10, 3=SG20,
+	 *                   4=SG30, 5=TP, 6=DQ)
+	 *   u64 timestamp → normalized via FUN_140042030 in exe
+	 *   i32 value     → counter increment (0..~3 typically)
+	 *
+	 * The "force" flag was NOT a wire byte — it's computed
+	 * server-side as `(server_config_allow_client_escalation
+	 * && category==0)`.  With our default config = 0, client
+	 * reports never force immediate escalation; they just
+	 * prime the PenaltySheet counter.
+	 *
+	 * Kept informational-only: value=0 dominates observed
+	 * traffic (cf. project_first_public_test memory), so even
+	 * if we fed it to penalty_enqueue the counter wouldn't
+	 * reach the 0x100 escalation threshold from client reports
+	 * alone.  Server-side detection (h_out_of_track 3-cut,
+	 * h_car_location_update pit-speeding, driver-stint tracker)
+	 * is the authoritative path.
+	 */
+	log_info("report penalty: conn=%u car=%d cat=%u kind=%u "
 	    "ts=%llu value=%d",
-	    (unsigned)c->conn_id, c->car_id, (unsigned)force,
-	    (unsigned)ptype, (unsigned long long)timestamp, (int)value);
+	    (unsigned)c->conn_id, c->car_id, (unsigned)category,
+	    (unsigned)kind, (unsigned long long)timestamp, (int)value);
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	/*
-	 * Informational-only: ptype here is the client's
-	 * ServerMonitorPenaltyShortcut index (0..35), not the exe's
-	 * param_5 internal kind (1..6), and celeborn capture shows
-	 * value=0 in every observed report.  Server-side detection
-	 * (h_out_of_track for 3-cut DT, h_car_location_update for
-	 * pit-lane speeding) is the authoritative path.  Feeding this
-	 * into penalty_enqueue without a confirmed ptype→kind mapping
-	 * would misattribute infractions.
-	 */
 	return 0;
 }
 
