@@ -142,6 +142,14 @@ weather.o: weather.c weather.h io.h log.h msg.h prim.h state.h
 probe: probe.c
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} ${ACCD_LDFLAGS} ${LDFLAGS} -o probe probe.c
 
+# Smoke test: spin up accd with a synthetic config, send one
+# ACP_REQUEST_CONNECTION, verify the 0x0b welcome trailer arrives
+# with the expected tail sentinel.  Catches size drift of any
+# write_* block in handshake.c that would otherwise ship broken and
+# make the real ACC client reject with "failed with value 13".
+test: ${PROG}
+	python3 tests/smoke_handshake.py
+
 clean:
 	rm -f ${PROG} ${OBJS} probe
 
@@ -159,4 +167,4 @@ uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/${PROG}
 	rm -f ${DESTDIR}${MANDIR}/man1/accd.1
 
-.PHONY: all clean install uninstall probe
+.PHONY: all clean install uninstall probe test
