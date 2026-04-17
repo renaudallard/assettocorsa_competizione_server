@@ -42,6 +42,7 @@
 #include "bans.h"
 #include "bcast.h"
 #include "chat.h"
+#include "entrylist.h"
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
@@ -632,7 +633,31 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/track")) {
 		chat_do_track(s, text + 6, NULL, 0);
 	} else if (chat_prefix(text, "/manual entrylist")) {
-		log_info("admin: /manual entrylist (TODO)");
+		/*
+		 * accServer.exe rejects this on "public servers"
+		 * (register_to_lobby = 1) via FUN_140025170.  Match that
+		 * posture: a public lobby server should not overwrite
+		 * its curated entrylist.json from a live session.
+		 */
+		if (s->register_to_lobby) {
+			chat_broadcast(s,
+			    "Entry list cannot be saved on public servers",
+			    4);
+		} else {
+			if (entrylist_save(s, s->cfg_dir) == 0) {
+				chat_broadcast(s,
+				    "Saved entry list to cfg/entrylist.json",
+				    4);
+			} else {
+				chat_broadcast(s,
+				    "Failed to save entry list", 4);
+			}
+		}
+		log_info("admin: /manual entrylist");
+	} else if (chat_prefix(text, "/manual start")) {
+		chat_broadcast(s,
+		    "This cmd was replaced by the formationLapType setting",
+		    4);
 	} else if (chat_prefix(text, "/controllers")) {
 		/*
 		 * Send a 1-byte 0x5b probe to every authenticated

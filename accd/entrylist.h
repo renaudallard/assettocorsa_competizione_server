@@ -43,4 +43,13 @@
  */
 int	entrylist_load(struct Server *s, const char *cfg_dir);
 
+/*
+ * Write the current Server.cars[] to cfg_dir/entrylist.json as
+ * UTF-8 JSON.  Intended for the /manual entrylist admin command
+ * — captures the live entry list so the next server restart
+ * reproduces the current car/driver lineup.  Returns 0 on success,
+ * -1 on I/O error.
+ */
+int	entrylist_save(const struct Server *s, const char *cfg_dir);
+
 #endif /* ACCD_ENTRYLIST_H */

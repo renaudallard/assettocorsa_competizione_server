@@ -246,3 +246,108 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 	log_info("entrylist: loaded %d cars from %s", loaded, path);
 	return loaded;
 }
+
+/*
+ * Write a JSON escape of s into out (NUL-terminated).  Enough for
+ * the fields we emit (names, steam IDs) — handles ASCII controls,
+ * quote, backslash.  Caller's buffer must be big enough; we cap at
+ * roughly 2x input.
+ */
+static void
+json_escape(char *out, size_t outsz, const char *s)
+{
+	size_t o = 0;
+
+	if (s == NULL) {
+		if (outsz > 0) out[0] = '\0';
+		return;
+	}
+	for (; *s != '\0' && o + 2 < outsz; s++) {
+		unsigned char c = (unsigned char)*s;
+		if (c == '"' || c == '\\') {
+			if (o + 3 >= outsz) break;
+			out[o++] = '\\';
+			out[o++] = (char)c;
+		} else if (c < 0x20) {
+			if (o + 7 >= outsz) break;
+			o += (size_t)snprintf(out + o, outsz - o,
+			    "\\u%04x", c);
+		} else {
+			out[o++] = (char)c;
+		}
+	}
+	if (o < outsz)
+		out[o] = '\0';
+	else if (outsz > 0)
+		out[outsz - 1] = '\0';
+}
+
+int
+entrylist_save(const struct Server *s, const char *cfg_dir)
+{
+	char path[512];
+	FILE *fp;
+	int i, first_entry = 1;
+
+	snprintf(path, sizeof(path), "%s/entrylist.json", cfg_dir);
+	fp = fopen(path, "w");
+	if (fp == NULL) {
+		log_warn("entrylist_save: %s: %s", path, strerror(errno));
+		return -1;
+	}
+	fputs("{\n  \"entries\": [\n", fp);
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+		const struct CarEntry *car = &s->cars[i];
+		int d;
+		char buf[192];
+
+		if (!car->used)
+			continue;
+		if (!first_entry)
+			fputs(",\n", fp);
+		first_entry = 0;
+		fputs("    {\n", fp);
+		fprintf(fp, "      \"raceNumber\": %d,\n",
+		    (int)car->race_number);
+		fprintf(fp, "      \"forcedCarModel\": %d,\n",
+		    (int)car->car_model);
+		fprintf(fp, "      \"overrideCarModelForCustomCar\": %d,\n",
+		    (int)car->cup_category);
+		fprintf(fp, "      \"defaultGridPosition\": %d,\n",
+		    (int)car->default_grid_position);
+		fprintf(fp, "      \"ballastKg\": %d,\n",
+		    (int)car->ballast_kg);
+		fprintf(fp, "      \"restrictor\": %.2f,\n",
+		    (double)car->restrictor);
+		fprintf(fp, "      \"defaultDriverIndex\": %d,\n",
+		    (int)car->current_driver_index);
+		json_escape(buf, sizeof(buf), car->team_name);
+		fprintf(fp, "      \"teamName\": \"%s\",\n", buf);
+		fputs("      \"drivers\": [\n", fp);
+		for (d = 0; d < car->driver_count; d++) {
+			const struct DriverInfo *di = &car->drivers[d];
+
+			if (d > 0)
+				fputs(",\n", fp);
+			fputs("        {\n", fp);
+			json_escape(buf, sizeof(buf), di->first_name);
+			fprintf(fp, "          \"firstName\": \"%s\",\n", buf);
+			json_escape(buf, sizeof(buf), di->last_name);
+			fprintf(fp, "          \"lastName\": \"%s\",\n", buf);
+			json_escape(buf, sizeof(buf), di->short_name);
+			fprintf(fp, "          \"shortName\": \"%s\",\n", buf);
+			json_escape(buf, sizeof(buf), di->steam_id);
+			fprintf(fp, "          \"playerID\": \"%s\",\n", buf);
+			fprintf(fp, "          \"driverCategory\": %d,\n",
+			    (int)di->driver_category);
+			fprintf(fp, "          \"nationality\": %d\n",
+			    (int)di->nationality);
+			fputs("        }", fp);
+		}
+		fputs("\n      ]\n    }", fp);
+	}
+	fputs("\n  ],\n  \"configVersion\": 1\n}\n", fp);
+	fclose(fp);
+	log_info("entrylist_save: wrote %s", path);
+	return 0;
+}
