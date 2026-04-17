@@ -371,6 +371,8 @@ struct Conn {
 	int32_t		car_id;		/* index into server.cars[], -1 if spectator */
 	int		is_admin;
 	int		is_spectator;
+	int		hellbanned;	/* /hellban: drop inbound, skip in
+					 * broadcasts.  Per-session only. */
 	struct ByteBuf	rx;		/* incoming TCP byte stream */
 	struct ByteBuf	tx;		/* not yet used; for batched sends */
 	unsigned char	*hs_echo;	/* raw handshake body to echo in trailer */
@@ -397,6 +399,18 @@ struct Server {
 	 * Intended for local monitoring tools; never routed off-host.
 	 */
 	int		stats_udp_port;
+	/*
+	 * Admin chat toggles mirroring the exe's server struct bytes.
+	 * legacy_netcode at +0x22 (/mp), log_conditions at +0x116
+	 * (/debug conditions), log_bandwidth at +0x114 (/debug
+	 * bandwidth), log_qos at +0x117 (/debug qos), latency_mode at
+	 * +0x1419b (/latencymode).  All default 0.
+	 */
+	uint8_t		legacy_netcode;
+	uint8_t		log_conditions;
+	uint8_t		log_bandwidth;
+	uint8_t		log_qos;
+	uint8_t		latency_mode;
 	char		server_name[ACC_MAX_NAME_LEN];
 	char		password[64];
 	char		admin_password[64];
