@@ -618,6 +618,49 @@ lobby_send_session_update(struct LobbyClient *l, const struct Server *s)
 	return rc;
 }
 
+/*
+ * Reply to a kson 0xf6 CONFIG_REQUEST with 0xd7 containing three
+ * kson_strings (server_name, track_name, password) matching the
+ * exe's dispatch of the same command in FUN_140044c10.  kson uses
+ * this periodically to verify our identity; no reply = eviction.
+ */
+static int
+lobby_send_config_response(struct LobbyClient *l, const struct Server *s)
+{
+	struct ByteBuf bb;
+	int rc;
+	const char *fields[3];
+	int i;
+
+	fields[0] = s->server_name;
+	fields[1] = s->track;
+	fields[2] = s->password;
+
+	bb_init(&bb);
+	if (lobby_write_preamble(&bb, l, 0xd7) < 0) {
+		bb_free(&bb);
+		return -1;
+	}
+	for (i = 0; i < 3; i++) {
+		const char *str = fields[i] != NULL ? fields[i] : "";
+		size_t slen = strlen(str);
+		if (slen > 0xFFFE)
+			slen = 0xFFFE;
+		if (wr_u16(&bb, (uint16_t)slen) < 0 ||
+		    bb_append(&bb, str, slen) < 0) {
+			bb_free(&bb);
+			return -1;
+		}
+	}
+	rc = lobby_send_framed(l, bb.data, bb.wpos);
+	bb_free(&bb);
+	if (rc == 0)
+		log_info("lobby: Sent 0xd7 config response "
+		    "(server=%s track=%s)",
+		    s->server_name, s->track);
+	return rc;
+}
+
 static int
 lobby_send_keepalive(struct LobbyClient *l, const struct Server *s)
 {
@@ -739,6 +782,11 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			    (unsigned)code, lobby_reject_reason(code));
 			return 0;
 		}
+		break;
+	case 0xf6:
+		/* CONFIG_REQUEST — reply with 0xd7 containing
+		 * server_name, track, password. */
+		(void)lobby_send_config_response(l, s);
 		break;
 	case 0xfd:
 		/* keepalive ack — clears ack-pending flag (our impl
