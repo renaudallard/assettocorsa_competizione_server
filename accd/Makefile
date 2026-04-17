@@ -51,8 +51,15 @@ ${PROG}: ${OBJS}
 	    -x c - -o /dev/null 2>/dev/null; then \
 	    ICONV="-liconv"; \
 	fi; \
-	echo ${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV ${LIBS}; \
-	${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV ${LIBS}
+	BSD=; \
+	if printf '%s\n%s\n' '#include <bsd/stdlib.h>' \
+	    'int main(){arc4random_uniform(1);return 0;}' \
+	    | ${CC} ${ACCD_CFLAGS} ${CFLAGS} ${ACCD_LDFLAGS} ${LDFLAGS} \
+	    -x c - -o /dev/null -lbsd 2>/dev/null; then \
+	    BSD="-lbsd"; \
+	fi; \
+	echo ${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD ${LIBS}; \
+	${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD ${LIBS}
 
 main.o: main.c bans.h config.h console.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c main.c

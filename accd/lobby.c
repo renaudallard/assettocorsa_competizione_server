@@ -65,6 +65,16 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+/*
+ * arc4random_uniform is native on OpenBSD (via <stdlib.h>) but on
+ * glibc it's hidden behind _DEFAULT_SOURCE or only exposed through
+ * libbsd's <bsd/stdlib.h>.  Include the BSD header on Linux so we
+ * link against -lbsd (Makefile auto-detects).
+ */
+#ifdef __linux__
+#include <bsd/stdlib.h>
+#endif
+
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
@@ -129,11 +139,9 @@ lobby_random_token(char *out, size_t n)
 	static const char alpha[] =
 	    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 	size_t i;
-	unsigned int seed;
 
-	seed = (unsigned int)(lobby_now_ms() ^ (uintptr_t)out);
 	for (i = 0; i + 1 < n; i++)
-		out[i] = alpha[rand_r(&seed) % (sizeof(alpha) - 1)];
+		out[i] = alpha[arc4random_uniform(sizeof(alpha) - 1)];
 	out[n - 1] = '\0';
 }
 
