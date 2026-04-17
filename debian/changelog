@@ -1,3 +1,24 @@
+accd (0.2.14) unstable; urgency=medium
+
+  * Lobby: report OVERTIME as phase=5 (kson backend silently delists
+    servers that emit phase 6 or 7).
+  * Lobby: collapse COMPLETED and ADVANCE to WAITING for the same
+    reason — keeps the server visible through transient end-states.
+  * Race sector splits: stop dropping the first 0x20 per car.  The
+    drop kept lap_count one lap behind the client, so race lap-0
+    appeared to start after the S/F line instead of at it.  Kunos
+    counts the formation lap as lap 1 with IsOutLap set; the
+    existing car_field bit 2 check already excludes it from
+    best_lap.
+  * Welcome trailer: rewrite the WeatherData block to match
+    FUN_14011e660 (12 × u32 + two variable u32 lists).  The previous
+    ad-hoc layout injected non-zero constants into slots the client
+    reads as authoritative cockpit weather hints, producing
+    persistent rain on the windshield while 0x37 correctly reported
+    dry outside.
+
+ -- Renaud Allard <renaud@allard.it>  Fri, 17 Apr 2026 16:40:00 +0200
+
 accd (0.2.3) unstable; urgency=medium
 
   * Fix 0x37 weather fields: correct wire order matching FUN_14011e930
