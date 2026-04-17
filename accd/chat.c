@@ -634,10 +634,64 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/manual entrylist")) {
 		log_info("admin: /manual entrylist (TODO)");
 	} else if (chat_prefix(text, "/controllers")) {
-		log_info("admin: /controllers (TODO needs 0x5b request)");
+		/*
+		 * Send a 1-byte 0x5b probe to every authenticated
+		 * connection.  accServer.exe iterates its car list and
+		 * calls FUN_14004cc50 with a single-byte 0x5b payload
+		 * for each one that has a live connection; the client
+		 * replies with ACP_CTRL_INFO carrying its assist / car
+		 * config, which h_ctrl_info then forwards as 0x2b chat
+		 * to the requesting admin.
+		 */
+		int j, sent = 0;
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			struct Conn *cn = s->conns[j];
+			uint8_t probe = SRV_CTRL_INFO_REQUEST;
+
+			if (cn == NULL || cn->state != CONN_AUTH)
+				continue;
+			if (conn_send_framed(cn, &probe, 1) == 0)
+				sent++;
+		}
+		{
+			char line[64];
+			snprintf(line, sizeof(line),
+			    "Requesting controllers for %d clients", sent);
+			chat_broadcast(s, line, 4);
+			log_info("admin: /controllers -> %d probes", sent);
+		}
 	} else if (chat_prefix(text, "/controller")) {
-		if (chat_parse_int(text + 11, &car_num) == 0)
-			log_info("admin: /controller %d (TODO)", car_num);
+		if (chat_parse_int(text + 11, &car_num) == 0) {
+			int car_id = chat_car_by_racenum(s, car_num);
+			struct Conn *cn = NULL;
+			int j;
+
+			if (car_id >= 0)
+				for (j = 0; j < ACC_MAX_CARS; j++)
+					if (s->conns[j] != NULL &&
+					    s->conns[j]->car_id == car_id) {
+						cn = s->conns[j];
+						break;
+					}
+			if (cn != NULL) {
+				uint8_t probe = SRV_CTRL_INFO_REQUEST;
+				char line[64];
+
+				(void)conn_send_framed(cn, &probe, 1);
+				snprintf(line, sizeof(line),
+				    "Requesting controller for car #%d",
+				    car_num);
+				chat_broadcast(s, line, 4);
+				log_info("admin: /controller %d -> probe",
+				    car_num);
+			} else {
+				char line[64];
+				snprintf(line, sizeof(line),
+				    "Couldn't locate connection for car #%d",
+				    car_num);
+				chat_broadcast(s, line, 4);
+			}
+		}
 	} else if (chat_prefix(text, "/connections")) {
 		int j;
 		chat_broadcast(s,"Active connections:", 4);
