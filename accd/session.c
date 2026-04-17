@@ -379,16 +379,18 @@ session_tick(struct Server *s)
 	enter_phase(s, new_phase);
 
 	/*
-	 * Activate overtime hold for race sessions only when there is
-	 * actually somebody to wait for: at least one driver on track
-	 * (not in pit/garage) AND with at least one valid lap.  If
-	 * everyone is sitting in the garage with no completed lap,
-	 * holding overtime serves no purpose — just let the schedule
-	 * advance to the next session immediately.
+	 * Overtime entry check, applies to every session type: if
+	 * nobody has a valid lap and is still out on track (not in
+	 * pit/garage), waiting the overtime grace period serves no
+	 * purpose.  Collapse ts[5] so compute_phase jumps straight to
+	 * COMPLETED on the next tick.
+	 *
+	 * For race sessions with cars still on track, activate the
+	 * overtime hold so the schedule freezes until everyone has
+	 * crossed the finish line.
 	 */
 	if (new_phase == PHASE_OVERTIME &&
-	    s->session.overtime_hold == 0 &&
-	    def->session_type == 10) {
+	    s->session.overtime_hold == 0) {
 		int i, racing = 0;
 		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
 		    i++) {
@@ -398,14 +400,17 @@ session_tick(struct Server *s)
 			    !s->cars[i].race.in_pit)
 				racing++;
 		}
-		if (racing > 0) {
+		if (racing == 0) {
+			log_info("overtime: no car racing on track, "
+			    "skipping grace period");
+			s->session.ts[5] = now;
+			if (s->session.ts[6] <= now)
+				s->session.ts[6] = now + 5000;
+		} else if (def->session_type == 10) {
 			s->session.overtime_hold = 1;
 			s->session.cars_in_overtime = (int16_t)racing;
 			log_info("overtime: hold active, %d cars racing",
 			    racing);
-		} else {
-			log_info("overtime: no car racing on track, "
-			    "skipping hold");
 		}
 	}
 
