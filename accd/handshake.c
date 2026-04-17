@@ -235,7 +235,7 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 static int
 write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 {
-	float ambient, road, rain, grip;
+	float ambient, road, rain;
 	int i;
 
 	ambient = s->session.ambient_temp > 0
@@ -244,14 +244,12 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 	rain = s->weather.current_rain > 0
 	    ? s->weather.current_rain : 0.0f;
-	grip = s->session.grip_level > 0
-	    ? s->session.grip_level : 1.0f;
 
 	/* CircuitInfo header (3 u8 + 4 f32 = 19 bytes). */
 	if (wr_u8(bb, 0x01) < 0) return -1;
 	if (wr_u8(bb, 0x20) < 0) return -1;
 	if (wr_u8(bb, 0x03) < 0) return -1;
-	if (wr_f32(bb, grip * 0.9f) < 0) return -1;
+	if (wr_f32(bb, 0.9f) < 0) return -1;
 	if (wr_f32(bb, s->weather.clouds * 0.1f) < 0) return -1;
 	if (wr_f32(bb, rain * 0.1f) < 0) return -1;
 	if (wr_f32(bb, 1.0f) < 0) return -1;

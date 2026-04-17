@@ -146,7 +146,6 @@ struct SessionState {
 	int32_t		time_remaining_ms;
 	uint8_t		ambient_temp;
 	uint8_t		track_temp;
-	float		grip_level;
 	uint32_t	standings_seq;	/* bumps on leaderboard change */
 	uint32_t	last_standings_seq;	/* tick.c: detect changes */
 	uint8_t		last_phase;		/* tick.c: detect transitions */
