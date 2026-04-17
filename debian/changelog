@@ -1,3 +1,26 @@
+accd (0.2.16) unstable; urgency=medium
+
+  * Lobby: emit phase=4 during the race PRE-2 countdown (formation
+    lap).  Exe's computeCurrentPhase (FUN_14012e810) splits PRE-1
+    (wire 3) from PRE-2 (wire 4); our PHASE_PRE_SESSION collapsed
+    both and the kson wire mapper always sent 3, so client-side
+    grid-countdown UIs never saw the 3→4 transition.
+  * Lobby: keepalive byte-13 matches exe formula (min_of_day/100,
+    cycling 0..14 across a 24h in-session day) — derived from
+    FUN_140048660 + FUN_14011ee30 + raw .rdata constants
+    (DAT_14014f0d8=60, _DAT_140150690≈5/3, DAT_14016a408=1/60f).
+    Previous value was weekend_time_s & 0xff which varied too
+    fast; byte-for-byte parity with the exe now.
+  * Session: race OVERTIME/COMPLETED gate timestamps initialize to
+    UINT64_MAX instead of ts[4]+ot_ms / ts[5]+post_ms, matching
+    the exe's -1.0 sentinel in FUN_14012e970.  Race no longer
+    times out into COMPLETED by clock; transitions are driven
+    exclusively by session_overtime_car_finished() (last car done)
+    or the no-cars-racing skip-grace branch.  Non-race sessions
+    keep timed gates as before.
+
+ -- Renaud Allard <renaud@allard.it>  Fri, 17 Apr 2026 19:30:00 +0200
+
 accd (0.2.15) unstable; urgency=medium
 
   * Weather: fix 0x37 + welcome wire order — rainLevel at slot [12]
