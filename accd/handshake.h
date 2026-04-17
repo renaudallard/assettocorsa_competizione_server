@@ -91,7 +91,7 @@ int	write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
  * u8 0x36).  Byte-exact to the exe: u32 + u8 + 3 u32 + u8 + u16
  * car_count + per-car FUN_140034210 entry + 2 u8 tail.
  */
-int	write_trailer_preview(struct ByteBuf *bb, const struct Server *s);
+int	write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s);
 int	write_leaderboard_section(struct ByteBuf *bb, struct Server *s);
 
 #endif /* ACCD_HANDSHAKE_H */

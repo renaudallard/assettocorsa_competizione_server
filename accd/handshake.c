@@ -682,75 +682,37 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 }
 
 /*
- * 88-byte structure emitted by (**(param_1[0x1410e]+0x20))(...)
- * in FUN_140033980.  No clean decomp of the underlying vtable;
- * the observed layout is a weather forecast preview:
+ * WeatherData::serialize body (FUN_14011e660, vtable[0x20] of
+ * WeatherData).  Called inline from the welcome trailer builder
+ * FUN_140033980 via (**(param_1[0x1410e]+0x20))(...).
  *
- *   u32 marker (= 1)
- *   6 x f32 (session-start weather samples; first 3 are
- *            temperature-like, last 3 are scaled values)
- *   u32 marker (= 1)
- *   u32 series_count (= 8)
- *   3 x f32 (weather hint: forecast_10m, forecast_30m, blend)
- *   u16 series_count (= 8) + 8 x f32 (quantised weather
- *       prediction curve; near-zero values in dry conditions)
- *   u16 tail_count (= 1) + 1 x f32 (forecast tail)
+ * Real exe layout:
+ *   12 × u32 scaling factors (source struct offsets 0x28, 0x30,
+ *     0x34, 0x38, 0x3c, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58
+ *     — 0x2c is skipped).
+ *   i16 list1_count + list1_count × u32 (forecast samples from
+ *     source+0x60..+0x68).
+ *   i16 list2_count + list2_count × u32 (forecast samples from
+ *     source+0x78..+0x80).
  *
- * Total: 4 + 24 + 4 + 4 + 12 + 2 + 32 + 2 + 4 = 88 bytes.
- *
- * The 6 session-start floats and the 8-element prediction
- * curve are derived from the weather simulator state at session
- * start time.  For a clean dry session they are small scaling
- * factors; for wet conditions they carry rain intensity curves.
- * We populate the hint and tail from live server state and use
- * near-zero defaults for the prediction curve.
+ * Kunos populates the 12 scaling factors from the live weather
+ * prediction curve at session-start.  Without a capture of the
+ * runtime values we emit zeros, which matches static / dry
+ * conditions — the client reads these as the authoritative
+ * cockpit weather hint, so any non-zero garbage shows up as
+ * persistent rain on the windshield.  The external view reads
+ * live 0x37 which does the proper zero-rain computation.
  */
 int
-write_trailer_preview(struct ByteBuf *bb, const struct Server *s)
+write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 {
-	float ambient, road, clouds, rain;
 	int i;
 
-	ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 22.0f;
-	road = s->session.track_temp > 0
-	    ? (float)s->session.track_temp : ambient + 4.0f;
-	clouds = s->weather.clouds;
-	rain = s->weather.current_rain;
-
-	/*
-	 * Layout verified against a 77-byte 0x40 capture:
-	 *   u32(1) marker
-	 *   6 × f32 starting weather snapshot (ambient °C, then 5
-	 *     scaling/grip values that don't have a closed-form here;
-	 *     using safe constants similar to what Kunos sends)
-	 *   u32(1) marker
-	 *   u32(5) count
-	 *   3 × f32 cloud progression hints
-	 *   u16(5) + 5 × f32 small noise deltas (Kunos sends ~1e-3)
-	 *   u16(1) + 1 × f32 forecast tail (often negative)
-	 */
-	if (wr_u32(bb, 1) < 0) return -1;
-	if (wr_f32(bb, ambient) < 0) return -1;
-	if (wr_f32(bb, 1.5688f) < 0) return -1;
-	if (wr_f32(bb, 1.4286f) < 0) return -1;
-	if (wr_f32(bb, 0.4287f) < 0) return -1;
-	if (wr_f32(bb, 210.6f) < 0) return -1;
-	if (wr_f32(bb, road) < 0) return -1;
-
-	if (wr_u32(bb, 1) < 0) return -1;
-	if (wr_u32(bb, 5) < 0) return -1;
-	if (wr_f32(bb, 0.4f) < 0) return -1;
-	if (wr_f32(bb, 0.3f) < 0) return -1;
-	if (wr_f32(bb, 0.143f + clouds * 0.1f) < 0) return -1;
-
-	if (wr_u16(bb, 5) < 0) return -1;
-	for (i = 0; i < 5; i++)
-		if (wr_f32(bb, rain * 0.001f * (float)(i + 1)) < 0)
-			return -1;
-
-	if (wr_u16(bb, 1) < 0) return -1;
-	if (wr_f32(bb, -2.6232f) < 0) return -1;
+	(void)s;
+	for (i = 0; i < 12; i++)
+		if (wr_u32(bb, 0) < 0) return -1;
+	if (wr_i16(bb, 0) < 0) return -1;
+	if (wr_i16(bb, 0) < 0) return -1;
 	return 0;
 }
 
@@ -1039,8 +1001,8 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 	if (write_leaderboard_section(bb, s) < 0)
 		return -1;
 
-	/* 88-byte structure from *(param_1[0x1410e]+0x20). */
-	if (write_trailer_preview(bb, s) < 0)
+	/* WeatherData::serialize body (FUN_14011e660, vtable[0x20]). */
+	if (write_trailer_weather_data(bb, s) < 0)
 		return -1;
 
 	/* trailer_additional_state (FUN_1400330e0) — 68 bytes. */
