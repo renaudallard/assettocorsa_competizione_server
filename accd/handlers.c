@@ -102,6 +102,18 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
+	/*
+	 * Match the exe's "Received lap with isSessionOver flag; will
+	 * ignore it" guard: once the session has passed OVERTIME the
+	 * leaderboard is frozen, and any late-arriving lap report
+	 * should not mutate state.  Still relay 0x1b so other clients
+	 * see the number for UI, but skip the internal bookkeeping.
+	 */
+	if (s->session.phase >= PHASE_COMPLETED) {
+		log_info("lap ignored: session over (car=%d)",
+		    c->car_id);
+		return 0;
+	}
 	race = &s->cars[c->car_id].race;
 
 	/*
@@ -168,6 +180,16 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
+	/*
+	 * Match the exe's "Received split with isSessionOver flag; will
+	 * ignore it" guard: reject late-arriving sector splits past
+	 * session end so the frozen leaderboard doesn't get mutated.
+	 */
+	if (s->session.phase >= PHASE_COMPLETED) {
+		log_info("sector split ignored: session over (car=%d)",
+		    c->car_id);
+		return 0;
+	}
 	race = &s->cars[c->car_id].race;
 
 	/*
@@ -362,6 +384,10 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		return 0;
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
+		return 0;
+	/* Skip bookkeeping past session end — match the exe's
+	 * isSessionOver guard. */
+	if (s->session.phase >= PHASE_COMPLETED)
 		return 0;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
