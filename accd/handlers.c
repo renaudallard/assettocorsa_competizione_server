@@ -246,6 +246,9 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		}
 		race->current_lap_ms = 0;
 		race->out_of_track_latched = 0;
+		race->sector_ms[0] = 0;
+		race->sector_ms[1] = 0;
+		race->sector_ms[2] = 0;
 
 		/*
 		 * Report to the Kunos lobby so the server stays listed
