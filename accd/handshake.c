@@ -352,15 +352,11 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
     uint32_t conn_client_ts, uint32_t conn_rtt)
 {
 	const struct SessionDef *def;
-	uint16_t sched_field;
-	uint32_t duration_s;
 	int k;
 
 	if (s->session_count == 0)
 		return -1;
 	def = &s->sessions[s->session.session_index];
-	sched_field = def->session_type == 10 ? 80 : 3;
-	duration_s = (uint32_t)def->duration_min * 60u;
 
 	/* First byte: session index (NOT phase). */
 	if (wr_u8(bb, s->session.session_index) < 0)
@@ -416,8 +412,6 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 			if (wr_u8(bb, 0) < 0) return -1;
 	}
 
-	(void)sched_field;
-	(void)duration_s;
 	return write_session_tail(bb, def, s->session_overtime_s);
 }
 
