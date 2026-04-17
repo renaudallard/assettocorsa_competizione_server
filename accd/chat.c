@@ -466,6 +466,31 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		log_info("admin: /next");
 		chat_broadcast(s,"Forwarding to next session", 4);
 		session_advance(s);
+	} else if (chat_prefix(text, "/wt")) {
+		/*
+		 * /wt: dump current weather snapshot.  accServer.exe
+		 * header is "Standard weather:" (or "Snowflake weather:"
+		 * when the dynamic-mode flag at +0x315 is set), followed
+		 * by rain / cloud / wetness / dry-line fields scaled to
+		 * integer percent via DAT_14014bd74 (f32 100.0).
+		 */
+		char msg[160];
+		const char *head = s->weather.randomness > 0
+		    ? "Snowflake weather:" : "Standard weather:";
+		snprintf(msg, sizeof(msg),
+		    "%s rain=%d clouds=%d wet=%d dry=%d "
+		    "wind=%d/%d amb=%d road=%d",
+		    head,
+		    (int)(s->weather.current_rain * 100.0f),
+		    (int)(s->weather.clouds * 100.0f),
+		    (int)(s->weather.track_wetness * 100.0f),
+		    (int)(s->weather.dry_line_wetness * 100.0f),
+		    (int)s->weather.wind_speed,
+		    (int)s->weather.wind_direction,
+		    (int)s->session.ambient_temp,
+		    (int)s->session.track_temp);
+		log_info("admin: /wt");
+		chat_broadcast(s, msg, 4);
 	} else if (chat_prefix(text, "/go")) {
 		/*
 		 * /go: cut the pre-session wait and start the active
