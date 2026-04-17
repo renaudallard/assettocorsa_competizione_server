@@ -34,6 +34,9 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -303,6 +306,56 @@ chat_track_name(int index)
 	return track_list[index];
 }
 
+/*
+ * Copy cfg/<name>.json to cfg/current/<name>.txt, matching the
+ * snapshot accServer.exe writes from FUN_14002aca0 on weekend reset.
+ * Missing source files are skipped silently.  Returns 0 on success,
+ * -1 only if we could not create the destination directory.
+ */
+static int
+snapshot_cfg_current(const struct Server *s)
+{
+	static const char *names[] = {
+		"configuration", "event", "settings",
+		"entrylist", "eventRules", NULL
+	};
+	char cur_dir[320];
+	int i;
+
+	snprintf(cur_dir, sizeof(cur_dir), "%s/current", s->cfg_dir);
+	if (mkdir(cur_dir, 0755) < 0 && errno != EEXIST) {
+		log_warn("snapshot_cfg_current: mkdir %s: %s",
+		    cur_dir, strerror(errno));
+		return -1;
+	}
+	for (i = 0; names[i] != NULL; i++) {
+		char src[448], dst[448], buf[8192];
+		FILE *fp_src, *fp_dst;
+		size_t n;
+
+		snprintf(src, sizeof(src), "%s/%s.json",
+		    s->cfg_dir, names[i]);
+		snprintf(dst, sizeof(dst), "%s/%s.txt",
+		    cur_dir, names[i]);
+		fp_src = fopen(src, "rb");
+		if (fp_src == NULL)
+			continue;
+		fp_dst = fopen(dst, "wb");
+		if (fp_dst == NULL) {
+			fclose(fp_src);
+			log_warn("snapshot_cfg_current: open %s: %s",
+			    dst, strerror(errno));
+			continue;
+		}
+		while ((n = fread(buf, 1, sizeof(buf), fp_src)) > 0)
+			fwrite(buf, 1, n, fp_dst);
+		fclose(fp_src);
+		fclose(fp_dst);
+	}
+	log_info("snapshot_cfg_current: wrote files under cfg/current/");
+	return 0;
+}
+
 void
 chat_do_track(struct Server *s, const char *args,
     char *reply, size_t replysz)
@@ -325,6 +378,17 @@ chat_do_track(struct Server *s, const char *args,
 	/* Update the track name. */
 	snprintf(s->track, sizeof(s->track), "%s", name);
 	session_reset(s, 0);
+
+	/*
+	 * Weekend reset side-effect — accServer.exe FUN_14002aca0
+	 * snapshots the live config to files under cfg/current/ so operators
+	 * can see what weekend this track change came from.  No 0x40
+	 * broadcast yet: the exe's body pulls from a RaceWeekendForecast
+	 * serializer whose full wire layout we haven't finished
+	 * decoding; clients pick up the new track via the 0x4b
+	 * redelivery below.
+	 */
+	(void)snapshot_cfg_current(s);
 
 	snprintf(msg, sizeof(msg), "Event changed to %s", s->track);
 	chat_broadcast(s, msg, 4);
