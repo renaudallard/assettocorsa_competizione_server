@@ -832,8 +832,9 @@ write_track_records(struct ByteBuf *bb, struct Server *s)
 /*
  * MultiplayerTrackRecord::writeToPacket (FUN_14011da70) — 19 bytes.
  * No direct decomp; the field purpose is a "best lap record" for the
- * circuit (signed sentinels when none recorded).  Observed value is
- * all zeros with a 0xffb0ffffffff sentinel in the middle.
+ * circuit (signed sentinels when none recorded).  Bytes 6..11 carry
+ * the 0xffd0ffffffff sentinel verified against a v1.10.2 welcome
+ * capture (resp_00_0x0b.bin).
  */
 static int
 write_mtr(struct ByteBuf *bb, struct Server *s)
@@ -843,7 +844,7 @@ write_mtr(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0xff) < 0) return -1;
-	if (wr_u8(bb, 0xf0) < 0) return -1;
+	if (wr_u8(bb, 0xd0) < 0) return -1;
 	if (wr_u32(bb, 0xffffffff) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
