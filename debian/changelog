@@ -1,3 +1,43 @@
+accd (0.2.15) unstable; urgency=medium
+
+  * Weather: fix 0x37 + welcome wire order — rainLevel at slot [12]
+    and cloudLevel at [11] per WeatherStatus::serialize write order,
+    pinned by the JSON-helper field names (FUN_140114100).  Prior
+    "clouds at [9], rain at [11]" reading made the cockpit render
+    persistent rain while the external view correctly showed dry.
+  * Welcome trailer: rewrite EventEntity body to match the real
+    child serializers (CircuitEntity + GraphicsRules + CarSet +
+    RaceEntity + WeatherStatus + WeatherData, 150 B for empty/dry)
+    per FUN_1401185b0 readFromPacket anchors.
+  * Lobby: 0xf2 keepalive body carries dynamic bytes (rain-derived
+    load, weekend-time-derived sequence) per FUN_140048660 case 6.
+    Hard-coded 0/0/0x0d body was getting the server delisted by the
+    kson backend a few minutes after drivers>0 as "frozen".
+  * Penalty system: match FUN_140125f50 behaviour for escalation.
+    Added per-car per-exe-kind PenaltySheetState with counter +
+    severity; ladder steps DT → SG30 → (force only) DQ on repeat
+    admin issuance, per the bVar6=(force+2)*2 rule in the decomp.
+  * Auto-penalties: server-side 3-cut drive-through in
+    h_out_of_track (mirrors ACC client's self-issued DT), 80 km/h
+    pit-lane speeding DQ with the 22.22 m/s threshold fixed from
+    22.5, and failed-to-serve auto-DQ (or SG30 when allowAutoDQ=0).
+    All three fire a 0x2b chat broadcast with a reason suffix
+    ("- cutting", "- pit speeding", etc.).
+  * 0x3e results: +0x74 penalty_ms now sums TP5/TP15/unserved-DT
+    (previously wrote 0), so race total reflects time penalties.
+  * 0x36 leaderboard: emit ServerMonitorPenaltyShortcut values
+    (0..35) instead of internal PEN_* so the client sees the
+    correct penalty semantic (DriveThrough_Cutting vs
+    DriveThrough_RaceControl, etc.).
+  * Session bests: DQ'd and unused cars no longer contribute to
+    the session-best lap / sector displayed on the leaderboard
+    sidebar.
+  * 0x41 ACP_REPORT_PENALTY body reader fixed to u8+u8+u64+i32
+    (was i32+f32+i32); still informational-only since client ptype
+    is ServerMonitorPenaltyShortcut, not exe param_5.
+
+ -- Renaud Allard <renaud@allard.it>  Fri, 17 Apr 2026 18:55:00 +0200
+
 accd (0.2.14) unstable; urgency=medium
 
   * Lobby: report OVERTIME as phase=5 (kson backend silently delists
