@@ -1505,10 +1505,20 @@ reply:
 		timestamp_ms = (uint64_t)ts.tv_sec * 1000ull +
 		    (uint64_t)ts.tv_nsec / 1000000ull;
 
+		/*
+		 * Notify already-connected clients that a new car
+		 * joined.  Wire is 0x2e u8 + u16 carId + u64
+		 * system_data (11 bytes), same layout as the regular
+		 * ACP_CAR_SYSTEM_UPDATE relay — see NOTEBOOK_B §5.6.4a.
+		 * The new car's system_data is 0 until the joining
+		 * client sends its first 0x2e; send that 0 rather than
+		 * substituting the server wall-clock as we used to.
+		 */
 		bb_init(&notify);
 		if (wr_u8(&notify, SRV_CAR_SYSTEM_RELAY) == 0 &&
 		    wr_u16(&notify, s->cars[c->car_id].car_id) == 0 &&
-		    wr_u64(&notify, timestamp_ms) == 0)
+		    wr_u64(&notify,
+			s->cars[c->car_id].last_sys_data) == 0)
 			(void)bcast_all(s, notify.data, notify.wpos,
 			    c->conn_id);
 		bb_free(&notify);
