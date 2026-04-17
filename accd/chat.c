@@ -600,12 +600,21 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		log_info("admin: /report (TODO)");
 	} else if (chat_prefix(text, "/latencymode")) {
 		log_info("admin: /latencymode (TODO)");
-	} else if (chat_prefix(text, "/legacy")) {
-		log_info("admin: /legacy netcode");
-		chat_broadcast(s,"Server now uses legacy netcode", 4);
-	} else if (chat_prefix(text, "/regular")) {
-		log_info("admin: /regular netcode");
-		chat_broadcast(s,"Server is now in regular mode", 4);
+	} else if (chat_prefix(text, "/mp") ||
+	           chat_prefix(text, "/legacy") ||
+	           chat_prefix(text, "/regular")) {
+		/*
+		 * Single toggle in accServer.exe at server struct +0x22,
+		 * reached via the 2-char "/mp" command.  Our earlier
+		 * /legacy and /regular split was wrong — map both onto
+		 * the same flip for backward compatibility.
+		 */
+		s->legacy_netcode = !s->legacy_netcode;
+		log_info("admin: /mp -> legacy_netcode=%d",
+		    (int)s->legacy_netcode);
+		chat_broadcast(s, s->legacy_netcode
+		    ? "Server now uses legacy netcode"
+		    : "Server is now in regular mode", 4);
 	} else if (chat_prefix(text, "/debug")) {
 		log_info("admin: /debug (toggle)");
 	} else {
