@@ -595,7 +595,16 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		if (wr_u32(bb, race->race_time_ms > 0
 		    ? (uint32_t)race->race_time_ms : 0x7FFFFFFFu) < 0)
 			return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
+		/*
+		 * +0x1f8 u8 current-lap ordinal — per FUN_140034210 the
+		 * exe writes the raw lap_count if it fits in a byte and
+		 * 0xff as escape otherwise.  We had been writing a flat
+		 * zero which dropped the secondary LAP X/Y indicator on
+		 * the HUD for any driver past their first lap.
+		 */
+		if (wr_u8(bb, race->lap_count < 0xff
+		    ? (uint8_t)race->lap_count : 0xff) < 0)
+			return -1;
 
 		/*
 		 * Two vectors per FUN_140034210:
