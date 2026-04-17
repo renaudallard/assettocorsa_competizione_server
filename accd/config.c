@@ -378,19 +378,27 @@ config_load(struct Server *s, const char *cfg_dir)
 
 	{
 		/*
-		 * eventRules.json — optional.  We only consume
-		 * `driverStintTime` (minutes) for FUN_14012ae10-style
-		 * stint-limit enforcement at race end.  0 / missing =
-		 * no limit.
+		 * eventRules.json — optional.  Consume the two fields
+		 * that drive server-side auto-DQ paths we implement:
+		 *   driverStintTime        (min, per-driver stint limit)
+		 *   mandatoryPitstopCount  (count, 0 = no requirement)
+		 * 0 / missing = no enforcement.
 		 */
 		struct json_node *rules =
 		    load_json(cfg_dir, "eventRules.json");
 		if (rules != NULL) {
 			int stint_min = json_obj_get_int(rules,
 			    "driverStintTime", 0);
+			int pit_count = json_obj_get_int(rules,
+			    "mandatoryPitstopCount", 0);
 			if (stint_min < 0)
 				stint_min = 0;
+			if (pit_count < 0)
+				pit_count = 0;
+			if (pit_count > 255)
+				pit_count = 255;
 			s->driver_stint_time_s = (uint32_t)stint_min * 60u;
+			s->mandatory_pit_count = (uint8_t)pit_count;
 			json_free(rules);
 		}
 	}

@@ -598,38 +598,70 @@ void
 stint_check_violations(struct Server *s)
 {
 	int i;
-	uint32_t limit_s;
+	int is_race =
+	    s->session.session_index < s->session_count &&
+	    s->sessions[s->session.session_index].session_type == 10;
 
-	if (s->driver_stint_time_s == 0)
-		return;	/* no limit configured — skip */
-	limit_s = s->driver_stint_time_s;
+	if (s->driver_stint_time_s == 0 && s->mandatory_pit_count == 0)
+		return;	/* no enforcement configured */
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarEntry *car = &s->cars[i];
 		struct CarRaceState *r;
 		int d;
-		int violated = 0;
 
 		if (!car->used)
 			continue;
 		r = &car->race;
 		/* Flush any in-progress stint before checking. */
 		stint_stop_tracking(s, i);
+		if (r->disqualified)
+			continue;	/* already DQ'd, skip */
 
-		for (d = 0; d < car->driver_count &&
-		    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
-			uint32_t stint_s = (uint32_t)(r->driver_stint_ms[d]
-			    / 1000);
-			if (stint_s > limit_s) {
-				log_info("Car %d driver %d stint %us > "
-				    "limit %us -> DQ", i, d,
-				    (unsigned)stint_s, (unsigned)limit_s);
-				violated = 1;
-				break;
+		/*
+		 * Per-driver stint-time violation (FUN_14012ae10 third
+		 * DQ branch, ExceededDriverStintLimit).  Only runs when
+		 * eventRules.driverStintTime is set.
+		 */
+		if (s->driver_stint_time_s != 0) {
+			int violated = 0;
+			uint32_t limit_s = s->driver_stint_time_s;
+
+			for (d = 0; d < car->driver_count &&
+			    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
+				uint32_t stint_s = (uint32_t)(
+				    r->driver_stint_ms[d] / 1000);
+				if (stint_s > limit_s) {
+					log_info("Car %d driver %d stint "
+					    "%us > limit %us -> DQ", i, d,
+					    (unsigned)stint_s,
+					    (unsigned)limit_s);
+					violated = 1;
+					break;
+				}
+			}
+			if (violated) {
+				(void)penalty_enqueue(s, i, EXE_DQ, 12, 3,
+				    1, 0,
+				    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
+				continue;	/* already DQ'd */
 			}
 		}
-		if (violated)
-			(void)penalty_enqueue(s, i, EXE_DQ, 12, 3, 1, 0,
-			    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
+
+		/*
+		 * Mandatory-pitstop violation at race end.  Only runs
+		 * in race sessions where the car actually raced.  The
+		 * exe uses Disqualified_IgnoredMandatoryPit (Server
+		 * MonitorPenaltyShortcut 13, our REASON_IGNORED_
+		 * MANDATORY_PIT).
+		 */
+		if (is_race && s->mandatory_pit_count > 0 &&
+		    r->lap_count > 0 && !r->mandatory_pit_served) {
+			log_info("Car %d ignored mandatory pit (need %u, "
+			    "served 0) -> DQ", i,
+			    (unsigned)s->mandatory_pit_count);
+			(void)penalty_enqueue(s, i, EXE_DQ, 13, 3, 1, 0,
+			    REASON_IGNORED_MANDATORY_PIT);
+		}
 	}
 }
