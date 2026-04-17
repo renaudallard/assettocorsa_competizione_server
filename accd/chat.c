@@ -38,6 +38,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
+#include <time.h>
 
 #include "bans.h"
 #include "bcast.h"
@@ -456,6 +457,38 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	if (text[0] != '/')
 		return 0;
 
+	/*
+	 * /report is the only slash command any driver may issue —
+	 * accServer.exe gates every other slash command on is_admin
+	 * but lets "/report" through unauthenticated.  Admins may also
+	 * use it.  Append to cfg/reports.txt for later review.
+	 */
+	if (chat_prefix(text, "/report")) {
+		const char *arg = text + 7;
+		char path[320];
+		FILE *fp;
+		time_t now = time(NULL);
+		struct tm tm_buf;
+		char ts[32];
+
+		while (*arg == ' ')
+			arg++;
+		(void)localtime_r(&now, &tm_buf);
+		strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm_buf);
+		snprintf(path, sizeof(path), "%s/reports.txt", s->cfg_dir);
+		fp = fopen(path, "a");
+		if (fp != NULL) {
+			fprintf(fp, "%s conn=%u car=%d %s: %s\n",
+			    ts, (unsigned)c->conn_id, c->car_id,
+			    c->is_admin ? "admin" : "driver", arg);
+			fclose(fp);
+		}
+		log_info("report %s conn=%u car=%d: %s",
+		    c->is_admin ? "(admin)" : "(driver)",
+		    (unsigned)c->conn_id, c->car_id, arg);
+		return 1;
+	}
+
 	if (!c->is_admin) {
 		log_info("admin command rejected (not admin) from conn=%u",
 		    (unsigned)c->conn_id);
@@ -760,8 +793,6 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				chat_broadcast(s, line, 4);
 			}
 		}
-	} else if (chat_prefix(text, "/report")) {
-		log_info("admin: /report (TODO)");
 	} else if (chat_prefix(text, "/latencymode")) {
 		int mode;
 		char line[96];
