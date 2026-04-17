@@ -466,6 +466,38 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		log_info("admin: /next");
 		chat_broadcast(s,"Forwarding to next session", 4);
 		session_advance(s);
+	} else if (chat_prefix(text, "/debug")) {
+		/*
+		 * /debug <sub>: toggle a server-side log-verbosity flag.
+		 * accServer.exe recognizes 'conditions' (+0x116),
+		 * 'bandwidth' (+0x114), and 'qos' (+0x117) — server-local
+		 * verbosity only, no wire impact.  Each toggle replies
+		 * '<name> stats are printed now' or '... stopped printing'.
+		 */
+		const char *arg = text + 6;
+		while (*arg == ' ')
+			arg++;
+		if (strcmp(arg, "conditions") == 0) {
+			s->log_conditions = !s->log_conditions;
+			chat_broadcast(s, s->log_conditions
+			    ? "conditions are printed now"
+			    : "conditions stopped printing", 4);
+		} else if (strcmp(arg, "bandwidth") == 0) {
+			s->log_bandwidth = !s->log_bandwidth;
+			chat_broadcast(s, s->log_bandwidth
+			    ? "bandwidth stats are printed now"
+			    : "bandwidth stats stopped printing", 4);
+		} else if (strcmp(arg, "qos") == 0) {
+			s->log_qos = !s->log_qos;
+			chat_broadcast(s, s->log_qos
+			    ? "netcode stats are printed now"
+			    : "netcode stats stopped printing", 4);
+		} else if (*arg == '\0') {
+			chat_broadcast(s, "missing parameter", 4);
+		} else {
+			chat_broadcast(s, "unknown debug request", 4);
+		}
+		log_info("admin: /debug %s", arg);
 	} else if (chat_prefix(text, "/wt")) {
 		/*
 		 * /wt: dump current weather snapshot.  accServer.exe
