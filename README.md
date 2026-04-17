@@ -317,6 +317,7 @@ Network settings:
     "udpPort": 9231,
     "tcpPort": 9232,
     "maxConnections": 30,
+    "statsUdpPort": 0,
     "configVersion": 1
 }
 ```
@@ -324,6 +325,12 @@ Network settings:
 The server always listens on UDP 8999 for client discovery probes
 (the ACC client sends a discovery probe before connecting, even for
 remote servers).  Ensure this port is open in your firewall.
+
+`statsUdpPort` is optional.  When non-zero the server pushes a 1 Hz
+`0xbe` state snapshot to `127.0.0.1:<port>` for local monitoring tools
+(weekend time, phase, session manager, weather, per-connection and
+per-car records).  Default `0` disables the feature.  The datagram is
+never routed off the loopback interface.
 
 #### settings.json
 

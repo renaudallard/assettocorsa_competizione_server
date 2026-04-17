@@ -242,6 +242,8 @@ config_load(struct Server *s, const char *cfg_dir)
 	    "maxConnections", s->max_connections);
 	s->lan_discovery = json_obj_get_int(configuration,
 	    "lanDiscovery", s->lan_discovery);
+	s->stats_udp_port = json_obj_get_int(configuration,
+	    "statsUdpPort", 0);
 	json_free(configuration);
 
 	settings = load_json(cfg_dir, "settings.json");

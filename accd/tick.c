@@ -37,7 +37,10 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <string.h>
 #include <time.h>
+#include <arpa/inet.h>
+#include <netinet/in.h>
 #include <sys/types.h>
 #include <sys/socket.h>
 
@@ -493,6 +496,111 @@ broadcast_session_results(struct Server *s)
 	    s->nconns, (unsigned)result_count);
 }
 
+/*
+ * Optional 0xbe periodic telemetry push to 127.0.0.1:<stats_udp_port>.
+ *
+ * Mirrors FUN_14002e8d0 + FUN_140034c70 in accServer.exe: a 1 Hz UDP
+ * datagram carrying a snapshot of the server state (weekend time, phase,
+ * session manager, weather, connection and car lists).  The exe sends
+ * this only when a stats port is configured (short at +0x112 in its
+ * server struct); we replicate the gating via s->stats_udp_port.
+ *
+ * Byte layout matches the exe structurally but the two opaque internal
+ * serializers (FUN_140033890 session_mgr_state, FUN_1400330e0 additional
+ * state) are substituted with our canonical writers from handshake.c /
+ * weather.c, which cover the same field surface as the exe's 0x28 /
+ * 0x37 payloads.  Since 0xbe is localhost-only telemetry with no known
+ * external consumer, exact parity with the exe is not required — any
+ * monitoring tool can match our format by reading the fields in order.
+ *
+ * Intentionally reuses s->udp_fd (the main game UDP socket).  Kunos
+ * uses a dedicated stats socket at offset +0x78 but a shared loopback
+ * send is equivalent in practice.
+ */
+static void
+broadcast_stats_udp(struct Server *s)
+{
+	struct ByteBuf bb, wb;
+	struct sockaddr_in dst;
+	int i, ok, n_conn, n_car;
+
+	if (s->stats_udp_port <= 0 || s->stats_udp_port > 65535)
+		return;
+	if (s->udp_fd < 0)
+		return;
+
+	memset(&dst, 0, sizeof(dst));
+	dst.sin_family = AF_INET;
+	dst.sin_port = htons((uint16_t)s->stats_udp_port);
+	dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);	/* 127.0.0.1 */
+
+	bb_init(&bb);
+	bb_init(&wb);
+	ok = wr_u8(&bb, SRV_PERIODIC_UDP) == 0;
+	ok = ok && wr_f32(&bb, (float)s->session.weekend_time_s) == 0;
+	ok = ok && wr_u8(&bb, s->session.phase) == 0;
+	ok = ok && write_session_mgr_state(&bb, s, 0, 0) == 0;
+
+	/*
+	 * Weather block: reuse weather_build_broadcast (which writes the
+	 * 0x37 opcode + 17 floats) into a scratch buffer and append
+	 * everything after the leading opcode byte.
+	 */
+	if (ok && weather_build_broadcast(s, &wb) == 0 && wb.wpos > 1) {
+		if (bb_append(&bb, wb.data + 1, wb.wpos - 1) < 0)
+			ok = 0;
+	}
+
+	/* Connection list. */
+	n_conn = 0;
+	for (i = 0; i < ACC_MAX_CARS; i++)
+		if (s->conns[i] != NULL &&
+		    s->conns[i]->state == CONN_AUTH)
+			n_conn++;
+	ok = ok && wr_u8(&bb, (uint8_t)(n_conn > 255 ? 255 : n_conn)) == 0;
+	for (i = 0; i < ACC_MAX_CARS && ok; i++) {
+		struct Conn *c = s->conns[i];
+		struct CarEntry *car;
+		const char *name = "";
+
+		if (c == NULL || c->state != CONN_AUTH)
+			continue;
+		car = (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) ?
+		    &s->cars[c->car_id] : NULL;
+		if (car != NULL && car->driver_count > 0)
+			name = car->drivers[car->current_driver_index
+			    < car->driver_count
+			    ? car->current_driver_index : 0].last_name;
+		ok = ok && wr_u16(&bb, car ? car->car_id : 0) == 0;
+		ok = ok && wr_u16(&bb, car ? (uint16_t)car->race_number : 0)
+		    == 0;
+		ok = ok && wr_u8(&bb,
+		    car ? car->current_driver_index : 0) == 0;
+		ok = ok && wr_str_b(&bb, name) == 0;
+		ok = ok && wr_u16(&bb, (uint16_t)c->avg_rtt_ms) == 0;
+	}
+
+	/* Car list. */
+	n_car = 0;
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+		if (s->cars[i].used)
+			n_car++;
+	ok = ok && wr_u8(&bb, (uint8_t)(n_car > 255 ? 255 : n_car)) == 0;
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections && ok; i++) {
+		if (!s->cars[i].used)
+			continue;
+		ok = ok && wr_u16(&bb, s->cars[i].car_id) == 0;
+		ok = ok && wr_u16(&bb,
+		    (uint16_t)s->cars[i].race.position) == 0;
+	}
+
+	if (ok)
+		(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
+		    (const struct sockaddr *)&dst, sizeof(dst));
+	bb_free(&bb);
+	bb_free(&wb);
+}
+
 void
 tick_run(struct Server *s)
 {
@@ -514,6 +622,10 @@ tick_run(struct Server *s)
 	/* Keepalive 0x14 every ~1s (matching exe capture). */
 	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
 		broadcast_keepalive(s, SRV_KEEPALIVE_14);
+
+	/* 0xbe optional localhost telemetry every ~1s. */
+	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
+		broadcast_stats_udp(s);
 
 	/*
 	 * Leaderboard rebroadcast on standings change.

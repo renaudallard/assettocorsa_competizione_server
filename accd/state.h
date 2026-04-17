@@ -390,6 +390,13 @@ struct Server {
 	int		udp_port;
 	int		max_connections;
 	int		lan_discovery;
+	/*
+	 * UDP port on 127.0.0.1 for 0xbe periodic state snapshots.  0 =
+	 * disabled (default).  Mirrors accServer.exe's optional stats
+	 * push channel (FUN_14002e8d0 gates on the short at +0x112).
+	 * Intended for local monitoring tools; never routed off-host.
+	 */
+	int		stats_udp_port;
 	char		server_name[ACC_MAX_NAME_LEN];
 	char		password[64];
 	char		admin_password[64];

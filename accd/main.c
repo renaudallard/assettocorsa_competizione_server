@@ -276,6 +276,9 @@ main(int argc, char **argv)
 	log_info("config: tcp=%d udp=%d max=%d lan=%d track=\"%s\"",
 	    srv.tcp_port, srv.udp_port, srv.max_connections,
 	    srv.lan_discovery, srv.track);
+	if (srv.stats_udp_port > 0)
+		log_info("policy: statsUdpPort=%d (0xbe telemetry to "
+		    "127.0.0.1)", srv.stats_udp_port);
 	if (srv.register_to_lobby) {
 		log_info("policy: registerToLobby=1 (will register with "
 		    "Kunos kson backend)");
