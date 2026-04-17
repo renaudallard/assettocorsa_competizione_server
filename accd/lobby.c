@@ -833,6 +833,33 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		 * re-invokes its 0xd1 sender. */
 		(void)lobby_send_drivers_update(l, s);
 		break;
+	case 0xf3: {
+		/*
+		 * CP (Championship Points) data push from kson.  Body:
+		 *   kson_string event_id        (e.g. "monza")
+		 *   u8  flag_a
+		 *   u8  flag_b
+		 *   kson_string event_qualifier (e.g. "E_6h")
+		 *   ServerEventConfig blob (consumed by exe's
+		 *      FUN_14012e4f0 — stored for CP stats integration)
+		 * We're not a CP-enabled server, so just log the
+		 * event identifier for operator visibility and drop
+		 * the rest.  Avoids the "unhandled cmd 0xf3" debug
+		 * spam without pulling in CP storage.
+		 */
+		char event_id[128];
+		size_t p = 1;
+
+		if (lobby_read_kson_string(body, len, &p, event_id,
+		    sizeof(event_id)) == 0)
+			log_info("lobby: 0xf3 CP data push for event \"%s\" "
+			    "(%zu B body, dropped — CP not enabled)",
+			    event_id, len);
+		else
+			log_info("lobby: 0xf3 CP data push (%zu B body, "
+			    "short parse — dropped)", len);
+		break;
+	}
 	case 0xf4: {
 		/*
 		 * Lobby-initiated remote ban.  kson sends two kson_strings
