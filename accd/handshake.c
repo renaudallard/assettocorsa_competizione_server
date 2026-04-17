@@ -449,12 +449,23 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		struct CarRaceState *r = &s->cars[j].race;
 
-		if (r->best_lap_ms > 0 && r->best_lap_ms < sess_best_lap)
-			sess_best_lap = r->best_lap_ms;
-		for (d = 0; d < 3; d++)
-			if (r->best_sectors_ms[d] > 0 &&
-			    r->best_sectors_ms[d] < sess_best_sec[d])
-				sess_best_sec[d] = r->best_sectors_ms[d];
+		/*
+		 * Session-best scan gated on used && !disqualified.
+		 * A DQ'd car keeps its personal best_lap_ms but that
+		 * time should not contribute to the session best that
+		 * every client sees.  Also skips unused slots whose
+		 * best_lap_ms is stale from a prior session.
+		 */
+		if (s->cars[j].used && !r->disqualified) {
+			if (r->best_lap_ms > 0 &&
+			    r->best_lap_ms < sess_best_lap)
+				sess_best_lap = r->best_lap_ms;
+			for (d = 0; d < 3; d++)
+				if (r->best_sectors_ms[d] > 0 &&
+				    r->best_sectors_ms[d] < sess_best_sec[d])
+					sess_best_sec[d] =
+					    r->best_sectors_ms[d];
+		}
 
 		if (!s->cars[j].used)
 			continue;
