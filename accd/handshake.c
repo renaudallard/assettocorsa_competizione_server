@@ -1605,21 +1605,19 @@ reply:
 					    s->cars[j].car_id) == 0;
 					ok = ok && wr_u8(&wb, 0) == 0;
 					/*
-					 * Safety / TrackMedal placeholders.
-					 * Kunos sends real Steam-backed
-					 * values (~20850 = 208.50 in their
-					 * x100 encoding); we stub at 5000
-					 * (= 50.00) so the HUD class chip
-					 * is non-zero.  Tracked properly
-					 * once we wire a rating service.
+					 * Kunos welcome 0x4e per-car body is
+					 * u16 car_id + u8 0 + u16 SA + u16 TR
+					 * + u32 0xFFFFFFFF + u8 0, confirmed
+					 * from a 14-byte single-car capture.
+					 * Safety / TrackMedal are placeholder
+					 * at 5000 (=50.00) until a rating
+					 * service is wired.
 					 */
 					ok = ok && wr_u16(&wb, 5000) == 0;
 					ok = ok && wr_u16(&wb, 5000) == 0;
 					ok = ok && wr_i16(&wb, -1) == 0;
 					ok = ok && wr_i16(&wb, -1) == 0;
-					ok = ok && wr_str_a(&wb,
-					    s->cars[j].drivers[0]
-					    .steam_id) == 0;
+					ok = ok && wr_u8(&wb, 0) == 0;
 				}
 				if (ok)
 					(void)bcast_all(s, wb.data,
