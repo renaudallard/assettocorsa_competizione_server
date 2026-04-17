@@ -102,15 +102,16 @@ weather_step(struct Server *s)
 	new_clouds = clamp01(s->weather.base_clouds +
 	    span * (float)sin(t / 1800.0));
 	/*
-	 * Rain only develops if base_rain > 0 OR clouds happen to
-	 * climb above ~0.7 during the drift.  This matches the
-	 * Kunos rule: cloudLevel gates rain chance.
+	 * Rain only develops if base_rain > 0 OR clouds climb above
+	 * DAT_14014bcc0 (0.6) — the exe's cloud→rain gate extracted
+	 * from accServer.exe .rdata.  We had 0.7 before which kept
+	 * drizzle from starting as early as Kunos's simulator does.
 	 */
 	if (s->weather.base_rain > 0.0f) {
 		new_rain = clamp01(s->weather.base_rain +
 		    span * (float)sin(t / 2400.0 + WX_RAIN_PHASE));
-	} else if (new_clouds > 0.7f) {
-		new_rain = clamp01((new_clouds - 0.7f) * 0.5f);
+	} else if (new_clouds > 0.6f) {
+		new_rain = clamp01((new_clouds - 0.6f) * 0.5f);
 	} else {
 		new_rain = 0.0f;
 	}
