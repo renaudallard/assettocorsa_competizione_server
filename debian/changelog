@@ -1,3 +1,26 @@
+accd (0.2.17) unstable; urgency=medium
+
+  * Lobby receive: proper u16-len framing parser with partial-read
+    buffer.  Previous code examined only the first 3-4 bytes of the
+    TCP buffer and discarded anything after, so kson messages that
+    arrived concatenated (common) were silently dropped.
+  * Lobby: reply to kson 0xf6 CONFIG_REQUEST with 0xd7 containing
+    (server_name, track, password) kson_strings — matches exe
+    dispatch FUN_140044c10 case 0xf6.  Missing this reply was
+    causing backend-initiated eviction after some time with
+    drivers>0.
+  * Lobby: handle kson 0xf1 DRIVERS_REFRESH by re-sending 0xd1,
+    mirroring the exe's dispatcher behaviour.  Keeps the lobby
+    drivers list in sync after any transient loss.
+  * Lobby: on 0xef register-accept, send 0xcb session update
+    first, then 0xd1 drivers — matches the exe's call order in
+    case 0xef (was reversed).
+  * Lobby: gate 0xd1 drivers sender on state REGISTERING (5) or
+    REGISTERED (6) per FUN_1400473f0 entry check, so a 0xf1
+    arriving early can't writev into a wrong-state socket.
+
+ -- Renaud Allard <renaud@allard.it>  Fri, 17 Apr 2026 19:40:00 +0200
+
 accd (0.2.16) unstable; urgency=medium
 
   * Lobby: emit phase=4 during the race PRE-2 countdown (formation
