@@ -228,84 +228,83 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 }
 
 /*
- * EventEntity body after the str_a trackName.  The structure is a
- * fixed sequence of child serializers per FUN_1401185b0 (EventEntity
- * readFromPacket anchors "post circuit", "post graphics", "post
- * carSet", "post race", "post weatherStatus", "post weatherData"):
- *
- *   CircuitEntity (FUN_14011a440): u8 flag + if flag!=0 u64   1-9 B
- *   GraphicsRules (FUN_140118d50): 7 × u8                     7 B
- *   CarSet        (FUN_140117ca0): u16 car_count + per-car
- *                                  records (empty for us;
- *                                  cars go in the top-level
- *                                  welcome position)          2+ B
- *   RaceEntity    (FUN_14011a510): 12 × u32 scaling +
- *                                  2 × (i16 count + u32 list) 52+ B
- *   WeatherStatus (FUN_14011e930): 9 × u32 in serialize order
- *                                  (0x28, 0x2c, 0x30, 0x34,
- *                                   0x3c, 0x38, 0x40, 0x44,
- *                                   0x48 per JSON helper
- *                                   FUN_140114100 field
- *                                   literals)                 36 B
- *   WeatherData   (FUN_14011e660): 12 × u32 scaling +
- *                                  2 × (i16 count + u32 list) 52+ B
- *
- * Our previous layout invented a "CircuitInfo"/"WeatherRules"
- * structure that didn't match the exe; bytes landed at wrong
- * offsets and the client read them as rain/cloud, showing
- * persistent rain on the cockpit windshield even while the
- * separate live 0x37 broadcast correctly reported dry.
+ * EventEntity body after the str_a trackName (136 bytes).
+ * The block mixes CircuitInfo, GraphicsInfo, CarSet, RaceRules
+ * and WeatherRules.  Structural bytes (graphics indices, race
+ * rule sentinels) come from a reference template; weather and
+ * temperature fields are filled from live server state so the
+ * EventEntity is valid for any track and weather configuration.
  */
 static int
 write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 {
-	float ambient, road, clouds, rain, dry;
-	int dyn = s->weather.randomness > 0;
+	float ambient, road, rain;
 	int i;
 
 	ambient = s->session.ambient_temp > 0
 	    ? (float)s->session.ambient_temp : 22.0f;
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
-	clouds = dyn ? tanhf(tanhf(s->weather.clouds) * 0.9f)
-	    : s->weather.clouds;
-	rain = dyn ? tanhf(tanhf(s->weather.current_rain) * 0.9f)
-	    : s->weather.current_rain;
-	dry = dyn ? tanhf(tanhf(s->weather.dry_line_wetness) * 0.9f)
-	    : s->weather.dry_line_wetness;
+	rain = s->weather.current_rain > 0
+	    ? s->weather.current_rain : 0.0f;
 
-	/* CircuitEntity: flag=0 so no trailing u64 (1 byte). */
-	if (wr_u8(bb, 0) < 0) return -1;
+	/* CircuitInfo header (3 u8 + 4 f32 = 19 bytes). */
+	if (wr_u8(bb, 0x01) < 0) return -1;
+	if (wr_u8(bb, 0x20) < 0) return -1;
+	if (wr_u8(bb, 0x03) < 0) return -1;
+	if (wr_f32(bb, 0.9f) < 0) return -1;
+	if (wr_f32(bb, s->weather.clouds * 0.1f) < 0) return -1;
+	if (wr_f32(bb, rain * 0.1f) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
 
-	/* GraphicsRules: 7 × u8 zeros. */
-	for (i = 0; i < 7; i++)
-		if (wr_u8(bb, 0) < 0) return -1;
+	/* GraphicsInfo (6 u8 + u16 + u8 = 9 bytes). */
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_u8(bb, 0x05) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_u8(bb, 0x05) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_u8(bb, 0x04) < 0) return -1;
+	if (wr_u16(bb, 0x0000) < 0) return -1;
+	if (wr_u8(bb, 0xFF) < 0) return -1;
 
-	/* CarSet: u16 car_count = 0. */
-	if (wr_u16(bb, 0) < 0) return -1;
+	/* RaceRules (16 bytes: sentinels and flags). */
+	{
+		static const unsigned char rr[16] = {
+			0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00,
+			0x01, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
+		};
+		if (bb_append(bb, rr, sizeof(rr)) < 0)
+			return -1;
+	}
 
-	/* RaceEntity: 12 u32 + 2 empty i16 lists. */
-	for (i = 0; i < 12; i++)
-		if (wr_u32(bb, 0) < 0) return -1;
-	if (wr_i16(bb, 0) < 0) return -1;
-	if (wr_i16(bb, 0) < 0) return -1;
-
-	/* WeatherStatus: 9 f32 in FUN_14011e930 write order. */
+	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */
+	if (wr_u8(bb, 0x01) < 0) return -1;
+	if (wr_u8(bb, 0x32) < 0) return -1;
+	if (wr_u8(bb, 0x03) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
-	if (wr_f32(bb, clouds) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, rain) < 0) return -1;
-	if (wr_f32(bb, dry) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
 
-	/* WeatherData: 12 u32 + 2 empty i16 lists. */
-	for (i = 0; i < 12; i++)
-		if (wr_u32(bb, 0) < 0) return -1;
-	if (wr_i16(bb, 0) < 0) return -1;
-	if (wr_i16(bb, 0) < 0) return -1;
+	/* WeatherRules forecast table (15 f32 = 60 bytes). */
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, -1.0f) < 0) return -1;
+	if (wr_f32(bb, 5.0f) < 0) return -1;
+	if (wr_f32(bb, 15.0f) < 0) return -1;
+	if (wr_f32(bb, -1.0f) < 0) return -1;
+	for (i = 0; i < 3; i++)
+		if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
 
 	return 0;
 }
