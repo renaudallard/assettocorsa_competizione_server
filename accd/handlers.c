@@ -194,20 +194,15 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	race = &s->cars[c->car_id].race;
 
 	/*
-	 * Formation lap flag (exe car+0x200): in RACE sessions only,
-	 * the first 0x20 from each car is the formation/out-lap
-	 * completion.  Drop it and set the flag so subsequent splits
-	 * count normally.  P/Q sessions have no formation lap.
+	 * Formation lap flag (exe car+0x200): flip on the first S/F
+	 * crossing (sector_index=2).  Kunos counts the formation lap
+	 * as lap 1 flagged IsOutLap (car_field & 0x0004); that bit
+	 * is honored below to keep it out of best_lap.  Do NOT drop
+	 * the 0x20 — doing so kept lap_count one behind the client
+	 * and made race lap-0 appear to start after S/F.
 	 */
-	if (!race->formation_lap_done &&
-	    s->session.session_index < s->session_count &&
-	    s->sessions[s->session.session_index].session_type == 10) {
+	if (sector_index == 2 && !race->formation_lap_done)
 		race->formation_lap_done = 1;
-		log_info("Car %d did not finish the formation lap, "
-		    "won't count his first split", c->car_id);
-		return 0;
-	}
-	race->formation_lap_done = 1;
 
 	/* Store per-sector time. */
 	if (sector_index < 3)
