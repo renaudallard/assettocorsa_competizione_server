@@ -187,8 +187,14 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 
 	/*
-	 * 17 × f32 body, layout reverse-engineered from a Kunos
-	 * accServer.exe v1.10.2 capture:
+	 * 17 × f32 body.  The [7..15] block is WeatherStatus::serialize
+	 * (FUN_14011e930) which writes 9 u32 from struct offsets 0x28,
+	 * 0x2c, 0x30, 0x34, 0x3c (written before 0x38), 0x38, 0x40, 0x44,
+	 * 0x48.  The struct offsets map to named fields per the JSON
+	 * serializer FUN_140114100: 0x28=ambient, 0x2c=road, 0x30=wind
+	 * speed, 0x34=wind direction, 0x38=rain, 0x3c=cloud.  So on the
+	 * wire the order is ambient, road, windSpeed, windDirection,
+	 * cloudLevel, rainLevel, WS+0x40, WS+0x44, WS+0x48.
 	 *
 	 *   [0]  grip estimation (current)
 	 *   [1]  grip green-flag (constant DAT_14014bcd8 = 0.96)
@@ -197,12 +203,13 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	 *   [6]  track wetness (target/mirror of [5])
 	 *   [7]  ambient temp °C
 	 *   [8]  road temp °C
-	 *   [9]  cloud level (0..1)
+	 *   [9]  wind speed
 	 *   [10] wind direction (degrees, signed)
-	 *   [11] rain level (0..1)
-	 *   [12] wind speed
-	 *   [13] dry-line wetness / puddles factor
-	 *   [14..15] reserved (always 0)
+	 *   [11] cloud level (0..1)
+	 *   [12] rain level (0..1)
+	 *   [13] dry-line wetness / puddles factor (WS+0x40)
+	 *   [14..15] tanhf-normalized 0..1 fields at WS+0x44/0x48,
+	 *            unknown semantics — emit 0 for dry weather.
 	 *   [16] weekend time (seconds, as f32)
 	 *
 	 * In dynamic mode (weatherRandomness > 0) the exe applies
@@ -219,10 +226,10 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
-	if (wr_f32(bb, clouds) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
-	if (wr_f32(bb, rain) < 0) return -1;
 	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
+	if (wr_f32(bb, clouds) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
 	if (wr_f32(bb, dry) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;

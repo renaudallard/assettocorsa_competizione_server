@@ -754,10 +754,10 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
-	if (wr_f32(bb, clouds) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
-	if (wr_f32(bb, rain) < 0) return -1;
 	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
+	if (wr_f32(bb, clouds) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
 	if (wr_f32(bb, dry) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
