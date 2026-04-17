@@ -138,10 +138,32 @@ weather_step(struct Server *s)
 	return 0;
 }
 
+/*
+ * tanhf normalization used by Kunos on rain/cloud/wetness/dry-line when
+ * the session runs in dynamic (snowflake) weather mode.  Constant K is
+ * DAT_14014bcd4 in accServer.exe .rdata (f32 0.9).
+ */
+#define WX_TANH_K	0.9f
+
+static inline float
+wx_norm(float x)
+{
+	return tanhf(tanhf(x) * WX_TANH_K);
+}
+
 int
 weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 {
 	float ambient, road;
+	int dyn = s->weather.randomness > 0;
+	float rain = dyn ? wx_norm(s->weather.current_rain)
+	    : s->weather.current_rain;
+	float clouds = dyn ? wx_norm(s->weather.clouds)
+	    : s->weather.clouds;
+	float wet = dyn ? wx_norm(s->weather.track_wetness)
+	    : s->weather.track_wetness;
+	float dry = dyn ? wx_norm(s->weather.dry_line_wetness)
+	    : s->weather.dry_line_wetness;
 
 	if (wr_u8(bb, SRV_WEATHER_STATUS) < 0)
 		return -1;
@@ -156,7 +178,7 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	 * accServer.exe v1.10.2 capture:
 	 *
 	 *   [0]  grip estimation (current)
-	 *   [1]  grip green-flag (constant from randomizeGreenFlagTriggers)
+	 *   [1]  grip green-flag (constant DAT_14014bcd8 = 0.96)
 	 *   [2..4] reserved (always 0)
 	 *   [5]  track wetness (current)
 	 *   [6]  track wetness (target/mirror of [5])
@@ -169,28 +191,26 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	 *   [13] dry-line wetness / puddles factor
 	 *   [14..15] reserved (always 0)
 	 *   [16] weekend time (seconds, as f32)
+	 *
+	 * In dynamic mode (weatherRandomness > 0) the exe applies
+	 * tanhf(tanhf(x) * 0.9) to rain / clouds / wet / dry-line —
+	 * see FUN_1400330e0 Branch B in notebook-a.
 	 */
-	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.3f) < 0) return -1;
-	/*
-	 * Slot [1] is the green-flag grip baseline.  Kunos initializes
-	 * this once from randomizeGreenFlagTriggers and holds it for the
-	 * session (capture shows 0.97).  Using 1 - clouds*0.4 made it
-	 * drift with the cloud level, which the exe never does.
-	 */
-	if (wr_f32(bb, 0.97f) < 0) return -1;
+	if (wr_f32(bb, 1.0f - clouds * 0.3f) < 0) return -1;
+	if (wr_f32(bb, 0.96f) < 0) return -1;	/* DAT_14014bcd8 */
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
-	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
+	if (wr_f32(bb, wet) < 0) return -1;
+	if (wr_f32(bb, wet) < 0) return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
+	if (wr_f32(bb, clouds) < 0) return -1;
 	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
 	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
-	if (wr_f32(bb, s->weather.dry_line_wetness) < 0) return -1;
+	if (wr_f32(bb, dry) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 

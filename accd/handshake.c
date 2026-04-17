@@ -52,6 +52,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
@@ -764,28 +765,37 @@ static int
 write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 {
 	float ambient, road;
+	int dyn = s->weather.randomness > 0;
+	float rain = dyn ? tanhf(tanhf(s->weather.current_rain) * 0.9f)
+	    : s->weather.current_rain;
+	float clouds = dyn ? tanhf(tanhf(s->weather.clouds) * 0.9f)
+	    : s->weather.clouds;
+	float wet = dyn ? tanhf(tanhf(s->weather.track_wetness) * 0.9f)
+	    : s->weather.track_wetness;
+	float dry = dyn ? tanhf(tanhf(s->weather.dry_line_wetness) * 0.9f)
+	    : s->weather.dry_line_wetness;
 
 	ambient = s->session.ambient_temp > 0
 	    ? (float)s->session.ambient_temp : 22.0f;
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 
-	if (wr_f32(bb, 1.0f - s->weather.clouds * 0.3f) < 0) return -1;
-	/* Green-flag grip baseline; constant per session (see weather.c). */
-	if (wr_f32(bb, 0.97f) < 0) return -1;
+	if (wr_f32(bb, 1.0f - clouds * 0.3f) < 0) return -1;
+	/* Green-flag grip baseline; constant DAT_14014bcd8 = 0.96. */
+	if (wr_f32(bb, 0.96f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
-	if (wr_f32(bb, s->weather.track_wetness) < 0) return -1;
+	if (wr_f32(bb, wet) < 0) return -1;
+	if (wr_f32(bb, wet) < 0) return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
+	if (wr_f32(bb, clouds) < 0) return -1;
 	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
-	if (wr_f32(bb, s->weather.current_rain) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
 	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
-	if (wr_f32(bb, s->weather.dry_line_wetness) < 0) return -1;
+	if (wr_f32(bb, dry) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 
