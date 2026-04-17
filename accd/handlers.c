@@ -1107,10 +1107,12 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	log_info("Receives driver stint reset for car %d", c->car_id);
 
 	/*
-	 * Relay 0x4f to all other clients.  Two variants:
-	 * force=0: short (4 bytes) u8 id + u16 car_id + u8(0)
-	 * force=1: long (12 bytes) u8 id + u16 car_id + u8(1)
-	 *          + u32(0) + f32 stint_time
+	 * Relay 0x4f to all other clients.  Two variants (see
+	 * NOTEBOOK_B §5.6.4a 0x4f entry):
+	 *   sub=0: 4 bytes — u8 id + u16 car_id + u8(0)
+	 *   sub=1: 12 bytes — u8 id + u16 car_id + u8(1) + u64 ts
+	 * We had been packing u32(0) + f32(0.0) into the u64 slot,
+	 * mirroring the wire size but not the field layout.
 	 */
 	{
 		struct ByteBuf out;
@@ -1119,10 +1121,8 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 		if (wr_u8(&out, SRV_DRIVER_STINT_RELAY) == 0 &&
 		    wr_u16(&out, s->cars[c->car_id].car_id) == 0 &&
 		    wr_u8(&out, force) == 0) {
-			if (force) {
-				(void)wr_u32(&out, 0);
-				(void)wr_f32(&out, 0.0f);
-			}
+			if (force)
+				(void)wr_u64(&out, ts_raw);
 			(void)bcast_all(s, out.data, out.wpos,
 			    c->conn_id);
 		}
