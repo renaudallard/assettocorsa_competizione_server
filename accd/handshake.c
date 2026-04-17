@@ -1241,7 +1241,15 @@ handshake_handle(struct Server *s, struct Conn *c,
 	{
 		size_t echo_len = rd_remaining(&r);
 
-		c->hs_echo = malloc(echo_len);
+		/*
+		 * Guard against malicious / malformed handshake bodies:
+		 * a real ACC 0x09 is ~200 B for a single driver + CarInfo.
+		 * 16 KiB is far beyond any legitimate payload and well
+		 * below any DoS surface.
+		 */
+		if (echo_len > 16384)
+			echo_len = 0;
+		c->hs_echo = echo_len > 0 ? malloc(echo_len) : NULL;
 		if (c->hs_echo != NULL) {
 			memcpy(c->hs_echo, r.p, echo_len);
 			c->hs_echo_len = echo_len;

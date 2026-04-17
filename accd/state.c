@@ -108,7 +108,8 @@ conn_drop(struct Server *s, struct Conn *c)
 	 * summary to the disconnecting client, then emit a 0x24
 	 * disconnect notify to every remaining connected client.
 	 */
-	if (c->state == CONN_AUTH && c->car_id >= 0) {
+	if (c->state == CONN_AUTH && c->car_id >= 0 &&
+	    c->car_id < ACC_MAX_CARS) {
 		struct ByteBuf bb;
 		struct DriverInfo *drv;
 
