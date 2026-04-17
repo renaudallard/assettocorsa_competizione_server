@@ -600,32 +600,45 @@ lobby_send_session_update(struct LobbyClient *l, const struct Server *s)
 }
 
 static int
-lobby_send_keepalive(struct LobbyClient *l)
+lobby_send_keepalive(struct LobbyClient *l, const struct Server *s)
 {
 	/*
-	 * Keepalive is preamble + u8 0 + u8 0x0d (msg_id at body[13]).
-	 * Verified against Kunos: `0e 00 + ts + 0 + session + 0 0 0 0d`.
+	 * Keepalive body (FUN_140048660 case 6 in accServer.exe):
+	 *   preamble(0xf2)                                  11 bytes
+	 *   u8 load      = (char)(int)(rainLevel * DAT_140150698)
+	 *   u8 0
+	 *   u8 sequence  = (char)(int)(FUN_14011ee30(weather) /
+	 *                  DAT_14014f0d8 / _DAT_140150690)
+	 * Total 14 bytes.  The kson backend tracks these two bytes as
+	 * liveness — constant values (our old hard-coded 0/0/0x0d)
+	 * look frozen to it and the server is delisted once drivers>0
+	 * (idle servers are tolerated; active servers are expected to
+	 * show varying bytes).  The exact scaling constants are not
+	 * decoded, but any plausible time-varying bytes satisfy the
+	 * backend's drift check.
 	 */
 	struct ByteBuf bb;
+	uint8_t load, seq;
 	int rc;
+
+	load = (uint8_t)(s->weather.current_rain * 100.0f);
+	seq = (uint8_t)(s->session.weekend_time_s & 0xff);
+
 	bb_init(&bb);
-	/*
-	 * Keepalive body: 11-byte preamble + u8 0 + u8 0 + u8 0x0d.
-	 * Total body 14 bytes (Kunos verified).  The first two zeros
-	 * are not the msg_id — they sit between preamble and the
-	 * keepalive marker 0x0d.
-	 */
 	if (lobby_write_preamble(&bb, l, 0xf2) < 0 ||
+	    wr_u8(&bb, load) < 0 ||
 	    wr_u8(&bb, 0) < 0 ||
-	    wr_u8(&bb, 0) < 0 ||
-	    wr_u8(&bb, LOBBY_MSG_KEEPALIVE) < 0) {
+	    wr_u8(&bb, seq) < 0) {
 		bb_free(&bb);
 		return -1;
 	}
 	rc = lobby_send_framed(l, bb.data, bb.wpos);
 	bb_free(&bb);
-	if (rc == 0)
+	if (rc == 0) {
 		l->last_keepalive_ms = lobby_now_ms();
+		log_info("lobby: Sent keepalive (load=%u seq=%u)",
+		    (unsigned)load, (unsigned)seq);
+	}
 	return rc;
 }
 
@@ -817,7 +830,7 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 			l->session_dirty = 0;
 		}
 		if (now - l->last_keepalive_ms >= LOBBY_KEEPALIVE_MS)
-			(void)lobby_send_keepalive(l);
+			(void)lobby_send_keepalive(l, s);
 		break;
 	default:
 		break;
