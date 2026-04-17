@@ -428,9 +428,58 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 
 int
 penalty_format_chat(char *out, size_t outsz, uint8_t kind,
-    int collision, int car_num)
+    uint8_t reason, int collision, int car_num)
 {
-	const char *suffix = collision ? " - causing a collision" : "";
+	const char *suffix = "";
+
+	if (collision) {
+		suffix = " - causing a collision";
+	} else {
+		switch (reason) {
+		case REASON_CUTTING:
+			suffix = " - cutting";
+			break;
+		case REASON_PIT_SPEEDING:
+			suffix = " - pit speeding";
+			break;
+		case REASON_IGNORED_MANDATORY_PIT:
+			suffix = " - ignored mandatory pit";
+			break;
+		case REASON_PIT_ENTRY:
+			suffix = " - pit entry infraction";
+			break;
+		case REASON_PIT_EXIT:
+			suffix = " - pit exit infraction";
+			break;
+		case REASON_WRONG_WAY:
+			suffix = " - wrong way";
+			break;
+		case REASON_LIGHTS_OFF:
+			suffix = " - lights off";
+			break;
+		case REASON_IGNORED_DRIVER_STINT:
+			suffix = " - ignored driver stint";
+			break;
+		case REASON_EXCEEDED_DRIVER_STINT_LIMIT:
+			suffix = " - exceeded driver stint limit";
+			break;
+		case REASON_DRIVER_RAN_NO_STINT:
+			suffix = " - driver ran no stint";
+			break;
+		case REASON_DAMAGED_CAR:
+			suffix = " - damaged car";
+			break;
+		case REASON_SPEEDING_ON_START:
+			suffix = " - speeding on start";
+			break;
+		case REASON_WRONG_POSITION_ON_START:
+			suffix = " - wrong position on start";
+			break;
+		default:
+			suffix = "";
+			break;
+		}
+	}
 
 	switch (kind) {
 	case PEN_TP5:
@@ -460,9 +509,12 @@ penalty_format_chat(char *out, size_t outsz, uint8_t kind,
 		    "Stop and Go 30s penalty for car #%d%s",
 		    car_num, suffix);
 	case PEN_DQ:
+		if (reason == REASON_RACE_CONTROL || reason == REASON_NONE)
+			return snprintf(out, outsz,
+			    "Car #%d was disqualified by Race Control",
+			    car_num);
 		return snprintf(out, outsz,
-		    "Car #%d was disqualified by Race Control",
-		    car_num);
+		    "Car #%d was disqualified%s", car_num, suffix);
 	default:
 		return snprintf(out, outsz, "Penalty for car #%d", car_num);
 	}

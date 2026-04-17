@@ -97,8 +97,10 @@ void	penalty_clear_all(struct Server *s);
 const char *
 	penalty_name(uint8_t kind);
 
-/* Build the chat string the binary uses for a penalty issuance. */
+/* Build the chat string for a penalty issuance.  Suffix is chosen
+ * from `reason` (e.g. " - cutting") unless `collision` is set, in
+ * which case the collision suffix overrides. */
 int	penalty_format_chat(char *out, size_t outsz,
-		uint8_t kind, int collision, int car_num);
+		uint8_t kind, uint8_t reason, int collision, int car_num);
 
 #endif /* ACCD_PENALTY_H */

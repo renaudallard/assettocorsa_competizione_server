@@ -325,6 +325,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 				front->laps_remaining--;
 				if (front->laps_remaining == 0) {
 					uint8_t inherited = front->reason;
+					char chat[128];
 					if (s->allow_auto_dq) {
 						log_info("Car %d failed to "
 						    "serve %s -> DQ",
@@ -333,6 +334,11 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 						penalty_enqueue(s, c->car_id,
 						    EXE_DQ, 8, 3, 1, 0,
 						    inherited);
+						penalty_format_chat(chat,
+						    sizeof(chat), PEN_DQ,
+						    inherited, 0,
+						    s->cars[c->car_id].race_number);
+						chat_broadcast(s, chat, 4);
 					} else {
 						log_info("Car %d failed to "
 						    "serve %s -> SG30 "
@@ -342,6 +348,11 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 						penalty_enqueue(s, c->car_id,
 						    EXE_SG30, 8, 3, 0, 0,
 						    inherited);
+						penalty_format_chat(chat,
+						    sizeof(chat), PEN_SG30,
+						    inherited, 0,
+						    s->cars[c->car_id].race_number);
+						chat_broadcast(s, chat, 4);
 					}
 				}
 			}
@@ -635,11 +646,16 @@ h_car_location_update(struct Server *s, struct Conn *c,
 			 * this since 1.8.11.  Use PEN_DQ, not PEN_DT.
 			 */
 			if (speed > 22.22f && !race->pit_crossing_latched) {
+				char chat[128];
 				log_info("PITLANE SPEEDING for car #%d "
 				    "speed=%.1f m/s -> DQ",
 				    car->race_number, speed);
 				penalty_enqueue(s, c->car_id, EXE_DQ, 8,
 				    3, 1, 0, REASON_PIT_SPEEDING);
+				penalty_format_chat(chat, sizeof(chat),
+				    PEN_DQ, REASON_PIT_SPEEDING, 0,
+				    car->race_number);
+				chat_broadcast(s, chat, 4);
 				race->pit_crossing_latched = 1;
 			}
 		}
@@ -729,9 +745,15 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		    (unsigned)race->cuts_this_lap);
 		if (race->cuts_this_lap == 3) {
 			if (penalty_enqueue(s, c->car_id, EXE_DT, 8,
-			    3, 0, 0, REASON_CUTTING) == 0)
+			    3, 0, 0, REASON_CUTTING) == 0) {
+				char chat[128];
 				log_info("auto-DT: car %d 3 cuts this lap",
 				    c->car_id);
+				penalty_format_chat(chat, sizeof(chat),
+				    PEN_DT, REASON_CUTTING, 0,
+				    s->cars[c->car_id].race_number);
+				chat_broadcast(s, chat, 4);
+			}
 		}
 	}
 
@@ -756,8 +778,7 @@ h_report_penalty(struct Server *s, struct Conn *c,
 {
 	struct Reader r;
 	uint8_t msg_id, force, ptype;
-	int32_t pad;
-	float game_ts;
+	uint64_t timestamp;
 	int32_t value;
 
 	(void)s;
@@ -765,29 +786,27 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u8(&r, &force) < 0 ||
 	    rd_u8(&r, &ptype) < 0 ||
-	    rd_i32(&r, &pad) < 0 ||
-	    rd_f32(&r, &game_ts) < 0 ||
+	    rd_u64(&r, &timestamp) < 0 ||
 	    rd_i32(&r, &value) < 0) {
 		log_warn("h_report_penalty: short body from conn=%u",
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	(void)pad;
-	log_info("report penalty: conn=%u car=%d force=%u type=%u "
-	    "game_ts=%.3f value=%d",
+	log_info("report penalty: conn=%u car=%d force=%u ptype=%u "
+	    "ts=%llu value=%d",
 	    (unsigned)c->conn_id, c->car_id, (unsigned)force,
-	    (unsigned)ptype, game_ts, (int)value);
+	    (unsigned)ptype, (unsigned long long)timestamp, (int)value);
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	/*
-	 * 0x41 is a client-side report: the client telemetry triggered
-	 * a self-detected penalty (track cut, pitlane speeding, etc.).
-	 * The server is the authority and decides whether to escalate.
-	 * Authoritative server-side detection is implemented elsewhere
-	 * (h_position_update for pitlane speeding, h_out_of_track for
-	 * track-limit invalidation).  Logging the client report is
-	 * enough for now; we don't blindly trust it to enqueue a real
-	 * penalty.  Escalation thresholds need exe analysis.
+	 * Informational-only: ptype here is the client's
+	 * ServerMonitorPenaltyShortcut index (0..35), not the exe's
+	 * param_5 internal kind (1..6), and celeborn capture shows
+	 * value=0 in every observed report.  Server-side detection
+	 * (h_out_of_track for 3-cut DT, h_car_location_update for
+	 * pit-lane speeding) is the authoritative path.  Feeding this
+	 * into penalty_enqueue without a confirmed ptype→kind mapping
+	 * would misattribute infractions.
 	 */
 	return 0;
 }
