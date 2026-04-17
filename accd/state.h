@@ -398,4 +398,12 @@ struct Conn *
  */
 int	server_alloc_car(struct Server *s);
 
+/*
+ * Pick the next grid slot for a joining car: max existing +1 if
+ * that fits, else walk back from max_connections-1 looking for
+ * an unoccupied slot.  Returns -1 if the grid is full.  Mirrors
+ * accServer.exe FUN_140021090.
+ */
+int	server_find_grid_slot(struct Server *s);
+
 #endif /* ACCD_STATE_H */

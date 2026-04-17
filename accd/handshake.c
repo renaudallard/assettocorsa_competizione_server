@@ -1443,6 +1443,20 @@ handshake_handle(struct Server *s, struct Conn *c,
 				    sizeof(car->team_name), "%s", team);
 		}
 
+		/*
+		 * Grid-position assignment.  entrylist.json
+		 * defaultGridPosition wins when set; otherwise pick the
+		 * next free slot per FUN_140021090 (server_find_grid_slot).
+		 */
+		if (car->default_grid_position > 0) {
+			car->race.grid_position =
+			    (int16_t)car->default_grid_position;
+		} else {
+			int g = server_find_grid_slot(s);
+			if (g >= 0)
+				car->race.grid_position = (int16_t)g;
+		}
+
 		free(first);
 		free(last);
 		free(sname);

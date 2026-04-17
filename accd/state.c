@@ -198,3 +198,49 @@ server_alloc_car(struct Server *s)
 	}
 	return -1;
 }
+
+/*
+ * Active grid-position assignment per FUN_140021090.  Scan every
+ * used car, find the maximum assigned grid number, and return
+ * max+1 if it still fits under max_connections.  Otherwise walk
+ * downward looking for an unoccupied slot; return -1 if the grid
+ * is full.
+ *
+ * Entrylist.json may pre-assign a grid position via
+ * `defaultGridPosition`.  If so the caller should honor that
+ * instead of calling this helper.
+ */
+int
+server_find_grid_slot(struct Server *s)
+{
+	int i, max_pits, used_count, max_assigned;
+	uint8_t occupied[ACC_MAX_CARS];
+
+	max_pits = s->max_connections > 0 &&
+	    s->max_connections <= ACC_MAX_CARS
+	    ? s->max_connections : ACC_MAX_CARS;
+	max_assigned = -1;
+	used_count = 0;
+	for (i = 0; i < ACC_MAX_CARS; i++)
+		occupied[i] = 0;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		int g;
+		if (!s->cars[i].used)
+			continue;
+		used_count++;
+		g = s->cars[i].race.grid_position;
+		if (g >= 0 && g < ACC_MAX_CARS) {
+			occupied[g] = 1;
+			if (g > max_assigned)
+				max_assigned = g;
+		}
+	}
+	if (max_assigned + 1 < max_pits)
+		return max_assigned + 1;
+	/* Fall back: walk down from max_pits-1 looking for unoccupied. */
+	for (i = max_pits - 1; i >= 0; i--)
+		if (!occupied[i])
+			return i;
+	(void)used_count;
+	return -1;
+}

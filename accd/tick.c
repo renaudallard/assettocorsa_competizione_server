@@ -329,8 +329,8 @@ broadcast_grid(struct Server *s)
 		if (wr_u16(&bb, car->car_id) < 0 ||
 		    wr_u8(&bb, 0) < 0 ||
 		    wr_u32(&bb,
-			(uint32_t)(car->race.grid_position > 0 ?
-			    car->race.grid_position : (i + 1))) < 0 ||
+			(uint32_t)(car->race.grid_position >= 0 ?
+			    car->race.grid_position : i)) < 0 ||
 		    wr_u8(&bb, 0) < 0)
 			goto done;
 	}
