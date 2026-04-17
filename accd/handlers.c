@@ -228,6 +228,22 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			if (race->lap_history_count < 0xFF)
 				race->lap_history_count++;
 		}
+		/*
+		 * Update per-sector bests from the just-completed lap.
+		 * The single-split handler (0x21) already tracks these
+		 * but bulk (0x20) is the common path and was not, so
+		 * the session-best sector display stayed at sentinel.
+		 */
+		if (!invalid) {
+			int si;
+			for (si = 0; si < 3; si++) {
+				int32_t st = race->sector_ms[si];
+				if (st > 0 &&
+				    (race->best_sectors_ms[si] == 0 ||
+				    st < race->best_sectors_ms[si]))
+					race->best_sectors_ms[si] = st;
+			}
+		}
 		race->current_lap_ms = 0;
 		race->out_of_track_latched = 0;
 
