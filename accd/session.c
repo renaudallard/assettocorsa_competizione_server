@@ -148,8 +148,23 @@ session_start(struct Server *s)
 	s->session.ts[2] = s->session.ts[1];
 	s->session.ts[3] = s->session.ts[2] + formation_ms;
 	s->session.ts[4] = s->session.ts[3] + dur_ms;
-	s->session.ts[5] = s->session.ts[4] + ot_ms;
-	s->session.ts[6] = s->session.ts[5] + post_ms;
+	if (def->session_type == 10) {
+		/*
+		 * Race: FUN_14012e970 (session_manager_advance) sets the
+		 * SESSION→OVERTIME and OVERTIME→COMPLETED gate timestamps
+		 * to -1.0 (never trigger by time).  Race ends via explicit
+		 * triggers — last car completing its lap count, or the
+		 * empty-overtime skip-grace path further down — not a
+		 * clock gate.  Use UINT64_MAX as our equivalent sentinel;
+		 * session_overtime_car_finished() / skip-grace set these
+		 * to finite values when the race actually ends.
+		 */
+		s->session.ts[5] = UINT64_MAX;
+		s->session.ts[6] = UINT64_MAX;
+	} else {
+		s->session.ts[5] = s->session.ts[4] + ot_ms;
+		s->session.ts[6] = s->session.ts[5] + post_ms;
+	}
 	s->session.ts_valid = 1;
 
 	s->session_start_ms = now;
