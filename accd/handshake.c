@@ -191,7 +191,7 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 2) < 0) return -1;	/* formationLapType */
 	if (wr_u8(bb, 2) < 0) return -1;	/* shortFormationLap */
 	if (wr_u16(bb, 300) < 0) return -1;	/* postRaceSeconds */
-	if (wr_u8(bb, 10) < 0) return -1;	/* weatherRandomness */
+	if (wr_u8(bb, s->weather.randomness) < 0) return -1; /* weatherRandomness */
 	if (wr_u8(bb, 3) < 0) return -1;	/* trackMedalsRequirement */
 	if (wr_u8(bb, 2) < 0) return -1;
 	if (wr_u8(bb, 2) < 0) return -1;
