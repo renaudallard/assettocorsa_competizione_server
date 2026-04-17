@@ -530,17 +530,25 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 	{
 		uint8_t p;
 		/*
-		 * OVERTIME is reported as phase=5 (SESSION) to the lobby.
-		 * The kson backend appears to hide servers permanently
-		 * once it sees phase=6 ("session overtime" in the exe's
-		 * log string) — observed empirically: as soon as any
-		 * session passes through OVERTIME, the server is delisted
-		 * from the public lobby and never reappears, even after
-		 * session_advance loops back to WAITING.  The real exe
-		 * may never emit 6 here and reserve OVERTIME as an
-		 * internal-only phase.  Since OVERTIME is functionally
-		 * an extended SESSION, collapsing the two into 5 keeps
-		 * us visible through the whole weekend.
+		 * Kunos's own accServer.exe transitions observed in
+		 * server.log always look like "<session> -> <waiting
+		 * for drivers>" — the exe resets the session to WAITING
+		 * as soon as the last driver leaves and so never emits
+		 * the <session overtime> / <session completed> phases
+		 * to the lobby under typical load.  Our reimpl DOES run
+		 * the full phase machine (including OVERTIME and
+		 * COMPLETED) even when nobody's connected, which surfaces
+		 * a kson backend filter: once the lobby sees phase=6
+		 * (OVERTIME) or phase=7 (COMPLETED) it delists the
+		 * server and won't re-list it even after we loop back
+		 * to phase=1.  Collapse the two transient end-of-session
+		 * phases to the closest stable equivalent so we stay
+		 * visible across session advance:
+		 *   OVERTIME  -> 5 (SESSION, since OT is an extended
+		 *                   session for in-flight laps)
+		 *   COMPLETED -> 1 (WAITING, since we immediately
+		 *                   advance to the next session and
+		 *                   that next session starts at WAITING)
 		 */
 		switch (s->session.phase) {
 		case PHASE_WAITING:     p = 1; break;
@@ -548,7 +556,7 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 		case PHASE_PRE_SESSION: p = 3; break;
 		case PHASE_SESSION:     p = 5; break;
 		case PHASE_OVERTIME:    p = 5; break;
-		case PHASE_COMPLETED:   p = 7; break;
+		case PHASE_COMPLETED:   p = 1; break;
 		default:                p = 1; break;
 		}
 		l->last_session_phase = p;
