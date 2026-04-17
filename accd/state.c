@@ -128,7 +128,7 @@ conn_drop(struct Server *s, struct Conn *c)
 		    wr_i16(&bb, -1) == 0 &&
 		    wr_u32(&bb, 0) == 0 &&
 		    wr_str_a(&bb, drv->steam_id) == 0)
-			(void)tcp_send_framed(c->fd, bb.data, bb.wpos);
+			(void)conn_send_framed(c, bb.data, bb.wpos);
 		bb_free(&bb);
 
 		/* 0x24 disconnect notify to all other clients. */

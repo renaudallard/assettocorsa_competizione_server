@@ -48,6 +48,7 @@
 #include <arpa/inet.h>
 #include <poll.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -69,6 +70,7 @@ extern int pledge(const char *promises, const char *execpromises);
 #include "config.h"
 #include "console.h"
 #include "dispatch.h"
+#include "bcast.h"
 #include "io.h"
 #include "lan.h"
 #include "log.h"
@@ -131,6 +133,7 @@ handle_tcp_accept(struct Server *s)
 	{
 		struct timeval tv;
 		int yes = 1;
+		int flags;
 		tv.tv_sec = 5;
 		tv.tv_usec = 0;
 		(void)setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO,
@@ -144,6 +147,14 @@ handle_tcp_accept(struct Server *s)
 		 */
 		(void)setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY,
 		    &yes, sizeof(yes));
+		/*
+		 * Non-blocking so a slow / stuck client never stalls the
+		 * main loop during a fan-out.  Partial writes and EAGAIN
+		 * results are captured in c->tx and drained on POLLOUT.
+		 */
+		flags = fcntl(cfd, F_GETFL, 0);
+		if (flags >= 0)
+			(void)fcntl(cfd, F_SETFL, flags | O_NONBLOCK);
 	}
 	c = conn_new(s, cfd, &from);
 	if (c == NULL) {
@@ -321,10 +332,16 @@ main(int argc, char **argv)
 		}
 		for (slot = 0; slot < ACC_MAX_CARS && npfds < POLL_SLOTS;
 		    slot++) {
-			if (srv.conns[slot] == NULL)
+			struct Conn *cn = srv.conns[slot];
+			if (cn == NULL)
 				continue;
-			pfds[npfds].fd = srv.conns[slot]->fd;
+			pfds[npfds].fd = cn->fd;
 			pfds[npfds].events = POLLIN;
+			/* Subscribe to POLLOUT only while we have bytes
+			 * queued — otherwise poll would spin on write-
+			 * ready every iteration. */
+			if (cn->tx.wpos > cn->tx.rpos)
+				pfds[npfds].events |= POLLOUT;
 			pfds[npfds].revents = 0;
 			npfds++;
 		}
@@ -382,7 +399,8 @@ main(int argc, char **argv)
 					    pfds[i].revents);
 				continue;
 			}
-			if (!(pfds[i].revents & (POLLIN | POLLHUP | POLLERR)))
+			if (!(pfds[i].revents & (POLLIN | POLLOUT |
+			    POLLHUP | POLLERR)))
 				continue;
 			c = NULL;
 			for (slot2 = 0; slot2 < ACC_MAX_CARS; slot2++) {
@@ -393,6 +411,16 @@ main(int argc, char **argv)
 				}
 			}
 			if (c == NULL)
+				continue;
+			if (pfds[i].revents & POLLOUT) {
+				int rc = conn_drain_tx(c);
+				if (rc < 0) {
+					conn_drop(&srv, c);
+					continue;
+				}
+			}
+			if ((pfds[i].revents &
+			    (POLLIN | POLLHUP | POLLERR)) == 0)
 				continue;
 			if (c->state == CONN_DISCONNECT ||
 			    handle_tcp_client(&srv, c) < 0)

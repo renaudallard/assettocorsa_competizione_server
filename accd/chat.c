@@ -335,7 +335,7 @@ chat_do_track(struct Server *s, const char *args,
 		bb_init(&bb);
 		if (wr_u8(&bb, SRV_WELCOME_REDELIVERY) == 0 &&
 		    build_welcome_trailer(&bb, s, cn) == 0)
-			(void)tcp_send_framed(cn->fd, bb.data, bb.wpos);
+			(void)conn_send_framed(cn, bb.data, bb.wpos);
 		bb_free(&bb);
 	}
 

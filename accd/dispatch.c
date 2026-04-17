@@ -39,6 +39,7 @@
 #include <stddef.h>
 #include <time.h>
 
+#include "bcast.h"
 #include "dispatch.h"
 #include "handlers.h"
 #include "handshake.h"
@@ -324,7 +325,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
 			    write_session_mgr_state(&bb, s,
 				pong_client_ts, rtt) == 0)
-				(void)tcp_send_framed(pc->fd,
+				(void)conn_send_framed(pc,
 				    bb.data, bb.wpos);
 			bb_free(&bb);
 		}

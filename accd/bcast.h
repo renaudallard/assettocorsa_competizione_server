@@ -62,6 +62,22 @@
 int	bcast_send_one(struct Conn *c, const void *body, size_t len);
 
 /*
+ * Queued variant: prepends the u16/u32 length header, then tries to
+ * write(2) as much as possible non-blocking.  Whatever can't go out
+ * immediately is appended to c->tx and drained later when the fd
+ * becomes POLLOUT-ready.  Returns 0 on success (bytes delivered or
+ * queued), -1 on unrecoverable error.
+ */
+int	conn_send_framed(struct Conn *c, const void *body, size_t len);
+
+/*
+ * Drain any bytes pending in c->tx to c->fd.  Returns 0 if the queue
+ * is now empty, 1 if bytes remain (caller should keep POLLOUT on),
+ * -1 on unrecoverable error (caller should drop the connection).
+ */
+int	conn_drain_tx(struct Conn *c);
+
+/*
  * Send a framed TCP message to every authenticated connection
  * except the one identified by except_conn_id (use 0xFFFF for
  * "exclude nobody").  Returns the number of clients that

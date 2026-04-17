@@ -434,7 +434,7 @@ broadcast_session_results(struct Server *s)
 			ok = ok && write_leaderboard_section(&bb, s) == 0;
 		}
 		if (ok)
-			(void)tcp_send_framed(c->fd, bb.data, bb.wpos);
+			(void)conn_send_framed(c, bb.data, bb.wpos);
 		bb_free(&bb);
 	}
 	log_info("Send session results to %d clients (count=%u)",
@@ -498,7 +498,7 @@ tick_run(struct Server *s)
 			    write_session_mgr_state(&bb, s,
 				c->last_pong_client_ts,
 				c->avg_rtt_ms) == 0)
-				(void)tcp_send_framed(c->fd,
+				(void)conn_send_framed(c,
 				    bb.data, bb.wpos);
 			bb_free(&bb);
 		}

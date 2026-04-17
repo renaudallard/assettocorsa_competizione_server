@@ -1097,7 +1097,7 @@ handshake_send_reject(struct Conn *c, uint16_t client_version)
 	    wr_u16(&bb, 0) < 0)
 		goto fail;
 
-	rc = tcp_send_framed(c->fd, bb.data, bb.wpos);
+	rc = conn_send_framed(c, bb.data, bb.wpos);
 	bb_free(&bb);
 	return rc;
 fail:
@@ -1135,7 +1135,7 @@ handshake_send_state_sync(struct Conn *new_conn, struct Server *s)
 		if (wr_u8(&out, SRV_CAR_SYSTEM_RELAY) == 0 &&
 		    wr_u16(&out, car->car_id) == 0 &&
 		    wr_u64(&out, car->last_sys_data) == 0)
-			(void)tcp_send_framed(new_conn->fd, out.data,
+			(void)conn_send_framed(new_conn, out.data,
 			    out.wpos);
 		bb_free(&out);
 	}
@@ -1171,7 +1171,7 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 	if (build_welcome_trailer(&bb, s, c) < 0)
 		goto fail;
 
-	rc = tcp_send_framed(c->fd, bb.data, bb.wpos);
+	rc = conn_send_framed(c, bb.data, bb.wpos);
 	bb_free(&bb);
 	if (rc < 0)
 		return rc;
