@@ -1,3 +1,13 @@
+accd (0.2.18) unstable; urgency=medium
+
+  * Lobby: switch lobby_random_token from rand_r (deterministic LCG,
+    flagged at link time on OpenBSD) to arc4random_uniform.  Native
+    on OpenBSD via <stdlib.h>; on Linux pulled via libbsd's
+    <bsd/stdlib.h> with -lbsd auto-detected by the Makefile (new
+    probe, mirrors the existing iconv probe).
+
+ -- Renaud Allard <renaud@allard.it>  Fri, 17 Apr 2026 19:50:00 +0200
+
 accd (0.2.17) unstable; urgency=medium
 
   * Lobby receive: proper u16-len framing parser with partial-read
