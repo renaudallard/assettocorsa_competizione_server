@@ -1,3 +1,42 @@
+accd (0.2.19) unstable; urgency=medium
+
+  * Lobby: fill 0xd0 laptime trailing u32 with race_time_ms (was
+    0); the public lobby per-server stats page now gets a real
+    total-time per lap instead of losing the value.
+  * Lobby: relay kson 0xf5 broadcast as system chat.  Body is
+    two kson_strings; exe builds a 0x2b chat and sends to all
+    connections.  Used by Kunos for backend-initiated
+    announcements (maintenance, rule reminders).
+  * Lobby: enforce kson 0xf4 remote DQ + system chat.  Body
+    identifies a target driver by steam_id; exe DQs that car
+    and emits a 0x2b chat.  Kunos's mechanism for removing a
+    globally-banned player from an active server.
+  * Penalty: DT/SG -> TP conversion multipliers corrected to
+    match FUN_140127440 + .rdata constants.  Unserved DT at
+    race end = 30s (was 80s); SG10 = 40s, SG20 = 50s, SG30 =
+    60s (were all absent).  0x3e result record's +0x74
+    penalty_ms field now reflects all four kinds.
+  * Handlers: 0x41 ACP_REPORT_PENALTY field names aligned with
+    exe.  What we'd called 'force' was exe's param_4 category
+    byte; what we'd called 'ptype' was exe's param_5 internal
+    kind (1=DT..6=DQ).  The actual force flag is computed
+    server-side, not received.  Handler stays informational.
+  * Session: driver-stint auto-DQ at race end.  New per-car
+    stint tracker matches FUN_14012ae10's ExceededDriver
+    StintLimit branch; accumulates on-track time per current
+    driver, checks against eventRules.driverStintTime.  Hooks
+    into pit-lane transitions and driver swaps.
+  * Session: auto-DQ on ignored mandatory pit at race end, per
+    exe's Disqualified_IgnoredMandatoryPit.  Gate:
+    eventRules.mandatoryPitstopCount > 0 AND car raced AND
+    ACP_MANDATORY_PITSTOP_SERVED never received.
+  * Docs: 0xc3 UDP packets from real ACC clients identified as
+    QUIC v1 Initial retry storms.  Documented in dispatch.c
+    comment + notebook-b section 15.  Still WARN-logged +
+    dropped (accServer.exe does the same).
+
+ -- Renaud Allard <renaud@allard.it>  Fri, 17 Apr 2026 20:28:00 +0200
+
 accd (0.2.18) unstable; urgency=medium
 
   * Lobby: switch lobby_random_token from rand_r (deterministic LCG,
