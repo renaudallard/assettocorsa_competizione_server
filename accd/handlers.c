@@ -275,6 +275,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		}
 		race->current_lap_ms = 0;
 		race->out_of_track_latched = 0;
+		race->cuts_this_lap = 0;
 		race->sector_ms[0] = 0;
 		race->sector_ms[1] = 0;
 		race->sector_ms[2] = 0;
@@ -706,10 +707,25 @@ h_out_of_track(struct Server *s, struct Conn *c,
 	 * Latch the off-track for the current lap so the next lap
 	 * completion in h_sector_split_bulk knows not to update
 	 * best_lap_ms.  The latch is cleared when the lap finishes.
+	 * Also count cuts: the ACC client self-issues a drive-through
+	 * on the 3rd cut per lap, so mirror that server-side by
+	 * enqueueing PEN_DT at the threshold — otherwise our
+	 * leaderboard and results never reflect the real penalty.
 	 */
-	s->cars[c->car_id].race.out_of_track_latched = 1;
-	log_info("out-of-track: car=%d force=%u ts=%d",
-	    c->car_id, (unsigned)force, (int)ts_raw);
+	{
+		struct CarRaceState *race = &s->cars[c->car_id].race;
+		race->out_of_track_latched = 1;
+		if (race->cuts_this_lap < 255)
+			race->cuts_this_lap++;
+		log_info("out-of-track: car=%d force=%u ts=%d cuts=%u",
+		    c->car_id, (unsigned)force, (int)ts_raw,
+		    (unsigned)race->cuts_this_lap);
+		if (race->cuts_this_lap == 3) {
+			if (penalty_enqueue(s, c->car_id, PEN_DT, 0) == 0)
+				log_info("auto-DT: car %d 3 cuts this lap",
+				    c->car_id);
+		}
+	}
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
