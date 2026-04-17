@@ -529,12 +529,25 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 	 */
 	{
 		uint8_t p;
+		/*
+		 * OVERTIME is reported as phase=5 (SESSION) to the lobby.
+		 * The kson backend appears to hide servers permanently
+		 * once it sees phase=6 ("session overtime" in the exe's
+		 * log string) — observed empirically: as soon as any
+		 * session passes through OVERTIME, the server is delisted
+		 * from the public lobby and never reappears, even after
+		 * session_advance loops back to WAITING.  The real exe
+		 * may never emit 6 here and reserve OVERTIME as an
+		 * internal-only phase.  Since OVERTIME is functionally
+		 * an extended SESSION, collapsing the two into 5 keeps
+		 * us visible through the whole weekend.
+		 */
 		switch (s->session.phase) {
 		case PHASE_WAITING:     p = 1; break;
 		case PHASE_FORMATION:   p = 2; break;
 		case PHASE_PRE_SESSION: p = 3; break;
 		case PHASE_SESSION:     p = 5; break;
-		case PHASE_OVERTIME:    p = 6; break;
+		case PHASE_OVERTIME:    p = 5; break;
 		case PHASE_COMPLETED:   p = 7; break;
 		default:                p = 1; break;
 		}
