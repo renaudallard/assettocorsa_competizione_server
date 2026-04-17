@@ -458,13 +458,14 @@ tick_run(struct Server *s)
 	 */
 	if (s->session.phase != *last_phase) {
 		/*
-		 * 0x3f grid positions fire once per race only.  P/Q
-		 * sessions also pass through PHASE_FORMATION on the
-		 * way to SESSION, but Kunos does not emit 0x3f there
-		 * (kunos_wine_full_race capture, P session: no 0x3f
-		 * on the wire).  Gate by race session type.
+		 * 0x3f grid positions fire once per race, at the
+		 * PRE_SESSION (countdown) transition.  Per
+		 * FUN_14002f710 the exe gates the emit on
+		 * `(iVar11 != 0) && (phase == 0x04)`, i.e. grid
+		 * results ready and phase == PRE_SESSION.  We had been
+		 * firing at FORMATION which is one level too early.
 		 */
-		if (s->session.phase == PHASE_FORMATION &&
+		if (s->session.phase == PHASE_PRE_SESSION &&
 		    s->session_count > 0 &&
 		    s->sessions[s->session.session_index]
 			.session_type == 10)
