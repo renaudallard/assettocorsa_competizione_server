@@ -709,35 +709,46 @@ lobby_reject_reason(uint8_t code)
 }
 
 /*
- * Returns 1 if the response indicates a successful registration,
- * 0 if rejected (state machine should disable / report), -1 if
- * unrecognised (treat as transient).
+ * Dispatch one framed message from the kson backend.  `body` points
+ * at the first command byte, `len` is the body length (excluding the
+ * u16 LE frame header already consumed by the caller).
+ *
+ * Returns 1 if this was a registration accept, 0 if it was a hard
+ * reject, -1 otherwise (including unknown commands).
  */
 static int
-lobby_parse_response(struct LobbyClient *l, const unsigned char *p, size_t n)
+lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
+    const unsigned char *body, size_t len)
 {
-	(void)l;
-	/*
-	 * Registration response is `02 00 ef NN` (4 bytes).  NN is
-	 * the case-byte read by FUN_140048660 in accServer.exe to
-	 * map to a human error string. NN==0 means accepted.
-	 * Keepalive ack is `01 00 fd` (3 bytes).
-	 */
-	if (n >= 4 && p[0] == 0x02 && p[1] == 0x00 && p[2] == 0xef) {
-		uint8_t code = p[3];
-		if (code == 0) {
-			log_info("lobby: registration accepted");
-			return 1;
-		}
-		log_warn("lobby: registration rejected code=%u (%s)",
-		    (unsigned)code, lobby_reject_reason(code));
-		return 0;
-	}
-	if (n >= 3 && p[0] == 0x01 && p[1] == 0x00 && p[2] == 0xfd) {
-		/* keepalive ack */
+	uint8_t cmd;
+
+	(void)s;
+	if (len == 0)
 		return -1;
+	cmd = body[0];
+
+	switch (cmd) {
+	case 0xef:
+		if (len >= 2) {
+			uint8_t code = body[1];
+			if (code == 0) {
+				log_info("lobby: registration accepted");
+				return 1;
+			}
+			log_warn("lobby: registration rejected code=%u (%s)",
+			    (unsigned)code, lobby_reject_reason(code));
+			return 0;
+		}
+		break;
+	case 0xfd:
+		/* keepalive ack — clears ack-pending flag (our impl
+		 * doesn't track pending explicitly, so nothing to do). */
+		break;
+	default:
+		log_debug("lobby: unhandled cmd 0x%02x (%zu B)",
+		    (unsigned)cmd, len);
+		break;
 	}
-	log_debug("lobby: unrecognised response, %zu bytes", n);
 	return -1;
 }
 
@@ -774,34 +785,73 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 	 * miss the REGISTERED transition.
 	 */
 	if (revents & POLLIN) {
-		unsigned char buf[4096];
-		ssize_t n = read(l->fd, buf, sizeof(buf));
+		unsigned char tmp[4096];
+		ssize_t n = read(l->fd, tmp, sizeof(tmp));
 		if (n > 0) {
-			int rc = lobby_parse_response(l, buf, (size_t)n);
-			if (l->state == LOBBY_REGISTERING) {
-				if (rc == 1) {
-					lobby_set_state(l, LOBBY_REGISTERED);
-					l->consecutive_fails = 0;
-					log_info("lobby: RegisterToLobby "
-					    "succeeded");
-					(void)lobby_send_drivers_update(l, s);
-					/*
-					 * Prime the lobby with our current
-					 * phase so it doesn't show the
-					 * initial "Practice" forever when we
-					 * registered mid-session.
-					 */
-					(void)lobby_send_session_update(l, s);
-				} else if (rc == 0) {
-					/*
-					 * Hard rejection — don't keep
-					 * retrying every 10s, give up.
-					 */
-					log_warn("lobby: hard reject; "
-					    "disabling lobby client");
-					lobby_set_state(l,
-					    LOBBY_PERMANENTLY_DISABLED);
+			size_t need, pos;
+
+			/*
+			 * Accumulate into a persistent buffer so partial
+			 * frames from a TCP segment boundary survive
+			 * across reads.  kson framing is `u16 LE len +
+			 * body`; loop until we've drained every complete
+			 * frame or hit a partial at the tail.
+			 */
+			need = l->rx_len + (size_t)n;
+			if (need > l->rx_cap) {
+				size_t new_cap = l->rx_cap
+				    ? l->rx_cap : 4096;
+				while (new_cap < need)
+					new_cap *= 2;
+				unsigned char *nb = realloc(l->rx_buf,
+				    new_cap);
+				if (nb == NULL) {
+					log_warn("lobby: oom on rx buffer");
+					lobby_disconnect(l, "oom");
+					return;
 				}
+				l->rx_buf = nb;
+				l->rx_cap = new_cap;
+			}
+			memcpy(l->rx_buf + l->rx_len, tmp, (size_t)n);
+			l->rx_len += (size_t)n;
+
+			pos = 0;
+			while (pos + 2 <= l->rx_len) {
+				uint16_t mlen = (uint16_t)(
+				    l->rx_buf[pos] |
+				    ((uint16_t)l->rx_buf[pos + 1] << 8));
+				int rc;
+
+				if (pos + 2 + mlen > l->rx_len)
+					break;	/* partial — wait for more */
+				rc = lobby_dispatch_message(l, s,
+				    l->rx_buf + pos + 2, mlen);
+				if (l->state == LOBBY_REGISTERING) {
+					if (rc == 1) {
+						lobby_set_state(l,
+						    LOBBY_REGISTERED);
+						l->consecutive_fails = 0;
+						log_info("lobby: "
+						    "RegisterToLobby "
+						    "succeeded");
+						(void)lobby_send_drivers_update(
+						    l, s);
+						(void)lobby_send_session_update(
+						    l, s);
+					} else if (rc == 0) {
+						log_warn("lobby: hard reject;"
+						    " disabling lobby client");
+						lobby_set_state(l,
+						    LOBBY_PERMANENTLY_DISABLED);
+					}
+				}
+				pos += 2 + mlen;
+			}
+			if (pos > 0) {
+				memmove(l->rx_buf, l->rx_buf + pos,
+				    l->rx_len - pos);
+				l->rx_len -= pos;
 			}
 		} else if (n == 0) {
 			revents |= POLLHUP;
