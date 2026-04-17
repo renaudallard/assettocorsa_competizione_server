@@ -392,8 +392,31 @@ write_result_header(struct ByteBuf *bb, const struct CarEntry *car)
 			break;
 		case PEN_DT:
 		case PEN_DTC:
+			/*
+			 * FUN_140127440 decomp + .rdata: unserved DT at
+			 * race end converts to 30s time penalty
+			 * (DAT_14014bd70 = 30.0).  Was 80s.
+			 */
 			if (!p->served && p->laps_remaining > 0)
-				penalty_ms += 80000;
+				penalty_ms += 30000;
+			break;
+		case PEN_SG10:
+		case PEN_SG10C:
+			/* DAT_14016b3f8 = 40.0s */
+			if (!p->served && p->laps_remaining > 0)
+				penalty_ms += 40000;
+			break;
+		case PEN_SG20:
+		case PEN_SG20C:
+			/* DAT_14016a258 = 50.0s */
+			if (!p->served && p->laps_remaining > 0)
+				penalty_ms += 50000;
+			break;
+		case PEN_SG30:
+		case PEN_SG30C:
+			/* DAT_1401506a8 = 60.0s */
+			if (!p->served && p->laps_remaining > 0)
+				penalty_ms += 60000;
 			break;
 		default:
 			break;
