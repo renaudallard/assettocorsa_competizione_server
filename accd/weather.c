@@ -99,17 +99,29 @@ weather_step(struct Server *s)
 	 * range so changes are perceptible but not jarring.
 	 */
 	span = 0.05f * (float)s->weather.randomness;
+	/*
+	 * Cloud base cosine with frequency / phase from accServer.exe
+	 * .rdata:
+	 *   DAT_14016a1d4 f32 = 7.3e-5 rad/s  (period ≈ 24 h)
+	 *   DAT_14016a1f8 f32 = 0.5236       (π/6 phase offset)
+	 * The real exe also layers a multi-harmonic sum on top (see
+	 * FUN_140116830) but the per-harmonic amplitude / phase arrays
+	 * are populated at session init from state we can't extract
+	 * statically.  Using the base cosine alone already fixes the
+	 * main drift error (our previous sin(t/1800) had a 3-hour
+	 * period, ~8× faster than the exe's 24-hour cycle).
+	 */
 	new_clouds = clamp01(s->weather.base_clouds +
-	    span * (float)sin(t / 1800.0));
+	    span * (float)cos(t * 7.3e-5 - 0.5236));
 	/*
 	 * Rain only develops if base_rain > 0 OR clouds climb above
-	 * DAT_14014bcc0 (0.6) — the exe's cloud→rain gate extracted
-	 * from accServer.exe .rdata.  We had 0.7 before which kept
-	 * drizzle from starting as early as Kunos's simulator does.
+	 * DAT_14014bcc0 (0.6).  Rain time scale from DAT_14016a1d0
+	 * f32 = 3.6e-5 rad/s (period ≈ 48 h, exactly half the cloud
+	 * frequency).
 	 */
 	if (s->weather.base_rain > 0.0f) {
 		new_rain = clamp01(s->weather.base_rain +
-		    span * (float)sin(t / 2400.0 + WX_RAIN_PHASE));
+		    span * (float)sin(t * 3.6e-5 + WX_RAIN_PHASE));
 	} else if (new_clouds > 0.6f) {
 		new_rain = clamp01((new_clouds - 0.6f) * 0.5f);
 	} else {
