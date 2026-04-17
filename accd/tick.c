@@ -255,13 +255,20 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		c->keepalive_sent_ms = srv_ms;
 
 		bb_init(&bb);
+		/*
+		 * Kunos FUN_140029b20 body is u32 server_ms + three u16
+		 * zeros + u8(2) + u8(4) + u8(100) + u8(100).  We had been
+		 * writing avg_rtt_ms into the three u16 slots and using
+		 * 0,0,100,100 for the four trailing u8s.  Neither matches
+		 * the capture; switch to the constants.
+		 */
 		if (wr_u8(&bb, msg_id) == 0 &&
 		    wr_u32(&bb, srv_ms) == 0 &&
-		    wr_u16(&bb, (uint16_t)c->avg_rtt_ms) == 0 &&
-		    wr_u16(&bb, (uint16_t)c->avg_rtt_ms) == 0 &&
-		    wr_u16(&bb, (uint16_t)c->avg_rtt_ms) == 0 &&
-		    wr_u8(&bb, 0) == 0 &&
-		    wr_u8(&bb, 0) == 0 &&
+		    wr_u16(&bb, 0) == 0 &&
+		    wr_u16(&bb, 0) == 0 &&
+		    wr_u16(&bb, 0) == 0 &&
+		    wr_u8(&bb, 2) == 0 &&
+		    wr_u8(&bb, 4) == 0 &&
 		    wr_u8(&bb, 100) == 0 &&
 		    wr_u8(&bb, 100) == 0) {
 			(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
