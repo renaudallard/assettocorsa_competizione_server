@@ -430,15 +430,23 @@ lobby_send_drivers_update(struct LobbyClient *l, const struct Server *s)
 	 *   u8  count        -- cars with at least one connected driver
 	 *   count × {
 	 *       u32 car_id
-	 *       wstring-B name         (u16 units + units × u16 UTF-16)
+	 *       kson_string name       (u16 utf8_byte_len + N UTF-8 bytes)
 	 *       u8  current-driver idx
 	 *   }
 	 * Idle server: count=0, no per-entry block, 12-byte body.
+	 *
+	 * Exe gate at FUN_1400473f0 entry: accepts state == REGISTERING
+	 * (5) or REGISTERED (6).  Mirror the check so a 0xf1 refresh
+	 * request arriving early (before 0xef accept) doesn't writev
+	 * into a closed or wrong-state socket.
 	 */
 	struct ByteBuf bb;
 	uint8_t nc = 0;
 	int j, rc;
 	int ok;
+
+	if (l->state != LOBBY_REGISTERING && l->state != LOBBY_REGISTERED)
+		return -1;
 
 	for (j = 0; j < ACC_MAX_CARS; j++)
 		if (s->cars[j].used && s->cars[j].driver_count > 0)
