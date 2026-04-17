@@ -783,6 +783,12 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			return 0;
 		}
 		break;
+	case 0xf1:
+		/* DRIVERS_REFRESH — kson wants a fresh drivers list.
+		 * Per FUN_140044c10 dispatch (case 0xf1) the exe just
+		 * re-invokes its 0xd1 sender. */
+		(void)lobby_send_drivers_update(l, s);
+		break;
 	case 0xf6:
 		/* CONFIG_REQUEST — reply with 0xd7 containing
 		 * server_name, track, password. */
