@@ -43,6 +43,7 @@
 #include "handshake.h"
 #include "log.h"
 #include "msg.h"
+#include "penalty.h"
 #include "prim.h"
 #include "results.h"
 #include "session.h"
@@ -540,4 +541,95 @@ session_advance(struct Server *s)
 	session_reset(s, next);
 	if (s->nconns > 0)
 		session_start(s);
+}
+
+/*
+ * Driver-stint tracker — matches FUN_14012ae10 (ExceededDriverStintLimit
+ * path) on a per-car, per-driver basis.  Accumulates on-track time into
+ * driver_stint_ms[current_driver_index] and enqueues DQ on any driver
+ * whose total exceeds the configured `driverStintTime` at session end.
+ *
+ * The other two FUN_14012ae10 DQs (IgnoredDriverStint, DriverRanNoStint)
+ * require extra config state (mandatory-stint count, minimum-stint) that
+ * we don't yet parse from eventRules.json.
+ */
+
+void
+stint_start_tracking(struct Server *s, int car_id)
+{
+	struct CarRaceState *r;
+
+	if (car_id < 0 || car_id >= ACC_MAX_CARS)
+		return;
+	r = &s->cars[car_id].race;
+	if (r->stint_start_ms != 0)
+		return;	/* already tracking */
+	r->stint_start_ms = mono_ms();
+}
+
+void
+stint_stop_tracking(struct Server *s, int car_id)
+{
+	struct CarRaceState *r;
+	struct CarEntry *car;
+	uint64_t now, delta;
+	uint8_t d;
+
+	if (car_id < 0 || car_id >= ACC_MAX_CARS)
+		return;
+	car = &s->cars[car_id];
+	r = &car->race;
+	if (r->stint_start_ms == 0)
+		return;	/* not tracking */
+	now = mono_ms();
+	delta = now - r->stint_start_ms;
+	r->stint_start_ms = 0;
+
+	d = car->current_driver_index;
+	if (d < ACC_MAX_DRIVERS_PER_CAR) {
+		int64_t total = (int64_t)r->driver_stint_ms[d] + (int64_t)delta;
+		if (total > INT32_MAX)
+			total = INT32_MAX;
+		r->driver_stint_ms[d] = (int32_t)total;
+	}
+}
+
+void
+stint_check_violations(struct Server *s)
+{
+	int i;
+	uint32_t limit_s;
+
+	if (s->driver_stint_time_s == 0)
+		return;	/* no limit configured — skip */
+	limit_s = s->driver_stint_time_s;
+
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct CarEntry *car = &s->cars[i];
+		struct CarRaceState *r;
+		int d;
+		int violated = 0;
+
+		if (!car->used)
+			continue;
+		r = &car->race;
+		/* Flush any in-progress stint before checking. */
+		stint_stop_tracking(s, i);
+
+		for (d = 0; d < car->driver_count &&
+		    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
+			uint32_t stint_s = (uint32_t)(r->driver_stint_ms[d]
+			    / 1000);
+			if (stint_s > limit_s) {
+				log_info("Car %d driver %d stint %us > "
+				    "limit %us -> DQ", i, d,
+				    (unsigned)stint_s, (unsigned)limit_s);
+				violated = 1;
+				break;
+			}
+		}
+		if (violated)
+			(void)penalty_enqueue(s, i, EXE_DQ, 12, 3, 1, 0,
+			    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
+	}
 }

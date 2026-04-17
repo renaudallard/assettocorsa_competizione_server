@@ -574,6 +574,12 @@ tick_run(struct Server *s)
 			.session_type == 10)
 			broadcast_grid(s);
 		if (s->session.phase == PHASE_COMPLETED) {
+			/*
+			 * Flush + check driver-stint violations before
+			 * results serialize so any ExceededDriver
+			 * StintLimit DQ shows up in the result record.
+			 */
+			stint_check_violations(s);
 			broadcast_session_results(s);
 			if (!s->session.results_written) {
 				(void)results_write(s);

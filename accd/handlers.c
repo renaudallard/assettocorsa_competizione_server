@@ -634,6 +634,19 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		race->in_pit = (location == 2 || location == 3 ||
 		    location == 4) ? 1 : 0;
 
+		/*
+		 * Driver-stint tracker: accumulate on-track time per
+		 * current_driver_index.  Start when transitioning from
+		 * non-track to Track (location=1); stop on any other
+		 * location (pit-lane traversal paused).
+		 */
+		if (location == 1 && was_in_pit)
+			stint_start_tracking(s, c->car_id);
+		else if (location != 1 && !was_in_pit && race->in_pit)
+			stint_stop_tracking(s, c->car_id);
+		else if (location == 0)
+			stint_stop_tracking(s, c->car_id);
+
 		if (location == 2 && car->rt.has_data) {
 			float vx = car->rt.vec_c[0];
 			float vy = car->rt.vec_c[1];
@@ -1048,7 +1061,10 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 		goto reply;
 	}
 
-	/* Commit the swap. */
+	/* Commit the swap.  Flush the outgoing driver's stint time
+	 * into driver_stint_ms before reassigning current_driver_index
+	 * so the accumulator lands on the correct driver slot. */
+	stint_stop_tracking(s, c->car_id);
 	car->current_driver_index = swap_code;
 	for (i = 0; i < ACC_MAX_DRIVERS_PER_CAR; i++)
 		car->swap_state[i] = 0;

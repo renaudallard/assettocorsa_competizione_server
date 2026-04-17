@@ -164,6 +164,15 @@ struct CarRaceState {
 	uint8_t		disqualified;		/* PEN_DQ terminal flag */
 	struct PenaltyQueue	pen;
 	struct PenaltySheetState	pen_state[7];	/* exe kind 1..6 */
+	/*
+	 * Driver-stint tracking for FUN_14012ae10-style enforcement.
+	 * stint_start_ms = monotonic ms when the current driver most
+	 * recently entered the track (0 = not accumulating).  On any
+	 * transition off-track (pit entry, driver swap, session end)
+	 * the delta is flushed into driver_stint_ms[current_driver].
+	 */
+	uint64_t	stint_start_ms;
+	int32_t		driver_stint_ms[ACC_MAX_DRIVERS_PER_CAR];
 };
 
 /*
@@ -423,6 +432,7 @@ struct Server {
 	uint8_t			bop_version;
 	uint16_t		pre_race_waiting_s; /* preRaceWaitingTimeSeconds */
 	uint16_t		session_overtime_s; /* sessionOverTimeSeconds */
+	uint32_t		driver_stint_time_s; /* eventRules.driverStintTime*60 (0 = no limit) */
 	char			cfg_dir[256];	/* for saving bans */
 
 	/* timing */

@@ -75,6 +75,20 @@ void	session_advance(struct Server *s);
 void	session_recompute_standings(struct Server *s);
 
 /*
+ * Driver-stint tracker (FUN_14012ae10 equivalent).
+ *   start_tracking   = called when the car moves from non-track to on-track;
+ *                      records the timestamp to accumulate against.
+ *   stop_tracking    = called on pit entry or driver swap; flushes the
+ *                      elapsed delta into driver_stint_ms[current_driver].
+ *   check_violations = called at session end; enqueues DQ with
+ *                      REASON_EXCEEDED_DRIVER_STINT_LIMIT on any driver
+ *                      whose accumulated stint exceeds driver_stint_time_s.
+ */
+void	stint_start_tracking(struct Server *s, int car_id);
+void	stint_stop_tracking(struct Server *s, int car_id);
+void	stint_check_violations(struct Server *s);
+
+/*
  * Returns 1 if the session phase requires lap-time-based sort
  * (P, Q), 0 if race-position-based (R).
  */

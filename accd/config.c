@@ -376,6 +376,25 @@ config_load(struct Server *s, const char *cfg_dir)
 		json_free(event);
 	}
 
+	{
+		/*
+		 * eventRules.json — optional.  We only consume
+		 * `driverStintTime` (minutes) for FUN_14012ae10-style
+		 * stint-limit enforcement at race end.  0 / missing =
+		 * no limit.
+		 */
+		struct json_node *rules =
+		    load_json(cfg_dir, "eventRules.json");
+		if (rules != NULL) {
+			int stint_min = json_obj_get_int(rules,
+			    "driverStintTime", 0);
+			if (stint_min < 0)
+				stint_min = 0;
+			s->driver_stint_time_s = (uint32_t)stint_min * 60u;
+			json_free(rules);
+		}
+	}
+
 	if (s->max_connections < 1 || s->max_connections > ACC_MAX_CARS)
 		s->max_connections = ACC_MAX_CARS;
 
