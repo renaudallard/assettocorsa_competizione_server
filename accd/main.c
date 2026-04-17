@@ -44,6 +44,7 @@
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <poll.h>
 #include <errno.h>
@@ -129,10 +130,20 @@ handle_tcp_accept(struct Server *s)
 	}
 	{
 		struct timeval tv;
+		int yes = 1;
 		tv.tv_sec = 5;
 		tv.tv_usec = 0;
 		(void)setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO,
 		    &tv, sizeof(tv));
+		/*
+		 * Kunos sets TCP_NODELAY on every accepted fd (exe
+		 * FUN_14004e360).  Without it our per-tick small writes
+		 * (0x14 keepalives, 0x1e per-peer broadcasts) get coalesced
+		 * into the 40 ms Nagle window, adding perceptible input
+		 * latency in-car.
+		 */
+		(void)setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY,
+		    &yes, sizeof(yes));
 	}
 	c = conn_new(s, cfd, &from);
 	if (c == NULL) {
