@@ -98,6 +98,6 @@ void	lobby_tick(struct LobbyClient *l, struct Server *s);
 void	lobby_notify_drivers_changed(struct LobbyClient *l, uint8_t count);
 void	lobby_notify_session_changed(struct LobbyClient *l);
 void	lobby_notify_lap(struct LobbyClient *l, uint16_t car_id,
-		int32_t lap_ms);
+		int32_t lap_ms, int32_t race_time_ms);
 
 #endif /* ACCD_LOBBY_H */

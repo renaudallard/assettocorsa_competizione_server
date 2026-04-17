@@ -1011,21 +1011,23 @@ lobby_notify_session_changed(struct LobbyClient *l)
 }
 
 void
-lobby_notify_lap(struct LobbyClient *l, uint16_t car_id, int32_t lap_ms)
+lobby_notify_lap(struct LobbyClient *l, uint16_t car_id, int32_t lap_ms,
+    int32_t race_time_ms)
 {
 	/*
 	 * 0xd0 laptime-to-kson (FUN_1400477a0):
 	 *   preamble(0xd0)
 	 *   u16 car_id
-	 *   u16 ???       (called with (short)uVar14 in caller — looks
-	 *                  like a position-or-lap-state field; sent as 0)
+	 *   u16 pad0          (caller's `(short)uVar14` — sector count
+	 *                       or flags; always 0 in our lap path)
 	 *   u32 lap_time_ms
-	 *   u32 ???       (iVar17 in caller — another integer, possibly
-	 *                  total race time; sent as 0 until identified)
+	 *   u32 race_time_ms  (caller's iVar17 = FUN_140042000 = total
+	 *                       race time from the lap record)
 	 *
 	 * Kunos emits this on every ACP_LAP_COMPLETED; public lobby
-	 * may use it as an "active racing" heartbeat that keeps the
-	 * server listed.
+	 * uses it as an active-racing heartbeat AND to populate the
+	 * per-server stats page.  The race_time_ms was previously
+	 * sent as 0 — kson's global stats lost the total-time value.
 	 */
 	struct ByteBuf bb;
 	int rc;
@@ -1037,13 +1039,14 @@ lobby_notify_lap(struct LobbyClient *l, uint16_t car_id, int32_t lap_ms)
 	    wr_u16(&bb, car_id) < 0 ||
 	    wr_u16(&bb, 0) < 0 ||
 	    wr_u32(&bb, (uint32_t)lap_ms) < 0 ||
-	    wr_u32(&bb, 0) < 0) {
+	    wr_u32(&bb, (uint32_t)race_time_ms) < 0) {
 		bb_free(&bb);
 		return;
 	}
 	rc = lobby_send_framed(l, bb.data, bb.wpos);
 	bb_free(&bb);
 	if (rc == 0)
-		log_info("lobby: Sent laptime to kson: car %u lap %dms",
-		    (unsigned)car_id, (int)lap_ms);
+		log_info("lobby: Sent laptime to kson: "
+		    "car %u lap %dms race_time %dms",
+		    (unsigned)car_id, (int)lap_ms, (int)race_time_ms);
 }
