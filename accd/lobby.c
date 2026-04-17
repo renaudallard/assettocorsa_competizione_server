@@ -93,6 +93,7 @@
 #include "io.h"
 #include "log.h"
 #include "lobby.h"
+#include "penalty.h"
 #include "prim.h"
 #include "session.h"
 #include "state.h"
@@ -832,6 +833,60 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		 * re-invokes its 0xd1 sender. */
 		(void)lobby_send_drivers_update(l, s);
 		break;
+	case 0xf4: {
+		/*
+		 * Lobby-initiated remote ban.  kson sends two kson_strings
+		 * (s1 = target steam_id, s2 = reason) + i32 + u8.  Per
+		 * FUN_1400251b0 the exe looks up the car whose driver's
+		 * steam_id matches s1, broadcasts a 0x2b chat to that
+		 * connection, and invokes FUN_140125f50 with exe_kind=6
+		 * (DQ) — i.e. Race-Control-level disqualification.
+		 * Ignoring this leaves the server's view out of sync
+		 * with kson when a player is globally banned.
+		 */
+		char s1[256], s2[256];
+		size_t p = 1;
+		char chat[640];
+		int j, target = -1;
+
+		if (lobby_read_kson_string(body, len, &p, s1, sizeof(s1)) < 0
+		    || lobby_read_kson_string(body, len, &p, s2, sizeof(s2))
+		    < 0) {
+			log_warn("lobby: 0xf4 body parse failed (%zu B)", len);
+			break;
+		}
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			int d;
+			if (!s->cars[j].used)
+				continue;
+			for (d = 0; d < s->cars[j].driver_count &&
+			    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
+				if (strcmp(s->cars[j].drivers[d].steam_id,
+				    s1) == 0) {
+					target = j;
+					break;
+				}
+			}
+			if (target >= 0)
+				break;
+		}
+		if (target >= 0) {
+			log_info("lobby: 0xf4 remote DQ for car %d (%s): %s",
+			    target, s1, s2);
+			(void)penalty_enqueue(s, target, EXE_DQ, 8, 3, 1, 0,
+			    REASON_RACE_CONTROL);
+			snprintf(chat, sizeof(chat),
+			    "Car #%d was disqualified by Race Control: %s",
+			    s->cars[target].race_number, s2);
+		} else {
+			log_info("lobby: 0xf4 remote DQ, no car matched "
+			    "steam_id=%s: %s", s1, s2);
+			snprintf(chat, sizeof(chat),
+			    "[kson] %s was kicked: %s", s1, s2);
+		}
+		chat_broadcast(s, chat, 5);
+		break;
+	}
 	case 0xf5: {
 		/*
 		 * Lobby-wide broadcast announcement.  kson sends two
