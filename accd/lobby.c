@@ -89,6 +89,7 @@
 #include <stdio.h>
 #include <time.h>
 
+#include "chat.h"
 #include "io.h"
 #include "log.h"
 #include "lobby.h"
@@ -752,6 +753,32 @@ lobby_disconnect(struct LobbyClient *l, const char *reason)
 	lobby_set_state(l, LOBBY_BACKOFF);
 }
 
+/*
+ * Parse a kson_string (u16 LE utf8_byte_len + N UTF-8 bytes) from
+ * `*pos` within `body[len]`, copy into `out[outsz]` NUL-terminated,
+ * and advance `*pos`.  Returns 0 on success, -1 if the frame would
+ * overflow or the string is oversized.
+ */
+static int
+lobby_read_kson_string(const unsigned char *body, size_t len, size_t *pos,
+    char *out, size_t outsz)
+{
+	uint16_t slen;
+
+	if (*pos + 2 > len)
+		return -1;
+	slen = (uint16_t)(body[*pos] | ((uint16_t)body[*pos + 1] << 8));
+	*pos += 2;
+	if (*pos + slen > len)
+		return -1;
+	if ((size_t)slen + 1 > outsz)
+		return -1;
+	memcpy(out, body + *pos, slen);
+	out[slen] = '\0';
+	*pos += slen;
+	return 0;
+}
+
 static const char *
 lobby_reject_reason(uint8_t code)
 {
@@ -805,6 +832,35 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		 * re-invokes its 0xd1 sender. */
 		(void)lobby_send_drivers_update(l, s);
 		break;
+	case 0xf5: {
+		/*
+		 * Lobby-wide broadcast announcement.  kson sends two
+		 * kson_strings + i32 + u8 in the body; the exe (per
+		 * FUN_140025470) builds a 0x2b chat with both strings
+		 * and relays to every connected client.  Used for
+		 * Kunos-backend-initiated messages (maintenance
+		 * notices, rule reminders, etc.).
+		 */
+		char s1[256], s2[256];
+		size_t p = 1;	/* skip the 0xf5 command byte */
+		char chat[520];
+
+		if (lobby_read_kson_string(body, len, &p, s1, sizeof(s1)) < 0
+		    || lobby_read_kson_string(body, len, &p, s2, sizeof(s2))
+		    < 0) {
+			log_warn("lobby: 0xf5 body parse failed (%zu B)", len);
+			break;
+		}
+		if (s1[0] && s2[0])
+			snprintf(chat, sizeof(chat), "[kson] %s: %s", s1, s2);
+		else if (s1[0])
+			snprintf(chat, sizeof(chat), "[kson] %s", s1);
+		else
+			snprintf(chat, sizeof(chat), "[kson] %s", s2);
+		log_info("lobby: 0xf5 broadcast \"%s\"", chat);
+		chat_broadcast(s, chat, 5);
+		break;
+	}
 	case 0xf6:
 		/* CONFIG_REQUEST — reply with 0xd7 containing
 		 * server_name, track, password. */
