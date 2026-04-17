@@ -280,6 +280,35 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		race->sector_ms[1] = 0;
 		race->sector_ms[2] = 0;
 		/*
+		 * Tick down the drive-through / stop-and-go service
+		 * deadline.  Three racing laps to serve, else auto-DQ.
+		 * Only the head-of-queue entry ticks — you can't serve
+		 * the next one until the first is cleared.
+		 */
+		if (race->pen.count > 0) {
+			struct PenaltyEntry *front = &race->pen.slots[0];
+			switch (front->kind) {
+			case PEN_DT: case PEN_DTC:
+			case PEN_SG10: case PEN_SG10C:
+			case PEN_SG20: case PEN_SG20C:
+			case PEN_SG30: case PEN_SG30C:
+				if (!front->served && front->laps_remaining > 0) {
+					front->laps_remaining--;
+					if (front->laps_remaining == 0) {
+						log_info("auto-DQ: car %d "
+						    "failed to serve %s",
+						    c->car_id,
+						    penalty_name(front->kind));
+						penalty_enqueue(s, c->car_id,
+						    PEN_DQ, 0);
+					}
+				}
+				break;
+			default:
+				break;
+			}
+		}
+		/*
 		 * Feed the local rating EWMA: clean lap +5 SA, cut -25,
 		 * out-laps skipped.  Keyed by driver steam_id.
 		 */
