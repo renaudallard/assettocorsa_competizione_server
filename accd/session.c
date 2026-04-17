@@ -128,6 +128,14 @@ session_start(struct Server *s)
 	uint64_t dur_ms = (uint64_t)def->duration_min * 60000ull;
 	uint64_t ot_ms  = (uint64_t)s->session_overtime_s * 1000ull;
 	uint64_t post_ms = 5000;
+	/*
+	 * Race formation lap: the exe spans ts[2] → ts[3] with the
+	 * formation-lap duration.  The exact value isn't in event.json
+	 * — Kunos uses an internal constant; ~60 s matches most ACC
+	 * circuits at rolling-start pace.  For P/Q we leave the span
+	 * at zero since those sessions don't do a formation lap.
+	 */
+	uint64_t formation_ms = def->session_type == 10 ? 60000ull : 0;
 
 	/*
 	 * 7 schedule boundaries matching the exe's sub-objects
@@ -138,7 +146,7 @@ session_start(struct Server *s)
 	s->session.ts[0] = now - 1;
 	s->session.ts[1] = s->session.ts[0] + pre_ms;
 	s->session.ts[2] = s->session.ts[1];
-	s->session.ts[3] = s->session.ts[2];	/* race: + formation_ms */
+	s->session.ts[3] = s->session.ts[2] + formation_ms;
 	s->session.ts[4] = s->session.ts[3] + dur_ms;
 	s->session.ts[5] = s->session.ts[4] + ot_ms;
 	s->session.ts[6] = s->session.ts[5] + post_ms;
