@@ -1270,43 +1270,116 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 
 /* ----- 0x55 ACP_LOAD_SETUP -> reply 0x56 ------------------------ */
 
+/*
+ * Despite the enum name, 0x55 is not a car-setup-file load — it's
+ * the in-game garage's "load lap history for this car from session
+ * N" request.  Wire layout (case 0x55 in FUN_1400142f0):
+ *
+ *     u8  0x55
+ *     u8  session_index   (0 P, 4 Q, 10 R — NOT the msg.h
+ *                          session_index which is slot 0/1/2)
+ *     u16 car_id
+ *     u32 revision        (client's cached revision — ignored here;
+ *                          exe uses it for cache invalidation)
+ *
+ * Reply 0x56 body (see notebook-b §5.6.4a 0x56):
+ *
+ *     u8  0x56
+ *     u8  session_index    (echoed from request)
+ *     u16 car_id
+ *     i16 lap_count
+ *     lap_count × Lap_record:
+ *         str_a track_name
+ *         u32   lap_time_ms
+ *         u8    split_count
+ *         split_count × u32 split_time_ms
+ *         u16   car_id
+ *         u8    lap_quality  (0 = clean)
+ *         u16   lap_number   (1-based)
+ *
+ * Clients tolerate the absence of the trailing full-leaderboard
+ * record that the exe appends; we skip it.  We also don't
+ * archive past-session histories (we only have current-session
+ * data), so a request for a completed session returns count=0.
+ */
 int
 h_load_setup(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
-	uint8_t msg_id, setup_index;
+	uint8_t msg_id, sess_type;
 	uint16_t car_id;
 	uint32_t revision;
 	struct ByteBuf out;
-
-	(void)s;
+	struct CarEntry *car = NULL;
+	int slot, my_sess_type = 0, laps_emitted = 0;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
-	    rd_u8(&r, &setup_index) < 0 ||
+	    rd_u8(&r, &sess_type) < 0 ||
 	    rd_u16(&r, &car_id) < 0 ||
 	    rd_u32(&r, &revision) < 0) {
 		log_warn("h_load_setup: short body");
 		return 0;
 	}
-	log_info("load setup: conn=%u car=%u index=%u rev=%u",
-	    (unsigned)c->conn_id, (unsigned)car_id,
-	    (unsigned)setup_index, (unsigned)revision);
 
-	/*
-	 * Phase 11 minimum-viable 0x56 reply: setup_index + carId
-	 * + lap_count = 0 + an empty per-car leaderboard record
-	 * stub.  We don't actually have a setup file library on
-	 * disk yet so the response is empty.
-	 */
+	slot = (int)car_id - ACC_CAR_ID_BASE;
+	if (slot >= 0 && slot < ACC_MAX_CARS && s->cars[slot].used)
+		car = &s->cars[slot];
+	if (s->session_count > 0 &&
+	    s->session.session_index < s->session_count)
+		my_sess_type = s->sessions[s->session.session_index]
+		    .session_type;
+
+	log_info("load setup: conn=%u car=%u sess_type=%u "
+	    "cur_sess_type=%d rev=%u",
+	    (unsigned)c->conn_id, (unsigned)car_id,
+	    (unsigned)sess_type, my_sess_type, (unsigned)revision);
+
 	bb_init(&out);
 	if (wr_u8(&out, SRV_SETUP_DATA_RESPONSE) < 0 ||
-	    wr_u8(&out, setup_index) < 0 ||
-	    wr_u16(&out, car_id) < 0 ||
-	    wr_i16(&out, 0) < 0)
+	    wr_u8(&out, sess_type) < 0 ||
+	    wr_u16(&out, car_id) < 0)
 		goto done;
+
+	/*
+	 * Only supply lap records when the client is asking about the
+	 * currently-active session — past sessions aren't kept in
+	 * memory.  Still send lap_count=0 for other sessions so the
+	 * client's "no laps yet" state is well-formed.
+	 */
+	if (car != NULL && sess_type == my_sess_type &&
+	    car->race.lap_history_count > 0) {
+		int count = car->race.lap_history_count;
+		int i;
+
+		if (count > ACC_LAP_HISTORY)
+			count = ACC_LAP_HISTORY;
+		if (wr_i16(&out, (int16_t)count) < 0)
+			goto done;
+		for (i = 0; i < count; i++) {
+			if (wr_str_a(&out, s->track) < 0) goto done;
+			if (wr_u32(&out, (uint32_t)car->race
+			    .lap_history_ms[i]) < 0) goto done;
+			/*
+			 * We don't archive per-lap sector splits — send
+			 * split_count = 0 so the client skips straight to
+			 * the trailing fields.
+			 */
+			if (wr_u8(&out, 0) < 0) goto done;
+			if (wr_u16(&out, car->car_id) < 0) goto done;
+			if (wr_u8(&out, 0) < 0) goto done;	/* quality */
+			if (wr_u16(&out, (uint16_t)(i + 1)) < 0) goto done;
+		}
+		laps_emitted = count;
+	} else {
+		if (wr_i16(&out, 0) < 0)
+			goto done;
+	}
 	(void)bcast_send_one(c, out.data, out.wpos);
+	log_debug("0x56 reply: conn=%u car=%u sess_type=%u laps=%d "
+	    "(%zu bytes)", (unsigned)c->conn_id, (unsigned)car_id,
+	    (unsigned)sess_type, laps_emitted, out.wpos);
 done:
 	bb_free(&out);
 	return 0;
