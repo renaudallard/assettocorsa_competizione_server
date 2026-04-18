@@ -281,11 +281,23 @@ rd_str_a(struct Reader *r, char **out)
 int
 rd_str_b(struct Reader *r, char **out)
 {
+	/*
+	 * Cap Format-B strings at 4096 codepoints (~12 KiB utf-8).
+	 * No legitimate ACC wire string comes near this — the longest
+	 * field is the 0x45-byte serverName, the 20-char steam_id, or
+	 * a ~32-char track name.  The untrusted u16 length could
+	 * otherwise force a 196 KiB allocation per call, and 30 peers
+	 * concurrently streaming crafted handshakes would push the
+	 * server into transient multi-MB spikes.
+	 */
+	enum { RD_STR_B_MAX = 4096 };
 	uint16_t units;
 	char *buf;
 	size_t alloc, used, i;
 
 	if (rd_u16(r, &units) < 0)
+		return -1;
+	if (units > RD_STR_B_MAX)
 		return -1;
 	if (rd_remaining(r) < (size_t)units * 2)
 		return -1;
