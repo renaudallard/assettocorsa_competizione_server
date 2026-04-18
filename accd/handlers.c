@@ -235,16 +235,24 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		    race->out_of_track_latched;
 
 		race->lap_count++;
-		race->last_lap_ms = lap_ms;
 		/*
-		 * Only valid laps (no force=1 ACP_OUT_OF_TRACK during
-		 * the lap) update the personal best.  Matches official
-		 * Kunos server behavior: track-limit violations void
-		 * the lap time but the lap counter still ticks.
+		 * Only valid laps (no cut, no out-lap, no force=1 ACP_
+		 * OUT_OF_TRACK during the lap) update the personal best
+		 * AND the personal last-lap time.  The exe's case-0x21
+		 * FUN_14012b380 routes out-laps and cut laps away from
+		 * the scoring path entirely; both values stay at their
+		 * previous state.  Updating last_lap_ms for invalid laps
+		 * leaks the out-lap pit-crawl time to the client, which
+		 * then uses it as the reference for the predicted-lap /
+		 * delta HUD overlay — producing large negative deltas on
+		 * every sector until a real valid lap lands.
 		 */
-		if (!invalid &&
-		    (race->best_lap_ms == 0 || lap_ms < race->best_lap_ms))
-			race->best_lap_ms = lap_ms;
+		if (!invalid) {
+			race->last_lap_ms = lap_ms;
+			if (race->best_lap_ms == 0 ||
+			    lap_ms < race->best_lap_ms)
+				race->best_lap_ms = lap_ms;
+		}
 		/*
 		 * Push the completed lap into the ring-buffer history so
 		 * the 0x36 per-car list 2 (+0x1d8) carries real lap times
