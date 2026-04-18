@@ -347,10 +347,22 @@ snapshot_cfg_current(const struct Server *s)
 			    dst, strerror(errno));
 			continue;
 		}
-		while ((n = fread(buf, 1, sizeof(buf), fp_src)) > 0)
-			fwrite(buf, 1, n, fp_dst);
-		fclose(fp_src);
-		fclose(fp_dst);
+		{
+			int copy_ok = 1;
+			while ((n = fread(buf, 1, sizeof(buf), fp_src)) > 0) {
+				if (fwrite(buf, 1, n, fp_dst) != n) {
+					log_warn("snapshot_cfg_current: "
+					    "short write to %s: %s",
+					    dst, strerror(errno));
+					copy_ok = 0;
+					break;
+				}
+			}
+			fclose(fp_src);
+			if (fclose(fp_dst) != 0 && copy_ok)
+				log_warn("snapshot_cfg_current: close %s: %s",
+				    dst, strerror(errno));
+		}
 	}
 	log_info("snapshot_cfg_current: wrote files under cfg/current/");
 	return 0;
