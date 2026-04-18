@@ -482,12 +482,11 @@ struct Server {
 	int		allow_auto_dq;
 
 	/*
-	 * useAsyncLeaderboard from settings.json (default 1).  The exe
-	 * gates whether the 0x36 leaderboard broadcast is deferred to
-	 * a CONCRT worker.  We have no worker, so in async mode we
-	 * coalesce: broadcast only on CADENCE_LEADERBOARD ticks, not
-	 * on every standings_seq bump.  In sync mode we broadcast on
-	 * every standings change plus the cadence tick.
+	 * useAsyncLeaderboard from settings.json (default 0 = fire-on-
+	 * dirty, matching the exe's FUN_14002f710 which broadcasts 0x36
+	 * whenever the leaderboard-dirty flag is set with no cadence
+	 * gate).  When 1, we coalesce to the CADENCE_LEADERBOARD tick
+	 * instead, trading up to 75 s of staleness for less fan-out CPU.
 	 */
 	uint8_t		use_async_leaderboard;
 

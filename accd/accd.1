@@ -92,7 +92,7 @@ Server identity, access control, and policy toggles.
     "maxCarSlots": 30,
     "allowAutoDQ": 1,
     "registerToLobby": 1,
-    "useAsyncLeaderboard": 1,
+    "useAsyncLeaderboard": 0,
     "unsafeRejoin": 1,
     "formationLapType": 3,
     "isPrepPhaseLocked": 0,
@@ -115,10 +115,11 @@ Default 0.
 When 1, registers with the Kunos lobby so the server is listed
 publicly in-game.
 .It Va useAsyncLeaderboard
-Default 1.
-Coalesces 0x36 leaderboard fan-outs to the 1 Hz cadence tick.
-Set 0 for lowest-latency (per-lap) broadcast at the cost of extra
-CPU.
+Default 0.
+When 0, the server fires 0x36 on every standings change (matching
+the exe's fire-on-dirty behaviour).
+Set 1 to coalesce the broadcast to a periodic cadence, trading
+fan-out CPU for up to 75 s of stale standings on slow clients.
 .It Va unsafeRejoin
 Default 1.
 When 0, fresh handshakes during an active race are rejected with

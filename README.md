@@ -249,7 +249,7 @@ tools (never routed off loopback).  `0` disables it.
     "maxCarSlots": 30,
     "allowAutoDQ": 1,
     "registerToLobby": 1,
-    "useAsyncLeaderboard": 1,
+    "useAsyncLeaderboard": 0,
     "unsafeRejoin": 1,
     "ignorePrematureDisconnects": 0,
     "dumpLeaderboards": 0,
@@ -264,7 +264,7 @@ tools (never routed off loopback).  `0` disables it.
 | `spectatorPassword` | `""` | Admits the client as a spectator. |
 | `allowAutoDQ` | `1` | `0` downgrades failed DT/SG to a 30 s stop&go. |
 | `registerToLobby` | `0` | `1` lists the server publicly in the ACC browser. |
-| `useAsyncLeaderboard` | `1` | `0` broadcasts on every standings change. |
+| `useAsyncLeaderboard` | `0` | `0` broadcasts on every standings change (matches the exe).  `1` coalesces to a 75 s cadence. |
 | `unsafeRejoin` | `1` | `0` refuses fresh mid-race handshakes. |
 | `formationLapType` | `3` | Race-start variant. `1` manual (private only, verbose with "Race start initialized" chat), `3` default rolling (silent), `5` short formation. |
 | `isPrepPhaseLocked` | `0` | `1` freezes the preparation phase; returning drivers still pass (same knob as the `/lockprep` admin command). |
