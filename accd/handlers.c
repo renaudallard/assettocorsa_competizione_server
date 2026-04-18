@@ -751,27 +751,31 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		    c->car_id);
 		return 0;
 	}
-	/* Capture shows exe only relays force=1 (actual out-of-track),
-	 * not force=0 (boundary crossing). */
-	if (force != 1) {
-		(void)out;
-		(void)rc;
-		return 0;
-	}
 	/*
-	 * Latch the off-track for the current lap so the next lap
-	 * completion in h_sector_split_bulk knows not to update
-	 * best_lap_ms.  The latch is cleared when the lap finishes.
+	 * accServer.exe FUN_1400142f0 case 0x3d bails on `force != 0`
+	 * and gates on a per-car off-track latch (car+0x1a8 bit 0).
+	 * Only the first force=0 event per latched cycle is relayed;
+	 * everything else (force=1 events AND force=0 repeats within
+	 * the same physical excursion) is silently dropped.
 	 *
-	 * Cut-count debounce: the ACC client emits ACP_OUT_OF_TRACK
-	 * force=1 for every physics tick while the car is off-track
-	 * (many events per physical cut — observed 3–6 per 1-second
-	 * excursion).  We want to count one discrete excursion as a
-	 * single cut, so ignore increments within a 2 s window of
-	 * the previous counted cut.  Without this, a single extended
-	 * off-track triggers the 3-cut auto-DT — manifesting as the
-	 * "got a DT while still on track" false positive.
+	 * Previously we filtered force=1 (opposite of exe!) and
+	 * counted every one as a distinct cut — so the ACC client's
+	 * per-tick force=1 spam during an extended off-track (3-6
+	 * events per single excursion) over-counted to 3 and our
+	 * server-side auto-DT fired after a single mistake.  The
+	 * visible symptom: "got a DT while still on track" — the DT
+	 * broadcast after the player had already returned to track.
+	 *
+	 * The exe itself does NOT auto-DT from 0x3d; it only relays
+	 * 0x3c.  The ACC client self-issues its own DT via 0x41 when
+	 * its internal heuristic hits 3 cuts.  Removing our auto-DT
+	 * here matches the exe and fixes the false positive.  Real
+	 * 3-cut DTs still arrive via h_report_penalty (0x41) which
+	 * logs the self-issued penalty (future work: wire that to
+	 * penalty_enqueue for wire-visible effect).
 	 */
+	if (force != 0)
+		return 0;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
 		struct timespec now_ts;
@@ -781,38 +785,37 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		now_ms = (uint64_t)now_ts.tv_sec * 1000ull +
 		    (uint64_t)now_ts.tv_nsec / 1000000ull;
 
-		race->out_of_track_latched = 1;
+		/*
+		 * Latch gate: skip if we've already counted a cut within
+		 * the last 2 s (approximation of the exe's +0x1a8 bit 0
+		 * "off-track latch" cleared at sector boundaries — we
+		 * don't have a stable sector-boundary signal to mirror
+		 * that precisely).  Keeps a single physical excursion
+		 * counting as one cut for best_lap invalidation while
+		 * not firing spurious penalties.
+		 */
 		if (now_ms - race->last_cut_ms >= 2000) {
+			race->out_of_track_latched = 1;
 			if (race->cuts_this_lap < 255)
 				race->cuts_this_lap++;
 			race->last_cut_ms = now_ms;
-			log_info("out-of-track: car=%d force=%u ts=%d "
-			    "cuts=%u", c->car_id, (unsigned)force,
-			    (int)ts_raw, (unsigned)race->cuts_this_lap);
-			if (race->cuts_this_lap == 3) {
-				if (penalty_enqueue(s, c->car_id, EXE_DT, 8,
-				    3, 0, 0, REASON_CUTTING) == 0) {
-					char chat[128];
-					log_info("auto-DT: car %d 3 cuts "
-					    "this lap", c->car_id);
-					penalty_format_chat(chat, sizeof(chat),
-					    PEN_DT, REASON_CUTTING, 0,
-					    s->cars[c->car_id].race_number);
-					chat_broadcast(s, chat, 4);
-				}
-			}
+			log_info("out-of-track: car=%d ts=%d cuts=%u",
+			    c->car_id, (int)ts_raw,
+			    (unsigned)race->cuts_this_lap);
 		} else {
 			log_debug("out-of-track: car=%d debounced "
 			    "(dt=%llu ms)", c->car_id,
 			    (unsigned long long)
 			    (now_ms - race->last_cut_ms));
+			return 0;	/* don't relay repeats either */
 		}
 	}
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
 	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
-	    wr_u16(&out, (uint16_t)force) < 0 ||
+	    wr_u16(&out, (uint16_t)s->cars[c->car_id]
+		.race.cuts_this_lap) < 0 ||
 	    wr_u32(&out, (uint32_t)ts_raw) < 0)
 		goto out;
 	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
