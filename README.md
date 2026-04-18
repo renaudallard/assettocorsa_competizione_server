@@ -154,13 +154,13 @@ every wire message, string encoding, and state transition.
   non-blocking `poll()` loop with a 256-packet UDP drain burst —
   comfortable at 30 cars × 18 Hz, but intentionally different from
   the exe's concurrency model.
-- A handful of Kunos `settings.json` keys are parsed and stored but
-  don't drive any accd behaviour because the backing feature isn't
-  implemented: `writeLatencyFileDumps` (no latency-dumps sink),
-  `configVersion` (no schema-migration), and the entire CP-server
-  stack (`isCPServer`, `isCPInvServer`, `competitionRatingMin/Max`,
-  `region`, etc.) — CP servers require the Kunos ranked backend we
-  can't reach from a third-party server.
+- The CP-server stack in `settings.json` is parsed and stored but
+  never acted on (`isCPServer`, `isCPInvServer`, `competitionRating
+  Min/Max`, `region`, `randomizeTrackWhenEmpty`, etc.) — CP servers
+  require the Kunos ranked backend we can't reach from a third-party
+  deployment.  Same goes for the DLC-gating keys
+  (`useIgtDlcTracks`, `useBgtDlcTracks`, `useGt2Tracks`, `useN24`)
+  and `centralEntryListPath` / `dumpEntryList`.
 
 ---
 
@@ -267,7 +267,7 @@ tools (never routed off loopback).  `0` disables it.
 | `formationLapType` | `3` | Race-start variant. `1` manual (private only, verbose with "Race start initialized" chat), `3` default rolling (silent), `5` short formation. |
 | `isPrepPhaseLocked` | `0` | `1` freezes the preparation phase; returning drivers still pass (same knob as the `/lockprep` admin command). |
 | `shortFormationLap` | `0` | `1` shortens the formation lap (parsed and passed through; exe forces `1` on public servers). |
-| `writeLatencyFileDumps` | `0` | `1` enables the latency-diagnostics file output (parsed; diagnostics sink not hooked yet). |
+| `writeLatencyFileDumps` | `0` | `1` writes `results/latency_<timestamp>_<P|Q|R>.csv` — per-keepalive row per authenticated conn with `mono_ms,conn_id,steam_id,avg_rtt_ms,clock_offset_ms`.  Rotates at each session boundary. |
 | `latencyStrategy` | `0` | Initial value for the `/latencymode` runtime toggle. |
 | `doDriverSwapBroadcast` | `1` | `0` suppresses the 0x47 driver-swap-state fan-out; swap progress stays on the swapping car. |
 | `ignorePrematureDisconnects` | `0` | `1` tolerates client-side premature drops. |

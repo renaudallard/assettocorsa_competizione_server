@@ -141,7 +141,14 @@ Default 0.
 Parsed and stored; the exe forces 1 on public servers.
 .It Va writeLatencyFileDumps
 Default 0.
-Parsed but not hooked up to a diagnostics sink in accd yet.
+When 1, accd writes one row per keepalive tick per authenticated
+connection to
+.Pa results/latency_YYMMDD_HHMMSS_<P|Q|R>.csv
+— columns are
+.Qq mono_ms,conn_id,steam_id,avg_rtt_ms,clock_offset_ms .
+Rotates on every session boundary.
+The Kunos exe parses but never consumes this flag; accd wires it to
+the CSV the config key implies.
 .It Va latencyStrategy
 Default 0.
 Initial value for the
@@ -299,6 +306,9 @@ Optional entry list for pre-assigned slots.
 Persistent ban list (one Steam ID per line), managed automatically.
 .It Pa results/
 Session results written as JSON on session completion.
+Also hosts the per-session latency CSVs when
+.Va writeLatencyFileDumps
+is enabled.
 .El
 .Sh EXIT STATUS
 .Ex -std
