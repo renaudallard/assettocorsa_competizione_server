@@ -680,13 +680,54 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 int
 write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 {
-	int i;
+	/*
+	 * WeatherData::serialize (FUN_14011e660) writes 12 u32 fields
+	 * from source struct +0x28 / +0x30..+0x58 (skipping +0x2c),
+	 * followed by two variable-length forecast lists at +0x60..+0x68
+	 * and +0x78..+0x80.  The 12 slots correspond to the JSON keys
+	 * exposed at 0x1659f8..0x165cc0:
+	 *
+	 *   +0x28 ambientTemperature        (current)
+	 *   +0x30 windSpeed                 (current)
+	 *   +0x34 windDirection             (current, degrees)
+	 *   +0x38 ambientTemperatureMean
+	 *   +0x3c windSpeedMean
+	 *   +0x40 windSpeedDeviation
+	 *   +0x44 windDirectionChange
+	 *   +0x48 idealLineGrip
+	 *   +0x4c outsideLineGrip
+	 *   +0x50 puddlesLevel
+	 *   +0x54 (reserved, semantic unknown)
+	 *   +0x58 (reserved, semantic unknown)
+	 *
+	 * Our weather is a deterministic sin/cos simulator with no
+	 * forecast curve: populate the current-state fields from live
+	 * weather + session data, leave the means at the current value,
+	 * and zero the deviation/change/reserved slots.  Forecast lists
+	 * stay empty (count=0) — cockpit renders static conditions.
+	 */
+	float ambient = s->session.ambient_temp > 0
+	    ? (float)s->session.ambient_temp : 22.0f;
+	float wind_speed = s->weather.wind_speed;
+	float wind_dir = s->weather.wind_direction;
+	float rain = s->weather.current_rain;
+	float ideal_grip = 1.0f - rain * 0.3f;
+	float outside_grip = ideal_grip > 0.05f ? ideal_grip - 0.05f : 0.0f;
 
-	(void)s;
-	for (i = 0; i < 12; i++)
-		if (wr_u32(bb, 0) < 0) return -1;
-	if (wr_i16(bb, 0) < 0) return -1;
-	if (wr_i16(bb, 0) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x28 */
+	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x30 */
+	if (wr_f32(bb, wind_dir) < 0) return -1;	/* +0x34 */
+	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x38 mean */
+	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x3c mean */
+	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x40 deviation */
+	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x44 dir change */
+	if (wr_f32(bb, ideal_grip) < 0) return -1;	/* +0x48 */
+	if (wr_f32(bb, outside_grip) < 0) return -1;	/* +0x4c */
+	if (wr_f32(bb, rain) < 0) return -1;		/* +0x50 puddles */
+	if (wr_u32(bb, 0) < 0) return -1;		/* +0x54 reserved */
+	if (wr_u32(bb, 0) < 0) return -1;		/* +0x58 reserved */
+	if (wr_i16(bb, 0) < 0) return -1;		/* forecast1 count */
+	if (wr_i16(bb, 0) < 0) return -1;		/* forecast2 count */
 	return 0;
 }
 
