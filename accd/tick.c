@@ -838,13 +838,14 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * Periodic 0x4e rating summary: Kunos emits when the "ratings
-	 * dirty" flag is set (~81 s cadence in captures).  We debounce
-	 * the same way — broadcast only when ratings_on_lap has marked
-	 * something dirty and at most once every 10 s.
+	 * Periodic 0x4e rating summary.  The exe gates this on
+	 * DAT_14014bd58 = 81000 ms (verified in .rdata) — a deliberate
+	 * 81 s debounce that keeps the rating fan-out out of the
+	 * per-second broadcast cost.  Previously debounced at 10 s
+	 * which was 8× too fast.
 	 */
 	if (ratings_is_dirty(s) &&
-	    s->tick_count - s->ratings_last_emit_ms >= 100ull) {
+	    s->tick_count - s->ratings_last_emit_ms >= 810ull) {
 		struct ByteBuf wb;
 		int j, nc = 0, ok = 1;
 		for (j = 0; j < ACC_MAX_CARS; j++)
