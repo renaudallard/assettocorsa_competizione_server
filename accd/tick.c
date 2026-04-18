@@ -45,6 +45,7 @@
 #include <sys/socket.h>
 
 #include "bcast.h"
+#include "chat.h"
 #include "ratings.h"
 #include "handshake.h"
 #include "io.h"
@@ -611,6 +612,39 @@ tick_run(struct Server *s)
 
 	/* Drive the session phase machine. */
 	session_tick(s);
+
+	/*
+	 * Race green-flag position gate (FUN_14012f4a0).  While a race
+	 * session is in its formation lap, find the current leader and
+	 * feed its normalized track position into the trigger check.
+	 * When green fires, broadcast the "Race start initialized"
+	 * system chat — the exe emits the exact same 0x2b.
+	 */
+	if (s->session.phase == PHASE_PRE_SESSION &&
+	    s->session_count > 0 &&
+	    s->sessions[s->session.session_index].session_type == 10 &&
+	    !s->session.green_fired) {
+		int i, leader = -1;
+
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			if (!s->cars[i].used || !s->cars[i].rt.has_data)
+				continue;
+			if (s->cars[i].race.position == 1) {
+				leader = i;
+				break;
+			}
+		}
+		if (leader >= 0) {
+			float pos;
+
+			memcpy(&pos, &s->cars[leader].rt.scalar_44,
+			    sizeof(pos));
+			if (pos >= 0.0f && pos <= 1.0f &&
+			    session_advance_race_triggers(s, pos))
+				chat_broadcast(s,
+				    "Race start initialized", 4);
+		}
+	}
 
 	/* Per-car relay is event-driven from h_udp_car_update(),
 	 * not periodic.  The 1 Hz recap below is kept for newly-

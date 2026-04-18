@@ -60,6 +60,53 @@ mono_ms(void)
 	    (uint64_t)ts.tv_nsec / 1000000ull;
 }
 
+/*
+ * Per-track range for the formation / green-flag position gate.  The
+ * exe loads these from per-track JSON (FUN_1400f5e10 reads three floats
+ * "formationTriggerNormalizedRangeStart", "greenFlagTriggerNormalized
+ * RangeStart", "greenFlagTriggerNormalizedRangeEnd").  We ship the
+ * engine with a single reasonable default covering the last segment
+ * before the start/finish line — valid for every ACC circuit since
+ * their finish lines all sit at normalized-position 0.
+ */
+#define FORMATION_RANGE_START	0.85f
+#define GREEN_RANGE_START	0.95f
+#define GREEN_RANGE_END		0.99f
+#define FORMATION_PRE_GREEN_EPS	0.005f
+
+static int
+wrapped_range_contains(float pos, float start, float end)
+{
+	/* FUN_1401342d0: test whether pos is inside a [start, end]
+	 * segment on the 0..1 normalized track loop, handling the
+	 * start/finish line wrap (start > end means the range crosses
+	 * position 0). */
+	if (start <= end)
+		return pos >= start && pos <= end;
+	return pos >= start || pos <= end;
+}
+
+static float
+randomize_green_trigger(void)
+{
+	/* FUN_14012ee60: pick a random point inside [start, end] with
+	 * wrap handling.  rand() is seeded once in main(). */
+	float span;
+	float p;
+
+	if (GREEN_RANGE_START <= GREEN_RANGE_END) {
+		span = GREEN_RANGE_END - GREEN_RANGE_START;
+		p = (float)rand() / (float)RAND_MAX;
+		return GREEN_RANGE_START + p * span;
+	}
+	span = (GREEN_RANGE_END + 1.0f) - GREEN_RANGE_START;
+	p = (float)rand() / (float)RAND_MAX;
+	p = GREEN_RANGE_START + p * span;
+	if (p >= 1.0f)
+		p -= 1.0f;
+	return p;
+}
+
 void
 session_reset(struct Server *s, uint8_t session_index)
 {
@@ -139,40 +186,34 @@ session_start(struct Server *s)
 	uint64_t dur_ms = (uint64_t)def->duration_min * 60000ull;
 	uint64_t ot_ms  = (uint64_t)s->session_overtime_s * 1000ull;
 	uint64_t post_ms = 5000;
-	/*
-	 * Race formation lap: the exe spans ts[2] → ts[3] with the
-	 * formation-lap duration.  The exact value isn't in event.json
-	 * — Kunos uses an internal constant; ~60 s matches most ACC
-	 * circuits at rolling-start pace.  For P/Q we leave the span
-	 * at zero since those sessions don't do a formation lap.
-	 */
-	uint64_t formation_ms = def->session_type == 10 ? 60000ull : 0;
 
 	/*
 	 * 7 schedule boundaries matching the exe's sub-objects
 	 * at +0x70..+0x1c0.  For non-race (P/Q), ts[1]=ts[2]=ts[3]
-	 * (no formation lap).  Session end is at ts[4], overtime
-	 * at ts[5].  Verified against Kunos wire capture.
+	 * (no formation lap).  For race, ts[3]..ts[6] are held at
+	 * UINT64_MAX and only set when the leader's normalized track
+	 * position triggers the green flag (FUN_14012f4a0).  No time
+	 * fallback — matches exe exactly; session_overtime_car_finished
+	 * and skip-grace collapse ts[5]/ts[6] when the race ends.
 	 */
 	s->session.ts[0] = now - 1;
 	s->session.ts[1] = s->session.ts[0] + pre_ms;
 	s->session.ts[2] = s->session.ts[1];
-	s->session.ts[3] = s->session.ts[2] + formation_ms;
-	s->session.ts[4] = s->session.ts[3] + dur_ms;
 	if (def->session_type == 10) {
-		/*
-		 * Race: FUN_14012e970 (session_manager_advance) sets the
-		 * SESSION→OVERTIME and OVERTIME→COMPLETED gate timestamps
-		 * to -1.0 (never trigger by time).  Race ends via explicit
-		 * triggers — last car completing its lap count, or the
-		 * empty-overtime skip-grace path further down — not a
-		 * clock gate.  Use UINT64_MAX as our equivalent sentinel;
-		 * session_overtime_car_finished() / skip-grace set these
-		 * to finite values when the race actually ends.
-		 */
+		s->session.ts[3] = UINT64_MAX;
+		s->session.ts[4] = UINT64_MAX;
 		s->session.ts[5] = UINT64_MAX;
 		s->session.ts[6] = UINT64_MAX;
+		s->session.formation_ended = 0;
+		s->session.green_fired = 0;
+		s->session.green_trigger = randomize_green_trigger();
+		log_info("session_start: race green trigger rolled at "
+		    "pos=%.3f (range [%.3f, %.3f])",
+		    (double)s->session.green_trigger,
+		    (double)GREEN_RANGE_START, (double)GREEN_RANGE_END);
 	} else {
+		s->session.ts[3] = s->session.ts[2];
+		s->session.ts[4] = s->session.ts[3] + dur_ms;
 		s->session.ts[5] = s->session.ts[4] + ot_ms;
 		s->session.ts[6] = s->session.ts[5] + post_ms;
 	}
@@ -222,6 +263,64 @@ compute_phase(const struct SessionState *ss, uint64_t now)
 	if (now < ss->ts[6])
 		return PHASE_COMPLETED;
 	return PHASE_ADVANCE;
+}
+
+int
+session_advance_race_triggers(struct Server *s, float leader_pos)
+{
+	struct SessionState *ss = &s->session;
+	const struct SessionDef *def;
+	uint64_t now, dur_ms;
+	float green_end;
+
+	if (!ss->ts_valid || ss->session_index >= s->session_count)
+		return 0;
+	def = &s->sessions[ss->session_index];
+	if (def->session_type != 10)
+		return 0;
+	if (ss->green_fired)
+		return 0;
+
+	now = mono_ms();
+	if (now < ss->ts[2])
+		return 0;	/* still in pre-race countdown */
+
+	if (!ss->formation_ended) {
+		float pre_green = GREEN_RANGE_START - FORMATION_PRE_GREEN_EPS;
+
+		if (pre_green < 0.0f)
+			pre_green += 1.0f;
+		if (wrapped_range_contains(leader_pos,
+		    FORMATION_RANGE_START, pre_green)) {
+			ss->formation_ended = 1;
+			log_info("formation end: leader norm_pos=%.3f "
+			    "range=[%.3f, %.3f]",
+			    (double)leader_pos,
+			    (double)FORMATION_RANGE_START,
+			    (double)pre_green);
+		}
+		return 0;
+	}
+
+	green_end = ss->green_trigger;
+	if (!wrapped_range_contains(leader_pos,
+	    GREEN_RANGE_START, green_end))
+		return 0;
+
+	/*
+	 * Green flag fires.  Unfreeze ts[3]/ts[4] so compute_phase
+	 * advances to PHASE_SESSION on the next tick (and the in-game
+	 * clock starts ticking against a real active-session end).
+	 */
+	ss->green_fired = 1;
+	dur_ms = (uint64_t)def->duration_min * 60000ull;
+	ss->ts[3] = now;
+	ss->ts[4] = now + dur_ms;
+	log_info("green flag: leader norm_pos=%.3f trigger=%.3f "
+	    "active_dur=%llums",
+	    (double)leader_pos, (double)green_end,
+	    (unsigned long long)dur_ms);
+	return 1;
 }
 
 int

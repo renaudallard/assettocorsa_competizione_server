@@ -122,6 +122,19 @@ uint8_t	session_phase_to_wire(uint8_t p);
 void	session_overtime_car_finished(struct Server *s);
 
 /*
+ * Race formation-/green-flag position gate (FUN_14012f4a0 equivalent).
+ * Called every tick during race PHASE_PRE_SESSION with the leader's
+ * normalized track position (0..1) and current monotonic ms.  Flips
+ * formation_ended/green_fired as the leader crosses the configured
+ * trigger ranges, and populates ts[3]/ts[4] when green fires so the
+ * time-driven phase machine advances to PHASE_SESSION on the next
+ * tick.  Returns 1 exactly once, when green fires — the caller should
+ * broadcast the "Race start initialized" 0x2b system chat.
+ */
+int	session_advance_race_triggers(struct Server *s,
+	    float leader_norm_pos);
+
+/*
  * Human-readable name for a session phase enum value.
  */
 const char *

@@ -233,6 +233,21 @@ struct SessionState {
 	int		ts_valid;	/* non-zero once populated */
 	uint8_t		overtime_hold;	/* freeze phase at OVERTIME */
 	int16_t		cars_in_overtime;/* cars still finishing */
+
+	/*
+	 * Race green-flag position gate (FUN_14012f4a0 in accServer.exe).
+	 * For race sessions, ts[3]/ts[4] are held at UINT64_MAX until the
+	 * leader's normalized track position crosses the configured
+	 * trigger zone.  No time fallback — matches exe exactly.
+	 *   formation_ended: leader entered the formation-end range
+	 *   green_fired:     green flag has fired; "Race start initialized"
+	 *                    system chat has been broadcast
+	 *   green_trigger:   randomized point inside the green range, rolled
+	 *                    once by session_start (FUN_14012ee60 equiv).
+	 */
+	uint8_t		formation_ended;
+	uint8_t		green_fired;
+	float		green_trigger;
 };
 
 /*
