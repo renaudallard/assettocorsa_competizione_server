@@ -178,13 +178,22 @@ void
 relay_car_update(struct Server *s, struct Conn *sender,
     struct CarEntry *car)
 {
+	struct ByteBuf bb;
 	int j;
 
 	if (s->udp_fd < 0)
 		return;
+	/*
+	 * Reuse one ByteBuf across all peers.  The body differs per
+	 * peer (delta depends on the peer's pong timestamp) so we
+	 * can't cache the bytes, but we can skip the malloc+free
+	 * pair per peer by clearing the cursor between iterations.
+	 * At 30 cars × 18 Hz × ~29 peers this is ~15.6k malloc/free
+	 * pairs per second eliminated.
+	 */
+	bb_init(&bb);
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		struct Conn *peer = s->conns[j];
-		struct ByteBuf bb;
 		int32_t delta;
 
 		if (peer == NULL || peer->state != CONN_AUTH)
@@ -194,7 +203,7 @@ relay_car_update(struct Server *s, struct Conn *sender,
 
 		delta = (int32_t)(sender->last_pong_client_ts -
 		    peer->last_pong_client_ts);
-		bb_init(&bb);
+		bb_clear(&bb);
 		if (wr_u8(&bb, SRV_PERCAR_SLOW_RATE) == 0 &&
 		    wr_u8(&bb, 1) == 0 &&
 		    build_percar_body(&bb, car, s, delta) == 0) {
@@ -202,8 +211,8 @@ relay_car_update(struct Server *s, struct Conn *sender,
 			    (const struct sockaddr *)&peer->peer,
 			    sizeof(peer->peer));
 		}
-		bb_free(&bb);
 	}
+	bb_free(&bb);
 }
 
 /*
@@ -241,10 +250,10 @@ relay_car_update(struct Server *s, struct Conn *sender,
 static void
 broadcast_keepalive(struct Server *s, uint8_t msg_id)
 {
+	struct ByteBuf bb;
 	int i;
 	struct timespec ts;
 	uint32_t srv_ms;
-	struct ByteBuf bb;
 
 	if (s->udp_fd < 0)
 		return;
@@ -252,6 +261,11 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 	srv_ms = (uint32_t)((uint64_t)ts.tv_sec * 1000 +
 	    (uint64_t)ts.tv_nsec / 1000000);
 
+	/*
+	 * Rebuild per peer because the msg_id may differ between
+	 * calls, but reuse the scratch buffer across all peers.
+	 */
+	bb_init(&bb);
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct Conn *c = s->conns[i];
 
@@ -259,7 +273,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 			continue;
 		c->keepalive_sent_ms = srv_ms;
 
-		bb_init(&bb);
+		bb_clear(&bb);
 		/*
 		 * Kunos FUN_140029b20 body is u32 server_ms + three u16
 		 * zeros + u8(2) + u8(4) + u8(100) + u8(100).  We had been
@@ -280,8 +294,8 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 			    (const struct sockaddr *)&c->peer,
 			    sizeof(c->peer));
 		}
-		bb_free(&bb);
 	}
+	bb_free(&bb);
 }
 
 /*
@@ -719,23 +733,30 @@ tick_run(struct Server *s)
 	 */
 	if ((s->tick_count % CADENCE_SESSION_STATE) == 0 &&
 	    s->nconns > 0) {
+		struct ByteBuf bb;
 		int i;
 
+		/*
+		 * Per-peer body (each conn gets its own clock-base
+		 * projected timestamps), but the scratch buffer itself
+		 * is reused across all peers to avoid one malloc+free
+		 * per conn per second.
+		 */
+		bb_init(&bb);
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct Conn *c = s->conns[i];
-			struct ByteBuf bb;
 
 			if (c == NULL || c->state != CONN_AUTH)
 				continue;
-			bb_init(&bb);
+			bb_clear(&bb);
 			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
 			    write_session_mgr_state(&bb, s,
 				c->last_pong_client_ts,
 				c->avg_rtt_ms) == 0)
 				(void)conn_send_framed(c,
 				    bb.data, bb.wpos);
-			bb_free(&bb);
 		}
+		bb_free(&bb);
 	}
 
 	/*
