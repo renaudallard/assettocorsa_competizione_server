@@ -257,7 +257,18 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_f32(bb, rain * 0.1f) < 0) return -1;
 	if (wr_f32(bb, 1.0f) < 0) return -1;
 
-	/* GraphicsInfo (6 u8 + u16 + u8 = 9 bytes). */
+	/*
+	 * GraphicsInfo — 9 bytes of protocol-tier constants.
+	 * Each pair is (current_tier, max_tier) where current=0 means
+	 * "server doesn't dictate" and max_tier is the protocol
+	 * version's upper bound.  Kunos bumps max_tier only in game
+	 * patches, so these are genuine constants, not runtime state.
+	 *   0x00 0x05  -- reflection quality (max 5)
+	 *   0x00 0x05  -- shadow quality (max 5)
+	 *   0x00 0x04  -- LOD quality (max 4)
+	 *   u16 0      -- reserved
+	 *   0xFF       -- anisotropic filtering = auto
+	 */
 	if (wr_u8(bb, 0x00) < 0) return -1;
 	if (wr_u8(bb, 0x05) < 0) return -1;
 	if (wr_u8(bb, 0x00) < 0) return -1;
@@ -267,14 +278,50 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_u16(bb, 0x0000) < 0) return -1;
 	if (wr_u8(bb, 0xFF) < 0) return -1;
 
-	/* RaceRules (16 bytes: sentinels and flags). */
+	/*
+	 * RaceRules — 16-byte block written field-by-field, matching
+	 * the exe's FUN_14011d230 wire serializer (vtable slot 0x20
+	 * of the RaceRules sub-object at EventEntity+0xf8).  Field
+	 * names pinned from JSON serializer FUN_14010e390.  Kunos
+	 * struct offsets in the comment; widths match the wire's
+	 * compact packing, which differs from the JSON / internal
+	 * struct sizes (several int32 fields are truncated to u8/u16
+	 * on the wire).  Unset fields use -1 / 0xFFFF as the sentinel.
+	 */
 	{
-		static const unsigned char rr[16] = {
-			0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0x01, 0x00,
-			0x01, 0x00, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
-		};
-		if (bb_append(bb, rr, sizeof(rr)) < 0)
-			return -1;
+		int32_t stint_s = (int32_t)s->driver_stint_time_s;
+		uint16_t stint_wire = stint_s > 0 && stint_s <= 0xfffe
+		    ? (uint16_t)stint_s : (uint16_t)0xffff;
+		uint8_t mandatory_pits = s->mandatory_pit_count;
+
+		/* +0x28 qualifyStandingType (0=best lap, 1=superpole).
+		 * Kunos default = 1; we don't implement superpole so
+		 * keep the exe's default value. */
+		if (wr_u8(bb, 0x01) < 0) return -1;
+		/* +0x2c superpoleMaxCar, signed-int-to-u8 with 0xff as
+		 * "unset" sentinel.  No superpole => -1. */
+		if (wr_u8(bb, 0xff) < 0) return -1;
+		/* +0x30 pitWindowLengthSec — u16 on wire, -1 unset. */
+		if (wr_u16(bb, 0xffff) < 0) return -1;
+		/* +0x34 driverStintTimeSec from eventRules.driverStintTime,
+		 * truncated to u16, -1 when unset. */
+		if (wr_u16(bb, stint_wire) < 0) return -1;
+		/* +0x38 isRefuellingAllowedInRace (bool).  Default on. */
+		if (wr_u8(bb, 0x01) < 0) return -1;
+		/* +0x39 isRefuellingTimeFixed (bool).  Default off. */
+		if (wr_u8(bb, 0x00) < 0) return -1;
+		/* +0x3a maxDriversCount — u8 on wire. */
+		if (wr_u8(bb, 0x01) < 0) return -1;
+		/* +0x3c mandatoryPitstopCount — u8 on wire. */
+		if (wr_u8(bb, mandatory_pits) < 0) return -1;
+		/* +0x40 maxTotalDrivingTime — u16 on wire, -1 unset. */
+		if (wr_u16(bb, 0xffff) < 0) return -1;
+		/* +0x44..+0x46 three mandatory-pit boolean toggles. */
+		if (wr_u8(bb, 0x00) < 0) return -1;
+		if (wr_u8(bb, 0x00) < 0) return -1;
+		if (wr_u8(bb, 0x00) < 0) return -1;
+		/* Trailing tyreSetCount (u8) — default 1. */
+		if (wr_u8(bb, 0x01) < 0) return -1;
 	}
 
 	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */
