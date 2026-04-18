@@ -485,6 +485,17 @@ struct Server {
 	 */
 	uint8_t		use_async_leaderboard;
 
+	/*
+	 * unsafeRejoin from settings.json (default 1 = allow late joins).
+	 * Mirrors the exe's +0x228 byte read in FUN_140117300 and gates
+	 * the mid-race / late-qualy rejection in FUN_140025690.  When 0,
+	 * 0x09 handshakes that land during a race session (or late qualy,
+	 * or a locked preparation phase) are rejected with 0x0c code 12.
+	 * Default matches the exe's "Joining during race is allowed"
+	 * startup log when the key is absent.
+	 */
+	uint8_t		unsafe_rejoin;
+
 	/* runtime */
 	int		tcp_fd;
 	int		udp_fd;

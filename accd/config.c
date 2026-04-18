@@ -269,6 +269,8 @@ config_load(struct Server *s, const char *cfg_dir)
 		s->use_async_leaderboard = (uint8_t)json_obj_get_int(
 		    settings, "useAsyncLeaderboard",
 		    s->use_async_leaderboard);
+		s->unsafe_rejoin = (uint8_t)json_obj_get_int(settings,
+		    "unsafeRejoin", s->unsafe_rejoin);
 		s->max_car_slots = json_obj_get_int(settings,
 		    "maxCarSlots", 10);
 		/*

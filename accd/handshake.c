@@ -1324,6 +1324,8 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 * from its car slot and mark the old conn for drop, then
 		 * bind the new conn to that same slot so the driver's
 		 * race state and grid position survive the reconnect.
+		 * Done before the unsafeRejoin race-phase gate so returning
+		 * drivers can always rejoin.
 		 */
 		{
 			int reconnect_slot = -1;
@@ -1363,6 +1365,35 @@ handshake_handle(struct Server *s, struct Conn *c,
 				    c->car_id,
 				    s->cars[c->car_id].race_number);
 				goto post_slot_assignment;
+			}
+		}
+
+		/*
+		 * Mid-race / late-qualy gate (FUN_140025690 bVar3/bVar4).
+		 * When unsafeRejoin=0 the exe refuses FRESH 0x09 handshakes
+		 * (no matching steam_id above) during an active race, logging
+		 * "Rejected driver, this server does not accept connections
+		 * during race sessions, late qualy or locked preparation
+		 * phase" and sending 0x0c reason 12.  Reconnects skip this
+		 * via the post_slot_assignment shortcut above.
+		 */
+		if (!s->unsafe_rejoin && s->session_count > 0) {
+			uint8_t stype = s->sessions[s->session.session_index]
+			    .session_type;
+			if (stype == 10 &&
+			    (s->session.phase == PHASE_FORMATION ||
+			     s->session.phase == PHASE_PRE_SESSION ||
+			     s->session.phase == PHASE_SESSION ||
+			     s->session.phase == PHASE_OVERTIME)) {
+				log_info("Rejected driver %s, this server "
+				    "does not accept connections during race "
+				    "sessions (phase %s), unsafeRejoin=0",
+				    steam_buf,
+				    session_phase_name(s->session.phase));
+				reason = REJECT_BAD_SESSION;
+				free(first); free(last); free(sname);
+				free(steam); free(team);
+				goto reply;
 			}
 		}
 
