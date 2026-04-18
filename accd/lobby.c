@@ -287,7 +287,7 @@ lobby_send_init_blob(struct LobbyClient *l, uint16_t tcp_port)
 	 * does not look at it.
 	 */
 	unsigned char buf[LOBBY_INIT_BLOB_SZ];
-	ssize_t n;
+	size_t sent = 0;
 
 	memset(buf, 0, sizeof(buf));
 	buf[0] = (unsigned char)(tcp_port & 0xff);
@@ -295,9 +295,16 @@ lobby_send_init_blob(struct LobbyClient *l, uint16_t tcp_port)
 	buf[2] = (unsigned char)(tcp_port % 77);
 	buf[3] = (unsigned char)(tcp_port % 21);
 
-	n = write(l->fd, buf, sizeof(buf));
-	if (n < 0) {
-		log_warn("lobby: init write: %s", strerror(errno));
+	while (sent < sizeof(buf)) {
+		ssize_t n = write(l->fd, buf + sent, sizeof(buf) - sent);
+		if (n > 0) {
+			sent += (size_t)n;
+			continue;
+		}
+		if (n < 0 && errno == EINTR)
+			continue;
+		log_warn("lobby: init write: %s",
+		    n < 0 ? strerror(errno) : "short write");
 		return -1;
 	}
 	return 0;
