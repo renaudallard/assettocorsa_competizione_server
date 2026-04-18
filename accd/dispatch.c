@@ -397,13 +397,13 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * and sends the same message as 0x2b chat to the target.
 		 */
 		struct Reader r;
-		uint8_t msg_id, enable_chat = 0;
+		uint8_t op, enable_chat = 0;
 		uint16_t source_conn = 0, target_conn = 0;
 		uint64_t latency_raw = 0;
 		struct Conn *src, *dst;
 
 		rd_init(&r, buf, len);
-		if (rd_u8(&r, &msg_id) < 0 ||
+		if (rd_u8(&r, &op) < 0 ||
 		    rd_u16(&r, &source_conn) < 0 ||
 		    rd_u16(&r, &target_conn) < 0 ||
 		    rd_u64(&r, &latency_raw) < 0 ||
