@@ -46,6 +46,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 
 #include <math.h>
 
@@ -291,6 +292,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		race->current_lap_ms = 0;
 		race->out_of_track_latched = 0;
 		race->cuts_this_lap = 0;
+		race->last_cut_ms = 0;
 		race->sector_ms[0] = 0;
 		race->sector_ms[1] = 0;
 		race->sector_ms[2] = 0;
@@ -760,30 +762,50 @@ h_out_of_track(struct Server *s, struct Conn *c,
 	 * Latch the off-track for the current lap so the next lap
 	 * completion in h_sector_split_bulk knows not to update
 	 * best_lap_ms.  The latch is cleared when the lap finishes.
-	 * Also count cuts: the ACC client self-issues a drive-through
-	 * on the 3rd cut per lap, so mirror that server-side by
-	 * enqueueing PEN_DT at the threshold — otherwise our
-	 * leaderboard and results never reflect the real penalty.
+	 *
+	 * Cut-count debounce: the ACC client emits ACP_OUT_OF_TRACK
+	 * force=1 for every physics tick while the car is off-track
+	 * (many events per physical cut — observed 3–6 per 1-second
+	 * excursion).  We want to count one discrete excursion as a
+	 * single cut, so ignore increments within a 2 s window of
+	 * the previous counted cut.  Without this, a single extended
+	 * off-track triggers the 3-cut auto-DT — manifesting as the
+	 * "got a DT while still on track" false positive.
 	 */
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
+		struct timespec now_ts;
+		uint64_t now_ms;
+
+		clock_gettime(CLOCK_MONOTONIC, &now_ts);
+		now_ms = (uint64_t)now_ts.tv_sec * 1000ull +
+		    (uint64_t)now_ts.tv_nsec / 1000000ull;
+
 		race->out_of_track_latched = 1;
-		if (race->cuts_this_lap < 255)
-			race->cuts_this_lap++;
-		log_info("out-of-track: car=%d force=%u ts=%d cuts=%u",
-		    c->car_id, (unsigned)force, (int)ts_raw,
-		    (unsigned)race->cuts_this_lap);
-		if (race->cuts_this_lap == 3) {
-			if (penalty_enqueue(s, c->car_id, EXE_DT, 8,
-			    3, 0, 0, REASON_CUTTING) == 0) {
-				char chat[128];
-				log_info("auto-DT: car %d 3 cuts this lap",
-				    c->car_id);
-				penalty_format_chat(chat, sizeof(chat),
-				    PEN_DT, REASON_CUTTING, 0,
-				    s->cars[c->car_id].race_number);
-				chat_broadcast(s, chat, 4);
+		if (now_ms - race->last_cut_ms >= 2000) {
+			if (race->cuts_this_lap < 255)
+				race->cuts_this_lap++;
+			race->last_cut_ms = now_ms;
+			log_info("out-of-track: car=%d force=%u ts=%d "
+			    "cuts=%u", c->car_id, (unsigned)force,
+			    (int)ts_raw, (unsigned)race->cuts_this_lap);
+			if (race->cuts_this_lap == 3) {
+				if (penalty_enqueue(s, c->car_id, EXE_DT, 8,
+				    3, 0, 0, REASON_CUTTING) == 0) {
+					char chat[128];
+					log_info("auto-DT: car %d 3 cuts "
+					    "this lap", c->car_id);
+					penalty_format_chat(chat, sizeof(chat),
+					    PEN_DT, REASON_CUTTING, 0,
+					    s->cars[c->car_id].race_number);
+					chat_broadcast(s, chat, 4);
+				}
 			}
+		} else {
+			log_debug("out-of-track: car=%d debounced "
+			    "(dt=%llu ms)", c->car_id,
+			    (unsigned long long)
+			    (now_ms - race->last_cut_ms));
 		}
 	}
 

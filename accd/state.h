@@ -168,6 +168,12 @@ struct CarRaceState {
 	uint8_t		current_tyres;
 	uint8_t		out_of_track_latched;
 	uint8_t		cuts_this_lap;		/* 0x3c force=1 count */
+	uint64_t	last_cut_ms;		/* mono_ms of last counted
+						 * cut — debounce window
+						 * so a sustained off-track
+						 * episode (many force=1
+						 * events from the client)
+						 * counts as a single cut */
 	uint8_t		formation_lap_done;	/* exe car+0x200 flag */
 	uint8_t		out_lap_done;		/* first lap from pits */
 	uint8_t		disqualified;		/* PEN_DQ terminal flag */
