@@ -82,7 +82,7 @@ extern int pledge(const char *promises, const char *execpromises);
 
 #define POLL_RECV_BUF	8192
 #define POLL_SLOTS	(ACC_MAX_CARS + 5)	/* tcp + udp + lan + stdin + conns */
-#define TICK_INTERVAL_MS	100
+#define TICK_INTERVAL_MS	3
 
 volatile sig_atomic_t g_stop;
 

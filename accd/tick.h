@@ -26,7 +26,8 @@
 /*
  * tick.h -- main server tick.
  *
- * Called periodically (target ~10 Hz) from the main loop.
+ * Called periodically (target 333 Hz / 3 ms) from the main loop,
+ * matching Kunos's CreateTimerQueueTimer(Period=3) schedule.
  * Drives session phase advancement and the periodic broadcasts:
  *   0x36 leaderboard, 0x37 weather, 0x3e session results,
  *   0x3f grid positions, 0x4e ratings, plus the per-tick keepalive

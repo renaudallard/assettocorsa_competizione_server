@@ -106,9 +106,11 @@ every wire message, string encoding, and state transition.
 
 - **Periodic per-car relay** — car updates set a dirty flag on
   ingest; the tick loop fans the dirty set out once per tick
-  (~10 Hz) as `0x1e` (or `0x39` count=1 under `/mp` legacy netcode),
-  matching FUN_14001a170 / FUN_14001a6a0 in accServer.exe.  Per-peer
-  timestamp adjustment uses the last client-to-client pong delta.
+  (~333 Hz, matching `CreateTimerQueueTimer(Period=3)` in the
+  exe's `main`) as `0x1e` (or `0x39` count=1 under `/mp` legacy
+  netcode), mirroring FUN_14001a170 / FUN_14001a6a0 in
+  accServer.exe.  Per-peer timestamp adjustment uses the last
+  client-to-client pong delta.
 - **Weather & in-game clock** — deterministic sin/cos weather with
   seeded cycles; 5-second `0x37` broadcast carrying `weekend_time_s`
   driven by `hourOfDay` × `timeMultiplier`.
@@ -152,10 +154,11 @@ every wire message, string encoding, and state transition.
 ### Known limitations
 
 - Single-threaded event loop.  The stock Kunos exe is multi-threaded
-  (CONCRT worker queue + per-client threads).  accd uses one
-  non-blocking `poll()` loop with a 256-packet UDP drain burst —
-  comfortable at 30 cars × 10 Hz fan-out, but intentionally
-  different from the exe's concurrency model.
+  (CONCRT worker queue + per-client threads) running at 333 Hz.
+  accd matches the 333 Hz cadence with one non-blocking `poll()`
+  loop and a 256-packet UDP drain burst, intentionally different
+  from the exe's concurrency model but emitting on the same
+  wall-clock schedule.
 - The CP-server stack in `settings.json` is parsed and stored but
   never acted on (`isCPServer`, `isCPInvServer`, `competitionRating
   Min/Max`, `region`, `randomizeTrackWhenEmpty`, etc.) — CP servers

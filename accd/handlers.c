@@ -1696,11 +1696,11 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 
 	/*
 	 * Mark the car dirty.  The periodic sweep in tick_run builds
-	 * the 0x1e fan-out once per tick (10 Hz), matching the exe's
-	 * FUN_14001a170 which clears the dirty byte after broadcasting
-	 * every dirty car to every peer in one pass.  Event-driven
-	 * relay was ~18 Hz × peer_count, which flooded the client's
-	 * UDP queue and caused position jitter / blinking.
+	 * the 0x1e fan-out once per tick (333 Hz, matching exe), which
+	 * mirrors FUN_14001a170 clearing the dirty byte after
+	 * broadcasting every dirty car to every peer in one pass.
+	 * Previous event-driven relay at ~18 Hz × peer_count flooded
+	 * the client's UDP queue and caused position jitter / blinking.
 	 */
 	rt->dirty = 1;
 	return 0;

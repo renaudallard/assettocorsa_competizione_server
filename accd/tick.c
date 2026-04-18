@@ -60,23 +60,26 @@
 #include "weather.h"
 
 /*
- * Broadcast cadences, in ticks (~100 ms each):
- *   per-car dirty:  every tick (10 Hz, from broadcast_percar_dirty)
- *   keepalive 0x14: every 10 ticks (~1 s)
- *   weather 0x37:   every 50 ticks (5 s)
- *   leaderboard 0x36: every 750 ticks (~75 s)
+ * Broadcast cadences, in ticks (~3 ms each, matching exe 333 Hz).
+ * Kunos's main() runs FUN_14002d1e0(cfg, 3) which wraps
+ * CreateTimerQueueTimer(Period=3 ms) — so tick=3 ms and every cadence
+ * below works out to the same wall-clock interval as the exe.
+ *   per-car dirty:  every tick (333 Hz, from broadcast_percar_dirty)
+ *   keepalive 0x14: every 333 ticks (~1 s)
+ *   weather 0x37:   every 1666 ticks (~5 s, DAT_14014bd38)
+ *   leaderboard 0x36: every 25000 ticks (~75 s, async coalesce only)
  */
-#define CADENCE_SESSION_STATE	10	/* 0x28 every ~1 s.  Single-
+#define CADENCE_SESSION_STATE	333	/* 0x28 every ~1 s.  Single-
 					 * session active replay shows
 					 * Kunos at 1.01/s (911 frames /
 					 * 900 s).  An earlier 81-min
 					 * mixed-idle replay averaged
 					 * 0.53/s only because ~half the
 					 * window had no active driver. */
-#define CADENCE_KEEPALIVE	10	/* 0x14 every ~1 s, matching exe */
-#define CADENCE_WEATHER		50
-#define CADENCE_LEADERBOARD	750	/* 0x36 every ~75 s, matches Kunos
-					 * (65 msgs over 4860 s) */
+#define CADENCE_KEEPALIVE	333	/* 0x14 every ~1 s, matching exe */
+#define CADENCE_WEATHER		1666
+#define CADENCE_LEADERBOARD	25000	/* 0x36 every ~75 s (async mode
+					 * only; sync fires on dirty) */
 
 /*
  * Write the 63-byte per-car body used by both 0x1e and each
@@ -845,7 +848,7 @@ tick_run(struct Server *s)
 	 * which was 8× too fast.
 	 */
 	if (ratings_is_dirty(s) &&
-	    s->tick_count - s->ratings_last_emit_ms >= 810ull) {
+	    s->tick_count - s->ratings_last_emit_ms >= 27000ull) {
 		struct ByteBuf wb;
 		int j, nc = 0, ok = 1;
 		for (j = 0; j < ACC_MAX_CARS; j++)
