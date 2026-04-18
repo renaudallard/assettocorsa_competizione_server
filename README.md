@@ -149,12 +149,6 @@ every wire message, string encoding, and state transition.
 
 ### Known limitations
 
-- Per-track green-flag trigger ranges default to the exe's compiled-in
-  constants (formation 0.80, green 0.89–0.96 normalised track
-  position — `DAT_14014bccc..bcd8`).  Override per deployment via
-  `event.json` keys `formationTriggerNormalizedRangeStart`,
-  `greenFlagTriggerNormalizedRangeStart`,
-  `greenFlagTriggerNormalizedRangeEnd`.
 - Car-to-car collisions are client-side physics; the server relays
   positions but does not arbitrate contact.
 - Weather forecast curve in the welcome trailer is populated from
@@ -163,6 +157,15 @@ every wire message, string encoding, and state transition.
   HUD shows a flat prediction.  The deterministic sin/cos weather
   drift is still visible via the live `0x37` broadcast during the
   session.
+- Single-threaded event loop.  The stock Kunos exe is multi-threaded
+  (CONCRT worker queue + per-client threads).  accd uses one
+  non-blocking `poll()` loop with a 256-packet UDP drain burst —
+  comfortable at 30 cars × 18 Hz, but intentionally different from
+  the exe's concurrency model.
+- Two `settings.json` keys the exe reads are not wired up:
+  `writeLatencyFileDumps` (latency diagnostics file write) and
+  `configVersion` (config-schema migration).  Both are safely
+  ignored; neither affects gameplay.
 
 ---
 
