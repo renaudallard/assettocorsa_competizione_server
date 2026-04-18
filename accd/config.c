@@ -346,6 +346,22 @@ config_load(struct Server *s, const char *cfg_dir)
 		    event, "sessionOverTimeSeconds", 120);
 		s->session.ambient_temp = (uint8_t)json_obj_get_int(
 		    event, "ambientTemp", 22);
+		{
+			const struct json_node *fn, *gs, *ge;
+			fn = json_obj_get(event,
+			    "formationTriggerNormalizedRangeStart");
+			gs = json_obj_get(event,
+			    "greenFlagTriggerNormalizedRangeStart");
+			ge = json_obj_get(event,
+			    "greenFlagTriggerNormalizedRangeEnd");
+			if (fn != NULL)
+				s->formation_trigger_start =
+				    (float)fn->u.num;
+			if (gs != NULL)
+				s->green_trigger_start = (float)gs->u.num;
+			if (ge != NULL)
+				s->green_trigger_end = (float)ge->u.num;
+		}
 		s->session.track_temp = (uint8_t)(
 		    s->session.ambient_temp + 8);
 

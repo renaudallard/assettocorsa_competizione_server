@@ -61,18 +61,17 @@ mono_ms(void)
 }
 
 /*
- * Per-track range for the formation / green-flag position gate.  The
- * exe loads these from per-track JSON (FUN_1400f5e10 reads three floats
- * "formationTriggerNormalizedRangeStart", "greenFlagTriggerNormalized
- * RangeStart", "greenFlagTriggerNormalizedRangeEnd").  We ship the
- * engine with a single reasonable default covering the last segment
- * before the start/finish line — valid for every ACC circuit since
- * their finish lines all sit at normalized-position 0.
+ * Formation / green-flag position gate range.  The exe reads three
+ * floats via a virtual deserializer at vtable slot 0x140142b70
+ * ("formationTriggerNormalizedRangeStart", "greenFlagTriggerNormalized
+ * RangeStart", "greenFlagTriggerNormalizedRangeEnd") and falls back to
+ * the compiled-in constants at DAT_14014bccc (0.80) / DAT_14014bcd0
+ * (0.89) / DAT_14014bcd8 (0.96) when the JSON is absent.  No per-track
+ * file path is used — the same defaults apply to every ACC circuit,
+ * overridable via event.json keys of the same names.  The epsilon
+ * constant comes from DAT_14014bcac = 0.05.
  */
-#define FORMATION_RANGE_START	0.85f
-#define GREEN_RANGE_START	0.95f
-#define GREEN_RANGE_END		0.99f
-#define FORMATION_PRE_GREEN_EPS	0.005f
+#define FORMATION_PRE_GREEN_EPS	0.05f
 
 static int
 wrapped_range_contains(float pos, float start, float end)
@@ -87,21 +86,23 @@ wrapped_range_contains(float pos, float start, float end)
 }
 
 static float
-randomize_green_trigger(void)
+randomize_green_trigger(const struct Server *s)
 {
-	/* FUN_14012ee60: pick a random point inside [start, end] with
-	 * wrap handling.  rand() is seeded once in main(). */
+	/* FUN_14012ee60: pick a random point inside
+	 * [green_trigger_start, green_trigger_end] with wrap handling. */
+	float start = s->green_trigger_start;
+	float end = s->green_trigger_end;
 	float span;
 	float p;
 
-	if (GREEN_RANGE_START <= GREEN_RANGE_END) {
-		span = GREEN_RANGE_END - GREEN_RANGE_START;
+	if (start <= end) {
+		span = end - start;
 		p = (float)rand() / (float)RAND_MAX;
-		return GREEN_RANGE_START + p * span;
+		return start + p * span;
 	}
-	span = (GREEN_RANGE_END + 1.0f) - GREEN_RANGE_START;
+	span = (end + 1.0f) - start;
 	p = (float)rand() / (float)RAND_MAX;
-	p = GREEN_RANGE_START + p * span;
+	p = start + p * span;
 	if (p >= 1.0f)
 		p -= 1.0f;
 	return p;
@@ -256,11 +257,12 @@ session_start(struct Server *s)
 		s->session.ts[6] = UINT64_MAX;
 		s->session.formation_ended = 0;
 		s->session.green_fired = 0;
-		s->session.green_trigger = randomize_green_trigger();
+		s->session.green_trigger = randomize_green_trigger(s);
 		log_info("session_start: race green trigger rolled at "
 		    "pos=%.3f (range [%.3f, %.3f])",
 		    (double)s->session.green_trigger,
-		    (double)GREEN_RANGE_START, (double)GREEN_RANGE_END);
+		    (double)s->green_trigger_start,
+		    (double)s->green_trigger_end);
 	} else {
 		s->session.ts[3] = s->session.ts[2];
 		s->session.ts[4] = s->session.ts[3] + dur_ms;
@@ -336,17 +338,18 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		return 0;	/* still in pre-race countdown */
 
 	if (!ss->formation_ended) {
-		float pre_green = GREEN_RANGE_START - FORMATION_PRE_GREEN_EPS;
+		float pre_green = s->green_trigger_start -
+		    FORMATION_PRE_GREEN_EPS;
 
 		if (pre_green < 0.0f)
 			pre_green += 1.0f;
 		if (wrapped_range_contains(leader_pos,
-		    FORMATION_RANGE_START, pre_green)) {
+		    s->formation_trigger_start, pre_green)) {
 			ss->formation_ended = 1;
 			log_info("formation end: leader norm_pos=%.3f "
 			    "range=[%.3f, %.3f]",
 			    (double)leader_pos,
-			    (double)FORMATION_RANGE_START,
+			    (double)s->formation_trigger_start,
 			    (double)pre_green);
 		}
 		return 0;
@@ -354,7 +357,7 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 
 	green_end = ss->green_trigger;
 	if (!wrapped_range_contains(leader_pos,
-	    GREEN_RANGE_START, green_end))
+	    s->green_trigger_start, green_end))
 		return 0;
 
 	/*

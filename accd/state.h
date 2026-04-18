@@ -506,6 +506,18 @@ struct Server {
 	 */
 	uint8_t		preparation_locked;
 
+	/*
+	 * Race green-flag position gate (event.json override, defaults
+	 * match the exe's vtable fallback constants DAT_14014bccc/bcd0/
+	 * bcd8).  Populate from event.json keys formationTriggerNormalized
+	 * RangeStart / greenFlagTriggerNormalizedRangeStart /
+	 * greenFlagTriggerNormalizedRangeEnd; else server_init sets the
+	 * exe defaults below.
+	 */
+	float		formation_trigger_start;
+	float		green_trigger_start;
+	float		green_trigger_end;
+
 	/* runtime */
 	int		tcp_fd;
 	int		udp_fd;

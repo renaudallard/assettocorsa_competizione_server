@@ -52,6 +52,9 @@ server_init(struct Server *s)
 	s->allow_auto_dq = 1;
 	s->use_async_leaderboard = 1;
 	s->unsafe_rejoin = 1;
+	s->formation_trigger_start = 0.80f;
+	s->green_trigger_start = 0.89f;
+	s->green_trigger_end = 0.96f;
 	lobby_init(&s->lobby);
 	for (int i = 0; i < ACC_MAX_CARS; i++)
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
