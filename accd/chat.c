@@ -891,6 +891,15 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    : "Server is now in regular mode", 4);
 	} else if (chat_prefix(text, "/debug")) {
 		log_info("admin: /debug (toggle)");
+	} else if (chat_prefix(text, "/lockprep")) {
+		s->preparation_locked = 1;
+		chat_broadcast(s, "Preparation phase is now LOCKED — no "
+		    "new drivers until unlock", 4);
+		log_info("admin: /lockprep");
+	} else if (chat_prefix(text, "/unlockprep")) {
+		s->preparation_locked = 0;
+		chat_broadcast(s, "Preparation phase is now OPEN", 4);
+		log_info("admin: /unlockprep");
 	} else {
 		log_info("admin: unknown command: %s", text);
 	}

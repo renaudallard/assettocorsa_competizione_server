@@ -1424,26 +1424,46 @@ handshake_handle(struct Server *s, struct Conn *c,
 		}
 
 		/*
-		 * Mid-race / late-qualy gate (FUN_140025690 bVar3/bVar4).
-		 * When unsafeRejoin=0 the exe refuses FRESH 0x09 handshakes
-		 * (no matching steam_id above) during an active race, logging
-		 * "Rejected driver, this server does not accept connections
-		 * during race sessions, late qualy or locked preparation
-		 * phase" and sending 0x0c reason 12.  Reconnects skip this
-		 * via the post_slot_assignment shortcut above.
+		 * Mid-race / late-qualy / locked-prep gate
+		 * (FUN_140025690 bVar46/bVar3/bVar4 paths).  Fresh 0x09
+		 * handshakes past the reconnect shortcut are rejected with
+		 * 0x0c code 12 under any of:
+		 *
+		 *   (a) unsafeRejoin=0 and an active race is in progress
+		 *       (phase FORMATION..OVERTIME, session_type==10);
+		 *   (b) the qualy session is in OVERTIME — the grid is
+		 *       already locking and new drivers would corrupt the
+		 *       finishing order (exe's late-qualy path using
+		 *       param_1[0x14180]);
+		 *   (c) the operator set preparation_locked via /lockprep
+		 *       and the current session is still in FORMATION or
+		 *       PRE_SESSION.
+		 *
+		 * Reconnects skip all three via post_slot_assignment.
 		 */
-		if (!s->unsafe_rejoin && s->session_count > 0) {
+		if (s->session_count > 0) {
 			uint8_t stype = s->sessions[s->session.session_index]
 			    .session_type;
-			if (stype == 10 &&
+			const char *why = NULL;
+
+			if (!s->unsafe_rejoin && stype == 10 &&
 			    (s->session.phase == PHASE_FORMATION ||
 			     s->session.phase == PHASE_PRE_SESSION ||
 			     s->session.phase == PHASE_SESSION ||
-			     s->session.phase == PHASE_OVERTIME)) {
+			     s->session.phase == PHASE_OVERTIME))
+				why = "unsafeRejoin=0 and race in progress";
+			else if (stype == 4 &&
+			    s->session.phase == PHASE_OVERTIME)
+				why = "late qualy";
+			else if (s->preparation_locked &&
+			    (s->session.phase == PHASE_FORMATION ||
+			     s->session.phase == PHASE_PRE_SESSION))
+				why = "locked preparation phase";
+
+			if (why != NULL) {
 				log_info("Rejected driver %s, this server "
-				    "does not accept connections during race "
-				    "sessions (phase %s), unsafeRejoin=0",
-				    steam_buf,
+				    "does not accept connections during "
+				    "%s (phase %s)", steam_buf, why,
 				    session_phase_name(s->session.phase));
 				reason = REJECT_BAD_SESSION;
 				free(first); free(last); free(sname);

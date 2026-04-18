@@ -496,6 +496,16 @@ struct Server {
 	 */
 	uint8_t		unsafe_rejoin;
 
+	/*
+	 * Admin-toggled preparation lock (FUN_140025690 bVar4 path using
+	 * exe +0x229).  When set AND the current session is in FORMATION
+	 * or PRE_SESSION, fresh handshakes are rejected with 0x0c code
+	 * 12 regardless of unsafeRejoin — lets an operator freeze the
+	 * grid once qualifying is in its countdown.  Toggled by the
+	 * /lockprep /unlockprep admin chat commands.
+	 */
+	uint8_t		preparation_locked;
+
 	/* runtime */
 	int		tcp_fd;
 	int		udp_fd;
