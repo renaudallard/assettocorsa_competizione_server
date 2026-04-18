@@ -1006,6 +1006,19 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 			 * frame or hit a partial at the tail.
 			 */
 			need = l->rx_len + (size_t)n;
+			/*
+			 * kson max frame is u16 length + body = 65537 B;
+			 * capping at 128 KiB leaves room for a partial
+			 * second frame buffered behind the first while
+			 * still failing cleanly against a misbehaving
+			 * peer that streams partial frames forever.
+			 */
+			if (need > 128u * 1024u) {
+				log_warn("lobby: rx buffer would exceed "
+				    "128 KiB (need=%zu)", need);
+				lobby_disconnect(l, "rx overflow");
+				return;
+			}
 			if (need > l->rx_cap) {
 				size_t new_cap = l->rx_cap
 				    ? l->rx_cap : 4096;

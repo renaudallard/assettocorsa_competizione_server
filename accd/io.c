@@ -42,6 +42,15 @@
 #include "log.h"
 
 #define BB_INITIAL_CAP	256
+/*
+ * Safety cap on ByteBuf growth.  Legitimate ACC traffic tops out
+ * at the welcome-trailer-sized frame (~1.3 KB) plus the largest
+ * 0x36 leaderboard (~20 KB) and 0x3e session results (~10 KB).
+ * 256 KiB is ~10× the largest real frame and well below any OS
+ * memory pressure; a malicious peer streaming partial frames
+ * forever to exhaust rx buffers fails cleanly at this cap.
+ */
+#define BB_MAX_CAP	(256u * 1024u)
 
 void
 bb_init(struct ByteBuf *bb)
@@ -80,11 +89,13 @@ bb_reserve(struct ByteBuf *bb, size_t need)
 
 	newcap = bb->cap == 0 ? BB_INITIAL_CAP : bb->cap;
 	while (newcap - bb->wpos < need) {
-		if (newcap > (size_t)-1 / 2) {
+		if (newcap >= BB_MAX_CAP) {
 			errno = ENOMEM;
 			return -1;
 		}
 		newcap *= 2;
+		if (newcap > BB_MAX_CAP)
+			newcap = BB_MAX_CAP;
 	}
 	p = realloc(bb->data, newcap);
 	if (p == NULL)
