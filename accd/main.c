@@ -199,17 +199,34 @@ handle_udp(struct Server *s)
 {
 	unsigned char buf[POLL_RECV_BUF];
 	struct sockaddr_in from;
-	socklen_t fromlen = sizeof(from);
 	ssize_t n;
+	int drained = 0;
 
-	n = recvfrom(s->udp_fd, buf, sizeof(buf), 0,
-	    (struct sockaddr *)&from, &fromlen);
-	if (n < 0) {
-		if (errno != EINTR && errno != EAGAIN)
+	/*
+	 * Drain every queued datagram in this poll iteration, not
+	 * just one.  Under real-race load every client sends 0x1e
+	 * car updates at ~18 Hz plus 0x13/0x16 keepalives, so the
+	 * UDP socket can accumulate dozens of packets between two
+	 * polls; reading one and looping back adds a poll roundtrip
+	 * per packet and pushes the fan-out latency up.  Cap at 256
+	 * to avoid starving TCP and the tick during a UDP flood.
+	 */
+	for (;;) {
+		socklen_t fromlen = sizeof(from);
+		n = recvfrom(s->udp_fd, buf, sizeof(buf), 0,
+		    (struct sockaddr *)&from, &fromlen);
+		if (n < 0) {
+			if (errno == EAGAIN || errno == EWOULDBLOCK)
+				break;
+			if (errno == EINTR)
+				continue;
 			log_warn("udp recvfrom: %s", strerror(errno));
-		return;
+			break;
+		}
+		dispatch_udp(s, &from, buf, (size_t)n);
+		if (++drained >= 256)
+			break;
 	}
-	dispatch_udp(s, &from, buf, (size_t)n);
 }
 
 /* ----- main loop ------------------------------------------------- */

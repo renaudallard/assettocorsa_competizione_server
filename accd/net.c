@@ -34,6 +34,7 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <string.h>
 #include <unistd.h>
 
@@ -74,7 +75,7 @@ tcp_listen(int port)
 int
 udp_bind(int port)
 {
-	int fd;
+	int fd, flags;
 	struct sockaddr_in sa;
 
 	fd = socket(AF_INET, SOCK_DGRAM, 0);
@@ -91,5 +92,15 @@ udp_bind(int port)
 		close(fd);
 		return -1;
 	}
+	/*
+	 * Non-blocking so handle_udp can drain every queued datagram
+	 * per poll iteration (detecting "no more pending" via EAGAIN).
+	 * Blocking recvfrom after POLLIN races if the kernel drops the
+	 * packet between poll notify and recvfrom — O_NONBLOCK makes
+	 * that case return EAGAIN instead of stalling the main loop.
+	 */
+	flags = fcntl(fd, F_GETFL, 0);
+	if (flags >= 0)
+		(void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
 	return fd;
 }
