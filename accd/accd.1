@@ -94,12 +94,18 @@ Server identity, access control, and policy toggles.
     "registerToLobby": 1,
     "useAsyncLeaderboard": 1,
     "unsafeRejoin": 1,
+    "formationLapType": 3,
+    "isPrepPhaseLocked": 0,
+    "shortFormationLap": 0,
+    "writeLatencyFileDumps": 0,
+    "latencyStrategy": 0,
+    "doDriverSwapBroadcast": 1,
     "ignorePrematureDisconnects": 0,
     "dumpLeaderboards": 0,
     "configVersion": 1
 }
 .Ed
-.Bl -tag -width "useAsyncLeaderboard" -compact
+.Bl -tag -width "doDriverSwapBroadcast" -compact
 .It Va allowAutoDQ
 Default 1.
 When 0, a missed DT/SG deadline is downgraded to a 30-second stop&go
@@ -118,6 +124,32 @@ Default 1.
 When 0, fresh handshakes during an active race are rejected with
 REJECT_BAD_SESSION.
 Returning drivers (matching Steam ID) always pass.
+.It Va formationLapType
+Default 3.
+Race-start variant.
+1 = manual (private-server only; verbose with
+.Dq Race start initialized
+broadcast), 3 = default rolling start (silent), 5 = short formation.
+.It Va isPrepPhaseLocked
+Default 0.
+When 1, freezes the preparation phase so fresh handshakes are
+rejected; same state as the
+.Ic /lockprep
+admin command.
+.It Va shortFormationLap
+Default 0.
+Parsed and stored; the exe forces 1 on public servers.
+.It Va writeLatencyFileDumps
+Default 0.
+Parsed but not hooked up to a diagnostics sink in accd yet.
+.It Va latencyStrategy
+Default 0.
+Initial value for the
+.Ic /latencymode
+runtime toggle.
+.It Va doDriverSwapBroadcast
+Default 1.
+When 0, suppresses the 0x47 driver-swap-state fan-out.
 .It Va ignorePrematureDisconnects
 Default 0.
 When 1, socket errors during the handshake are not treated as a
@@ -143,6 +175,9 @@ Session types are
     "cloudLevel": 0.1,
     "rain": 0.0,
     "weatherRandomness": 1,
+    "formationTriggerNormalizedRangeStart": 0.80,
+    "greenFlagTriggerNormalizedRangeStart": 0.89,
+    "greenFlagTriggerNormalizedRangeEnd":   0.96,
     "sessions": [
         {
             "hourOfDay": 14,
@@ -155,6 +190,12 @@ Session types are
     "configVersion": 1
 }
 .Ed
+.Pp
+The three
+.Va *TriggerNormalizedRange*
+keys override the built-in defaults for the position-based race-start
+gate (normalized track positions 0..1).
+Shown above at the exe's compiled-in fallback values.
 .It Pa entrylist.json
 Optional.
 Pre-assigned car slots keyed by Steam ID.

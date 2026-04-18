@@ -162,10 +162,13 @@ every wire message, string encoding, and state transition.
   non-blocking `poll()` loop with a 256-packet UDP drain burst —
   comfortable at 30 cars × 18 Hz, but intentionally different from
   the exe's concurrency model.
-- Two `settings.json` keys the exe reads are not wired up:
-  `writeLatencyFileDumps` (latency diagnostics file write) and
-  `configVersion` (config-schema migration).  Both are safely
-  ignored; neither affects gameplay.
+- A handful of Kunos `settings.json` keys are parsed and stored but
+  don't drive any accd behaviour because the backing feature isn't
+  implemented: `writeLatencyFileDumps` (no latency-dumps sink),
+  `configVersion` (no schema-migration), and the entire CP-server
+  stack (`isCPServer`, `isCPInvServer`, `competitionRatingMin/Max`,
+  `region`, etc.) — CP servers require the Kunos ranked backend we
+  can't reach from a third-party server.
 
 ---
 
@@ -269,6 +272,12 @@ tools (never routed off loopback).  `0` disables it.
 | `registerToLobby` | `0` | `1` lists the server publicly in the ACC browser. |
 | `useAsyncLeaderboard` | `1` | `0` broadcasts on every standings change. |
 | `unsafeRejoin` | `1` | `0` refuses fresh mid-race handshakes. |
+| `formationLapType` | `3` | Race-start variant. `1` manual (private only, verbose with "Race start initialized" chat), `3` default rolling (silent), `5` short formation. |
+| `isPrepPhaseLocked` | `0` | `1` freezes the preparation phase; returning drivers still pass (same knob as the `/lockprep` admin command). |
+| `shortFormationLap` | `0` | `1` shortens the formation lap (parsed and passed through; exe forces `1` on public servers). |
+| `writeLatencyFileDumps` | `0` | `1` enables the latency-diagnostics file output (parsed; diagnostics sink not hooked yet). |
+| `latencyStrategy` | `0` | Initial value for the `/latencymode` runtime toggle. |
+| `doDriverSwapBroadcast` | `1` | `0` suppresses the 0x47 driver-swap-state fan-out; swap progress stays on the swapping car. |
 | `ignorePrematureDisconnects` | `0` | `1` tolerates client-side premature drops. |
 | `dumpLeaderboards` | `0` | `1` writes snapshots to `results/` on every update. |
 
@@ -286,6 +295,9 @@ tools (never routed off loopback).  `0` disables it.
     "cloudLevel": 0.1,
     "rain": 0.0,
     "weatherRandomness": 1,
+    "formationTriggerNormalizedRangeStart": 0.80,
+    "greenFlagTriggerNormalizedRangeStart": 0.89,
+    "greenFlagTriggerNormalizedRangeEnd":   0.96,
     "sessions": [
         { "hourOfDay": 12, "dayOfWeekend": 2, "timeMultiplier": 1,
           "sessionType": "P", "sessionDurationMinutes": 10 },
@@ -299,6 +311,11 @@ tools (never routed off loopback).  `0` disables it.
 ```
 
 Session types: `P` (Practice), `Q` (Qualifying), `R` (Race).
+
+The three `formationTrigger*` / `greenFlag*` keys override the built-in
+defaults for the position-based race-start gate (normalized track
+positions 0..1).  Shown above at the exe's compiled-in fallback
+values; leave absent to use them.
 
 </details>
 
