@@ -185,7 +185,18 @@ session_reset(struct Server *s, uint8_t session_index)
 			struct CarEntry *car = &s->cars[i];
 			int16_t g = -1;
 
-			if (!car->used)
+			/*
+			 * Assign grid to every slot that has an identity
+			 * (driver_count > 0), not just currently-connected
+			 * ones.  A driver who disconnected during qualy
+			 * and reconnects after the race has started still
+			 * gets their rightful grid position when the
+			 * zombie-slot reclaim in handshake_handle re-binds
+			 * them to this slot.  Unreclaimed zombies stay
+			 * invisible because broadcast_grid iterates only
+			 * `used` cars.
+			 */
+			if (car->driver_count == 0)
 				continue;
 			if (prior >= 0 && car->race_archive[prior] != NULL) {
 				int16_t p = car->race_archive[prior]->position;
@@ -201,8 +212,9 @@ session_reset(struct Server *s, uint8_t session_index)
 					g = (int16_t)slot;
 			}
 			car->race.grid_position = g;
-			log_info("grid: car %d -> %d (from session %d)",
-			    i, (int)g, prior);
+			log_info("grid: car %d -> %d (from session %d%s)",
+			    i, (int)g, prior,
+			    car->used ? "" : ", zombie");
 		}
 	}
 

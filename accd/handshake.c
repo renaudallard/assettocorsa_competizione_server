@@ -1398,8 +1398,14 @@ handshake_handle(struct Server *s, struct Conn *c,
 
 				/* Zombie-slot match: old conn is gone but
 				 * CarEntry still holds the driver's data
-				 * (preserved by conn_drop) — reclaim it
-				 * and keep race state, grid, penalties. */
+				 * (conn_drop preserves driver_count /
+				 * drivers[] / race state but clears used=0
+				 * so the slot can be reallocated).  We
+				 * ignore used here and match purely on
+				 * steam_id, then re-claim the slot so the
+				 * returning driver keeps race state, grid
+				 * position, penalties, and lap history
+				 * across a session transition too. */
 				if (reconnect_slot < 0) {
 					int k;
 					for (k = 0; k < ACC_MAX_CARS; k++) {
@@ -1407,8 +1413,6 @@ handshake_handle(struct Server *s, struct Conn *c,
 						    &s->cars[k];
 						int dj, held = 0, cc;
 
-						if (!ec->used)
-							continue;
 						if (ec->driver_count == 0)
 							continue;
 						for (dj = 0;
@@ -1573,6 +1577,11 @@ handshake_handle(struct Server *s, struct Conn *c,
 		}
 
 post_slot_assignment:
+		/* Re-claim the slot on the used flag in case this was a
+		 * zombie reclaim (conn_drop clears .used so the slot can
+		 * be reallocated; reclaim must flip it back so the rest
+		 * of the server sees the driver as active again). */
+		s->cars[c->car_id].used = 1;
 		/* Populate the car slot with parsed data. */
 		car = &s->cars[c->car_id];
 		if (first != NULL)
