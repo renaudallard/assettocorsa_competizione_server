@@ -1332,6 +1332,9 @@ handshake_handle(struct Server *s, struct Conn *c,
 
 			if (steam_buf[0] != '\0') {
 				int j;
+
+				/* Live-conn match: driver came back before
+				 * we noticed the old socket died. */
 				for (j = 0; j < ACC_MAX_CARS; j++) {
 					struct Conn *old = s->conns[j];
 					struct CarEntry *oc;
@@ -1356,6 +1359,58 @@ handshake_handle(struct Server *s, struct Conn *c,
 					old->car_id = -1;
 					old->state = CONN_DISCONNECT;
 					break;
+				}
+
+				/* Zombie-slot match: old conn is gone but
+				 * CarEntry still holds the driver's data
+				 * (preserved by conn_drop) — reclaim it
+				 * and keep race state, grid, penalties. */
+				if (reconnect_slot < 0) {
+					int k;
+					for (k = 0; k < ACC_MAX_CARS; k++) {
+						struct CarEntry *ec =
+						    &s->cars[k];
+						int dj, held = 0, cc;
+
+						if (!ec->used)
+							continue;
+						if (ec->driver_count == 0)
+							continue;
+						for (dj = 0;
+						    dj < ec->driver_count;
+						    dj++) {
+							if (strcmp(ec->
+							    drivers[dj].
+							    steam_id,
+							    steam_buf) == 0)
+								break;
+						}
+						if (dj >= ec->driver_count)
+							continue;
+						for (cc = 0;
+						    cc < ACC_MAX_CARS;
+						    cc++) {
+							struct Conn *cn =
+							    s->conns[cc];
+							if (cn != NULL &&
+							    cn != c &&
+							    cn->car_id == k) {
+								held = 1;
+								break;
+							}
+						}
+						if (held)
+							continue;
+						log_info("Recognized "
+						    "reconnect (zombie "
+						    "slot %d): carId %d "
+						    "raceNumber #%d for %s",
+						    k, k,
+						    ec->race_number,
+						    steam_buf);
+						reconnect_slot = k;
+						break;
+					}
 				}
 			}
 			if (reconnect_slot >= 0) {
