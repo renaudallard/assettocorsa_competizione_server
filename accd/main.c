@@ -256,6 +256,15 @@ main(int argc, char **argv)
 {
 	struct Server srv;
 	struct pollfd pfds[POLL_SLOTS];
+	/*
+	 * Parallel owner array: pfd_owner[i] is the Conn* that owns
+	 * pfds[i].fd when pfds[i] is a client socket, NULL otherwise
+	 * (tcp_fd / udp_fd / lan / console / lobby slots).  Built in
+	 * the same pass that populates pfds[] so the event-dispatch
+	 * loop can resolve fd -> Conn* in O(1) instead of walking
+	 * conns[] linearly per TCP event.
+	 */
+	struct Conn *pfd_owner[POLL_SLOTS];
 	int npfds, i, r, ch;
 	const char *cfg_dir = "cfg";
 	uint64_t last_tick_ms;
@@ -335,21 +344,25 @@ main(int argc, char **argv)
 		pfds[npfds].fd = srv.tcp_fd;
 		pfds[npfds].events = POLLIN;
 		pfds[npfds].revents = 0;
+		pfd_owner[npfds] = NULL;
 		npfds++;
 		pfds[npfds].fd = srv.udp_fd;
 		pfds[npfds].events = POLLIN;
 		pfds[npfds].revents = 0;
+		pfd_owner[npfds] = NULL;
 		npfds++;
 		if (srv.lan_fd >= 0) {
 			pfds[npfds].fd = srv.lan_fd;
 			pfds[npfds].events = POLLIN;
 			pfds[npfds].revents = 0;
+			pfd_owner[npfds] = NULL;
 			npfds++;
 		}
 		if (console_fd() >= 0) {
 			pfds[npfds].fd = console_fd();
 			pfds[npfds].events = POLLIN;
 			pfds[npfds].revents = 0;
+			pfd_owner[npfds] = NULL;
 			npfds++;
 		}
 		for (slot = 0; slot < ACC_MAX_CARS && npfds < POLL_SLOTS;
@@ -365,6 +378,7 @@ main(int argc, char **argv)
 			if (cn->tx.wpos > cn->tx.rpos)
 				pfds[npfds].events |= POLLOUT;
 			pfds[npfds].revents = 0;
+			pfd_owner[npfds] = cn;
 			npfds++;
 		}
 		{
@@ -374,6 +388,7 @@ main(int argc, char **argv)
 				pfds[npfds].events =
 				    lobby_poll_events(&srv.lobby);
 				pfds[npfds].revents = 0;
+				pfd_owner[npfds] = NULL;
 				npfds++;
 			}
 		}
@@ -405,34 +420,25 @@ main(int argc, char **argv)
 			i++;
 		}
 		for (; i < npfds; i++) {
-			struct Conn *c;
-			int fd;
-			int slot2;
+			struct Conn *c = pfd_owner[i];
 
-			fd = pfds[i].fd;
-			if (fd == lobby_poll_fd(&srv.lobby)) {
+			if (c == NULL) {
 				/*
-				 * Lobby cares about POLLOUT (connect
-				 * completion) too, not just POLLIN.
+				 * Non-client slot.  The only non-client
+				 * entry past the fixed tcp/udp/lan/console
+				 * prefix is the lobby socket; dispatch it
+				 * by fd match.  Events on any other slot
+				 * here indicate a build-order bug — skip.
 				 */
-				if (pfds[i].revents & (POLLIN | POLLOUT |
-				    POLLHUP | POLLERR | POLLNVAL))
+				if (pfds[i].fd == lobby_poll_fd(&srv.lobby) &&
+				    (pfds[i].revents & (POLLIN | POLLOUT |
+				    POLLHUP | POLLERR | POLLNVAL)))
 					lobby_handle_io(&srv.lobby, &srv,
 					    pfds[i].revents);
 				continue;
 			}
 			if (!(pfds[i].revents & (POLLIN | POLLOUT |
 			    POLLHUP | POLLERR)))
-				continue;
-			c = NULL;
-			for (slot2 = 0; slot2 < ACC_MAX_CARS; slot2++) {
-				if (srv.conns[slot2] != NULL &&
-				    srv.conns[slot2]->fd == fd) {
-					c = srv.conns[slot2];
-					break;
-				}
-			}
-			if (c == NULL)
 				continue;
 			if (pfds[i].revents & POLLOUT) {
 				int rc = conn_drain_tx(c);
