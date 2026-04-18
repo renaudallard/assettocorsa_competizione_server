@@ -102,8 +102,8 @@ weather_step(struct Server *s)
 	/*
 	 * Cloud base cosine with frequency / phase from accServer.exe
 	 * .rdata:
-	 *   DAT_14016a1d4 f32 = 7.3e-5 rad/s  (period ≈ 24 h)
-	 *   DAT_14016a1f8 f32 = 0.5236       (π/6 phase offset)
+	 *   DAT_14016a1d4 f32 = 7.2722e-5 rad/s  (period = 86400 s = 24 h)
+	 *   DAT_14016a1f8 f32 = 0.5236           (π/6 phase offset)
 	 * The real exe also layers a multi-harmonic sum on top (see
 	 * FUN_140116830) but the per-harmonic amplitude / phase arrays
 	 * are populated at session init from state we can't extract
@@ -112,16 +112,16 @@ weather_step(struct Server *s)
 	 * period, ~8× faster than the exe's 24-hour cycle).
 	 */
 	new_clouds = clamp01(s->weather.base_clouds +
-	    span * (float)cos(t * 7.3e-5 - 0.5236));
+	    span * (float)cos(t * 7.2722e-5 - 0.5236));
 	/*
 	 * Rain only develops if base_rain > 0 OR clouds climb above
 	 * DAT_14014bcc0 (0.6).  Rain time scale from DAT_14016a1d0
-	 * f32 = 3.6e-5 rad/s (period ≈ 48 h, exactly half the cloud
-	 * frequency).
+	 * f32 = 3.6361e-5 rad/s (period = 172800 s = 48 h, exactly half
+	 * the cloud frequency).
 	 */
 	if (s->weather.base_rain > 0.0f) {
 		new_rain = clamp01(s->weather.base_rain +
-		    span * (float)sin(t * 3.6e-5 + WX_RAIN_PHASE));
+		    span * (float)sin(t * 3.6361e-5 + WX_RAIN_PHASE));
 	} else if (new_clouds > 0.6f) {
 		new_rain = clamp01((new_clouds - 0.6f) * 0.5f);
 	} else {
