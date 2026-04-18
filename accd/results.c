@@ -105,7 +105,7 @@ results_write(struct Server *s)
 
 	now = time(NULL);
 	localtime_r(&now, &tm);
-	strftime(ts, sizeof(ts), "%y%m%d_%H%M%S", &tm);
+	strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm);
 	snprintf(path, sizeof(path), "%s/%s_%s.json",
 	    dir, ts, session_type_str(st));
 
