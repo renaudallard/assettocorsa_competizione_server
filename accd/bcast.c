@@ -34,6 +34,7 @@
 #include <string.h>
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/uio.h>
 #include <unistd.h>
 
 #include <time.h>
@@ -133,25 +134,45 @@ conn_send_framed(struct Conn *c, const void *body, size_t len)
 	queued_before = c->tx.wpos - c->tx.rpos;
 
 	/*
-	 * Fast path: queue is empty, try to push the entire message
-	 * straight to the kernel.  On EAGAIN or short write, capture
-	 * the remainder in c->tx for drain-on-POLLOUT.
+	 * Fast path: queue is empty, push header + body in one
+	 * writev() syscall.  The Kunos exe chunks outbound TCP via
+	 * a 256-byte send() loop (FUN_14004e400 is its sole send
+	 * call site, invoked repeatedly per frame); writev coalesces
+	 * hdr + body into a single kernel entry with identical wire
+	 * semantics.  On EAGAIN or short write, queue the remainder
+	 * in c->tx for drain-on-POLLOUT.
 	 */
 	if (queued_before == 0) {
+		struct iovec iov[2];
 		size_t sent = 0;
-		while (sent < total) {
-			size_t off = sent;
-			const void *p;
-			size_t rem;
+
+		iov[0].iov_base = hdr;
+		iov[0].iov_len = hdrlen;
+		iov[1].iov_base = (void *)body;
+		iov[1].iov_len = len;
+
+		for (;;) {
+			struct iovec tmp[2];
+			int niov;
+			size_t off;
+
+			if (sent >= total)
+				break;
+			off = sent;
 			if (off < hdrlen) {
-				p = hdr + off;
-				rem = hdrlen - off;
+				tmp[0].iov_base =
+				    (unsigned char *)iov[0].iov_base + off;
+				tmp[0].iov_len = hdrlen - off;
+				tmp[1] = iov[1];
+				niov = 2;
 			} else {
-				p = (const unsigned char *)body +
+				tmp[0].iov_base =
+				    (unsigned char *)iov[1].iov_base +
 				    (off - hdrlen);
-				rem = total - off;
+				tmp[0].iov_len = total - off;
+				niov = 1;
 			}
-			n = write(c->fd, p, rem);
+			n = writev(c->fd, tmp, niov);
 			if (n > 0) {
 				sent += (size_t)n;
 				continue;
