@@ -271,6 +271,16 @@ config_load(struct Server *s, const char *cfg_dir)
 		    s->use_async_leaderboard);
 		s->unsafe_rejoin = (uint8_t)json_obj_get_int(settings,
 		    "unsafeRejoin", s->unsafe_rejoin);
+		{
+			int flt = json_obj_get_int(settings,
+			    "formationLapType", s->formation_lap_type);
+			if (flt == 2) {
+				log_warn("wrong formationLapType %d, "
+				    "defaulting to 3", flt);
+				flt = 3;
+			}
+			s->formation_lap_type = (uint8_t)flt;
+		}
 		s->max_car_slots = json_obj_get_int(settings,
 		    "maxCarSlots", 10);
 		/*

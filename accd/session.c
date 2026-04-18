@@ -355,25 +355,50 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		return 0;
 	}
 
-	green_end = ss->green_trigger;
-	if (!wrapped_range_contains(leader_pos,
-	    s->green_trigger_start, green_end))
-		return 0;
-
 	/*
-	 * Green flag fires.  Unfreeze ts[3]/ts[4] so compute_phase
-	 * advances to PHASE_SESSION on the next tick (and the in-game
-	 * clock starts ticking against a real active-session end).
+	 * formationLapType dictates which green-flag variant the exe
+	 * runs (server_tick_tail at FUN_14002f710 line 290):
+	 *   3 / 5 -> FUN_14012f300 silent path: fire when leader
+	 *            crosses the RANDOMISED trigger point (+0x294 rolled
+	 *            at session_start), never broadcast.  Default for
+	 *            public servers.
+	 *   else  -> FUN_14012f4a0 verbose path: fire anywhere in the
+	 *            static [green_start, green_end] range; broadcast
+	 *            "Race start initialized" on fire.  Used on private
+	 *            servers with manual formation (type 1).
 	 */
-	ss->green_fired = 1;
-	dur_ms = (uint64_t)def->duration_min * 60000ull;
-	ss->ts[3] = now;
-	ss->ts[4] = now + dur_ms;
-	log_info("green flag: leader norm_pos=%.3f trigger=%.3f "
-	    "active_dur=%llums",
-	    (double)leader_pos, (double)green_end,
-	    (unsigned long long)dur_ms);
-	return 1;
+	{
+		int silent = (s->formation_lap_type == 3 ||
+		    s->formation_lap_type == 5);
+		float lo, hi;
+
+		if (silent) {
+			lo = ss->green_trigger;
+			hi = ss->green_trigger;	/* single point */
+			if (!wrapped_range_contains(leader_pos,
+			    lo,
+			    lo + 0.02f > 1.0f ? lo + 0.02f - 1.0f
+					       : lo + 0.02f))
+				return 0;
+		} else {
+			lo = s->green_trigger_start;
+			hi = s->green_trigger_end;
+			if (!wrapped_range_contains(leader_pos, lo, hi))
+				return 0;
+		}
+
+		green_end = silent ? ss->green_trigger : hi;
+		ss->green_fired = 1;
+		dur_ms = (uint64_t)def->duration_min * 60000ull;
+		ss->ts[3] = now;
+		ss->ts[4] = now + dur_ms;
+		log_info("green flag (%s): leader norm_pos=%.3f trigger=%.3f "
+		    "active_dur=%llums",
+		    silent ? "silent" : "verbose",
+		    (double)leader_pos, (double)green_end,
+		    (unsigned long long)dur_ms);
+		return silent ? 0 : 1;
+	}
 }
 
 int
