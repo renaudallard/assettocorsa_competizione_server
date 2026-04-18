@@ -435,9 +435,16 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		uint8_t sector = flag_b < 3 ? flag_b : 0;
 
 		race->sector_ms[sector] = split_time;
-		if (race->best_sectors_ms[sector] == 0 ||
-		    split_time < race->best_sectors_ms[sector])
-			race->best_sectors_ms[sector] = split_time;
+		/*
+		 * Intentionally do not touch best_sectors_ms here.  The
+		 * exe's split handler (FUN_14012b4c0) only propagates the
+		 * out-lap bit onto the lap record; scoring into bests runs
+		 * inside FUN_14012b380 at lap completion, gated on the
+		 * lap not being an out-lap.  Updating best per-split leaks
+		 * out-lap splits into the session-wide best sectors (sent
+		 * in the 0x36 prefix), which makes the client's predicted-
+		 * lap display show a delta before any valid lap exists.
+		 */
 	}
 	log_info("sector split single: car=%d split=%d lap=%d",
 	    c->car_id, (int)split_time, (int)lap_time);
