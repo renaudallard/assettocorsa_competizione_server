@@ -149,12 +149,14 @@ every wire message, string encoding, and state transition.
 
 ### Known limitations
 
-- Weather forecast curve in the welcome trailer is populated from
-  current server state (ambient/wind/grip/puddles); the two
-  variable-length forecast lists stay empty, so the in-game forecast
-  HUD shows a flat prediction.  The deterministic sin/cos weather
-  drift is still visible via the live `0x37` broadcast during the
-  session.
+- Welcome-trailer `WeatherData` Fourier curve has empty coefficient
+  lists (`sineCoefficients`, `cosineCoefficients`).  The 12 scalar
+  fields (isDynamic, ambient / wind means, variance, harmonics count)
+  are populated from live state, but `nHarmonics=0` + empty lists
+  encodes "no stochastic variability model" — which matches our
+  deterministic sin/cos simulator's design.  In-car forecast HUD
+  therefore shows a flat prediction at session start; the weather
+  still drifts live via the 5-second `0x37` broadcast during play.
 - Single-threaded event loop.  The stock Kunos exe is multi-threaded
   (CONCRT worker queue + per-client threads).  accd uses one
   non-blocking `poll()` loop with a 256-packet UDP drain burst —
