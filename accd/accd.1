@@ -15,7 +15,7 @@
 .\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 .\" PURPOSE ARE DISCLAIMED.
 .\"
-.Dd April 11, 2026
+.Dd April 18, 2026
 .Dt ACCD 1
 .Os
 .Sh NAME
@@ -81,29 +81,55 @@ The ACC client sends a discovery probe to this port before connecting,
 even for remote servers.
 Ensure TCP 9232, UDP 9231, and UDP 8999 are all open in the firewall.
 .It Pa settings.json
-Server identity and access control: server name, passwords,
-car group restrictions, and rating requirements.
+Server identity, access control, and policy toggles.
 .Bd -literal -offset indent
 {
     "serverName": "My Server",
     "adminPassword": "",
+    "password": "",
+    "spectatorPassword": "",
     "carGroup": "FreeForAll",
     "trackMedalsRequirement": -1,
     "safetyRatingRequirement": -1,
     "racecraftRatingRequirement": -1,
-    "password": "",
     "maxCarSlots": 30,
-    "spectatorPassword": "",
     "allowAutoDQ": 1,
+    "registerToLobby": 1,
+    "useAsyncLeaderboard": 1,
+    "unsafeRejoin": 1,
+    "ignorePrematureDisconnects": 0,
+    "dumpLeaderboards": 0,
     "configVersion": 1
 }
 .Ed
-The
-.Va allowAutoDQ
-flag (default 1) controls whether failure to serve a drive-through
-or stop&go within 3 laps results in an automatic disqualification.
-Set to 0 to downgrade the auto-DQ to a 30-second stop&go so race
-control can review.
+.Bl -tag -width "useAsyncLeaderboard" -compact
+.It Va allowAutoDQ
+Default 1.
+When 0, a missed DT/SG deadline is downgraded to a 30-second stop&go
+instead of auto-DQ.
+.It Va registerToLobby
+Default 0.
+When 1, registers with the Kunos lobby so the server is listed
+publicly in-game.
+.It Va useAsyncLeaderboard
+Default 1.
+Coalesces 0x36 leaderboard fan-outs to the 1 Hz cadence tick.
+Set 0 for lowest-latency (per-lap) broadcast at the cost of extra
+CPU.
+.It Va unsafeRejoin
+Default 1.
+When 0, fresh handshakes during an active race are rejected with
+REJECT_BAD_SESSION.
+Returning drivers (matching Steam ID) always pass.
+.It Va ignorePrematureDisconnects
+Default 0.
+When 1, socket errors during the handshake are not treated as a
+hard drop.
+.It Va dumpLeaderboards
+Default 0.
+When 1, every leaderboard update is snapshot-written to
+.Pa results/ .
+.El
 .It Pa event.json
 Track, weather, and session schedule.
 Session types are
@@ -190,6 +216,34 @@ Set restrictor (0\(en99%).
 Change track for next session.
 .It /connections
 List connected drivers.
+.It /hellban Ar car#
+Shadow-ban: drop inbound traffic and hide the car from peers,
+session-scoped.
+.It /lockprep
+Freeze the preparation phase so no new drivers can join until
+.Dq /unlockprep .
+.It /unlockprep
+Release
+.Dq /lockprep .
+.It /manual entrylist
+Save the current roster as
+.Pa cfg/entrylist.json .
+.It /manual start
+Manually start the session when the schedule has not yet triggered.
+.It /controllers , /controller Ar car#
+List controllers / show one driver's controller fingerprint.
+.It /latencymode Ar n
+Toggle latency-diagnostics mode (0 or 1).
+.It /mp
+Toggle legacy vs regular netcode.
+.It /wt
+Broadcast server weather / track conditions summary.
+.It /go
+Release a held countdown and start racing.
+.It /report Ar text
+Driver-issued: append a free-text report to
+.Pa cfg/reports.txt .
+The only slash command available without admin elevation.
 .It /debug
 Toggle debug logging.
 .El
@@ -215,5 +269,10 @@ Session results written as JSON on session completion.
 .Sh CAVEATS
 This is an independent reimplementation, not affiliated with
 Kunos Simulazioni.
-The server does not connect to the ACC lobby; only LAN discovery
-and direct connect are supported.
+Public lobby registration is opt-in via
+.Va registerToLobby
+in
+.Pa settings.json .
+LAN discovery (UDP 8999) and direct IP connect via the client's
+.Pa serverList.json
+work regardless of the lobby setting.
