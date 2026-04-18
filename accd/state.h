@@ -152,6 +152,15 @@ struct CarRaceState {
 	int32_t		best_sectors_ms[3];
 	int32_t		race_time_ms;
 	int32_t		lap_history_ms[ACC_LAP_HISTORY];
+	/*
+	 * Per-lap sector splits captured at lap-completion time
+	 * (same ring-buffer index as lap_history_ms).  Indexed
+	 * [slot][sector] where sector ∈ {0,1,2}.  0 = no data for
+	 * that split.  Populated by h_sector_split_bulk so the 0x56
+	 * garage reply can include real per-lap splits instead of
+	 * always emitting split_count = 0.
+	 */
+	int32_t		lap_splits_ms[ACC_LAP_HISTORY][3];
 	uint8_t		lap_history_count;
 	uint8_t		in_pit;
 	uint8_t		pit_crossing_latched;

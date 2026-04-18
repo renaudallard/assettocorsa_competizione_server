@@ -253,8 +253,22 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		{
 			uint8_t slot = race->lap_history_count
 			    % ACC_LAP_HISTORY;
+			int si;
+
 			race->lap_history_ms[slot] = invalid
 			    ? (int32_t)0x7FFFFFFF : lap_ms;
+			/*
+			 * Capture the per-sector splits for this lap into
+			 * the same ring-buffer slot so the 0x56 garage
+			 * response can surface real per-lap splits.  Use
+			 * 0x7FFFFFFF sentinel for invalid laps so the
+			 * client renders them as dashes just like the
+			 * lap_time_ms field.
+			 */
+			for (si = 0; si < 3; si++)
+				race->lap_splits_ms[slot][si] = invalid
+				    ? (int32_t)0x7FFFFFFF
+				    : race->sector_ms[si];
 			if (race->lap_history_count < 0xFF)
 				race->lap_history_count++;
 		}
@@ -1358,15 +1372,15 @@ h_load_setup(struct Server *s, struct Conn *c,
 		if (wr_i16(&out, (int16_t)count) < 0)
 			goto done;
 		for (i = 0; i < count; i++) {
+			int si;
+
 			if (wr_str_a(&out, s->track) < 0) goto done;
 			if (wr_u32(&out, (uint32_t)car->race
 			    .lap_history_ms[i]) < 0) goto done;
-			/*
-			 * We don't archive per-lap sector splits — send
-			 * split_count = 0 so the client skips straight to
-			 * the trailing fields.
-			 */
-			if (wr_u8(&out, 0) < 0) goto done;
+			if (wr_u8(&out, 3) < 0) goto done;	/* split_count */
+			for (si = 0; si < 3; si++)
+				if (wr_u32(&out, (uint32_t)car->race
+				    .lap_splits_ms[i][si]) < 0) goto done;
 			if (wr_u16(&out, car->car_id) < 0) goto done;
 			if (wr_u8(&out, 0) < 0) goto done;	/* quality */
 			if (wr_u16(&out, (uint16_t)(i + 1)) < 0) goto done;
