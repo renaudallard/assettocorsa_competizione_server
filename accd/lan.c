@@ -142,17 +142,25 @@ lan_handle(struct Server *s, int fd)
 	 * u8(session_type).
 	 */
 	bb_init(&reply);
+	/*
+	 * session_type must always be a configured value (0 P / 4 Q /
+	 * 10 R).  Emitting 0xfa when phase == WAITING caused the ACC
+	 * lobby list to drop the measured RTT and not show the server's
+	 * ping, because the client rejected the probe reply as
+	 * malformed.  accServer.exe FUN_140029250 calls
+	 * FUN_140116480(computeCurrentSessionType) which always returns
+	 * a valid session_type byte regardless of phase.
+	 */
 	if (wr_u8(&reply, ACP_LAN_RESPONSE) == 0 &&
 	    wr_str_a(&reply, s->server_name) == 0 &&
 	    wr_u8(&reply, (uint8_t)clients) == 0 &&
 	    wr_u8(&reply, s->password[0] != '\0' ? 1 : 0) == 0 &&
 	    wr_u16(&reply, (uint16_t)s->tcp_port) == 0 &&
 	    wr_u32(&reply, nonce) == 0 &&
-	    wr_u8(&reply, s->session.phase == PHASE_WAITING ? 0xfa
-		: (s->session_count > 0 &&
-		    s->session.session_index < s->session_count
-		    ? s->sessions[s->session.session_index].session_type
-		    : 0)) == 0) {
+	    wr_u8(&reply, s->session_count > 0 &&
+		s->session.session_index < s->session_count
+		? s->sessions[s->session.session_index].session_type
+		: 0) == 0) {
 		if (sendto(fd, reply.data, reply.wpos, 0,
 		    (struct sockaddr *)&from, fromlen) < 0)
 			log_warn("lan sendto: %s", strerror(errno));
