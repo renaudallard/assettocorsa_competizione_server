@@ -149,14 +149,6 @@ every wire message, string encoding, and state transition.
 
 ### Known limitations
 
-- Welcome-trailer `WeatherData` Fourier curve has empty coefficient
-  lists (`sineCoefficients`, `cosineCoefficients`).  The 12 scalar
-  fields (isDynamic, ambient / wind means, variance, harmonics count)
-  are populated from live state, but `nHarmonics=0` + empty lists
-  encodes "no stochastic variability model" — which matches our
-  deterministic sin/cos simulator's design.  In-car forecast HUD
-  therefore shows a flat prediction at session start; the weather
-  still drifts live via the 5-second `0x37` broadcast during play.
 - Single-threaded event loop.  The stock Kunos exe is multi-threaded
   (CONCRT worker queue + per-client threads).  accd uses one
   non-blocking `poll()` loop with a 256-packet UDP drain burst —
