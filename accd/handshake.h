@@ -94,4 +94,14 @@ int	write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
 int	write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s);
 int	write_leaderboard_section(struct ByteBuf *bb, struct Server *s);
 
+/*
+ * Single-car variant of the leaderboard record (the inner block
+ * that FUN_140034210 emits per entry, byte-exact).  Used by the
+ * 0x56 ACP_LOAD_SETUP reply to append the target car's own record
+ * as a tail.  cvar8 controls the 1-byte gated block — pass the
+ * car's own formation_lap_done in single-car contexts.
+ */
+int	write_car_leaderboard_record(struct ByteBuf *bb,
+		const struct CarEntry *ec, uint8_t cvar8);
+
 #endif /* ACCD_HANDSHAKE_H */

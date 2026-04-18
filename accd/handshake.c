@@ -495,203 +495,133 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	if (wr_u16(bb, (uint16_t)nc) < 0) return -1;
 
 	for (j = 0; j < ACC_MAX_CARS; j++) {
-		struct CarEntry *ec = &s->cars[j];
-		struct CarRaceState *race;
-		struct PenaltyQueue *pq;
-		int pi;
-
-		if (!ec->used)
+		if (!s->cars[j].used)
 			continue;
-		race = &ec->race;
-		pq = &race->pen;
-
-		/*
-		 * FUN_140034210 per-car record, byte-exact.
-		 * +0x50 u16 car_id
-		 * +0x54 u16 race_number
-		 * +0x58 u8  car_model
-		 * +0x5c u8  cup_category
-		 * +0x1d0 u16
-		 */
-		if (wr_u16(bb, ec->car_id) < 0) return -1;
-		if (wr_u16(bb, (uint16_t)ec->race_number) < 0)
+		if (write_car_leaderboard_record(bb, &s->cars[j], cvar8) < 0)
 			return -1;
-		if (wr_u8(bb, ec->car_model) < 0) return -1;
-		if (wr_u8(bb, ec->cup_category) < 0) return -1;
-		if (wr_u16(bb, 0) < 0) return -1;
-
-		/*
-		 * Active penalty block (+0xC8 u16 kind, +0xCC f32):
-		 * u8 flag; if flag: u16 kind + f32 remaining.
-		 */
-		if (pq->count > 0 && !pq->slots[0].served) {
-			float remaining = (float)pq->slots[0].laps_remaining;
-			if (wr_u8(bb, 1) < 0) return -1;
-			if (wr_u16(bb, penalty_wire_value(pq->slots[0].kind,
-			    pq->slots[0].reason)) < 0)
-				return -1;
-			if (wr_f32(bb, remaining) < 0) return -1;
-		} else {
-			if (wr_u8(bb, 0) < 0) return -1;
-		}
-
-		/*
-		 * cVar8-gated section: 1 byte when cvar8=1.  Per
-		 * FUN_140034210 the gated block is just u8 low byte of
-		 * +0x204 (current-sector index, only valid when at
-		 * least one car has an active lap).  Prior version
-		 * emitted u32+u8 (5 bytes) from a mis-read of the
-		 * decomp — rare in practice because cvar8 only fires
-		 * mid-session.
-		 */
-		if (cvar8) {
-			if (wr_u8(bb, race->formation_lap_done) < 0)
-				return -1;
-		}
-
-		/* Pending penalty queue: u8 count + N x i32. */
-		if (wr_u8(bb, pq->count) < 0) return -1;
-		for (pi = 0; pi < pq->count; pi++)
-			if (wr_i32(bb, (int32_t)penalty_wire_value(
-			    pq->slots[pi].kind,
-			    pq->slots[pi].reason)) < 0)
-				return -1;
-
-		/* Drivers. */
-		{
-			uint8_t dcount = ec->driver_count;
-			if (dcount == 0)
-				dcount = 1;
-			if (dcount > ACC_MAX_DRIVERS_PER_CAR)
-				dcount = ACC_MAX_DRIVERS_PER_CAR;
-			if (wr_u8(bb, dcount) < 0) return -1;
-			for (d = 0; d < dcount; d++) {
-				struct DriverInfo *dd = &ec->drivers[d];
-				if (wr_str_a(bb, dd->steam_id) < 0)
-					return -1;
-				if (wr_str_a(bb, dd->short_name) < 0)
-					return -1;
-				if (wr_str_a(bb, dd->first_name) < 0)
-					return -1;
-				if (wr_str_a(bb, dd->last_name) < 0)
-					return -1;
-				if (wr_u8(bb, dd->driver_category) < 0)
-					return -1;
-				if (wr_u16(bb, dd->nationality) < 0)
-					return -1;
-			}
-		}
-
-		/*
-		 * Timing fields, in the order FUN_140034210 emits
-		 * them (serializer offsets, not struct offsets):
-		 *   u16 +0x180
-		 *   u32 +0x1d4 best_lap      (0x7fffffff = unset)
-		 *   u32 +0x1b0 last_lap      (0x7fffffff = unset)
-		 *   u16 +0x1f4 lap_count
-		 *   u32 +0x1f0 race_time     (0x7fffffff = unset)
-		 *   u8  +0x1f8 current_lap_ordinal (0xff escape if >=256)
-		 * Kunos uses 0x7fffffff as "no valid value" sentinel —
-		 * client HUD distinguishes "- -:--.---" from zero time.
-		 */
-		if (wr_u16(bb, 0) < 0) return -1;
-		if (wr_u32(bb, race->best_lap_ms > 0
-		    ? (uint32_t)race->best_lap_ms : 0x7FFFFFFFu) < 0)
-			return -1;
-		if (wr_u32(bb, race->last_lap_ms > 0
-		    ? (uint32_t)race->last_lap_ms : 0x7FFFFFFFu) < 0)
-			return -1;
-		if (wr_u16(bb, (uint16_t)race->lap_count) < 0)
-			return -1;
-		if (wr_u32(bb, race->race_time_ms > 0
-		    ? (uint32_t)race->race_time_ms : 0x7FFFFFFFu) < 0)
-			return -1;
-		/*
-		 * +0x1f8 u8 current-lap ordinal — per FUN_140034210 the
-		 * exe writes the raw lap_count if it fits in a byte and
-		 * 0xff as escape otherwise.  We had been writing a flat
-		 * zero which dropped the secondary LAP X/Y indicator on
-		 * the HUD for any driver past their first lap.
-		 */
-		if (wr_u8(bb, race->lap_count < 0xff
-		    ? (uint8_t)race->lap_count : 0xff) < 0)
-			return -1;
-
-		/*
-		 * Two vectors per FUN_140034210:
-		 *   list 1 (+0x1b8..+0x1c0): current-lap sector splits
-		 *   list 2 (+0x1d8..+0x1e0): lap-time history
-		 * A single wide_flag covers both; it is 1 if ANY
-		 * value in either list exceeds 0xffff.  When wide=1
-		 * every entry in both lists is a u32; when wide=0
-		 * every entry is a u16 (capped at 0xffff).
-		 *
-		 * list 2 holds the last N lap times from the ring
-		 * buffer.  Fresh car (no laps) emits three 0x7fffffff
-		 * sentinels to match the Kunos capture; otherwise we
-		 * replay the completed-lap times so the HUD history
-		 * widget shows real values instead of garbage.
-		 */
-		{
-			int si;
-			int l1_n = 0;
-			int l2_n;
-			uint8_t wide_flag = 1;
-			int32_t l2_buf[ACC_LAP_HISTORY];
-
-			for (si = 0; si < 3; si++) {
-				if (race->sector_ms[si] > 0)
-					l1_n = si + 1;
-			}
-
-			if (race->lap_history_count == 0) {
-				l2_n = 3;
-				l2_buf[0] = (int32_t)0x7FFFFFFF;
-				l2_buf[1] = (int32_t)0x7FFFFFFF;
-				l2_buf[2] = (int32_t)0x7FFFFFFF;
-			} else {
-				int nh = race->lap_history_count
-				    < ACC_LAP_HISTORY
-				    ? race->lap_history_count
-				    : ACC_LAP_HISTORY;
-				int start = race->lap_history_count
-				    <= ACC_LAP_HISTORY
-				    ? 0
-				    : race->lap_history_count
-				    % ACC_LAP_HISTORY;
-				int k;
-
-				l2_n = nh;
-				for (k = 0; k < nh; k++) {
-					int idx = (start + k)
-					    % ACC_LAP_HISTORY;
-					l2_buf[k] = race->lap_history_ms[idx];
-				}
-			}
-
-			if (wr_u8(bb, wide_flag) < 0) return -1;
-			if (wr_u8(bb, (uint8_t)l1_n) < 0) return -1;
-			for (si = 0; si < l1_n; si++) {
-				if (wr_u32(bb,
-				    (uint32_t)race->sector_ms[si]) < 0)
-					return -1;
-			}
-			if (wr_u8(bb, (uint8_t)l2_n) < 0) return -1;
-			for (si = 0; si < l2_n; si++) {
-				if (wr_u32(bb,
-				    (uint32_t)l2_buf[si]) < 0)
-					return -1;
-			}
-		}
-
-		/* Tail: u8 +0x200 (formation_lap_done), u8 +0x201. */
-		if (wr_u8(bb, race->formation_lap_done) < 0)
-			return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
 	}
 
 	/* assist_rules tail. */
 	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	return 0;
+}
+
+/*
+ * Per-car leaderboard record, byte-exact to FUN_140034210 in
+ * accServer.exe.  Extracted from write_leaderboard_section so the
+ * 0x56 garage reply can append a single-car record at its tail the
+ * same way the exe does.
+ *
+ * cvar8 controls the 1-byte gated block (only emitted when the
+ * caller says any car has an active lap; for a single-car context
+ * the caller typically passes the car's own formation_lap_done).
+ */
+int
+write_car_leaderboard_record(struct ByteBuf *bb,
+    const struct CarEntry *ec, uint8_t cvar8)
+{
+	const struct CarRaceState *race = &ec->race;
+	const struct PenaltyQueue *pq = &race->pen;
+	int pi, d;
+
+	if (wr_u16(bb, ec->car_id) < 0) return -1;
+	if (wr_u16(bb, (uint16_t)ec->race_number) < 0) return -1;
+	if (wr_u8(bb, ec->car_model) < 0) return -1;
+	if (wr_u8(bb, ec->cup_category) < 0) return -1;
+	if (wr_u16(bb, 0) < 0) return -1;
+
+	if (pq->count > 0 && !pq->slots[0].served) {
+		float remaining = (float)pq->slots[0].laps_remaining;
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_u16(bb, penalty_wire_value(pq->slots[0].kind,
+		    pq->slots[0].reason)) < 0) return -1;
+		if (wr_f32(bb, remaining) < 0) return -1;
+	} else {
+		if (wr_u8(bb, 0) < 0) return -1;
+	}
+
+	if (cvar8) {
+		if (wr_u8(bb, race->formation_lap_done) < 0) return -1;
+	}
+
+	if (wr_u8(bb, pq->count) < 0) return -1;
+	for (pi = 0; pi < pq->count; pi++)
+		if (wr_i32(bb, (int32_t)penalty_wire_value(
+		    pq->slots[pi].kind,
+		    pq->slots[pi].reason)) < 0) return -1;
+
+	{
+		uint8_t dcount = ec->driver_count;
+		if (dcount == 0) dcount = 1;
+		if (dcount > ACC_MAX_DRIVERS_PER_CAR)
+			dcount = ACC_MAX_DRIVERS_PER_CAR;
+		if (wr_u8(bb, dcount) < 0) return -1;
+		for (d = 0; d < dcount; d++) {
+			const struct DriverInfo *dd = &ec->drivers[d];
+			if (wr_str_a(bb, dd->steam_id) < 0) return -1;
+			if (wr_str_a(bb, dd->short_name) < 0) return -1;
+			if (wr_str_a(bb, dd->first_name) < 0) return -1;
+			if (wr_str_a(bb, dd->last_name) < 0) return -1;
+			if (wr_u8(bb, dd->driver_category) < 0) return -1;
+			if (wr_u16(bb, dd->nationality) < 0) return -1;
+		}
+	}
+
+	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u32(bb, race->best_lap_ms > 0
+	    ? (uint32_t)race->best_lap_ms : 0x7FFFFFFFu) < 0) return -1;
+	if (wr_u32(bb, race->last_lap_ms > 0
+	    ? (uint32_t)race->last_lap_ms : 0x7FFFFFFFu) < 0) return -1;
+	if (wr_u16(bb, (uint16_t)race->lap_count) < 0) return -1;
+	if (wr_u32(bb, race->race_time_ms > 0
+	    ? (uint32_t)race->race_time_ms : 0x7FFFFFFFu) < 0) return -1;
+	if (wr_u8(bb, race->lap_count < 0xff
+	    ? (uint8_t)race->lap_count : 0xff) < 0) return -1;
+
+	{
+		int si;
+		int l1_n = 0;
+		int l2_n;
+		uint8_t wide_flag = 1;
+		int32_t l2_buf[ACC_LAP_HISTORY];
+
+		for (si = 0; si < 3; si++)
+			if (race->sector_ms[si] > 0)
+				l1_n = si + 1;
+
+		if (race->lap_history_count == 0) {
+			l2_n = 3;
+			l2_buf[0] = (int32_t)0x7FFFFFFF;
+			l2_buf[1] = (int32_t)0x7FFFFFFF;
+			l2_buf[2] = (int32_t)0x7FFFFFFF;
+		} else {
+			int nh = race->lap_history_count < ACC_LAP_HISTORY
+			    ? race->lap_history_count : ACC_LAP_HISTORY;
+			int start = race->lap_history_count
+			    <= ACC_LAP_HISTORY ? 0
+			    : race->lap_history_count % ACC_LAP_HISTORY;
+			int k;
+
+			l2_n = nh;
+			for (k = 0; k < nh; k++) {
+				int idx = (start + k) % ACC_LAP_HISTORY;
+				l2_buf[k] = race->lap_history_ms[idx];
+			}
+		}
+
+		if (wr_u8(bb, wide_flag) < 0) return -1;
+		if (wr_u8(bb, (uint8_t)l1_n) < 0) return -1;
+		for (si = 0; si < l1_n; si++)
+			if (wr_u32(bb,
+			    (uint32_t)race->sector_ms[si]) < 0) return -1;
+		if (wr_u8(bb, (uint8_t)l2_n) < 0) return -1;
+		for (si = 0; si < l2_n; si++)
+			if (wr_u32(bb,
+			    (uint32_t)l2_buf[si]) < 0) return -1;
+	}
+
+	if (wr_u8(bb, race->formation_lap_done) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	return 0;
 }

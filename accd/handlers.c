@@ -1390,6 +1390,16 @@ h_load_setup(struct Server *s, struct Conn *c,
 		if (wr_i16(&out, 0) < 0)
 			goto done;
 	}
+	/*
+	 * Trailing full leaderboard record for the target car — matches
+	 * the exe where FUN_1400328f0 appends a FUN_140034210 single-
+	 * car record at the tail of 0x56.  Gives the in-game panel the
+	 * target car's totals (best lap, last lap, lap count, race
+	 * time) alongside the per-lap list.
+	 */
+	if (car != NULL)
+		(void)write_car_leaderboard_record(&out, car,
+		    car->race.formation_lap_done);
 	(void)bcast_send_one(c, out.data, out.wpos);
 	log_debug("0x56 reply: conn=%u car=%u sess_type=%u laps=%d "
 	    "(%zu bytes)", (unsigned)c->conn_id, (unsigned)car_id,
