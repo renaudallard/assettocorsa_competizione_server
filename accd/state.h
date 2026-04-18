@@ -534,6 +534,25 @@ struct Server {
 	 */
 	uint8_t		formation_lap_type;
 
+	/*
+	 * Additional settings.json knobs read by FUN_140106300 in the
+	 * exe.  Parsed but mostly informational for accd — the CP-
+	 * server, DLC-gating, and track-rotation keys are out of our
+	 * scope so we don't bother storing them.
+	 */
+	uint8_t		short_formation_lap;	/* shortFormationLap: exe
+						 * forces 1 on public
+						 * servers (+0x230) */
+	uint8_t		write_latency_dumps;	/* writeLatencyFileDumps:
+						 * latency diagnostics
+						 * file output toggle */
+	uint8_t		do_driver_swap_broadcast; /* doDriverSwapBroadcast:
+						 * gate 0x47 / 0x48 driver-
+						 * swap state broadcasts */
+	uint32_t	config_version;		/* configVersion: logged
+						 * at startup, used to
+						 * migrate older schemas */
+
 	/* runtime */
 	int		tcp_fd;
 	int		udp_fd;

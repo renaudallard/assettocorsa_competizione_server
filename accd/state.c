@@ -56,6 +56,10 @@ server_init(struct Server *s)
 	s->green_trigger_start = 0.89f;
 	s->green_trigger_end = 0.96f;
 	s->formation_lap_type = 3;
+	s->short_formation_lap = 0;
+	s->write_latency_dumps = 0;
+	s->do_driver_swap_broadcast = 1;
+	s->config_version = 0;
 	lobby_init(&s->lobby);
 	for (int i = 0; i < ACC_MAX_CARS; i++)
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);

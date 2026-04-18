@@ -281,6 +281,36 @@ config_load(struct Server *s, const char *cfg_dir)
 			}
 			s->formation_lap_type = (uint8_t)flt;
 		}
+		/*
+		 * Remaining settings.json keys read by the exe
+		 * (FUN_140106300).  Most are informational; the two
+		 * that drive accd behaviour are isPrepPhaseLocked
+		 * (mirrors our /lockprep admin state) and latencyStrategy
+		 * (init value for the /latencymode toggle).
+		 */
+		s->preparation_locked = (uint8_t)json_obj_get_int(settings,
+		    "isPrepPhaseLocked", s->preparation_locked);
+		s->short_formation_lap = (uint8_t)json_obj_get_int(settings,
+		    "shortFormationLap", s->short_formation_lap);
+		s->write_latency_dumps = (uint8_t)json_obj_get_int(settings,
+		    "writeLatencyFileDumps", s->write_latency_dumps);
+		s->do_driver_swap_broadcast = (uint8_t)json_obj_get_int(
+		    settings, "doDriverSwapBroadcast",
+		    s->do_driver_swap_broadcast);
+		s->latency_mode = (uint8_t)json_obj_get_int(settings,
+		    "latencyStrategy", s->latency_mode);
+		s->config_version = (uint32_t)json_obj_get_int(settings,
+		    "configVersion", (int)s->config_version);
+		log_info("settings.json: configVersion=%u "
+		    "shortFormationLap=%u latencyStrategy=%u "
+		    "writeLatencyFileDumps=%u doDriverSwapBroadcast=%u "
+		    "isPrepPhaseLocked=%u",
+		    (unsigned)s->config_version,
+		    (unsigned)s->short_formation_lap,
+		    (unsigned)s->latency_mode,
+		    (unsigned)s->write_latency_dumps,
+		    (unsigned)s->do_driver_swap_broadcast,
+		    (unsigned)s->preparation_locked);
 		s->max_car_slots = json_obj_get_int(settings,
 		    "maxCarSlots", 10);
 		/*

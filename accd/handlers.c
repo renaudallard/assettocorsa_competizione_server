@@ -1004,6 +1004,14 @@ broadcast_swap_state(struct Server *s, struct CarEntry *car)
 	struct ByteBuf bb;
 	int i;
 
+	/*
+	 * settings.json doDriverSwapBroadcast (default 1): when 0,
+	 * the exe suppresses the 0x47 broadcast and keeps driver-swap
+	 * progress local to the swapping car.  Accept the toggle for
+	 * parity with Kunos' config.
+	 */
+	if (!s->do_driver_swap_broadcast)
+		return;
 	bb_init(&bb);
 	if (wr_u8(&bb, SRV_DRIVER_SWAP_STATE_BCAST) < 0 ||
 	    wr_u16(&bb, car->car_id) < 0 ||
