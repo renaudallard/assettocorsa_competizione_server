@@ -153,6 +153,56 @@ session_reset(struct Server *s, uint8_t session_index)
 		r->best_lap_ms = 0;
 		r->last_lap_ms = 0;
 		r->position = (int16_t)(i + 1);
+		r->grid_position = -1;
+	}
+
+	/*
+	 * Race grid assignment (FUN_140032400 equivalent).  The exe
+	 * builds the grid from the most recent qualifying session's
+	 * finishing order.  entrylist defaultGridPosition is a fallback
+	 * that Kunos only honors when no qualifying session precedes
+	 * the race (mixing the two logs a warning).
+	 */
+	if (s->sessions[session_index].session_type == 10) {
+		int k, prior = -1;
+
+		for (k = (int)session_index - 1; k >= 0; k--) {
+			if (s->sessions[k].session_type == 4) {
+				prior = k;
+				break;
+			}
+		}
+		if (prior < 0) {
+			for (k = (int)session_index - 1; k >= 0; k--) {
+				if (s->sessions[k].session_type == 0) {
+					prior = k;
+					break;
+				}
+			}
+		}
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct CarEntry *car = &s->cars[i];
+			int16_t g = -1;
+
+			if (!car->used)
+				continue;
+			if (prior >= 0 && car->race_archive[prior] != NULL) {
+				int16_t p = car->race_archive[prior]->position;
+				if (p >= 1 && p <= ACC_MAX_CARS)
+					g = p - 1;	/* 0-based slot */
+			}
+			if (g < 0 && prior < 0 &&
+			    car->default_grid_position > 0)
+				g = (int16_t)(car->default_grid_position - 1);
+			if (g < 0) {
+				int slot = server_find_grid_slot(s);
+				if (slot >= 0)
+					g = (int16_t)slot;
+			}
+			car->race.grid_position = g;
+			log_info("grid: car %d -> %d (from session %d)",
+			    i, (int)g, prior);
+		}
 	}
 
 	{

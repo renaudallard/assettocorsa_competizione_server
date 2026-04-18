@@ -317,7 +317,7 @@ static void
 broadcast_grid(struct Server *s)
 {
 	struct ByteBuf bb;
-	int i, n = 0;
+	int i, g, n = 0, emitted = 0;
 
 	bb_init(&bb);
 	if (wr_u8(&bb, SRV_GRID_POSITIONS) < 0)
@@ -327,17 +327,43 @@ broadcast_grid(struct Server *s)
 			n++;
 	if (wr_u8(&bb, (uint8_t)n) < 0)
 		goto done;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	/*
+	 * Emit in grid order — FUN_140032400 in the exe assigns grid
+	 * slots and walks them in ascending order when building the
+	 * 0x3f payload, and the client infers each car's starting
+	 * position from the record sequence.  Cars without a valid
+	 * grid slot trail in car_id order.
+	 */
+	for (g = 0; g <= ACC_MAX_CARS && emitted < n; g++) {
+		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
+		    i++) {
+			struct CarEntry *car = &s->cars[i];
+			if (!car->used)
+				continue;
+			if (car->race.grid_position != g)
+				continue;
+			if (wr_u16(&bb, car->car_id) < 0 ||
+			    wr_u8(&bb, 0) < 0 ||
+			    wr_u32(&bb, (uint32_t)g) < 0 ||
+			    wr_u8(&bb, 0) < 0)
+				goto done;
+			emitted++;
+		}
+	}
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections &&
+	    emitted < n; i++) {
 		struct CarEntry *car = &s->cars[i];
 		if (!car->used)
 			continue;
+		if (car->race.grid_position >= 0 &&
+		    car->race.grid_position <= ACC_MAX_CARS)
+			continue;
 		if (wr_u16(&bb, car->car_id) < 0 ||
 		    wr_u8(&bb, 0) < 0 ||
-		    wr_u32(&bb,
-			(uint32_t)(car->race.grid_position >= 0 ?
-			    car->race.grid_position : i)) < 0 ||
+		    wr_u32(&bb, (uint32_t)i) < 0 ||
 		    wr_u8(&bb, 0) < 0)
 			goto done;
+		emitted++;
 	}
 	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
 	log_info("Sending grid positions: %d cars", n);
