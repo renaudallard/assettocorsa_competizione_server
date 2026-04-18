@@ -87,6 +87,30 @@ bb_reserve(struct ByteBuf *bb, size_t need)
 	if (need <= bb->cap - bb->wpos)
 		return 0;
 
+	/*
+	 * Compact first: if the buffer is being used as a queue
+	 * (rpos > 0 because the caller has consumed bytes but wpos
+	 * has moved past them), shift the live window [rpos..wpos)
+	 * back to offset 0 before deciding to grow.  This keeps
+	 * per-connection tx queues from bloating cap just because
+	 * write() successes accumulate rpos while new frames pile
+	 * up against wpos.
+	 */
+	if (bb->rpos > 0 && bb->wpos > bb->rpos) {
+		size_t live = bb->wpos - bb->rpos;
+		memmove(bb->data, bb->data + bb->rpos, live);
+		bb->wpos = live;
+		bb->rpos = 0;
+		if (need <= bb->cap - bb->wpos)
+			return 0;
+	} else if (bb->rpos > 0 && bb->wpos == bb->rpos) {
+		/* Queue drained flat — reset offsets without realloc. */
+		bb->wpos = 0;
+		bb->rpos = 0;
+		if (need <= bb->cap)
+			return 0;
+	}
+
 	newcap = bb->cap == 0 ? BB_INITIAL_CAP : bb->cap;
 	while (newcap - bb->wpos < need) {
 		if (newcap >= BB_MAX_CAP) {

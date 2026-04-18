@@ -374,7 +374,9 @@ struct Conn {
 	int		hellbanned;	/* /hellban: drop inbound, skip in
 					 * broadcasts.  Per-session only. */
 	struct ByteBuf	rx;		/* incoming TCP byte stream */
-	struct ByteBuf	tx;		/* not yet used; for batched sends */
+	struct ByteBuf	tx;		/* outbound queue, drained on POLLOUT */
+	size_t		tx_peak_bytes;	/* max queue depth ever observed */
+	uint64_t	tx_warn_ms;	/* rate-limit soft-cap warnings */
 	unsigned char	*hs_echo;	/* raw handshake body to echo in trailer */
 	size_t		 hs_echo_len;
 	uint32_t	keepalive_sent_ms;	/* server mono ms when last 0x14 sent */

@@ -36,15 +36,39 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+#include <time.h>
+
 #include "bcast.h"
 #include "io.h"
 #include "log.h"
 #include "msg.h"
 #include "state.h"
 
+/*
+ * Per-connection tx queue thresholds.  TX_SOFT_CAP triggers a
+ * rate-limited warning; TX_HARD_CAP triggers an immediate drop so
+ * one stuck client can't keep fan-outs backing up server memory.
+ * Legitimate burst is the welcome sequence (~5 KB) + 0x36
+ * leaderboard (~20 KB); 32 KB / 64 KB leaves comfortable room.
+ */
+#define TX_SOFT_CAP	(32u * 1024u)
+#define TX_HARD_CAP	(64u * 1024u)
+
+static uint64_t
+bcast_mono_ms(void)
+{
+	struct timespec ts;
+
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000ull +
+	    (uint64_t)ts.tv_nsec / 1000000ull;
+}
+
 int
 bcast_send_one(struct Conn *c, const void *body, size_t len)
 {
+	size_t queued;
+
 	if (c == NULL || c->fd < 0)
 		return -1;
 	if (conn_send_framed(c, body, len) < 0) {
@@ -52,6 +76,25 @@ bcast_send_one(struct Conn *c, const void *body, size_t len)
 		    "marking disconnect", (unsigned)c->conn_id, c->fd);
 		c->state = CONN_DISCONNECT;
 		return -1;
+	}
+	queued = c->tx.wpos - c->tx.rpos;
+	if (queued > c->tx_peak_bytes)
+		c->tx_peak_bytes = queued;
+	if (queued > TX_HARD_CAP) {
+		log_warn("tx backpressure: conn=%u queued=%zu > hard cap "
+		    "(%u), disconnecting slow client",
+		    (unsigned)c->conn_id, queued, TX_HARD_CAP);
+		c->state = CONN_DISCONNECT;
+		return -1;
+	}
+	if (queued > TX_SOFT_CAP) {
+		uint64_t now = bcast_mono_ms();
+		if (now - c->tx_warn_ms > 5000) {
+			log_warn("tx soft cap: conn=%u queued=%zu "
+			    "(peak=%zu)", (unsigned)c->conn_id, queued,
+			    c->tx_peak_bytes);
+			c->tx_warn_ms = now;
+		}
 	}
 	return 0;
 }
