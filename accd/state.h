@@ -475,6 +475,16 @@ struct Server {
 	 */
 	int		allow_auto_dq;
 
+	/*
+	 * useAsyncLeaderboard from settings.json (default 1).  The exe
+	 * gates whether the 0x36 leaderboard broadcast is deferred to
+	 * a CONCRT worker.  We have no worker, so in async mode we
+	 * coalesce: broadcast only on CADENCE_LEADERBOARD ticks, not
+	 * on every standings_seq bump.  In sync mode we broadcast on
+	 * every standings change plus the cadence tick.
+	 */
+	uint8_t		use_async_leaderboard;
+
 	/* runtime */
 	int		tcp_fd;
 	int		udp_fd;

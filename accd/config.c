@@ -266,6 +266,9 @@ config_load(struct Server *s, const char *cfg_dir)
 		    "allowAutoDQ", s->allow_auto_dq);
 		s->register_to_lobby = json_obj_get_int(settings,
 		    "registerToLobby", s->register_to_lobby);
+		s->use_async_leaderboard = (uint8_t)json_obj_get_int(
+		    settings, "useAsyncLeaderboard",
+		    s->use_async_leaderboard);
 		s->max_car_slots = json_obj_get_int(settings,
 		    "maxCarSlots", 10);
 		/*

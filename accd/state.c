@@ -50,6 +50,7 @@ server_init(struct Server *s)
 	s->udp_fd = -1;
 	s->lan_fd = -1;
 	s->allow_auto_dq = 1;
+	s->use_async_leaderboard = 1;
 	lobby_init(&s->lobby);
 	for (int i = 0; i < ACC_MAX_CARS; i++)
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);

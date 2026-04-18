@@ -688,15 +688,25 @@ tick_run(struct Server *s)
 		broadcast_stats_udp(s);
 
 	/*
-	 * Leaderboard rebroadcast on standings change.
-	 * Capture shows 0x4e rating summary is only sent on
-	 * connection events (3 total over 20 min), not on
-	 * every standings change.  Decouple from leaderboard.
+	 * Leaderboard rebroadcast.  useAsyncLeaderboard (settings.json,
+	 * default 1) coalesces fan-out to the CADENCE_LEADERBOARD slot
+	 * only — lap completions bump standings_seq but don't trigger a
+	 * fresh 0x36 mid-tick.  Sync mode (=0) broadcasts on every
+	 * standings change for minimum latency at the cost of extra
+	 * fan-out CPU under heavy lap-completion traffic.
 	 */
-	if (s->session.standings_seq != *last_standings_seq ||
-	    (s->tick_count % CADENCE_LEADERBOARD) == 0) {
-		*last_standings_seq = s->session.standings_seq;
-		broadcast_leaderboard(s);
+	{
+		int changed = s->session.standings_seq !=
+		    *last_standings_seq;
+		int cadence = (s->tick_count %
+		    CADENCE_LEADERBOARD) == 0;
+		int fire = cadence ||
+		    (changed && !s->use_async_leaderboard);
+
+		if (fire) {
+			*last_standings_seq = s->session.standings_seq;
+			broadcast_leaderboard(s);
+		}
 	}
 
 	/*
