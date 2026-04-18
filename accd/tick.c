@@ -250,7 +250,13 @@ relay_car_update(struct Server *s, struct Conn *sender,
 static void
 broadcast_keepalive(struct Server *s, uint8_t msg_id)
 {
-	struct ByteBuf bb;
+	/*
+	 * Kunos FUN_140029b20 body is msg_id + u32 server_ms + three
+	 * u16 zeros + u8(2) + u8(4) + u8(100) + u8(100) = 15 bytes —
+	 * identical for every recipient.  Build once on the stack and
+	 * sendto each peer, instead of rebuilding it per-peer.
+	 */
+	unsigned char pkt[15];
 	int i;
 	struct timespec ts;
 	uint32_t srv_ms;
@@ -261,41 +267,32 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 	srv_ms = (uint32_t)((uint64_t)ts.tv_sec * 1000 +
 	    (uint64_t)ts.tv_nsec / 1000000);
 
-	/*
-	 * Rebuild per peer because the msg_id may differ between
-	 * calls, but reuse the scratch buffer across all peers.
-	 */
-	bb_init(&bb);
+	pkt[0]  = msg_id;
+	pkt[1]  = (unsigned char)(srv_ms & 0xff);
+	pkt[2]  = (unsigned char)((srv_ms >> 8) & 0xff);
+	pkt[3]  = (unsigned char)((srv_ms >> 16) & 0xff);
+	pkt[4]  = (unsigned char)((srv_ms >> 24) & 0xff);
+	pkt[5]  = 0;
+	pkt[6]  = 0;
+	pkt[7]  = 0;
+	pkt[8]  = 0;
+	pkt[9]  = 0;
+	pkt[10] = 0;
+	pkt[11] = 2;
+	pkt[12] = 4;
+	pkt[13] = 100;
+	pkt[14] = 100;
+
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct Conn *c = s->conns[i];
 
 		if (c == NULL || c->state != CONN_AUTH)
 			continue;
 		c->keepalive_sent_ms = srv_ms;
-
-		bb_clear(&bb);
-		/*
-		 * Kunos FUN_140029b20 body is u32 server_ms + three u16
-		 * zeros + u8(2) + u8(4) + u8(100) + u8(100).  We had been
-		 * writing avg_rtt_ms into the three u16 slots and using
-		 * 0,0,100,100 for the four trailing u8s.  Neither matches
-		 * the capture; switch to the constants.
-		 */
-		if (wr_u8(&bb, msg_id) == 0 &&
-		    wr_u32(&bb, srv_ms) == 0 &&
-		    wr_u16(&bb, 0) == 0 &&
-		    wr_u16(&bb, 0) == 0 &&
-		    wr_u16(&bb, 0) == 0 &&
-		    wr_u8(&bb, 2) == 0 &&
-		    wr_u8(&bb, 4) == 0 &&
-		    wr_u8(&bb, 100) == 0 &&
-		    wr_u8(&bb, 100) == 0) {
-			(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
-			    (const struct sockaddr *)&c->peer,
-			    sizeof(c->peer));
-		}
+		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
+		    (const struct sockaddr *)&c->peer,
+		    sizeof(c->peer));
 	}
-	bb_free(&bb);
 }
 
 /*
