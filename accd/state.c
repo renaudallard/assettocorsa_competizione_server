@@ -29,6 +29,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -73,6 +74,10 @@ server_free(struct Server *s)
 			conn_drop(s, s->conns[i]);
 			s->conns[i] = NULL;
 		}
+	}
+	if (s->latency_dump_fp != NULL) {
+		fclose((FILE *)s->latency_dump_fp);
+		s->latency_dump_fp = NULL;
 	}
 }
 

@@ -37,6 +37,7 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 #include <time.h>
 #include <arpa/inet.h>
@@ -697,6 +698,43 @@ tick_run(struct Server *s)
 	/* 0xbe optional localhost telemetry every ~1s. */
 	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
 		broadcast_stats_udp(s);
+
+	/*
+	 * writeLatencyFileDumps (settings.json).  When enabled, append one
+	 * CSV row per authenticated conn per keepalive tick: monotonic ms,
+	 * conn_id, steam_id, avg_rtt_ms, clock_offset_ms.  Gives operators
+	 * a per-session record of per-client network health without needing
+	 * to enable full debug logging.  The exe parses the flag but ships
+	 * no consumer; accd wires it to its own CSV so the data Kunos
+	 * implied is actually available.
+	 */
+	if (s->write_latency_dumps && s->latency_dump_fp != NULL &&
+	    (s->tick_count % CADENCE_KEEPALIVE) == 0 && s->nconns > 0) {
+		FILE *fp = (FILE *)s->latency_dump_fp;
+		uint64_t now_ms;
+		struct timespec _ts;
+		int i;
+
+		clock_gettime(CLOCK_MONOTONIC, &_ts);
+		now_ms = (uint64_t)_ts.tv_sec * 1000ull +
+		    (uint64_t)_ts.tv_nsec / 1000000ull;
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct Conn *c = s->conns[i];
+			const char *sid = "";
+
+			if (c == NULL || c->state != CONN_AUTH)
+				continue;
+			if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
+			    s->cars[c->car_id].driver_count > 0)
+				sid = s->cars[c->car_id].drivers[0].steam_id;
+			fprintf(fp, "%llu,%u,%s,%u,%d\n",
+			    (unsigned long long)now_ms,
+			    (unsigned)c->conn_id, sid,
+			    (unsigned)c->avg_rtt_ms,
+			    (int)c->clock_offset_ms);
+		}
+		fflush(fp);
+	}
 
 	/*
 	 * Leaderboard rebroadcast.  useAsyncLeaderboard (settings.json,

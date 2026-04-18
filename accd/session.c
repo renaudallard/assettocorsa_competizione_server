@@ -36,6 +36,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -289,6 +290,40 @@ session_start(struct Server *s)
 	    "pre=%llums dur=%llums ot=%llums post=%llums",
 	    (unsigned long long)pre_ms, (unsigned long long)dur_ms,
 	    (unsigned long long)ot_ms, (unsigned long long)post_ms);
+
+	/*
+	 * Open a per-session latency-dump CSV if writeLatencyFileDumps=1.
+	 * Closed by server_free or the next session_start (rotating).
+	 * One row per authenticated conn per keepalive tick is appended
+	 * from tick_run; see the consumer comment there.
+	 */
+	if (s->latency_dump_fp != NULL) {
+		fclose((FILE *)s->latency_dump_fp);
+		s->latency_dump_fp = NULL;
+	}
+	if (s->write_latency_dumps) {
+		char path[384];
+		time_t t = time(NULL);
+		struct tm tm;
+		const char *stype = def->session_type == 4 ? "Q"
+		    : def->session_type == 10 ? "R" : "P";
+
+		localtime_r(&t, &tm);
+		snprintf(path, sizeof(path),
+		    "results/latency_%04d%02d%02d_%02d%02d%02d_%s.csv",
+		    tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday,
+		    tm.tm_hour, tm.tm_min, tm.tm_sec, stype);
+		s->latency_dump_fp = fopen(path, "w");
+		if (s->latency_dump_fp != NULL) {
+			fprintf((FILE *)s->latency_dump_fp,
+			    "mono_ms,conn_id,steam_id,avg_rtt_ms,"
+			    "clock_offset_ms\n");
+			fflush((FILE *)s->latency_dump_fp);
+			log_info("latency dump: writing to %s", path);
+		} else {
+			log_warn("latency dump: fopen %s failed", path);
+		}
+	}
 }
 
 /*

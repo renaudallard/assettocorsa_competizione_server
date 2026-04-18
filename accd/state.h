@@ -546,6 +546,12 @@ struct Server {
 	uint8_t		write_latency_dumps;	/* writeLatencyFileDumps:
 						 * latency diagnostics
 						 * file output toggle */
+	void		*latency_dump_fp;	/* FILE* for the current
+						 * session's latency CSV
+						 * (void* to avoid leaking
+						 * stdio into this header);
+						 * NULL when disabled or
+						 * between sessions */
 	uint8_t		do_driver_swap_broadcast; /* doDriverSwapBroadcast:
 						 * gate 0x47 / 0x48 driver-
 						 * swap state broadcasts */
