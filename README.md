@@ -149,8 +149,6 @@ every wire message, string encoding, and state transition.
 
 ### Known limitations
 
-- Car-to-car collisions are client-side physics; the server relays
-  positions but does not arbitrate contact.
 - Weather forecast curve in the welcome trailer is populated from
   current server state (ambient/wind/grip/puddles); the two
   variable-length forecast lists stay empty, so the in-game forecast
