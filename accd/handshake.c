@@ -1488,8 +1488,21 @@ handshake_handle(struct Server *s, struct Conn *c,
 			     s->session.phase == PHASE_OVERTIME))
 				why = "unsafeRejoin=0 and race in progress";
 			else if (stype == 4 &&
-			    s->session.phase == PHASE_OVERTIME)
-				why = "late qualy";
+			    s->session.phase == PHASE_COMPLETED)
+				/*
+				 * "Late qualy" in the exe (FUN_140025690
+				 * bVar46 path) fires when session_type==4
+				 * AND server+0x14180 > 0.0.  That field is
+				 * the post-session aftercare deadline,
+				 * written in FUN_14002f710 right after the
+				 * 0x3e results broadcast and cleared when
+				 * the exe advances to the next session.
+				 * Our PHASE_COMPLETED window matches that
+				 * deadline exactly: results written, waiting
+				 * on ts[6] aftercare before PHASE_ADVANCE.
+				 */
+				why = "late qualy (results broadcast, "
+				    "awaiting aftercare)";
 			else if (s->preparation_locked &&
 			    (s->session.phase == PHASE_FORMATION ||
 			     s->session.phase == PHASE_PRE_SESSION))
