@@ -1318,6 +1318,55 @@ handshake_handle(struct Server *s, struct Conn *c,
 		}
 
 		/*
+		 * Quick-reconnect detection (FUN_140025690 in accServer.exe,
+		 * logs "Removed connection due to (quick) reconnect").  If an
+		 * already-authenticated peer has this steam_id, detach it
+		 * from its car slot and mark the old conn for drop, then
+		 * bind the new conn to that same slot so the driver's
+		 * race state and grid position survive the reconnect.
+		 */
+		{
+			int reconnect_slot = -1;
+
+			if (steam_buf[0] != '\0') {
+				int j;
+				for (j = 0; j < ACC_MAX_CARS; j++) {
+					struct Conn *old = s->conns[j];
+					struct CarEntry *oc;
+
+					if (old == NULL || old == c)
+						continue;
+					if (old->car_id < 0 ||
+					    old->car_id >= ACC_MAX_CARS)
+						continue;
+					oc = &s->cars[old->car_id];
+					if (oc->driver_count == 0)
+						continue;
+					if (strcmp(oc->drivers[0].steam_id,
+					    steam_buf) != 0)
+						continue;
+					log_info("Removed connection due to "
+					    "(quick) reconnect: conn=%u "
+					    "for %s",
+					    (unsigned)old->conn_id,
+					    steam_buf);
+					reconnect_slot = old->car_id;
+					old->car_id = -1;
+					old->state = CONN_DISCONNECT;
+					break;
+				}
+			}
+			if (reconnect_slot >= 0) {
+				c->car_id = reconnect_slot;
+				log_info("Recognized reconnect: carId %d "
+				    "raceNumber #%d",
+				    c->car_id,
+				    s->cars[c->car_id].race_number);
+				goto post_slot_assignment;
+			}
+		}
+
+		/*
 		 * Entry list enforcement: if forceEntryList is set,
 		 * look up the client's steam_id in the preloaded
 		 * entries. Assign them to the matching slot, or
@@ -1369,6 +1418,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 			}
 		}
 
+post_slot_assignment:
 		/* Populate the car slot with parsed data. */
 		car = &s->cars[c->car_id];
 		if (first != NULL)
