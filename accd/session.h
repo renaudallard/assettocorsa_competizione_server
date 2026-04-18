@@ -89,6 +89,20 @@ void	stint_stop_tracking(struct Server *s, int car_id);
 void	stint_check_violations(struct Server *s);
 
 /*
+ * Snapshot the current session's race state into each used car's
+ * race_archive[session_index] slot.  Called once when the session
+ * transitions to PHASE_COMPLETED so the 0x56 garage reply can
+ * serve laps from a past session after we've moved on.
+ */
+void	session_archive_snapshot(struct Server *s);
+
+/*
+ * Free every car's race_archive[] slots — used on a full weekend
+ * reset (session_reset with index 0) and on server teardown.
+ */
+void	session_archive_clear(struct Server *s);
+
+/*
  * Returns 1 if the session phase requires lap-time-based sort
  * (P, Q), 0 if race-position-based (R).
  */

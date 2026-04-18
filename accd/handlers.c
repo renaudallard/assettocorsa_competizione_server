@@ -1345,57 +1345,82 @@ h_load_setup(struct Server *s, struct Conn *c,
 		my_sess_type = s->sessions[s->session.session_index]
 		    .session_type;
 
-	log_info("load setup: conn=%u car=%u sess_type=%u "
-	    "cur_sess_type=%d rev=%u",
-	    (unsigned)c->conn_id, (unsigned)car_id,
-	    (unsigned)sess_type, my_sess_type, (unsigned)revision);
-
-	bb_init(&out);
-	if (wr_u8(&out, SRV_SETUP_DATA_RESPONSE) < 0 ||
-	    wr_u8(&out, sess_type) < 0 ||
-	    wr_u16(&out, car_id) < 0)
-		goto done;
-
 	/*
-	 * Only supply lap records when the client is asking about the
-	 * currently-active session — past sessions aren't kept in
-	 * memory.  Still send lap_count=0 for other sessions so the
-	 * client's "no laps yet" state is well-formed.
+	 * Pick the race state to serve:
+	 *  - sess_type == current session's type  -> live car->race
+	 *  - else, find a session in s->sessions[] with that type and
+	 *    look up the car's archived snapshot from that session's
+	 *    index.  archive slot == NULL means that session was never
+	 *    completed for this car; reply with lap_count=0.
 	 */
-	if (car != NULL && sess_type == my_sess_type &&
-	    car->race.lap_history_count > 0) {
-		int count = car->race.lap_history_count;
-		int i;
+	{
+		const struct CarRaceState *src = NULL;
 
-		if (count > ACC_LAP_HISTORY)
-			count = ACC_LAP_HISTORY;
-		if (wr_i16(&out, (int16_t)count) < 0)
-			goto done;
-		for (i = 0; i < count; i++) {
-			int si;
-
-			if (wr_str_a(&out, s->track) < 0) goto done;
-			if (wr_u32(&out, (uint32_t)car->race
-			    .lap_history_ms[i]) < 0) goto done;
-			if (wr_u8(&out, 3) < 0) goto done;	/* split_count */
-			for (si = 0; si < 3; si++)
-				if (wr_u32(&out, (uint32_t)car->race
-				    .lap_splits_ms[i][si]) < 0) goto done;
-			if (wr_u16(&out, car->car_id) < 0) goto done;
-			if (wr_u8(&out, 0) < 0) goto done;	/* quality */
-			if (wr_u16(&out, (uint16_t)(i + 1)) < 0) goto done;
+		if (car != NULL && sess_type == my_sess_type) {
+			src = &car->race;
+		} else if (car != NULL) {
+			int k;
+			for (k = 0; k < s->session_count &&
+			    k < ACC_MAX_SESSIONS; k++) {
+				if (s->sessions[k].session_type == sess_type
+				    && car->race_archive[k] != NULL) {
+					src = car->race_archive[k];
+					break;
+				}
+			}
 		}
-		laps_emitted = count;
-	} else {
-		if (wr_i16(&out, 0) < 0)
+
+		log_info("load setup: conn=%u car=%u sess_type=%u "
+		    "cur_sess_type=%d rev=%u src=%s",
+		    (unsigned)c->conn_id, (unsigned)car_id,
+		    (unsigned)sess_type, my_sess_type,
+		    (unsigned)revision,
+		    src == NULL ? "none"
+			: (src == &car->race ? "current" : "archive"));
+
+		bb_init(&out);
+		if (wr_u8(&out, SRV_SETUP_DATA_RESPONSE) < 0 ||
+		    wr_u8(&out, sess_type) < 0 ||
+		    wr_u16(&out, car_id) < 0)
 			goto done;
+
+		if (src != NULL && src->lap_history_count > 0) {
+			int count = src->lap_history_count;
+			int i;
+
+			if (count > ACC_LAP_HISTORY)
+				count = ACC_LAP_HISTORY;
+			if (wr_i16(&out, (int16_t)count) < 0)
+				goto done;
+			for (i = 0; i < count; i++) {
+				int si;
+
+				if (wr_str_a(&out, s->track) < 0) goto done;
+				if (wr_u32(&out,
+				    (uint32_t)src->lap_history_ms[i]) < 0)
+					goto done;
+				if (wr_u8(&out, 3) < 0) goto done;
+				for (si = 0; si < 3; si++)
+					if (wr_u32(&out,
+					    (uint32_t)src->lap_splits_ms[i][si])
+					    < 0) goto done;
+				if (wr_u16(&out, car->car_id) < 0) goto done;
+				if (wr_u8(&out, 0) < 0) goto done;
+				if (wr_u16(&out, (uint16_t)(i + 1)) < 0)
+					goto done;
+			}
+			laps_emitted = count;
+		} else {
+			if (wr_i16(&out, 0) < 0)
+				goto done;
+		}
 	}
 	/*
 	 * Trailing full leaderboard record for the target car — matches
 	 * the exe where FUN_1400328f0 appends a FUN_140034210 single-
-	 * car record at the tail of 0x56.  Gives the in-game panel the
-	 * target car's totals (best lap, last lap, lap count, race
-	 * time) alongside the per-lap list.
+	 * car record at the tail of 0x56.  Always uses the live
+	 * CarEntry (name / model / ratings / etc), not the archived
+	 * race state — the record is primarily identity + totals.
 	 */
 	if (car != NULL)
 		(void)write_car_leaderboard_record(&out, car,

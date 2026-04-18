@@ -36,6 +36,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -72,6 +73,15 @@ session_reset(struct Server *s, uint8_t session_index)
 		log_info("session: no more sessions, entering RESULTS");
 		return;
 	}
+
+	/*
+	 * A reset back to session 0 means the whole weekend is starting
+	 * over (either operator /track or the empty-server auto-reset in
+	 * session_tick).  Drop every car's race_archive so a later 0x56
+	 * garage request doesn't serve laps from the previous weekend.
+	 */
+	if (session_index == 0)
+		session_archive_clear(s);
 
 	{
 		uint8_t at = s->session.ambient_temp;
@@ -662,6 +672,60 @@ stint_check_violations(struct Server *s)
 			    (unsigned)s->mandatory_pit_count);
 			(void)penalty_enqueue(s, i, EXE_DQ, 13, 3, 1, 0,
 			    REASON_IGNORED_MANDATORY_PIT);
+		}
+	}
+}
+
+/*
+ * Take a snapshot of every used car's CarRaceState and store it
+ * in the corresponding race_archive[] slot so future 0x56
+ * ACP_LOAD_SETUP requests can serve laps from this session after
+ * we've moved on to the next one.  A stale slot (should not
+ * normally happen but defensive) is freed first.
+ */
+void
+session_archive_snapshot(struct Server *s)
+{
+	uint8_t idx = s->session.session_index;
+	int j;
+
+	if (idx >= ACC_MAX_SESSIONS)
+		return;
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct CarEntry *car = &s->cars[j];
+		struct CarRaceState *snap;
+
+		if (!car->used)
+			continue;
+		if (car->race_archive[idx] != NULL) {
+			free(car->race_archive[idx]);
+			car->race_archive[idx] = NULL;
+		}
+		snap = malloc(sizeof(*snap));
+		if (snap == NULL) {
+			log_warn("session_archive_snapshot: oom for car %d "
+			    "session %u", j, (unsigned)idx);
+			continue;
+		}
+		*snap = car->race;
+		car->race_archive[idx] = snap;
+	}
+	log_info("session_archive_snapshot: session %u archived",
+	    (unsigned)idx);
+}
+
+void
+session_archive_clear(struct Server *s)
+{
+	int j, k;
+
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct CarEntry *car = &s->cars[j];
+		for (k = 0; k < ACC_MAX_SESSIONS; k++) {
+			if (car->race_archive[k] != NULL) {
+				free(car->race_archive[k]);
+				car->race_archive[k] = NULL;
+			}
 		}
 	}
 }

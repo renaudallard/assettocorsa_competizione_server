@@ -697,6 +697,12 @@ tick_run(struct Server *s)
 				(void)results_write(s);
 				s->session.results_written = 1;
 			}
+			/*
+			 * Snapshot per-car race state so future 0x56
+			 * garage requests for this session's laps can
+			 * serve them after we've moved on.
+			 */
+			session_archive_snapshot(s);
 			/* Persist the local rating ledger at session end. */
 			ratings_save(s);
 		}

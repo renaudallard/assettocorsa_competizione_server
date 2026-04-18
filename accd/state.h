@@ -366,6 +366,15 @@ struct CarEntry {
 	 * replayed to newly-joined clients via a proactive 0x2e
 	 * state sync, matching FUN_14002dcb0 in accServer.exe. */
 	uint64_t	last_sys_data;
+
+	/*
+	 * Snapshot of race state at the end of each completed
+	 * session, keyed by SessionDef index.  Used by the 0x56
+	 * ACP_LOAD_SETUP reply when the client asks for laps from
+	 * a session we've already moved past.  NULL entries mean
+	 * the session is either not yet run or was reset.
+	 */
+	struct CarRaceState *race_archive[ACC_MAX_SESSIONS];
 };
 
 /*
