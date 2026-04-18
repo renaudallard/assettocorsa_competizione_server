@@ -555,9 +555,14 @@ struct Server {
 	uint8_t		do_driver_swap_broadcast; /* doDriverSwapBroadcast:
 						 * gate 0x47 / 0x48 driver-
 						 * swap state broadcasts */
-	uint32_t	config_version;		/* configVersion: logged
-						 * at startup, used to
-						 * migrate older schemas */
+	uint32_t	config_version;		/* configVersion from
+						 * settings.json */
+	uint32_t	configuration_version;	/* configVersion from
+						 * configuration.json */
+	uint32_t	event_version;		/* configVersion from
+						 * event.json */
+	uint32_t	entrylist_version;	/* configVersion from
+						 * entrylist.json */
 
 	/* runtime */
 	int		tcp_fd;

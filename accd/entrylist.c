@@ -177,6 +177,8 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 
 	s->force_entry_list = json_obj_get_int(root,
 	    "forceEntryList", 0);
+	s->entrylist_version = (uint32_t)json_obj_get_int(root,
+	    "configVersion", 0);
 
 	entries = json_obj_get(root, "entries");
 	n = json_arr_len(entries);

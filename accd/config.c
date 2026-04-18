@@ -244,6 +244,8 @@ config_load(struct Server *s, const char *cfg_dir)
 	    "lanDiscovery", s->lan_discovery);
 	s->stats_udp_port = json_obj_get_int(configuration,
 	    "statsUdpPort", 0);
+	s->configuration_version = (uint32_t)json_obj_get_int(
+	    configuration, "configVersion", 0);
 	json_free(configuration);
 
 	settings = load_json(cfg_dir, "settings.json");
@@ -386,6 +388,8 @@ config_load(struct Server *s, const char *cfg_dir)
 		    event, "sessionOverTimeSeconds", 120);
 		s->session.ambient_temp = (uint8_t)json_obj_get_int(
 		    event, "ambientTemp", 22);
+		s->event_version = (uint32_t)json_obj_get_int(event,
+		    "configVersion", 0);
 		{
 			const struct json_node *fn, *gs, *ge;
 			fn = json_obj_get(event,
@@ -476,6 +480,44 @@ config_load(struct Server *s, const char *cfg_dir)
 	 * not fatal (open server with no forced grid).
 	 */
 	(void)entrylist_load(s, cfg_dir);
+
+	/*
+	 * configVersion roll-up — the Kunos exe reads this key from each
+	 * config file and stores it but never compares.  We at least log
+	 * all four together so operators can spot drift from one editor
+	 * leaving a stale version behind, and warn loudly when a file
+	 * predates the minimum schema we tested against.
+	 */
+	{
+		const uint32_t min_ver = 1;
+
+		log_info("configVersion: configuration=%u settings=%u "
+		    "event=%u entrylist=%u (expected >= %u)",
+		    (unsigned)s->configuration_version,
+		    (unsigned)s->config_version,
+		    (unsigned)s->event_version,
+		    (unsigned)s->entrylist_version,
+		    (unsigned)min_ver);
+		if (s->configuration_version < min_ver)
+			log_warn("configuration.json configVersion=%u < %u "
+			    "— some keys may be missing defaults",
+			    (unsigned)s->configuration_version,
+			    (unsigned)min_ver);
+		if (s->config_version < min_ver)
+			log_warn("settings.json configVersion=%u < %u",
+			    (unsigned)s->config_version,
+			    (unsigned)min_ver);
+		if (s->event_version < min_ver)
+			log_warn("event.json configVersion=%u < %u",
+			    (unsigned)s->event_version,
+			    (unsigned)min_ver);
+		/* entrylist.json is optional — only warn when it loaded. */
+		if (s->entrylist_version > 0 &&
+		    s->entrylist_version < min_ver)
+			log_warn("entrylist.json configVersion=%u < %u",
+			    (unsigned)s->entrylist_version,
+			    (unsigned)min_ver);
+	}
 
 	return 0;
 }
