@@ -48,12 +48,4 @@ void	tick_run(struct Server *s);
 int	build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 		struct Server *s, int32_t clock_adj);
 
-/*
- * Event-driven per-car relay.  Called from h_udp_car_update()
- * after storing the update.  Sends 0x39 (count=1) to all
- * other authenticated peers.
- */
-void	relay_car_update(struct Server *s, struct Conn *sender,
-		struct CarEntry *car);
-
 #endif /* ACCD_TICK_H */

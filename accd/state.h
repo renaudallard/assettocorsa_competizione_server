@@ -354,6 +354,12 @@ struct CarRuntime {
 	uint32_t	client_timestamp_ms;	/* most recent client ts */
 	uint32_t	last_timestamp_ms;	/* for out-of-order drop */
 	int		has_data;		/* ever received? */
+	uint8_t		dirty;			/* set by car_update ingest,
+						 * cleared by periodic
+						 * fan-out.  Matches the
+						 * +1 byte on the exe's car
+						 * struct used by
+						 * FUN_14001a170. */
 };
 
 /*

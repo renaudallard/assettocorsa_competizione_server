@@ -61,10 +61,10 @@
 
 /*
  * Broadcast cadences, in ticks (~100 ms each):
- *   per-car fast:   every tick (10 Hz)
- *   per-car slow:   every 10 ticks (1 Hz)
- *   keepalive 0x14: every 20 ticks (2 s)
+ *   per-car dirty:  every tick (10 Hz, from broadcast_percar_dirty)
+ *   keepalive 0x14: every 10 ticks (~1 s)
  *   weather 0x37:   every 50 ticks (5 s)
+ *   leaderboard 0x36: every 750 ticks (~75 s)
  */
 #define CADENCE_SESSION_STATE	10	/* 0x28 every ~1 s.  Single-
 					 * session active replay shows
@@ -169,73 +169,74 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 }
 
 /*
- * Event-driven per-car relay.  Called from h_udp_car_update()
- * immediately after storing the update.  Sends a single-car
- * 0x39 batch (count=1) to every other authenticated peer,
- * matching the exe's relay behavior (0x39 only, never 0x1e
- * from server, 18 Hz event-driven not periodic).
+ * Periodic per-car fan-out.  Walks every car with rt.dirty set,
+ * emits one 0x1e (or 0x39 count=1 in legacy-netcode mode) per
+ * dirty car to every other authenticated peer, then clears the
+ * dirty flag.  Matches FUN_14001a170 / FUN_14001a6a0 in the exe,
+ * which are gated by the legacy_netcode toggle at srv+0x22 and
+ * called once per scheduler tick from FUN_14002e8d0.
+ *
+ * Replaces the prior event-driven relay (h_udp_car_update ->
+ * per-peer sendto per incoming update).  At ~18 Hz × peer_count
+ * that flooded the client's UDP queue with ~520 pps per peer and
+ * surfaced as position jitter + visual blinking on real clients.
  */
-void
-relay_car_update(struct Server *s, struct Conn *sender,
-    struct CarEntry *car)
+static void
+broadcast_percar_dirty(struct Server *s)
 {
 	struct ByteBuf bb;
-	int j;
+	int i, j;
+	uint8_t msg_id = s->legacy_netcode
+	    ? SRV_PERCAR_SLOW_RATE : SRV_PERCAR_FAST_RATE;
 
 	if (s->udp_fd < 0)
 		return;
-	/*
-	 * Reuse one ByteBuf across all peers.  The body differs per
-	 * peer (delta depends on the peer's pong timestamp) so we
-	 * can't cache the bytes, but we can skip the malloc+free
-	 * pair per peer by clearing the cursor between iterations.
-	 * At 30 cars × 18 Hz × ~29 peers this is ~15.6k malloc/free
-	 * pairs per second eliminated.
-	 */
+
 	bb_init(&bb);
-	for (j = 0; j < ACC_MAX_CARS; j++) {
-		struct Conn *peer = s->conns[j];
-		int32_t delta;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct CarEntry *car = &s->cars[i];
+		struct Conn *sender = NULL;
 
-		if (peer == NULL || peer->state != CONN_AUTH)
-			continue;
-		if (peer == sender)
+		if (!car->used || !car->rt.dirty || !car->rt.has_data)
 			continue;
 
-		delta = (int32_t)(sender->last_pong_client_ts -
-		    peer->last_pong_client_ts);
-		bb_clear(&bb);
-		if (wr_u8(&bb, SRV_PERCAR_SLOW_RATE) == 0 &&
-		    wr_u8(&bb, 1) == 0 &&
-		    build_percar_body(&bb, car, s, delta) == 0) {
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			if (s->conns[j] != NULL &&
+			    s->conns[j]->car_id == i) {
+				sender = s->conns[j];
+				break;
+			}
+		}
+
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			struct Conn *peer = s->conns[j];
+			int32_t delta = 0;
+
+			if (peer == NULL || peer->state != CONN_AUTH)
+				continue;
+			if (peer->car_id == i)
+				continue;
+			if (sender != NULL)
+				delta = (int32_t)(sender->last_pong_client_ts -
+				    peer->last_pong_client_ts);
+
+			bb_clear(&bb);
+			if (wr_u8(&bb, msg_id) < 0)
+				continue;
+			if (s->legacy_netcode &&
+			    wr_u8(&bb, 1) < 0)
+				continue;
+			if (build_percar_body(&bb, car, s, delta) < 0)
+				continue;
 			(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
 			    (const struct sockaddr *)&peer->peer,
 			    sizeof(peer->peer));
 		}
+
+		car->rt.dirty = 0;
 	}
 	bb_free(&bb);
 }
-
-/*
- * Slow-rate 0x39 broadcast.  For every connected peer, emit
- * one or more UDP datagrams carrying batches of up to 8 other-
- * car records (header: u8 0x39 + u8 count + count * 63-byte
- * body).  Layout from FUN_14001a6a0 in accServer.exe.
- *
- * Matches the exe's multi-batch loop: if the peer has N > 8
- * other cars, N/8 + 1 datagrams are sent.  8 is the max count
- * per batch and is hard-coded in the inner loop of the exe.
- *
- * This runs every CADENCE_PERCAR_SLOW ticks (~1 Hz) and is an
- * unconditional recap (dirty-flag filtering is done by the
- * fast-rate path only) so newly-joined peers pick up state for
- * cars that haven't moved since the last tick.
- */
-
-/* Per-car relay is fully event-driven from relay_car_update().
- * The periodic broadcast_percar_slow was removed: the Kunos
- * capture shows no periodic recap.  Event-driven relay handles
- * all car state propagation. */
 
 /*
  * Send a 0x14 keepalive to each authenticated connection via
@@ -684,12 +685,13 @@ tick_run(struct Server *s)
 		}
 	}
 
-	/* Per-car relay is event-driven from h_udp_car_update(),
-	 * not periodic.  The 1 Hz recap below is kept for newly-
-	 * joined peers to pick up state for idle cars. */
-
-	/* Per-car relay is fully event-driven from h_udp_car_update.
-	 * No periodic recap: Kunos capture shows none. */
+	/*
+	 * Per-car fan-out: send 0x1e (or 0x39 in legacy-netcode mode)
+	 * for every car marked dirty since the last sweep.  Matches
+	 * FUN_14001a170 / FUN_14001a6a0 being called once per scheduler
+	 * tick from FUN_14002e8d0.
+	 */
+	broadcast_percar_dirty(s);
 
 	/* Keepalive 0x14 every ~1s (matching exe capture). */
 	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
