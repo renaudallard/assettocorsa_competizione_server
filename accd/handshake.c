@@ -494,11 +494,40 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, cvar8) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)nc) < 0) return -1;
 
-	for (j = 0; j < ACC_MAX_CARS; j++) {
-		if (!s->cars[j].used)
-			continue;
-		if (write_car_leaderboard_record(bb, &s->cars[j], cvar8) < 0)
-			return -1;
+	/*
+	 * Emit records in ranked order — the client infers each car's
+	 * position from the record order (the exe's leaderboard record
+	 * carries no explicit position byte; FUN_140034a40 iterates a
+	 * pre-sorted vector).  Cars with equal/unset positions fall
+	 * back to car_id order.
+	 */
+	{
+		int pos, emitted = 0;
+
+		for (pos = 1; pos <= ACC_MAX_CARS && emitted < nc; pos++) {
+			for (j = 0; j < ACC_MAX_CARS; j++) {
+				if (!s->cars[j].used)
+					continue;
+				if (s->cars[j].race.position != pos)
+					continue;
+				if (write_car_leaderboard_record(bb,
+				    &s->cars[j], cvar8) < 0)
+					return -1;
+				emitted++;
+			}
+		}
+		/* Emit any stragglers whose position wasn't in [1..n]. */
+		for (j = 0; j < ACC_MAX_CARS && emitted < nc; j++) {
+			int16_t p = s->cars[j].race.position;
+			if (!s->cars[j].used)
+				continue;
+			if (p >= 1 && p <= ACC_MAX_CARS)
+				continue;
+			if (write_car_leaderboard_record(bb,
+			    &s->cars[j], cvar8) < 0)
+				return -1;
+			emitted++;
+		}
 	}
 
 	/* assist_rules tail. */
