@@ -214,8 +214,25 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 	}
 	msg_id = buf[0];
 
-	/* Skip keepalive noise in debug output. */
-	if (msg_id != ACP_KEEPALIVE_A && msg_id != ACP_KEEPALIVE_B) {
+	/*
+	 * Skip debug noise from very high-rate traffic: keepalives
+	 * (0x13 / 0x17 / 0x16 pong at 1 Hz × N clients), car updates
+	 * (0x1e at 18 Hz × N clients), and car-info requests (0x22
+	 * bursts while the garage opens).  Every debug line is one
+	 * snprintf + one write() to the log file, so on a busy server
+	 * the hexdump alone turns into tens of MB/s of log traffic
+	 * — enough that a blocking write() on a slow filesystem
+	 * stalls the poll loop and shows up as in-game lag.  Rare /
+	 * diagnostic packets still get the full hexdump.
+	 */
+	switch (msg_id) {
+	case ACP_KEEPALIVE_A:
+	case ACP_KEEPALIVE_B:
+	case ACP_PONG_PHYSICS:
+	case ACP_CAR_UPDATE:
+	case ACP_CAR_INFO_REQUEST:
+		break;
+	default:
 		log_debug("udp rx msg=0x%02x len=%zu from %s:%u",
 		    (unsigned)msg_id, len,
 		    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port));
