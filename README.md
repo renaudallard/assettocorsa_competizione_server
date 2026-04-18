@@ -149,14 +149,20 @@ every wire message, string encoding, and state transition.
 
 ### Known limitations
 
-- Per-track green-flag trigger ranges are hardcoded defaults
-  (formation 0.85–0.95, green 0.95–0.99 normalised track position).
-  Kunos loads these per-track from JSON; the defaults work on every
-  shipping ACC circuit but don't match the exact trigger windows.
+- Per-track green-flag trigger ranges default to the exe's compiled-in
+  constants (formation 0.80, green 0.89–0.96 normalised track
+  position — `DAT_14014bccc..bcd8`).  Override per deployment via
+  `event.json` keys `formationTriggerNormalizedRangeStart`,
+  `greenFlagTriggerNormalizedRangeStart`,
+  `greenFlagTriggerNormalizedRangeEnd`.
 - Car-to-car collisions are client-side physics; the server relays
   positions but does not arbitrate contact.
-- Two welcome trailer sub-structures (`EventEntity` tail and the
-  `*(0x1410e+0x20)` block) are still emitted as static templates.
+- Weather forecast curve in the welcome trailer is populated from
+  current server state (ambient/wind/grip/puddles); the two
+  variable-length forecast lists stay empty, so the in-game forecast
+  HUD shows a flat prediction.  The deterministic sin/cos weather
+  drift is still visible via the live `0x37` broadcast during the
+  session.
 
 ---
 

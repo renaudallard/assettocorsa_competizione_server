@@ -42,13 +42,10 @@ OnlineRules, RaceDirectorRules), the EventEntity block, the
 session manager state, the assist_rules + leaderboard section,
 a weather-additional-state block, the per-weekend session
 schedule, and the MultiplayerTrackRecord / RatingSeries tail.
-Per-car and SeasonEntity fields are built dynamically from
-live server state; two sub-structures
-.Pq Tn EventEntity No rest and the
-.Tn 0x1410e
-serializer output
-are still emitted as static byte templates captured from a real
-Kunos welcome.
+Per-car, SeasonEntity, EventEntity, and WeatherData fields are
+built dynamically from live server state.  Protocol-version
+sentinels inside EventEntity (GraphicsInfo / RaceRules) are held
+at fixed values.
 .Pp
 The options are as follows:
 .Bl -tag -width Ds

@@ -660,22 +660,16 @@ write_car_leaderboard_record(struct ByteBuf *bb,
  * WeatherData).  Called inline from the welcome trailer builder
  * FUN_140033980 via (**(param_1[0x1410e]+0x20))(...).
  *
- * Real exe layout:
- *   12 × u32 scaling factors (source struct offsets 0x28, 0x30,
- *     0x34, 0x38, 0x3c, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58
- *     — 0x2c is skipped).
+ * Wire layout:
+ *   12 × u32 fields (source struct offsets 0x28, 0x30, 0x34, 0x38,
+ *     0x3c, 0x40, 0x44, 0x48, 0x4c, 0x50, 0x54, 0x58 — 0x2c skipped).
  *   i16 list1_count + list1_count × u32 (forecast samples from
  *     source+0x60..+0x68).
  *   i16 list2_count + list2_count × u32 (forecast samples from
  *     source+0x78..+0x80).
  *
- * Kunos populates the 12 scaling factors from the live weather
- * prediction curve at session-start.  Without a capture of the
- * runtime values we emit zeros, which matches static / dry
- * conditions — the client reads these as the authoritative
- * cockpit weather hint, so any non-zero garbage shows up as
- * persistent rain on the windshield.  The external view reads
- * live 0x37 which does the proper zero-rain computation.
+ * Populated from live weather + session state; forecast lists stay
+ * empty since our sin/cos simulator has no forecast curve.
  */
 int
 write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
