@@ -216,7 +216,19 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	 * tanhf(tanhf(x) * 0.9) to rain / clouds / wet / dry-line —
 	 * see FUN_1400330e0 Branch B in notebook-a.
 	 */
-	if (wr_f32(bb, 1.0f - clouds * 0.3f) < 0) return -1;
+	/*
+	 * [0] grip estimation.  FUN_1400330e0 writes 1.0f (0x3f800000)
+	 * by default and only drops to 0.89f (DAT_14014bcd0) when the
+	 * wet-line factor crosses DAT_14014bcac = 0.05.  We used to
+	 * compute 1.0 - clouds*0.3, which drifted below 1.0 under any
+	 * cloud cover even on a dry track.
+	 */
+	{
+		float grip = 1.0f;
+		if (wet >= 0.05f)
+			grip = 0.89f;
+		if (wr_f32(bb, grip) < 0) return -1;
+	}
 	if (wr_f32(bb, 0.96f) < 0) return -1;	/* DAT_14014bcd8 */
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
