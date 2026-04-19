@@ -651,16 +651,36 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		}
 	}
 
+	/*
+	 * Six per-car fields after the driver list.  FUN_140034210 reads
+	 * these at fixed car-struct offsets; we traced each to its
+	 * source via FUN_1400f0090 (car → LeaderboardLine copier) and
+	 * cross-referenced with case 0x2e/0x51 handlers:
+	 *
+	 *   +0x180  u16   reserved / zero in all observed captures
+	 *   +0x1d4  u32   best-lap-ms
+	 *   +0x1b0  u32   low 4 bytes of car_system u64 (FUN_1400142f0
+	 *                 case 0x2e writes u64 at car+0x1b0)
+	 *   +0x1f4  u16   lap count (u32 in struct, u16 truncated on wire)
+	 *   +0x1f0  u32   race-time-ms
+	 *   +0x1f8  u8    ELO, clamped to u8 (FUN_1400142f0 case 0x51
+	 *                 writes u32 at car+0x1f8 on ACP_ELO_UPDATE)
+	 *
+	 * We used to put last_lap_ms at +0x1b0 and clamp lap_count to u8
+	 * at +0x1f8, both of which wrote real timing data into wire slots
+	 * the client reads as car-system + ELO.  Emit the correct
+	 * semantics.  last_lap_ms has no dedicated slot in this record —
+	 * the client carries it via 0x1b lap broadcasts instead.
+	 */
 	if (wr_u16(bb, 0) < 0) return -1;
 	if (wr_u32(bb, race->best_lap_ms > 0
 	    ? (uint32_t)race->best_lap_ms : 0x7FFFFFFFu) < 0) return -1;
-	if (wr_u32(bb, race->last_lap_ms > 0
-	    ? (uint32_t)race->last_lap_ms : 0x7FFFFFFFu) < 0) return -1;
+	if (wr_u32(bb, (uint32_t)ec->last_sys_data) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)race->lap_count) < 0) return -1;
 	if (wr_u32(bb, race->race_time_ms > 0
 	    ? (uint32_t)race->race_time_ms : 0x7FFFFFFFu) < 0) return -1;
-	if (wr_u8(bb, race->lap_count < 0xff
-	    ? (uint8_t)race->lap_count : 0xff) < 0) return -1;
+	if (wr_u8(bb, ec->last_elo < 0xff
+	    ? (uint8_t)ec->last_elo : 0xff) < 0) return -1;
 
 	{
 		int si;

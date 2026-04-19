@@ -399,6 +399,11 @@ struct CarEntry {
 	 * state sync, matching FUN_14002dcb0 in accServer.exe. */
 	uint64_t	last_sys_data;
 
+	/* Last ACP_ELO_UPDATE payload (u32 at car+0x1f8 in the
+	 * exe).  FUN_140034210 emits it as u8-clamped in the
+	 * leaderboard record tail; default 0 = no rating seen. */
+	uint32_t	last_elo;
+
 	/*
 	 * Snapshot of race state at the end of each completed
 	 * session, keyed by SessionDef index.  Used by the 0x56

@@ -1294,9 +1294,9 @@ h_elo_update(struct Server *s, struct Conn *c,
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
 		log_info("Car %d elo update => %u",
 		    c->car_id, (unsigned)new_elo);
-		/* Phase 3 just logs; nothing persisted to disk yet. */
+		s->cars[c->car_id].last_elo = new_elo;
 	}
-	(void)s;
+	(void)reserved;
 	return 0;
 }
 
