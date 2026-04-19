@@ -60,26 +60,34 @@
 #include "weather.h"
 
 /*
- * Broadcast cadences, in ticks (~3 ms each, matching exe 333 Hz).
- * Kunos's main() runs FUN_14002d1e0(cfg, 3) which wraps
- * CreateTimerQueueTimer(Period=3 ms) — so tick=3 ms and every cadence
- * below works out to the same wall-clock interval as the exe.
- *   per-car dirty:  every tick (333 Hz, from broadcast_percar_dirty)
- *   keepalive 0x14: every 333 ticks (~1 s)
- *   weather 0x37:   every 1666 ticks (~5 s, DAT_14014bd38)
- *   leaderboard 0x36: every 25000 ticks (~75 s, async coalesce only)
+ * Broadcast cadences, in wall-clock milliseconds.
+ *
+ * The exe's main() calls CreateTimerQueueTimer(Period=3 ms), i.e. a
+ * 333 Hz tick, and its cadences are all expressed as integer tick
+ * counts (DAT_14014bd* in the .rdata).  Our reimpl runs one
+ * poll()-driven tick per main-loop iteration — but on OpenBSD
+ * `poll()` rounds short timeouts up to ~20 ms, which pins the loop
+ * at ~50 Hz regardless of TICK_INTERVAL_MS.  Tick-count modulo
+ * gates therefore fire at ~1/6.7 of their intended wall-clock rate.
+ *
+ * Fix: gate every cadence on a per-cadence `last_fired_ms` counter
+ * measured against mono_ms().  Rate is now a property of the
+ * cadence itself, not of the underlying tick period.
  */
-#define CADENCE_SESSION_STATE	333	/* 0x28 every ~1 s.  Single-
-					 * session active replay shows
-					 * Kunos at 1.01/s (911 frames /
-					 * 900 s).  An earlier 81-min
-					 * mixed-idle replay averaged
-					 * 0.53/s only because ~half the
-					 * window had no active driver. */
-#define CADENCE_KEEPALIVE	333	/* 0x14 every ~1 s, matching exe */
-#define CADENCE_WEATHER		1666
-#define CADENCE_LEADERBOARD	25000	/* 0x36 every ~75 s (async mode
-					 * only; sync fires on dirty) */
+#define CADENCE_SESSION_STATE_MS	1000	/* 0x28 ~1 Hz per-client */
+#define CADENCE_KEEPALIVE_MS		1000	/* 0x14 ~1 Hz */
+#define CADENCE_WEATHER_MS		5000	/* 0x37 every 5 s */
+#define CADENCE_LEADERBOARD_MS		75000	/* 0x36 async-coalesce */
+#define CADENCE_RATINGS_MS		81000	/* 0x4e debounce (.rdata) */
+
+static uint64_t
+tick_mono_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000ull +
+	    (uint64_t)ts.tv_nsec / 1000000ull;
+}
 
 /*
  * Write the 63-byte per-car body used by both 0x1e and each
@@ -695,6 +703,16 @@ tick_run(struct Server *s)
 {
 	uint32_t *last_standings_seq = &s->session.last_standings_seq;
 	uint8_t *last_phase = &s->session.last_phase;
+	/*
+	 * Wall-clock cadence state.  Initialized to 0 so every gate
+	 * fires on the first tick after startup (matches the prior
+	 * tick-modulo behavior that always fires at tick 0).
+	 */
+	static uint64_t last_keepalive_ms = 0;
+	static uint64_t last_leaderboard_ms = 0;
+	static uint64_t last_session_state_ms = 0;
+	static uint64_t last_weather_ms = 0;
+	uint64_t now_ms = tick_mono_ms();
 
 	s->tick_count++;
 
@@ -742,49 +760,42 @@ tick_run(struct Server *s)
 	 */
 	broadcast_percar_dirty(s);
 
-	/* Keepalive 0x14 every ~1s (matching exe capture). */
-	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
+	/*
+	 * Keepalive 0x14 + 0xbe localhost telemetry + optional latency
+	 * CSV row, all sharing the 1 s wall-clock cadence.  See
+	 * CADENCE_KEEPALIVE_MS — driven off now_ms so the cadence is
+	 * honest regardless of how many tick iterations the OS schedules
+	 * per second.
+	 */
+	if (now_ms - last_keepalive_ms >= CADENCE_KEEPALIVE_MS) {
 		broadcast_keepalive(s, SRV_KEEPALIVE_14);
-
-	/* 0xbe optional localhost telemetry every ~1s. */
-	if ((s->tick_count % CADENCE_KEEPALIVE) == 0)
 		broadcast_stats_udp(s);
 
-	/*
-	 * writeLatencyFileDumps (settings.json).  When enabled, append one
-	 * CSV row per authenticated conn per keepalive tick: monotonic ms,
-	 * conn_id, steam_id, avg_rtt_ms, clock_offset_ms.  Gives operators
-	 * a per-session record of per-client network health without needing
-	 * to enable full debug logging.  The exe parses the flag but ships
-	 * no consumer; accd wires it to its own CSV so the data Kunos
-	 * implied is actually available.
-	 */
-	if (s->write_latency_dumps && s->latency_dump_fp != NULL &&
-	    (s->tick_count % CADENCE_KEEPALIVE) == 0 && s->nconns > 0) {
-		FILE *fp = (FILE *)s->latency_dump_fp;
-		uint64_t now_ms;
-		struct timespec _ts;
-		int i;
+		if (s->write_latency_dumps &&
+		    s->latency_dump_fp != NULL && s->nconns > 0) {
+			FILE *fp = (FILE *)s->latency_dump_fp;
+			int i;
 
-		clock_gettime(CLOCK_MONOTONIC, &_ts);
-		now_ms = (uint64_t)_ts.tv_sec * 1000ull +
-		    (uint64_t)_ts.tv_nsec / 1000000ull;
-		for (i = 0; i < ACC_MAX_CARS; i++) {
-			struct Conn *c = s->conns[i];
-			const char *sid = "";
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct Conn *c = s->conns[i];
+				const char *sid = "";
 
-			if (c == NULL || c->state != CONN_AUTH)
-				continue;
-			if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
-			    s->cars[c->car_id].driver_count > 0)
-				sid = s->cars[c->car_id].drivers[0].steam_id;
-			fprintf(fp, "%llu,%u,%s,%u,%d\n",
-			    (unsigned long long)now_ms,
-			    (unsigned)c->conn_id, sid,
-			    (unsigned)c->avg_rtt_ms,
-			    (int)c->clock_offset_ms);
+				if (c == NULL || c->state != CONN_AUTH)
+					continue;
+				if (c->car_id >= 0 &&
+				    c->car_id < ACC_MAX_CARS &&
+				    s->cars[c->car_id].driver_count > 0)
+					sid = s->cars[c->car_id]
+					    .drivers[0].steam_id;
+				fprintf(fp, "%llu,%u,%s,%u,%d\n",
+				    (unsigned long long)now_ms,
+				    (unsigned)c->conn_id, sid,
+				    (unsigned)c->avg_rtt_ms,
+				    (int)c->clock_offset_ms);
+			}
+			fflush(fp);
 		}
-		fflush(fp);
+		last_keepalive_ms = now_ms;
 	}
 
 	/*
@@ -798,14 +809,15 @@ tick_run(struct Server *s)
 	{
 		int changed = s->session.standings_seq !=
 		    *last_standings_seq;
-		int cadence = (s->tick_count %
-		    CADENCE_LEADERBOARD) == 0;
+		int cadence = now_ms - last_leaderboard_ms >=
+		    CADENCE_LEADERBOARD_MS;
 		int fire = cadence ||
 		    (changed && !s->use_async_leaderboard);
 
 		if (fire) {
 			*last_standings_seq = s->session.standings_seq;
 			broadcast_leaderboard(s);
+			last_leaderboard_ms = now_ms;
 		}
 	}
 
@@ -817,7 +829,7 @@ tick_run(struct Server *s)
 	 * Kunos capture).  Each message is built per-connection
 	 * with a per-client time base from FUN_1400418b0.
 	 */
-	if ((s->tick_count % CADENCE_SESSION_STATE) == 0 &&
+	if (now_ms - last_session_state_ms >= CADENCE_SESSION_STATE_MS &&
 	    s->nconns > 0) {
 		struct ByteBuf bb;
 		int i;
@@ -843,6 +855,7 @@ tick_run(struct Server *s)
 				    bb.data, bb.wpos);
 		}
 		bb_free(&bb);
+		last_session_state_ms = now_ms;
 	}
 
 	/*
@@ -894,7 +907,7 @@ tick_run(struct Server *s)
 	 * which was 8× too fast.
 	 */
 	if (ratings_is_dirty(s) &&
-	    s->tick_count - s->ratings_last_emit_ms >= 27000ull) {
+	    now_ms - s->ratings_last_emit_ms >= CADENCE_RATINGS_MS) {
 		struct ByteBuf wb;
 		int j, nc = 0, ok = 1;
 		for (j = 0; j < ACC_MAX_CARS; j++)
@@ -927,7 +940,7 @@ tick_run(struct Server *s)
 			(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
 		bb_free(&wb);
 		ratings_clear_dirty(s);
-		s->ratings_last_emit_ms = s->tick_count;
+		s->ratings_last_emit_ms = now_ms;
 	}
 
 	/*
@@ -936,7 +949,7 @@ tick_run(struct Server *s)
 	 * drives the client's in-game clock, so it must be sent
 	 * unconditionally (matching the Kunos 5-second cadence).
 	 */
-	if ((s->tick_count % CADENCE_WEATHER) == 0) {
+	if (now_ms - last_weather_ms >= CADENCE_WEATHER_MS) {
 		struct ByteBuf bb;
 
 		(void)weather_step(s);
@@ -944,6 +957,7 @@ tick_run(struct Server *s)
 		if (weather_build_broadcast(s, &bb) == 0)
 			(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
 		bb_free(&bb);
+		last_weather_ms = now_ms;
 	}
 }
 
