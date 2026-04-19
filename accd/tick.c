@@ -410,9 +410,9 @@ done:
  * matching the observed cumulative behavior.
  */
 static int
-write_result_header(struct ByteBuf *bb, const struct CarEntry *car)
+write_result_header(struct ByteBuf *bb, const struct CarEntry *car,
+    const struct CarRaceState *r)
 {
-	const struct CarRaceState *r = &car->race;
 	uint8_t position = r->position > 0 && r->position < 0xff
 	    ? (uint8_t)r->position : 0;
 	/*
@@ -520,23 +520,61 @@ broadcast_session_results(struct Server *s)
 		bb_init(&bb);
 		ok = ok && wr_u8(&bb, SRV_SESSION_RESULTS) == 0;
 		ok = ok && wr_u8(&bb, result_count) == 0;
-		(void)n;
 		/*
-		 * Emit one result_header per entry then the leaderboard
-		 * section covering every car.  We still iterate
-		 * result_count times (session_index+1) so the byte count
-		 * matches the capture even while we populate per-car
-		 * fields in each 23-byte block.
+		 * FUN_1400351f0 walks a per-session-results vector and
+		 * emits one (header + leaderboard) pair per completed
+		 * session, each describing THAT session's leading car.
+		 * We used to pick the first used car for every iteration,
+		 * so the end-of-session screen for sessions 1+ showed the
+		 * wrong driver and times.  Resolve the session leader from
+		 * the archive slot (or live state for the current
+		 * session).
 		 */
 		for (n = 0; n < result_count && ok; n++) {
-			/* Pick the first used car to populate the header;
-			 * for multi-car sessions the leaderboard section
-			 * that follows carries every car's record. */
-			for (j = 0; j < ACC_MAX_CARS; j++)
-				if (s->cars[j].used)
+			int leader = -1;
+			const struct CarRaceState *src = NULL;
+			int cur = s->session.session_index;
+
+			for (j = 0; j < ACC_MAX_CARS; j++) {
+				if (!s->cars[j].used)
+					continue;
+				if (n == cur) {
+					if (s->cars[j].race.position == 1) {
+						leader = j;
+						src = &s->cars[j].race;
+						break;
+					}
+				} else if (n < cur &&
+				    n < ACC_MAX_SESSIONS &&
+				    s->cars[j].race_archive[n] != NULL &&
+				    s->cars[j].race_archive[n]->position
+					== 1) {
+					leader = j;
+					src = s->cars[j].race_archive[n];
 					break;
+				}
+			}
+			if (leader < 0) {
+				/* Fallback: first used car, archived state
+				 * if available, else live. */
+				for (j = 0; j < ACC_MAX_CARS; j++)
+					if (s->cars[j].used) {
+						leader = j;
+						break;
+					}
+				if (leader < 0) {
+					ok = 0;
+					break;
+				}
+				if (n < cur && n < ACC_MAX_SESSIONS &&
+				    s->cars[leader].race_archive[n] != NULL)
+					src = s->cars[leader]
+					    .race_archive[n];
+				else
+					src = &s->cars[leader].race;
+			}
 			ok = ok && write_result_header(&bb,
-			    &s->cars[j]) == 0;
+			    &s->cars[leader], src) == 0;
 			ok = ok && write_leaderboard_section(&bb, s) == 0;
 		}
 		if (ok)
