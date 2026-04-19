@@ -157,7 +157,15 @@ conn_drop(struct Server *s, struct Conn *c)
 			    wr_u16(&bb, tr) == 0 &&
 			    wr_i16(&bb, -1) == 0 &&
 			    wr_i16(&bb, -1) == 0 &&
-			    wr_u32(&bb, 0) == 0 &&
+			    /*
+			     * FUN_14002f710 emits 0xFFFFFFFF (i32 -1)
+			     * here as the unset sentinel; writing 0
+			     * put a usable "rating 0" value in front
+			     * of the steam_id and the HUD flagged the
+			     * departing driver as a fresh zero-rated
+			     * account.
+			     */
+			    wr_u32(&bb, 0xFFFFFFFFu) == 0 &&
 			    wr_str_a(&bb, drv->steam_id) == 0)
 				(void)conn_send_framed(c, bb.data, bb.wpos);
 			bb_free(&bb);
