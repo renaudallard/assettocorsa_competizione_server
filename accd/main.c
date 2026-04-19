@@ -83,6 +83,7 @@ extern int pledge(const char *promises, const char *execpromises);
 #define POLL_RECV_BUF	8192
 #define POLL_SLOTS	(ACC_MAX_CARS + 5)	/* tcp + udp + lan + stdin + conns */
 #define TICK_INTERVAL_MS	3
+#define CONN_UNAUTH_TIMEOUT_MS	30000	/* reap silent TCP scanners */
 
 volatile sig_atomic_t g_stop;
 
@@ -458,11 +459,30 @@ main(int argc, char **argv)
 
 		/* Sweep connections marked for disconnect (kick/ban
 		 * or failed sends) that had no poll events this
-		 * iteration. */
+		 * iteration, plus any TCP that accepted but never
+		 * authenticated within CONN_UNAUTH_TIMEOUT_MS — port
+		 * scanners occasionally hold the socket open forever,
+		 * and the session-start gate treats any TCP conn as a
+		 * driver present, pinning the phase machine. */
 		for (slot = 0; slot < ACC_MAX_CARS; slot++) {
-			if (srv.conns[slot] != NULL &&
-			    srv.conns[slot]->state == CONN_DISCONNECT)
-				conn_drop(&srv, srv.conns[slot]);
+			struct Conn *cn = srv.conns[slot];
+
+			if (cn == NULL)
+				continue;
+			if (cn->state == CONN_DISCONNECT) {
+				conn_drop(&srv, cn);
+				continue;
+			}
+			if (cn->state == CONN_UNAUTH &&
+			    mono_ms() - cn->accepted_mono_ms >=
+			    CONN_UNAUTH_TIMEOUT_MS) {
+				log_info("conn=%u unauth idle timeout, "
+				    "closing %s:%u",
+				    (unsigned)cn->conn_id,
+				    inet_ntoa(cn->peer.sin_addr),
+				    ntohs(cn->peer.sin_port));
+				conn_drop(&srv, cn);
+			}
 		}
 
 		if (mono_ms() - last_tick_ms >= TICK_INTERVAL_MS) {
