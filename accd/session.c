@@ -422,12 +422,27 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		float lo, hi;
 
 		if (silent) {
+			/*
+			 * FUN_14012f300 fires when the leader is in
+			 * [green_trigger, green_end + 0.2 * |green_end -
+			 * green_start|] (with wrap).  With defaults
+			 * 0.89..0.96 that's a 0.037-wide window past the
+			 * rolled point.  Our prior 0.02 single-point
+			 * window was narrower than the exe's and often
+			 * missed the leader on the first lap when the
+			 * position update fell outside the 2 %
+			 * slot — green wouldn't fire until the next full
+			 * lap.
+			 */
+			float span = s->green_trigger_end -
+			    s->green_trigger_start;
+			if (span < 0.0f)
+				span = -span;
 			lo = ss->green_trigger;
-			hi = ss->green_trigger;	/* single point */
-			if (!wrapped_range_contains(leader_pos,
-			    lo,
-			    lo + 0.02f > 1.0f ? lo + 0.02f - 1.0f
-					       : lo + 0.02f))
+			hi = s->green_trigger_end + 0.2f * span;
+			if (hi >= 1.0f)
+				hi -= 1.0f;
+			if (!wrapped_range_contains(leader_pos, lo, hi))
 				return 0;
 		} else {
 			lo = s->green_trigger_start;
