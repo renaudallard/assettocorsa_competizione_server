@@ -712,9 +712,29 @@ tick_run(struct Server *s)
 	static uint64_t last_leaderboard_ms = 0;
 	static uint64_t last_session_state_ms = 0;
 	static uint64_t last_weather_ms = 0;
+	/*
+	 * Tick-rate probe.  Every 60 s of wall-clock, log the observed
+	 * tick rate so we can confirm the main-loop busy-wait is
+	 * hitting the intended 333 Hz.  Costs one log line per minute.
+	 */
+	static uint64_t tickprobe_start_ms = 0;
+	static uint32_t tickprobe_start_count = 0;
 	uint64_t now_ms = tick_mono_ms();
 
 	s->tick_count++;
+	if (tickprobe_start_ms == 0) {
+		tickprobe_start_ms = now_ms;
+		tickprobe_start_count = s->tick_count;
+	} else if (now_ms - tickprobe_start_ms >= 60000) {
+		uint32_t dt_ticks = s->tick_count - tickprobe_start_count;
+		uint64_t dt_ms = now_ms - tickprobe_start_ms;
+		log_info("tick rate: %u ticks in %llu ms = %.1f Hz",
+		    (unsigned)dt_ticks,
+		    (unsigned long long)dt_ms,
+		    (double)dt_ticks * 1000.0 / (double)dt_ms);
+		tickprobe_start_ms = now_ms;
+		tickprobe_start_count = s->tick_count;
+	}
 
 	/* Drive the session phase machine. */
 	session_tick(s);
