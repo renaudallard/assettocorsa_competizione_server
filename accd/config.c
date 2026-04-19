@@ -392,6 +392,8 @@ config_load(struct Server *s, const char *cfg_dir)
 		    event, "postRaceSeconds", s->post_race_s);
 		s->session.ambient_temp = (uint8_t)json_obj_get_int(
 		    event, "ambientTemp", 22);
+		s->session.track_temp = (uint8_t)json_obj_get_int(
+		    event, "trackTemp", 0);
 		s->event_version = (uint32_t)json_obj_get_int(event,
 		    "configVersion", 0);
 		{
