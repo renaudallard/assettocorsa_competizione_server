@@ -733,7 +733,16 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		}
 	}
 
-	if (wr_u8(bb, race->formation_lap_done) < 0) return -1;
+	/*
+	 * Final two bytes: FUN_140034210 writes car+0x200 then
+	 * car+0x201.  car+0x200 is the session-final latch (set only
+	 * once a car has crossed the finish line in a completed
+	 * session); car+0x201's semantic is unknown but also quiescent
+	 * during normal play.  formation_lap_done (car+0x204) was
+	 * already emitted in the cvar8-gated block above — don't
+	 * repeat it here.
+	 */
+	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	return 0;
 }
