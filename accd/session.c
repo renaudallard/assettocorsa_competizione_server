@@ -249,7 +249,9 @@ session_start(struct Server *s)
 	    ? (uint64_t)s->pre_race_waiting_s * 1000ull : 3000;
 	uint64_t dur_ms = (uint64_t)def->duration_min * 60000ull;
 	uint64_t ot_ms  = (uint64_t)s->session_overtime_s * 1000ull;
-	uint64_t post_ms = 5000;
+	uint64_t post_ms = def->session_type == 10
+	    ? (uint64_t)s->post_race_s * 1000ull
+	    : (uint64_t)s->post_qualy_s * 1000ull;
 
 	/*
 	 * 7 schedule boundaries matching the exe's sub-objects

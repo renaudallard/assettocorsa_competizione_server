@@ -588,6 +588,8 @@ struct Server {
 	uint8_t			bop_version;
 	uint16_t		pre_race_waiting_s; /* preRaceWaitingTimeSeconds */
 	uint16_t		session_overtime_s; /* sessionOverTimeSeconds */
+	uint16_t		post_qualy_s;	    /* postQualySeconds (EventConfig+0x90) */
+	uint16_t		post_race_s;	    /* postRaceSeconds  (EventConfig+0x94) */
 	uint32_t		driver_stint_time_s; /* eventRules.driverStintTime*60 (0 = no limit) */
 	uint8_t			mandatory_pit_count; /* eventRules.mandatoryPitstopCount (0 = none) */
 	char			cfg_dir[256];	/* for saving bans */

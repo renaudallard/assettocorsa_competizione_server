@@ -386,6 +386,10 @@ config_load(struct Server *s, const char *cfg_dir)
 		    event, "preRaceWaitingTimeSeconds", 80);
 		s->session_overtime_s = (uint16_t)json_obj_get_int(
 		    event, "sessionOverTimeSeconds", 120);
+		s->post_qualy_s = (uint16_t)json_obj_get_int(
+		    event, "postQualySeconds", s->post_qualy_s);
+		s->post_race_s = (uint16_t)json_obj_get_int(
+		    event, "postRaceSeconds", s->post_race_s);
 		s->session.ambient_temp = (uint8_t)json_obj_get_int(
 		    event, "ambientTemp", 22);
 		s->event_version = (uint32_t)json_obj_get_int(event,
