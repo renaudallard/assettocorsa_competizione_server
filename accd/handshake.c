@@ -1945,7 +1945,20 @@ reply:
 					}
 					ok = ok && wr_i16(&wb, -1) == 0;
 					ok = ok && wr_i16(&wb, -1) == 0;
-					ok = ok && wr_u8(&wb, 0) == 0;
+					/*
+					 * FUN_14002f710 tail of each 0x4e
+					 * entry is str_a steam_id (via the
+					 * generic string writer at 14004d390),
+					 * not a u8 0.  The prior pad would be
+					 * accepted as a zero-length str_a only
+					 * by accident; real steam_ids are
+					 * ~17-18 chars, and the rating HUD
+					 * maps each per-entry body back to its
+					 * driver by that id.
+					 */
+					ok = ok && wr_str_a(&wb,
+					    s->cars[j].drivers[0].steam_id)
+					    == 0;
 				}
 				if (ok)
 					(void)bcast_all(s, wb.data,
