@@ -666,7 +666,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		int si;
 		int l1_n = 0;
 		int l2_n;
-		uint8_t wide_flag = 1;
+		uint8_t wide_flag = 0;
 		int32_t l2_buf[ACC_LAP_HISTORY];
 
 		for (si = 0; si < 3; si++)
@@ -693,15 +693,44 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			}
 		}
 
+		/*
+		 * FUN_140034210 scans both sector lists; if ANY value
+		 * >= 0x10000, it switches BOTH lists to u32 encoding.
+		 * Otherwise each value is written as u16 capped at 0xffff.
+		 * The sentinel 0x7FFFFFFF for empty laps forces wide mode
+		 * naturally, so narrow mode only kicks in when every
+		 * sector is a real sub-65 s split.
+		 */
+		for (si = 0; si < l1_n; si++)
+			if ((uint32_t)race->sector_ms[si] >= 0x10000u)
+				wide_flag = 1;
+		for (si = 0; si < l2_n; si++)
+			if ((uint32_t)l2_buf[si] >= 0x10000u)
+				wide_flag = 1;
+
 		if (wr_u8(bb, wide_flag) < 0) return -1;
 		if (wr_u8(bb, (uint8_t)l1_n) < 0) return -1;
-		for (si = 0; si < l1_n; si++)
-			if (wr_u32(bb,
-			    (uint32_t)race->sector_ms[si]) < 0) return -1;
+		for (si = 0; si < l1_n; si++) {
+			uint32_t v = (uint32_t)race->sector_ms[si];
+			if (wide_flag) {
+				if (wr_u32(bb, v) < 0) return -1;
+			} else {
+				if (wr_u16(bb,
+				    v >= 0x10000u ? 0xffffu
+				    : (uint16_t)v) < 0) return -1;
+			}
+		}
 		if (wr_u8(bb, (uint8_t)l2_n) < 0) return -1;
-		for (si = 0; si < l2_n; si++)
-			if (wr_u32(bb,
-			    (uint32_t)l2_buf[si]) < 0) return -1;
+		for (si = 0; si < l2_n; si++) {
+			uint32_t v = (uint32_t)l2_buf[si];
+			if (wide_flag) {
+				if (wr_u32(bb, v) < 0) return -1;
+			} else {
+				if (wr_u16(bb,
+				    v >= 0x10000u ? 0xffffu
+				    : (uint16_t)v) < 0) return -1;
+			}
+		}
 	}
 
 	if (wr_u8(bb, race->formation_lap_done) < 0) return -1;
