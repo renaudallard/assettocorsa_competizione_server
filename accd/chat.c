@@ -166,12 +166,21 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 		    "Assigned %d %% to car #%d", value, car_num);
 	}
 
-	/* Emit 0x53 MultiplayerBOPUpdate broadcast (per §5.6.4a). */
+	/*
+	 * Emit 0x53 MultiplayerBOPUpdate broadcast.  FUN_14011d7d0
+	 * writes (u16 car_id, u16 restrictor_pct, u32 ballast_kg) —
+	 * in that order, with restrictor before ballast and ballast
+	 * as a u32, not a float.  We had the last two fields flipped
+	 * and typed wrong; the client was reading our ballast bytes
+	 * as restrictor (and vice versa) and rendering ballast as a
+	 * float — every admin BoP edit showed a nonsense value.
+	 */
 	bb_init(&out);
 	if (wr_u8(&out, SRV_BOP_UPDATE) == 0 &&
 	    wr_u16(&out, car->car_id) == 0 &&
-	    wr_u16(&out, (uint16_t)car->ballast_kg) == 0 &&
-	    wr_f32(&out, car->restrictor) == 0)
+	    wr_u16(&out,
+		(uint16_t)(car->restrictor * 100.0f + 0.5f)) == 0 &&
+	    wr_u32(&out, (uint32_t)car->ballast_kg) == 0)
 		(void)bcast_all(s, out.data, out.wpos, 0xFFFF);
 	bb_free(&out);
 
