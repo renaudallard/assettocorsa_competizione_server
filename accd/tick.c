@@ -113,18 +113,9 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 {
 	int k, ok;
 	int16_t clamped;
-	uint16_t rtt_hint = 0;
 	uint32_t adj_ts;
 
-	for (k = 0; k < ACC_MAX_CARS; k++) {
-		struct Conn *oc = s->conns[k];
-		if (oc != NULL && oc->car_id ==
-		    (int)(car->car_id - ACC_CAR_ID_BASE)) {
-			rtt_hint = (uint16_t)(oc->avg_rtt_ms > 65535
-			    ? 65535 : oc->avg_rtt_ms);
-			break;
-		}
-	}
+	(void)s;
 
 	/*
 	 * Per-peer timestamp adjustment matching FUN_14001a170.
@@ -146,7 +137,15 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	if (wr_u16(bb, car->car_id) < 0) return -1;
 	if (wr_u8(bb, car->rt.packet_seq) < 0) return -1;
 	if (wr_u32(bb, adj_ts) < 0) return -1;
-	if (wr_u16(bb, rtt_hint) < 0) return -1;
+	/*
+	 * FUN_14001a170 emits car+0x50 here — a u16 that is 0 in
+	 * every capture we've seen.  We previously substituted the
+	 * owning connection's RTT as a convenience ping hint, but
+	 * that diverged from the exe's wire bytes and there was no
+	 * evidence the client read the field for any purpose (peer
+	 * RTT is already carried in 0x28).  Emit 0 to match.
+	 */
+	if (wr_u16(bb, 0) < 0) return -1;
 
 	for (k = 0; k < 3 && ok; k++)
 		ok = wr_f32(bb, car->rt.vec_a[k]) == 0;
