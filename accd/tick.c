@@ -416,7 +416,16 @@ write_result_header(struct ByteBuf *bb, const struct CarEntry *car)
 	const struct CarRaceState *r = &car->race;
 	uint8_t position = r->position > 0 && r->position < 0xff
 	    ? (uint8_t)r->position : 0;
-	uint8_t drv_minus_one = (uint8_t)(car->current_driver_index - 1);
+	/*
+	 * FUN_1400351f0 writes `cVar3 + -1` where cVar3 is the byte at
+	 * entry+0x58.  The exe stores that byte 1-based (driver #1,
+	 * #2, ...) so the minus-one transforms it to the 0-based wire
+	 * index the client expects.  Our current_driver_index is
+	 * already 0-based, so emit it directly — subtracting here
+	 * wrapped to 0xff for the first driver and broke the result
+	 * screen.
+	 */
+	uint8_t drv_idx = car->current_driver_index;
 	uint32_t penalty_ms = 0;
 	int pi;
 
@@ -471,11 +480,11 @@ write_result_header(struct ByteBuf *bb, const struct CarEntry *car)
 
 	if (wr_u8(bb, position) < 0) return -1;		/* +0x50 */
 	if (wr_u8(bb, position) < 0) return -1;		/* +0x54 cup_pos */
-	if (wr_u8(bb, drv_minus_one) < 0) return -1;	/* +0x58 drv-1 */
+	if (wr_u8(bb, drv_idx) < 0) return -1;		/* +0x58 0-based drv */
 	if (wr_u32(bb, (uint32_t)r->lap_count) < 0) return -1;	/* +0x5c */
 	if (wr_u16(bb, 0) < 0) return -1;		/* +0x60 unknown */
 	if (wr_u32(bb, r->best_lap_ms > 0
-	    ? (uint32_t)r->best_lap_ms : 0x7FFFFFFFu) < 0) return -1;
+	    ? (uint32_t)r->best_lap_ms : 0x7FFFFFFFu) < 0) return -1;	/* +0x64 */
 	if (wr_u32(bb, r->race_time_ms > 0
 	    ? (uint32_t)r->race_time_ms : 0) < 0) return -1;	/* +0x68 */
 	if (wr_u8(bb, r->formation_lap_done) < 0) return -1;	/* +0x6c */
