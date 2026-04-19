@@ -1003,7 +1003,21 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	slot1 = (uint8_t)(car_slot + 1);
 	if (wr_u16(bb, ec->car_id) < 0) return -1;
 	if (wr_u8(bb, slot1) < 0) return -1;
-	if (wr_u8(bb, slot1) < 0) return -1;
+	/*
+	 * FUN_140032c90 writes `car+0x3 + 1` here — the 1-based
+	 * gridNumber.  The exe's own debug log confirms it:
+	 *   "Assigning gridNumber %d to new carId %d".
+	 * Using slot+1 instead made the race start position HUD
+	 * number disagree with the actual pit/grid slot the client
+	 * spawned the car on, visible when defaultGridPosition or a
+	 * qualy archive overrode the natural slot order.
+	 */
+	{
+		int16_t g = ec->race.grid_position;
+		uint8_t grid_wire = (g >= 0 && g < 0xff)
+		    ? (uint8_t)(g + 1) : slot1;
+		if (wr_u8(bb, grid_wire) < 0) return -1;
+	}
 
 	if (bb_append(bb, owner->hs_echo + ci_off, ci_len) < 0)
 		return -1;
