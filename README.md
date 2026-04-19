@@ -84,6 +84,10 @@ every wire message, string encoding, and state transition.
 - **Mid-race join controls** — `unsafeRejoin: 0` refuses fresh
   handshakes during an active race; `/lockprep` freezes the
   preparation phase.  Returning drivers always bypass both.
+- **Silent scanner reaper** — a TCP socket that accepts but never
+  sends the handshake is dropped after 30 s.  Without the reaper a
+  single port scan could pin the session-start gate and trip the
+  public lobby's delist filter.
 
 ### Session management
 

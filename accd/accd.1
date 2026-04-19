@@ -325,3 +325,9 @@ in
 LAN discovery (UDP 8999) and direct IP connect via the client's
 .Pa serverList.json
 work regardless of the lobby setting.
+.Pp
+A TCP peer that connects but never completes the handshake is
+dropped after 30 seconds so port scanners cannot pin the
+session-start gate.
+A legitimate client sends its first handshake byte within
+milliseconds, well under the timeout.
