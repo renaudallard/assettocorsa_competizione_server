@@ -603,8 +603,15 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 
 	if (wr_u16(bb, ec->car_id) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)ec->race_number) < 0) return -1;
-	if (wr_u8(bb, ec->car_model) < 0) return -1;
+	/*
+	 * FUN_140034210 writes u8 at car+0x58 (cupCategory) then u8 at
+	 * car+0x5c (current_driver_index) — NOT car_model.  The client
+	 * already has car_model from the spawnDef in 0x0b; repeating it
+	 * here shifts the two following fields out of alignment on the
+	 * HUD timing tower.
+	 */
 	if (wr_u8(bb, ec->cup_category) < 0) return -1;
+	if (wr_u8(bb, ec->current_driver_index) < 0) return -1;
 	if (wr_u16(bb, 0) < 0) return -1;
 
 	if (pq->count > 0 && !pq->slots[0].served) {
