@@ -49,6 +49,7 @@
 #include <poll.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <sched.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -82,7 +83,7 @@ extern int pledge(const char *promises, const char *execpromises);
 
 #define POLL_RECV_BUF	8192
 #define POLL_SLOTS	(ACC_MAX_CARS + 5)	/* tcp + udp + lan + stdin + conns */
-#define TICK_INTERVAL_MS	3
+#define TICK_INTERVAL_US	3000	/* 333 Hz, matching exe CreateTimerQueueTimer(3) */
 #define CONN_UNAUTH_TIMEOUT_MS	30000	/* reap silent TCP scanners */
 
 volatile sig_atomic_t g_stop;
@@ -232,24 +233,20 @@ handle_udp(struct Server *s)
 
 /* ----- main loop ------------------------------------------------- */
 
-static int
-ms_until_next_tick(uint64_t last_tick_ms, uint64_t now_ms)
+static uint64_t
+mono_us(void)
 {
-	uint64_t target = last_tick_ms + TICK_INTERVAL_MS;
+	struct timespec ts;
 
-	if (now_ms >= target)
-		return 0;
-	return (int)(target - now_ms);
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000ull +
+	    (uint64_t)ts.tv_nsec / 1000ull;
 }
 
 static uint64_t
 mono_ms(void)
 {
-	struct timespec ts;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000ull +
-	    (uint64_t)ts.tv_nsec / 1000000ull;
+	return mono_us() / 1000ull;
 }
 
 int
@@ -268,7 +265,7 @@ main(int argc, char **argv)
 	struct Conn *pfd_owner[POLL_SLOTS];
 	int npfds, i, r, ch;
 	const char *cfg_dir = "cfg";
-	uint64_t last_tick_ms;
+	uint64_t last_tick_us;
 
 	while ((ch = getopt(argc, argv, "dc:")) != -1) {
 		switch (ch) {
@@ -336,9 +333,8 @@ main(int argc, char **argv)
 	log_info("listening: tcp/%d udp/%d (Ctrl-C to stop)",
 	    srv.tcp_port, srv.udp_port);
 
-	last_tick_ms = mono_ms();
+	last_tick_us = mono_us();
 	while (!g_stop) {
-		int timeout_ms;
 		int slot;
 
 		npfds = 0;
@@ -394,8 +390,15 @@ main(int argc, char **argv)
 			}
 		}
 
-		timeout_ms = ms_until_next_tick(last_tick_ms, mono_ms());
-		r = poll(pfds, (nfds_t)npfds, timeout_ms);
+		/*
+		 * Non-blocking poll.  On OpenBSD a poll() with timeout
+		 * < 20 ms still waits ~20 ms (HZ=100 kernel tick +
+		 * rounding), which would pin our tick loop at 50 Hz
+		 * instead of the exe's 333 Hz.  We pick up whatever's
+		 * ready now and spin on sched_yield() until the tick
+		 * deadline — matches the exe's dedicated tick thread.
+		 */
+		r = poll(pfds, (nfds_t)npfds, 0);
 		if (r < 0) {
 			if (errno == EINTR)
 				continue;
@@ -485,10 +488,23 @@ main(int argc, char **argv)
 			}
 		}
 
-		if (mono_ms() - last_tick_ms >= TICK_INTERVAL_MS) {
-			tick_run(&srv);
-			last_tick_ms = mono_ms();
+		{
+			uint64_t now_us = mono_us();
+			if (now_us - last_tick_us >= TICK_INTERVAL_US) {
+				tick_run(&srv);
+				last_tick_us = now_us;
+			}
 		}
+		/*
+		 * Yield briefly so other runnable processes can
+		 * schedule.  sched_yield() returns in < 1 µs on
+		 * OpenBSD so it doesn't break the 333 Hz deadline
+		 * the way nanosleep/usleep/poll(timeout>0) would.
+		 * The trade-off is ~100 % of one core — which is
+		 * how the Kunos exe runs on Windows too (dedicated
+		 * CreateTimerQueueTimer thread + busy workers).
+		 */
+		sched_yield();
 	}
 
 	log_info("accd shutting down");
