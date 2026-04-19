@@ -1433,28 +1433,34 @@ h_load_setup(struct Server *s, struct Conn *c,
 			goto done;
 
 		if (src != NULL && src->lap_history_count > 0) {
-			int count = src->lap_history_count;
-			int i;
+			int total = src->lap_history_count;
+			int count = total < ACC_LAP_HISTORY
+			    ? total : ACC_LAP_HISTORY;
+			int start = total <= ACC_LAP_HISTORY
+			    ? 0 : total % ACC_LAP_HISTORY;
+			int first_lap = total <= ACC_LAP_HISTORY
+			    ? 1 : total - ACC_LAP_HISTORY + 1;
+			int k;
 
-			if (count > ACC_LAP_HISTORY)
-				count = ACC_LAP_HISTORY;
 			if (wr_i16(&out, (int16_t)count) < 0)
 				goto done;
-			for (i = 0; i < count; i++) {
+			for (k = 0; k < count; k++) {
+				int idx = (start + k) % ACC_LAP_HISTORY;
 				int si;
 
 				if (wr_str_a(&out, s->track) < 0) goto done;
 				if (wr_u32(&out,
-				    (uint32_t)src->lap_history_ms[i]) < 0)
+				    (uint32_t)src->lap_history_ms[idx]) < 0)
 					goto done;
 				if (wr_u8(&out, 3) < 0) goto done;
 				for (si = 0; si < 3; si++)
-					if (wr_u32(&out,
-					    (uint32_t)src->lap_splits_ms[i][si])
-					    < 0) goto done;
+					if (wr_u32(&out, (uint32_t)
+					    src->lap_splits_ms[idx][si]) < 0)
+						goto done;
 				if (wr_u16(&out, car->car_id) < 0) goto done;
 				if (wr_u8(&out, 0) < 0) goto done;
-				if (wr_u16(&out, (uint16_t)(i + 1)) < 0)
+				if (wr_u16(&out,
+				    (uint16_t)(first_lap + k)) < 0)
 					goto done;
 			}
 			laps_emitted = count;
