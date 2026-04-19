@@ -1643,6 +1643,15 @@ post_slot_assignment:
 			car->driver_count = 1;
 
 		/*
+		 * entrylist isServerAdmin: auto-elevate this conn to admin
+		 * without requiring /admin <pw>.  Matches the exe's
+		 * FUN_140018390 which sets conn->admin byte when the entry's
+		 * +0x6e flag is non-zero on join.
+		 */
+		if (car->is_server_admin)
+			c->is_admin = 1;
+
+		/*
 		 * Only override car fields from the handshake if the
 		 * entry list did not pre-populate them.
 		 */

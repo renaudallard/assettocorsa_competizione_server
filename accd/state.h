@@ -377,6 +377,11 @@ struct CarEntry {
 	float		restrictor;		/* normalized 0..0.99 */
 	uint8_t		current_driver_index;
 	uint8_t		driver_count;
+	uint8_t		is_server_admin;	/* entrylist isServerAdmin:
+						 * auto-elevate any driver
+						 * matching this slot to admin
+						 * without /admin <pw>,
+						 * matching exe +0x6e check */
 	struct DriverInfo drivers[ACC_MAX_DRIVERS_PER_CAR];
 	uint8_t		swap_state[ACC_MAX_DRIVERS_PER_CAR]; /* 0=idle..5=done */
 	int		used;			/* slot occupied? */
