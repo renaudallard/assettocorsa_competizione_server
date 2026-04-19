@@ -793,15 +793,24 @@ write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 	uint32_t is_dynamic = s->weather.randomness > 0 ? 1 : 0;
 
 	if (wr_u32(bb, is_dynamic) < 0) return -1;	/* +0x28 */
-	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x30 */
-	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x34 */
-	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x38 mean */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x3c dev  */
+	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x30 ambientMean */
+	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x34 wind now */
+	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x38 windMean */
+	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x3c windDev  */
 	if (wr_f32(bb, wind_dir) < 0) return -1;	/* +0x40 */
 	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x44 chg  */
 	if (wr_u32(bb, 0) < 0) return -1;		/* +0x48 windHarmonic */
 	if (wr_u32(bb, 0) < 0) return -1;		/* +0x4c nHarmonics   */
-	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x50 baseMean */
+	/*
+	 * +0x50 weatherBaseMean is the CLOUD/RAIN variability baseline,
+	 * NOT a temperature.  We were emitting the ambient temperature
+	 * (typically ~22.0), which made the client read a 22-unit cloud
+	 * baseline on the forecast page.  For a static weather model
+	 * with zero harmonics, the meaningful baseline is the current
+	 * cloud level — that's what the variability curve oscillates
+	 * around when dynamic mode flips on.
+	 */
+	if (wr_f32(bb, s->weather.clouds) < 0) return -1;	/* +0x50 */
 	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x54 baseDev  */
 	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x58 varDev   */
 	if (wr_i16(bb, 0) < 0) return -1;		/* sineCoeffs: 0 */
