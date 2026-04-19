@@ -878,7 +878,13 @@ tick_run(struct Server *s)
 			ok = ok && wr_u16(&wb, tr) == 0;
 			ok = ok && wr_i16(&wb, -1) == 0;
 			ok = ok && wr_i16(&wb, -1) == 0;
-			ok = ok && wr_u8(&wb, 0) == 0;
+			/*
+			 * Same tail as the welcome and disconnect 0x4e
+			 * paths: str_a steam_id, not a u8 0 pad.  See
+			 * FUN_14002f710 tail for the reference write.
+			 */
+			ok = ok && wr_str_a(&wb,
+			    s->cars[j].drivers[0].steam_id) == 0;
 		}
 		if (ok)
 			(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
