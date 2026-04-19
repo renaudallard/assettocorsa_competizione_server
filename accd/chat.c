@@ -394,13 +394,24 @@ chat_do_track(struct Server *s, const char *args,
 	/*
 	 * Weekend reset side-effect — accServer.exe FUN_14002aca0
 	 * snapshots the live config to files under cfg/current/ so operators
-	 * can see what weekend this track change came from.  No 0x40
-	 * broadcast yet: the exe's body pulls from a RaceWeekendForecast
-	 * serializer whose full wire layout we haven't finished
-	 * decoding; clients pick up the new track via the 0x4b
-	 * redelivery below.
+	 * can see what weekend this track change came from.
 	 */
 	(void)snapshot_cfg_current(s);
+
+	/*
+	 * 0x40 weekend-reset broadcast.  FUN_14002c740 line 242 writes msg_id
+	 * 0x40, then appends the WeatherData serialize body (vtable slot 0x20
+	 * on the WeatherData object — same call our write_trailer_weather_data
+	 * mirrors), then fans out to every peer via FUN_14004cc50.
+	 */
+	{
+		struct ByteBuf wb;
+		bb_init(&wb);
+		if (wr_u8(&wb, SRV_RACE_WEEKEND_RESET) == 0 &&
+		    write_trailer_weather_data(&wb, s) == 0)
+			(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
+		bb_free(&wb);
+	}
 
 	snprintf(msg, sizeof(msg), "Event changed to %s", s->track);
 	chat_broadcast(s, msg, 4);
