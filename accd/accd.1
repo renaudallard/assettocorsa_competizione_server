@@ -226,6 +226,11 @@ Authenticate first with
 Advance to the next session.
 .It /restart
 Restart the current session.
+.It /resetWeekend
+Reset to the first session of the weekend, snapshot
+.Pa cfg/current/*.txt ,
+and redeliver the welcome trailer to every connected client
+so the new weather and schedule take effect immediately.
 .It /kick Ar car#
 Kick a car by number.
 .It /ban Ar car#
