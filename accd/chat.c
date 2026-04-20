@@ -382,7 +382,7 @@ snapshot_cfg_current(const struct Server *s)
  * weather body, and 0x4b welcome-trailer redelivery to every peer.
  * Shared by /track (new event) and /resetWeekend (same event).
  */
-static void
+void
 chat_weekend_reset_broadcast(struct Server *s)
 {
 	int j;

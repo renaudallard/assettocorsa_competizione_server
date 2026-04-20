@@ -77,6 +77,15 @@ void	chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	    char *reply, size_t replysz);
 void	chat_do_track(struct Server *s, const char *args,
 	    char *reply, size_t replysz);
+
+/*
+ * Rebroadcast the weekend-reset state after the caller has already
+ * mutated server state via session_reset(s, 0): writes the cfg/current
+ * snapshot, emits a 0x40 WeatherData update, and redelivers the 0x4b
+ * welcome trailer to every authenticated peer.  Safe to call with no
+ * connections.
+ */
+void	chat_weekend_reset_broadcast(struct Server *s);
 int	chat_track_count(void);
 const char *
 	chat_track_name(int index);

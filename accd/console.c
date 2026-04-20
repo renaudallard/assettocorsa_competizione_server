@@ -87,6 +87,7 @@ cmd_help(void)
 	reply("  show conns       list active connections");
 	reply("  next             advance to next session");
 	reply("  restart          restart current session");
+	reply("  resetWeekend     reset to first session + redeliver welcome");
 	reply("  kick <num>       kick car by race number");
 	reply("  ban <num>        kick + persistent ban");
 	reply("  dq <num>         disqualify");
@@ -291,6 +292,13 @@ console_dispatch(struct Server *s, const char *line)
 		chat_broadcast(s,
 		    "Session restarted by administrator", 4);
 		reply("session restarted");
+	} else if (chat_prefix(p, "resetWeekend") ||
+	    chat_prefix(p, "resetweekend")) {
+		session_reset(s, 0);
+		chat_broadcast(s,
+		    "Race weekend reset by administrator", 4);
+		chat_weekend_reset_broadcast(s);
+		reply("race weekend reset");
 	} else if (chat_prefix(p, "kick")) {
 		chat_do_kick(s, p + 4, 0, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
