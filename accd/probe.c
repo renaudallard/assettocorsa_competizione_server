@@ -167,14 +167,26 @@ msg_name(uint8_t id)
 	case 0x36: return "LEADERBOARD";
 	case 0x37: return "WEATHER";
 	case 0x39: return "PERCAR_SLOW";
+	case 0x3a: return "SECTOR_SPLITS_RELAY";
+	case 0x3b: return "SECTOR_SPLIT_RELAY";
+	case 0x3c: return "OUT_OF_TRACK_RELAY";
 	case 0x3e: return "SESSION_RESULTS";
 	case 0x3f: return "GRID_POSITIONS";
 	case 0x40: return "WEEKEND_RESET";
+	case 0x44: return "DAMAGE_ZONES_RELAY";
+	case 0x46: return "CAR_DIRT_RELAY";
+	case 0x47: return "DRIVER_SWAP_STATE_BCAST";
+	case 0x49: return "DRIVER_SWAP_RESULT";
+	case 0x4b: return "WELCOME_REDELIVERY";
 	case 0x4e: return "RATING_SUMMARY";
 	case 0x4f: return "DRIVER_STINT_RELAY";
 	case 0x53: return "BOP_UPDATE";
+	case 0x56: return "SETUP_DATA_RESPONSE";
+	case 0x58: return "DRIVER_SWAP_NOTIFY";
+	case 0x59: return "DRIVER_HANDOVER_REQ";
 	case 0x5b: return "CTRL_INFO_REQUEST";
 	case 0x5d: return "CONNECTIONS_LIST_ROW";
+	case 0xbe: return "PERIODIC_UDP";
 	default:   return "???";
 	}
 }
