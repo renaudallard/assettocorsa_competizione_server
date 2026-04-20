@@ -127,12 +127,30 @@ results_write(struct Server *s)
 	fprint_json_str(f, s->server_name);
 	fprintf(f, ",\n");
 	fprintf(f, "  \"sessionResult\": {\n");
-	fprintf(f, "    \"bestlap\": %d,\n",
-	    s->cars[0].used ? s->cars[0].race.best_lap_ms : 0);
-	fprintf(f, "    \"bestSplits\": [%d, %d, %d],\n",
-	    s->cars[0].used ? s->cars[0].race.best_sectors_ms[0] : 0,
-	    s->cars[0].used ? s->cars[0].race.best_sectors_ms[1] : 0,
-	    s->cars[0].used ? s->cars[0].race.best_sectors_ms[2] : 0);
+	{
+		int32_t best_lap = 0;
+		int32_t best_sec[3] = { 0, 0, 0 };
+		int k;
+
+		for (k = 0; k < ACC_MAX_CARS; k++) {
+			const struct CarRaceState *r = &s->cars[k].race;
+			int j;
+
+			if (r->disqualified)
+				continue;
+			if (r->best_lap_ms > 0 &&
+			    (best_lap == 0 || r->best_lap_ms < best_lap))
+				best_lap = r->best_lap_ms;
+			for (j = 0; j < 3; j++)
+				if (r->best_sectors_ms[j] > 0 &&
+				    (best_sec[j] == 0 ||
+				    r->best_sectors_ms[j] < best_sec[j]))
+					best_sec[j] = r->best_sectors_ms[j];
+		}
+		fprintf(f, "    \"bestlap\": %d,\n", (int)best_lap);
+		fprintf(f, "    \"bestSplits\": [%d, %d, %d],\n",
+		    (int)best_sec[0], (int)best_sec[1], (int)best_sec[2]);
+	}
 	fprintf(f, "    \"isWetSession\": 0,\n");
 	fprintf(f, "    \"type\": 0,\n");
 	fprintf(f, "    \"leaderBoardLines\": [");
