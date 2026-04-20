@@ -172,6 +172,10 @@ results_write(struct Server *s)
 		if (!first)
 			fprintf(f, ",");
 		fprintf(f, "\n      {\n");
+		fprintf(f, "        \"position\": %d,\n",
+		    (int)car->race.position);
+		fprintf(f, "        \"disqualified\": %s,\n",
+		    car->race.disqualified ? "true" : "false");
 		fprintf(f, "        \"car\": {\n");
 		fprintf(f, "          \"carId\": %u,\n", car->car_id);
 		fprintf(f, "          \"raceNumber\": %d,\n",
