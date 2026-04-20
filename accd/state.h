@@ -464,17 +464,23 @@ struct Conn {
 						 * pin the session-start gate */
 	uint32_t	avg_rtt_ms;		/* exponential avg round-trip (from 0x16 pong) */
 	int32_t		clock_offset_ms;	/* server_now - (rtt/2 + client_ts) */
-	uint32_t	last_pong_client_ts;	/* client_ts from most recent 0x16 pong */
-	uint32_t	last_pong_server_ms;	/* server mono_ms at most recent pong;
-						 * pairs with last_pong_client_ts
-						 * so write_session_mgr_state can
-						 * extrapolate the current client
-						 * clock as
-						 *   last_pong_client_ts +
-						 *   (server_now - last_pong_server_ms)
-						 * to avoid the ~1 s lag that
-						 * passing the raw pong ts would
-						 * incur */
+	uint32_t	last_pong_client_ts;	/* client_ts from most recent 0x16 pong;
+						 * used only by the first-pong re-
+						 * emit detection (latches non-zero
+						 * on a real pong) */
+	uint32_t	last_udp_client_ts;	/* client_ts from the freshest UDP
+						 * packet (0x16 pong OR 0x1e car
+						 * update) — pairs with last_udp_
+						 * server_ms as the extrapolation
+						 * pivot used by write_session_mgr_
+						 * state.  Refreshed on every UDP
+						 * packet so the resulting f32
+						 * delta stays accurate even when
+						 * the client clock drifts relative
+						 * to the server (car updates arrive
+						 * at ~18 Hz so the pivot is never
+						 * more than ~55 ms stale). */
+	uint32_t	last_udp_server_ms;
 };
 
 /*

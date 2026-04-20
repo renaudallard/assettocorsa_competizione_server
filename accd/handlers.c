@@ -1807,6 +1807,22 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	rt->client_timestamp_ms = client_ts_ms;
 	rt->last_timestamp_ms = client_ts_ms;
 
+	/*
+	 * Refresh the extrapolation pivot used by write_session_mgr_state:
+	 * every incoming UDP packet gives us a fresh (client_ts, server_ms)
+	 * pair, so the 0x28 f32 deltas never depend on a stale 1-Hz pong.
+	 * Matches the exe's FUN_1400419e0 which updates +0x280cc/+0x280ce
+	 * on every 0x1e — minus the explicit drift accumulator, because
+	 * the 18 Hz 0x1e cadence keeps the pivot fresh to within ~55 ms.
+	 */
+	{
+		struct timespec _ts;
+		clock_gettime(CLOCK_MONOTONIC, &_ts);
+		c->last_udp_client_ts = client_ts_ms;
+		c->last_udp_server_ms = (uint32_t)((uint64_t)_ts.tv_sec
+		    * 1000 + (uint64_t)_ts.tv_nsec / 1000000);
+	}
+
 	/* Three Vector3 blocks (3 * 12 = 36 bytes). */
 	for (i = 0; i < 3; i++)
 		if (rd_f32(&r, &rt->vec_a[i]) < 0)

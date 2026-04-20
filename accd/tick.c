@@ -857,17 +857,18 @@ tick_run(struct Server *s)
 			if (c == NULL || c->state != CONN_AUTH)
 				continue;
 			/*
-			 * Extrapolate the client's clock forward from the
-			 * last pong snapshot so the f32 delta in the 0x28
-			 * body is accurate at emit time rather than lagging
-			 * by up to one pong interval (~1 s).  Matches exe
-			 * FUN_1400418b0 which sums the clock-offset double
-			 * with a drift/time-since-pong term rebuilt from
-			 * every incoming UDP packet.
+			 * Extrapolate the client's clock from the freshest
+			 * UDP pivot (refreshed on every pong AND car update,
+			 * so at 18 Hz it's never more than ~55 ms stale).
+			 * This collapses the need for a separate drift
+			 * accumulator a la exe FUN_1400419e0 +0x280d0 — the
+			 * pivot itself is already current, so client_ts_est
+			 * tracks the client's live clock regardless of
+			 * client↔server tick-rate skew.
 			 */
-			if (c->last_pong_server_ms != 0)
-				client_ts_est = c->last_pong_client_ts +
-				    ((uint32_t)now_ms - c->last_pong_server_ms);
+			if (c->last_udp_server_ms != 0)
+				client_ts_est = c->last_udp_client_ts +
+				    ((uint32_t)now_ms - c->last_udp_server_ms);
 			else
 				client_ts_est = c->last_pong_client_ts;
 			bb_clear(&bb);

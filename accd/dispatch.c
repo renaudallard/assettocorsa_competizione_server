@@ -356,7 +356,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		pc->clock_offset_ms = (int32_t)(now_ms -
 		    (pc->avg_rtt_ms / 2 + pong_client_ts));
-		pc->last_pong_server_ms = now_ms;
+		pc->last_udp_client_ts = pong_client_ts;
+		pc->last_udp_server_ms = now_ms;
 
 		/*
 		 * On the FIRST pong, send a fresh 0x28 with the
