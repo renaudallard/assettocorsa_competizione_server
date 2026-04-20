@@ -279,19 +279,14 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 0xFF) < 0) return -1;
 
 	/*
-	 * CarSet — vtable[0x20] = FUN_14011ccc0.  The serializer
-	 * emits just `u16 count` of the CarSelection vector at
-	 * CarSet+0x28..+0x30 (stride 0x138) followed by N ×
-	 * CarEntity::writeToBuf entries.  EventEntity's default
-	 * CarSet has an empty vector, so the wire payload is u16 0.
-	 * We had skipped this sub-block entirely, which silently
-	 * shifted every subsequent EventEntity byte by two on the
-	 * wire — the client tolerated it because the following
-	 * RaceRules/WeatherRules leading bytes are small constants
-	 * that still parse to something, but the layout was
-	 * mis-aligned vs the exe.
+	 * v0.2.46 last-known-working shape has NO CarSet sub-block
+	 * between GraphicsInfo and RaceRules.  An earlier experiment
+	 * inserted `u16 0` here based on a misread of the exe
+	 * CarSet::writeToBuf, but the real ACC client actually refuses
+	 * welcomes with the extra slot and crashes with 'UDPPacket
+	 * data read out of range'.  Keep the two blocks adjacent until
+	 * we have a CarSet reader trace.
 	 */
-	if (wr_u16(bb, 0) < 0) return -1;
 
 	/*
 	 * RaceRules — 16-byte block written field-by-field, matching
