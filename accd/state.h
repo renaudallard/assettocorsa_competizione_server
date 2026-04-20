@@ -476,6 +476,15 @@ struct Server {
 	char		password[64];
 	char		admin_password[64];
 	char		spectator_password[64];
+	/*
+	 * settings.json carGroup — "FreeForAll" (default) / GT2 / GT3 /
+	 * GT4 / GTC / TCX.  FUN_140116480 maps this to the trailing byte
+	 * of the LAN-discovery reply (0xfa for FreeForAll) which the ACC
+	 * server browser reads to categorise the server and to validate
+	 * the probe reply for the ping-column measurement.  Invalid
+	 * values fall back to FreeForAll in the exe's logic.
+	 */
+	char		car_group[16];
 	char		track[ACC_TRACK_NAME_LEN];
 	int		ignore_premature_disconnects;
 	int		dump_leaderboards;

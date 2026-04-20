@@ -259,6 +259,11 @@ config_load(struct Server *s, const char *cfg_dir)
 		copy_str(s->spectator_password,
 		    sizeof(s->spectator_password),
 		    json_obj_get_str(settings, "spectatorPassword"));
+		copy_str(s->car_group, sizeof(s->car_group),
+		    json_obj_get_str(settings, "carGroup"));
+		if (s->car_group[0] == '\0')
+			snprintf(s->car_group, sizeof(s->car_group),
+			    "FreeForAll");
 		s->ignore_premature_disconnects = json_obj_get_int(
 		    settings, "ignorePrematureDisconnects",
 		    s->ignore_premature_disconnects);

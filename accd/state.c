@@ -66,6 +66,7 @@ server_init(struct Server *s)
 	s->post_qualy_s = 10;
 	s->post_race_s = 15;
 	s->config_version = 0;
+	snprintf(s->car_group, sizeof(s->car_group), "FreeForAll");
 	lobby_init(&s->lobby);
 	for (int i = 0; i < ACC_MAX_CARS; i++)
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);

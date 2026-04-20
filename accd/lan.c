@@ -143,27 +143,40 @@ lan_handle(struct Server *s, int fd)
 	 */
 	bb_init(&reply);
 	/*
-	 * session_type must always be a configured value (0 P / 4 Q /
-	 * 10 R).  Emitting 0xfa when phase == WAITING caused the ACC
-	 * lobby list to drop the measured RTT and not show the server's
-	 * ping, because the client rejected the probe reply as
-	 * malformed.  accServer.exe FUN_140029250 calls
-	 * FUN_140116480(computeCurrentSessionType) which always returns
-	 * a valid session_type byte regardless of phase.
+	 * Trailing byte is the carGroup code, NOT the session_type.
+	 * FUN_140116480 in the exe maps settings.json carGroup to
+	 * this byte: "FreeForAll" -> 0xfa, 3-char groups (GT3/GT4/
+	 * GTC/TCX/GT2) to specific codes, invalid -> 0xfa fallback.
+	 * The ACC server browser reads this byte to categorise each
+	 * server AND to validate the probe reply for the ping column
+	 * — emitting the SDK session_type here (0/4/10) matches no
+	 * carGroup code and the client silently discards the RTT
+	 * measurement, showing '-- ms' in the list.
 	 */
-	if (wr_u8(&reply, ACP_LAN_RESPONSE) == 0 &&
-	    wr_str_a(&reply, s->server_name) == 0 &&
-	    wr_u8(&reply, (uint8_t)clients) == 0 &&
-	    wr_u8(&reply, s->password[0] != '\0' ? 1 : 0) == 0 &&
-	    wr_u16(&reply, (uint16_t)s->tcp_port) == 0 &&
-	    wr_u32(&reply, nonce) == 0 &&
-	    wr_u8(&reply, s->session_count > 0 &&
-		s->session.session_index < s->session_count
-		? s->sessions[s->session.session_index].session_type
-		: 0) == 0) {
-		if (sendto(fd, reply.data, reply.wpos, 0,
-		    (struct sockaddr *)&from, fromlen) < 0)
-			log_warn("lan sendto: %s", strerror(errno));
+	{
+		uint8_t cg = 0xfa;	/* FreeForAll default */
+		if (strcmp(s->car_group, "GT3") == 0)
+			cg = 0x07;
+		else if (strcmp(s->car_group, "GT4") == 0)
+			cg = 0x0c;
+		else if (strcmp(s->car_group, "GTC") == 0)
+			cg = 0x0b;
+		else if (strcmp(s->car_group, "TCX") == 0)
+			cg = 0xf9;
+		else if (strcmp(s->car_group, "GT2") == 0)
+			cg = 0x00;
+		if (wr_u8(&reply, ACP_LAN_RESPONSE) == 0 &&
+		    wr_str_a(&reply, s->server_name) == 0 &&
+		    wr_u8(&reply, (uint8_t)clients) == 0 &&
+		    wr_u8(&reply, s->password[0] != '\0' ? 1 : 0) == 0 &&
+		    wr_u16(&reply, (uint16_t)s->tcp_port) == 0 &&
+		    wr_u32(&reply, nonce) == 0 &&
+		    wr_u8(&reply, cg) == 0) {
+			if (sendto(fd, reply.data, reply.wpos, 0,
+			    (struct sockaddr *)&from, fromlen) < 0)
+				log_warn("lan sendto: %s",
+				    strerror(errno));
+		}
 	}
 	bb_free(&reply);
 }
