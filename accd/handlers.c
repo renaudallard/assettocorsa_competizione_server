@@ -1045,6 +1045,10 @@ h_damage_zones(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
+	/* Keep the latest state around for the welcome spawnDef so
+	 * late joiners render with the same damage the live peers
+	 * already see. */
+	memcpy(s->cars[c->car_id].race.damage, zones, sizeof(zones));
 	log_info("damage zones: car=%d [%u,%u,%u,%u,%u]",
 	    c->car_id, zones[0], zones[1], zones[2], zones[3], zones[4]);
 
@@ -1086,9 +1090,13 @@ h_car_dirt(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	/* Capture shows Kunos never relays 0x46 dirt. Store only. */
-	(void)s;
-	(void)dirt;
+	/*
+	 * Kunos never relays 0x46 (per pcap) but DOES carry the
+	 * latest dirt values in the welcome spawnDef tail, so late
+	 * joiners see accumulated body weathering.  Store per-car;
+	 * write_spawn_def reads this array.
+	 */
+	memcpy(s->cars[c->car_id].race.car_dirt, dirt, sizeof(dirt));
 	return 0;
 }
 

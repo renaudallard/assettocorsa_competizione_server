@@ -169,6 +169,14 @@ struct CarRaceState {
 						 * pit entry; used to
 						 * enforce SG stop time */
 	uint8_t		current_tyres;
+	uint8_t		car_dirt[5];		/* last 0x46 payload per
+						 * zone — emitted in the
+						 * welcome spawnDef so a
+						 * late joiner sees the
+						 * same body weathering
+						 * as everyone else */
+	uint8_t		damage[5];		/* last 0x43 zone payload
+						 * — same rationale */
 	uint8_t		out_of_track_latched;
 	uint8_t		cuts_this_lap;		/* 0x3c force=1 count */
 	uint64_t	last_cut_ms;		/* mono_ms of last counted

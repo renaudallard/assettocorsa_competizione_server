@@ -1150,16 +1150,18 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	}
 
 	/* spawnDef tail: active, u64 ts, 2 u8, 5 dirt, 5 damage,
-	 * u16 elo, u32 stability.  All zero for a fresh spawn. */
+	 * u16 elo, u32 stability.  Dirt and damage carry the latest
+	 * 0x46 / 0x43 values so a late joiner renders the car with
+	 * the same weathering everyone else already sees. */
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	for (k = 0; k < 5; k++)
-		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, ec->race.car_dirt[k]) < 0) return -1;
 	for (k = 0; k < 5; k++)
-		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, ec->race.damage[k]) < 0) return -1;
 	if (wr_u16(bb, 0) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	return 0;
