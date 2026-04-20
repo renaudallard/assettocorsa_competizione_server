@@ -993,23 +993,29 @@ write_mtr(struct ByteBuf *bb, struct Server *s)
 }
 
 /*
- * MultiplayerCommunityCompetitionRatingSeries (37 bytes).
- *   str_raw "Standard"
- *   str_raw ""
- *   u8 1 (ratingline.first_u8)
- *   24 x u8 zeros (ratingline.payload)
+ * MultiplayerCommunityCompetitionRatingSeries.  FUN_14011d9a0:
+ *   str "Standard"        (writeKsonString = u16 len + N bytes)
+ *   str ""                (empty second category)
+ *   u32 count             (RatingLine vector length)
+ *   count × RatingLine    (vtable[0x20], stride 0xa0 in memory)
+ *
+ * We used to emit `u8 1 + 24 zero bytes` after the two strings,
+ * which the real ACC client parses as a u32 count of 1 (because
+ * the low byte is 0x01) and then expects a full ~160-byte
+ * RatingLine entry that doesn't follow.  Result: thousands of
+ * "UDPPacket over UDP data read out of range" errors on every
+ * welcome, exposed once the CarSet fix advanced the buffer
+ * cursor far enough to reach CCR.
+ *
+ * Emit the correct empty-vector wire (u32 0, no entries).
  */
 static int
 write_rating_series(struct ByteBuf *bb, struct Server *s)
 {
-	int k;
-
 	(void)s;
 	if (wr_str_raw(bb, "Standard") < 0) return -1;
 	if (wr_str_raw(bb, "") < 0) return -1;
-	if (wr_u8(bb, 1) < 0) return -1;
-	for (k = 0; k < 24; k++)
-		if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u32(bb, 0) < 0) return -1;
 	return 0;
 }
 
