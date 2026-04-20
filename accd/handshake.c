@@ -1117,21 +1117,46 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		if (bb_append(bb, owner->hs_echo, drv_len) < 0) return -1;
 		for (di = 1; di < dc; di++) {
 			const struct DriverInfo *dd = &ec->drivers[di];
-			int z;
 
+			/*
+			 * Five wstrings at DriverInfo +0x28/+0x48/+0x68/
+			 * +0x88/+0xa8.  We know the first three (first,
+			 * last, short) from our entrylist.  The final two
+			 * are initialized to empty std::string by
+			 * FUN_140041290 (DriverInfo ctor) so a fresh
+			 * synthetic driver matches the exe's default.
+			 */
 			if (wr_str_a(bb, dd->first_name) < 0) return -1;
 			if (wr_str_a(bb, dd->last_name) < 0) return -1;
 			if (wr_str_a(bb, dd->short_name) < 0) return -1;
 			if (wr_str_a(bb, "") < 0) return -1;
 			if (wr_str_a(bb, "") < 0) return -1;
-			if (wr_u8(bb, dd->driver_category) < 0) return -1;
+
+			/*
+			 * 41 fixed bytes.  FUN_140041290 seeds each of
+			 * these to specific non-zero defaults that the
+			 * real-driver client carries through handshake;
+			 * mirroring those defaults gives a synthetic
+			 * driver the same resting rating shape as an exe-
+			 * built one (category '\x52'='R' reserve tag, an
+			 * 0x1f7/0x1f8 rating seed, etc.).  We previously
+			 * zeroed the block, which looks like "rating 0"
+			 * on the client's UI.
+			 */
+			if (wr_u8(bb, dd->driver_category
+			    ? dd->driver_category : 0x52) < 0) return -1;
 			if (wr_u16(bb, dd->nationality) < 0) return -1;
 			if (wr_u8(bb, 0) < 0) return -1;
-			for (z = 0; z < 3; z++)
-				if (wr_u32(bb, 0) < 0) return -1;
-			if (wr_u8(bb, 0) < 0) return -1;
-			for (z = 0; z < 6; z++)
-				if (wr_u32(bb, 0) < 0) return -1;
+			if (wr_u32(bb, 0x1f7u) < 0) return -1;	/* +0xd0 */
+			if (wr_u32(bb, 0x11u) < 0) return -1;	/* +0xd4 */
+			if (wr_u32(bb, 0xf3u) < 0) return -1;	/* +0xd8 */
+			if (wr_u8(bb, 0) < 0) return -1;	/* +0xdc */
+			if (wr_u32(bb, 0) < 0) return -1;	/* +0xe0 lo */
+			if (wr_u32(bb, 0) < 0) return -1;	/* +0xe4 hi */
+			if (wr_u32(bb, 200u) < 0) return -1;	/* +0xe8 */
+			if (wr_u32(bb, 0x1f8u) < 0) return -1;	/* +0xec */
+			if (wr_u32(bb, 0xf3u) < 0) return -1;	/* +0xf0 */
+			if (wr_u32(bb, 0x155u) < 0) return -1;	/* +0xf4 */
 			if (wr_str_a(bb, dd->steam_id) < 0) return -1;
 		}
 	}
