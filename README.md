@@ -132,7 +132,7 @@ every wire message, string encoding, and state transition.
   `/sg10..30` (all with collision variants), `/clear`, `/clear_all`,
   `/ballast`, `/restrictor`, `/track`, `/connections`, `/hellban`,
   `/lockprep`, `/unlockprep`, `/manual entrylist`, `/manual start`,
-  `/wt`, `/go`, `/report`.
+  `/wt`, `/go` / `/start`, `/report`.
 - **Penalty system** — per-car queue, mandatory pitstop tracking,
   3-lap deadline countdown for DT/SG with auto-DQ on miss
   (downgradable via `allowAutoDQ: 0`), pit-speeding auto-DQ from
