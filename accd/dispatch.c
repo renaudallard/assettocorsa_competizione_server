@@ -345,6 +345,17 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			    (unsigned)pong_conn, (unsigned)rtt);
 		} else
 			pc->avg_rtt_ms = (pc->avg_rtt_ms * 7 + rtt) / 8;
+		/*
+		 * Clock offset — exe's FUN_1400420e0 stores
+		 *   param_1[0x2802a] = server_now - (rtt/2 + client_ts)
+		 * as the fixed offset between server and client clocks.
+		 * Updated on every pong.  Used only by our latency CSV
+		 * dump today (no wire consumer), but tracking it here
+		 * means the dump matches the exe's semantics and a future
+		 * FUN_140042030-style projection helper can read it.
+		 */
+		pc->clock_offset_ms = (int32_t)(now_ms -
+		    (pc->avg_rtt_ms / 2 + pong_client_ts));
 
 		/*
 		 * On the FIRST pong, send a fresh 0x28 with the
