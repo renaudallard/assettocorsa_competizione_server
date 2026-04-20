@@ -377,34 +377,16 @@ snapshot_cfg_current(const struct Server *s)
 	return 0;
 }
 
-void
-chat_do_track(struct Server *s, const char *args,
-    char *reply, size_t replysz)
+/*
+ * Common post-reset broadcast: cfg snapshot, 0x40 weekend-reset with
+ * weather body, and 0x4b welcome-trailer redelivery to every peer.
+ * Shared by /track (new event) and /resetWeekend (same event).
+ */
+static void
+chat_weekend_reset_broadcast(struct Server *s)
 {
-	const char *name;
-	char msg[128];
 	int j;
 
-	while (*args == ' ')
-		args++;
-	name = args;
-	if (*name == '\0') {
-		if (reply != NULL)
-			snprintf(reply, replysz,
-			    "current track: %s (type 'tracks' for list)",
-			    s->track);
-		return;
-	}
-
-	/* Update the track name. */
-	snprintf(s->track, sizeof(s->track), "%s", name);
-	session_reset(s, 0);
-
-	/*
-	 * Weekend reset side-effect — accServer.exe FUN_14002aca0
-	 * snapshots the live config to files under cfg/current/ so operators
-	 * can see what weekend this track change came from.
-	 */
 	(void)snapshot_cfg_current(s);
 
 	/*
@@ -422,15 +404,6 @@ chat_do_track(struct Server *s, const char *args,
 		bb_free(&wb);
 	}
 
-	snprintf(msg, sizeof(msg), "Event changed to %s", s->track);
-	chat_broadcast(s, msg, 4);
-	log_info("admin: %s", msg);
-
-	/*
-	 * Send 0x4b welcome trailer redelivery + monitor welcome
-	 * sequence to every connected client so they load the new
-	 * track.
-	 */
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		struct Conn *cn = s->conns[j];
 		struct ByteBuf bb;
@@ -438,13 +411,39 @@ chat_do_track(struct Server *s, const char *args,
 		if (cn == NULL || cn->state != CONN_AUTH)
 			continue;
 
-		/* 0x4b with the same body as the 0x0b welcome trailer. */
 		bb_init(&bb);
 		if (wr_u8(&bb, SRV_WELCOME_REDELIVERY) == 0 &&
 		    build_welcome_trailer(&bb, s, cn) == 0)
 			(void)conn_send_framed(cn, bb.data, bb.wpos);
 		bb_free(&bb);
 	}
+}
+
+void
+chat_do_track(struct Server *s, const char *args,
+    char *reply, size_t replysz)
+{
+	const char *name;
+	char msg[128];
+
+	while (*args == ' ')
+		args++;
+	name = args;
+	if (*name == '\0') {
+		if (reply != NULL)
+			snprintf(reply, replysz,
+			    "current track: %s (type 'tracks' for list)",
+			    s->track);
+		return;
+	}
+
+	snprintf(s->track, sizeof(s->track), "%s", name);
+	session_reset(s, 0);
+	chat_weekend_reset_broadcast(s);
+
+	snprintf(msg, sizeof(msg), "Event changed to %s", s->track);
+	chat_broadcast(s, msg, 4);
+	log_info("admin: %s", msg);
 
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", msg);
@@ -682,6 +681,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		chat_broadcast(s,
 		    "Race weekend reset by administrator", 4);
 		session_reset(s, 0);
+		chat_weekend_reset_broadcast(s);
 	} else if (chat_prefix(text, "/kick")) {
 		chat_do_kick(s, text + 5, 0, NULL, 0);
 	} else if (chat_prefix(text, "/ban")) {
