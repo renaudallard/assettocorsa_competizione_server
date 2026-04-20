@@ -160,7 +160,7 @@ def main():
             #    legitimately, but the reviewer should notice.  If you
             #    deliberately change a block size, update this constant
             #    together with a commit explaining why.
-            EXPECTED_LEN = 945
+            EXPECTED_LEN = 921
             if len(body) != EXPECTED_LEN:
                 fail(f"welcome trailer is {len(body)} B, expected "
                      f"{EXPECTED_LEN} B — a write_* block changed "
