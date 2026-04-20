@@ -281,7 +281,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		bb_init(&reply);
 		if (wr_u8(&reply, SRV_KEEPALIVE_14) == 0 &&
 		    wr_u32(&reply, srv_ms) == 0 &&
-		    wr_u16(&reply, 0) == 0 &&
+		    wr_u16(&reply, kc->conn_id) == 0 &&
 		    wr_u16(&reply, 0) == 0 &&
 		    wr_u16(&reply, 0) == 0 &&
 		    wr_u8(&reply, 2) == 0 &&

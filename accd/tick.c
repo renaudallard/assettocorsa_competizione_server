@@ -123,8 +123,8 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	int k, ok;
 	int16_t clamped;
 	uint32_t adj_ts;
-
-	(void)s;
+	uint16_t sender_rtt_ms = 0;
+	int j;
 
 	/*
 	 * Per-peer timestamp adjustment matching FUN_14001a170.
@@ -142,19 +142,33 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	adj_ts = (uint32_t)((int32_t)car->rt.client_timestamp_ms
 	    - clock_adj);
 
+	/*
+	 * FUN_14001a170 emits a u16 at conn+0x50 here — the sender
+	 * connection's server-measured avg RTT.  Receivers read it
+	 * to render the per-car ping column on the HUD timing tower.
+	 * Capture-based analysis earlier said this was 0, but that
+	 * was because the capture came from a loopback test where
+	 * RTT collapses to 0 before the pong smoothing kicks in;
+	 * a real client session needs the live value.
+	 */
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct Conn *sender = s->conns[j];
+		if (sender != NULL && sender->car_id ==
+		    (int)(car - s->cars)) {
+			if (sender->avg_rtt_ms > 65535)
+				sender_rtt_ms = 65535;
+			else
+				sender_rtt_ms =
+				    (uint16_t)sender->avg_rtt_ms;
+			break;
+		}
+	}
+
 	ok = 1;
 	if (wr_u16(bb, car->car_id) < 0) return -1;
 	if (wr_u8(bb, car->rt.packet_seq) < 0) return -1;
 	if (wr_u32(bb, adj_ts) < 0) return -1;
-	/*
-	 * FUN_14001a170 emits car+0x50 here — a u16 that is 0 in
-	 * every capture we've seen.  We previously substituted the
-	 * owning connection's RTT as a convenience ping hint, but
-	 * that diverged from the exe's wire bytes and there was no
-	 * evidence the client read the field for any purpose (peer
-	 * RTT is already carried in 0x28).  Emit 0 to match.
-	 */
-	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u16(bb, sender_rtt_ms) < 0) return -1;
 
 	for (k = 0; k < 3 && ok; k++)
 		ok = wr_f32(bb, car->rt.vec_a[k]) == 0;
@@ -273,10 +287,17 @@ static void
 broadcast_keepalive(struct Server *s, uint8_t msg_id)
 {
 	/*
-	 * Kunos FUN_140029b20 body is msg_id + u32 server_ms + three
-	 * u16 zeros + u8(2) + u8(4) + u8(100) + u8(100) = 15 bytes —
-	 * identical for every recipient.  Build once on the stack and
-	 * sendto each peer, instead of rebuilding it per-peer.
+	 * Kunos FUN_140029b20 / FUN_1400336d0 body:
+	 *   u8  msg_id (0x14)
+	 *   u32 server_ms
+	 *   u16 conn_id of THIS recipient     (exe: param_3, per-peer)
+	 *   u16 conn stats slot (+0x10)        (0 — we don't track)
+	 *   u16 conn stats slot (+0x12)        (0)
+	 *   u8  2 / u8 4 / u8 100 / u8 100     (fixed timing hints)
+	 * Total 15 bytes.  The conn_id is the per-recipient echo — the
+	 * client filters on `conn_id == my_conn_id` before emitting
+	 * a 0x16 pong, so a hardcoded 0 kept every client's ping HUD
+	 * at `-- ms` and left avg_rtt_ms stuck at 0 on the server.
 	 */
 	unsigned char pkt[15];
 	int i;
@@ -294,8 +315,6 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 	pkt[2]  = (unsigned char)((srv_ms >> 8) & 0xff);
 	pkt[3]  = (unsigned char)((srv_ms >> 16) & 0xff);
 	pkt[4]  = (unsigned char)((srv_ms >> 24) & 0xff);
-	pkt[5]  = 0;
-	pkt[6]  = 0;
 	pkt[7]  = 0;
 	pkt[8]  = 0;
 	pkt[9]  = 0;
@@ -310,6 +329,8 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 
 		if (c == NULL || c->state != CONN_AUTH)
 			continue;
+		pkt[5] = (unsigned char)(c->conn_id & 0xff);
+		pkt[6] = (unsigned char)((c->conn_id >> 8) & 0xff);
 		c->keepalive_sent_ms = srv_ms;
 		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
 		    (const struct sockaddr *)&c->peer,
