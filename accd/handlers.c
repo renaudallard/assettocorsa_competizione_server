@@ -1454,7 +1454,7 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 			log_info("Car %d mandatory swap skipped (driver %u) "
 			    "-> DT", c->car_id,
 			    (unsigned)ecar->current_driver_index);
-			(void)penalty_enqueue(s, c->car_id, EXE_DT, 4, 3, 1,
+			(void)penalty_enqueue(s, c->car_id, EXE_DT, 24, 3, 1,
 			    0, REASON_IGNORED_DRIVER_STINT);
 			penalty_format_chat(chat, sizeof(chat), PEN_DT,
 			    REASON_IGNORED_DRIVER_STINT, 0,
