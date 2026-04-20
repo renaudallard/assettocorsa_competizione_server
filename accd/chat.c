@@ -652,9 +652,11 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    (int)s->session.track_temp);
 		log_info("admin: /wt");
 		chat_broadcast(s, msg, 4);
-	} else if (chat_prefix(text, "/go")) {
+	} else if (chat_prefix(text, "/go") ||
+	    chat_prefix(text, "/start")) {
 		/*
-		 * /go: cut the pre-session wait and start the active
+		 * /go (our legacy name) and /start (the exe's name):
+		 * cut the pre-session wait and start the active
 		 * session now.  Matches FUN_14012f290 in accServer.exe,
 		 * which advances the session manager's next-start gate.
 		 * For us: if we're in WAITING or FORMATION, collapse
@@ -663,11 +665,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		 * shifted — the active session still gets its full
 		 * duration from ts[2] onwards.
 		 */
-		log_info("admin: /go");
+		log_info("admin: /start");
 		chat_broadcast(s, "Session started by administrator", 4);
 		if (s->session.ts_valid) {
-			uint64_t now = s->session.phase_started_ms;
-			(void)now;
 			s->session.ts[0] = 0;
 			s->session.ts[1] = 0;
 		}
