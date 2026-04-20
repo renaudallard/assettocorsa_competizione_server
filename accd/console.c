@@ -87,6 +87,7 @@ cmd_help(void)
 	reply("  show conns       list active connections");
 	reply("  next             advance to next session");
 	reply("  restart          restart current session");
+	reply("  start            skip pre-session countdown");
 	reply("  resetWeekend     reset to first session + redeliver welcome");
 	reply("  kick <num>       kick car by race number");
 	reply("  ban <num>        kick + persistent ban");
@@ -292,6 +293,13 @@ console_dispatch(struct Server *s, const char *line)
 		chat_broadcast(s,
 		    "Session restarted by administrator", 4);
 		reply("session restarted");
+	} else if (chat_prefix(p, "start") || chat_prefix(p, "go")) {
+		chat_broadcast(s, "Session started by administrator", 4);
+		if (s->session.ts_valid) {
+			s->session.ts[0] = 0;
+			s->session.ts[1] = 0;
+		}
+		reply("session started");
 	} else if (chat_prefix(p, "resetWeekend") ||
 	    chat_prefix(p, "resetweekend")) {
 		session_reset(s, 0);
