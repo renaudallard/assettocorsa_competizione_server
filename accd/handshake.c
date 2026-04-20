@@ -821,51 +821,53 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 int
 write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 {
-	float ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 22.0f;
-	float wind_speed = s->weather.wind_speed;
-	float wind_dir = s->weather.wind_direction;
-	uint32_t is_dynamic = s->weather.randomness > 0 ? 1 : 0;
+	float ambient, road, clouds, rain;
+	int i;
 
-	if (wr_u32(bb, is_dynamic) < 0) return -1;	/* +0x28 */
-	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x30 ambientMean */
-	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x34 wind now */
-	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x38 windMean */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x3c windDev  */
-	if (wr_f32(bb, wind_dir) < 0) return -1;	/* +0x40 */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x44 chg  */
-	if (wr_u32(bb, 0) < 0) return -1;		/* +0x48 windHarmonic */
+	ambient = s->session.ambient_temp > 0
+	    ? (float)s->session.ambient_temp : 22.0f;
+	road = s->session.track_temp > 0
+	    ? (float)s->session.track_temp : ambient + 4.0f;
+	clouds = s->weather.clouds;
+	rain = s->weather.current_rain;
+
 	/*
-	 * +0x4c nHarmonics.  Emit 0 so the client's Fourier
-	 * synthesis falls through the `nHarmonics == 0` early-
-	 * return and treats weather as static.  Attempting to
-	 * expose our drift via non-zero nHarmonics + a synthetic
-	 * sineCoef caused the client's welcome parser to walk off
-	 * the end of the buffer — its count field is almost
-	 * certainly read as a u32 where we emit i16, so a valid
-	 * i16 of 1 turns into a billion-entry u32 loop.  Until the
-	 * count width is pinned down, keep nHarmonics at 0.
+	 * Layout verified against v0.2.13 (last known-working
+	 * build with a real ACC client):
+	 *   u32(1) marker
+	 *   6 × f32 starting weather snapshot
+	 *   u32(1) marker
+	 *   u32(5) nHarmonics
+	 *   3 × f32 cloud progression hints
+	 *   u16(5) + 5 × f32 sine coefficients
+	 *   u16(1) + 1 × f32 cosine coefficient
+	 * Total: 76 bytes.  The decomp (FUN_14011e660) permits all-
+	 * zero/empty vectors but the real client then walks off the
+	 * end of the welcome buffer — apparently some downstream
+	 * read path assumes at least one harmonic was received.
+	 * Keep the populated form until the exact minimum is known.
 	 */
-	if (wr_u32(bb, 0) < 0) return -1;
-	/*
-	 * +0x50 weatherBaseMean is the CLOUD/RAIN variability baseline,
-	 * NOT a temperature.  We were emitting the ambient temperature
-	 * (typically ~22.0), which made the client read a 22-unit cloud
-	 * baseline on the forecast page.  For a static weather model
-	 * with zero harmonics, the meaningful baseline is the current
-	 * cloud level — that's what the variability curve oscillates
-	 * around when dynamic mode flips on.
-	 */
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1;	/* +0x50 */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x54 baseDev  */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x58 varDev   */
-	/*
-	 * Both Fourier vectors empty.  See nHarmonics comment above
-	 * — non-zero counts here trigger a runaway read loop on the
-	 * real ACC client.
-	 */
-	if (wr_i16(bb, 0) < 0) return -1;	/* sineCoeffs: 0 */
-	if (wr_i16(bb, 0) < 0) return -1;	/* cosineCoeffs: 0 */
+	if (wr_u32(bb, 1) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, 1.5688f) < 0) return -1;
+	if (wr_f32(bb, 1.4286f) < 0) return -1;
+	if (wr_f32(bb, 0.4287f) < 0) return -1;
+	if (wr_f32(bb, 210.6f) < 0) return -1;
+	if (wr_f32(bb, road) < 0) return -1;
+
+	if (wr_u32(bb, 1) < 0) return -1;
+	if (wr_u32(bb, 5) < 0) return -1;
+	if (wr_f32(bb, 0.4f) < 0) return -1;
+	if (wr_f32(bb, 0.3f) < 0) return -1;
+	if (wr_f32(bb, 0.143f + clouds * 0.1f) < 0) return -1;
+
+	if (wr_u16(bb, 5) < 0) return -1;
+	for (i = 0; i < 5; i++)
+		if (wr_f32(bb, rain * 0.001f * (float)(i + 1)) < 0)
+			return -1;
+
+	if (wr_u16(bb, 1) < 0) return -1;
+	if (wr_f32(bb, -2.6232f) < 0) return -1;
 	return 0;
 }
 
