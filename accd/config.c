@@ -469,6 +469,8 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "driverStintTime", 0);
 			int pit_count = json_obj_get_int(rules,
 			    "mandatoryPitstopCount", 0);
+			int swap_req = json_obj_get_int(rules,
+			    "isMandatoryPitstopSwapDriverRequired", 0);
 			if (stint_min < 0)
 				stint_min = 0;
 			if (pit_count < 0)
@@ -477,6 +479,7 @@ config_load(struct Server *s, const char *cfg_dir)
 				pit_count = 255;
 			s->driver_stint_time_s = (uint32_t)stint_min * 60u;
 			s->mandatory_pit_count = (uint8_t)pit_count;
+			s->mandatory_swap_required = swap_req ? 1 : 0;
 			json_free(rules);
 		}
 	}

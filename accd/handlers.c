@@ -679,6 +679,8 @@ h_car_location_update(struct Server *s, struct Conn *c,
 			clock_gettime(CLOCK_MONOTONIC, &_ts);
 			race->pit_entry_ms = (uint64_t)_ts.tv_sec * 1000ull +
 			    (uint64_t)_ts.tv_nsec / 1000000ull;
+			race->pit_entry_driver_index =
+			    car->current_driver_index;
 		}
 
 		/*
@@ -1430,8 +1432,34 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 		return 0;
 	}
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
-		s->cars[c->car_id].race.mandatory_pit_served = 1;
+		struct CarEntry *ecar = &s->cars[c->car_id];
+		struct CarRaceState *race = &ecar->race;
+
+		race->mandatory_pit_served = 1;
 		penalty_serve_front(s, c->car_id);
+		/*
+		 * Mandatory driver-swap check: if eventRules demands a
+		 * swap during the mandatory pit (isMandatoryPitstopSwap
+		 * DriverRequired=1) and the pit entry + pit served came
+		 * from the same driver, enqueue a DT so the HUD flags it
+		 * as an IgnoredDriverStint.  Skipped when the car has
+		 * only one registered driver (no swap target exists).
+		 */
+		if (s->mandatory_swap_required &&
+		    ecar->driver_count > 1 &&
+		    race->pit_entry_driver_index ==
+			ecar->current_driver_index) {
+			char chat[128];
+			log_info("Car %d mandatory swap skipped (driver %u) "
+			    "-> DT", c->car_id,
+			    (unsigned)ecar->current_driver_index);
+			(void)penalty_enqueue(s, c->car_id, EXE_DT, 4, 3, 1,
+			    0, REASON_IGNORED_DRIVER_STINT);
+			penalty_format_chat(chat, sizeof(chat), PEN_DT,
+			    REASON_IGNORED_DRIVER_STINT, 0,
+			    ecar->race_number);
+			chat_broadcast(s, chat, 4);
+		}
 	}
 	log_info("Served Mandatory Pitstop: %u", (unsigned)car_id);
 	return 0;

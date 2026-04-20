@@ -168,6 +168,13 @@ struct CarRaceState {
 	uint64_t	pit_entry_ms;		/* mono_ms of most recent
 						 * pit entry; used to
 						 * enforce SG stop time */
+	uint8_t		pit_entry_driver_index;	/* current_driver_index at
+						 * most recent pit entry —
+						 * compared at 0x54
+						 * (MANDATORY_PITSTOP_SERVED)
+						 * against the live index to
+						 * detect a skipped mandatory
+						 * driver swap */
 	uint8_t		current_tyres;
 	uint8_t		car_dirt[5];		/* last 0x46 payload per
 						 * zone — emitted in the
@@ -626,6 +633,7 @@ struct Server {
 	uint16_t		post_race_s;	    /* postRaceSeconds  (EventConfig+0x94) */
 	uint32_t		driver_stint_time_s; /* eventRules.driverStintTime*60 (0 = no limit) */
 	uint8_t			mandatory_pit_count; /* eventRules.mandatoryPitstopCount (0 = none) */
+	uint8_t			mandatory_swap_required; /* eventRules.isMandatoryPitstopSwapDriverRequired */
 	char			cfg_dir[256];	/* for saving bans */
 
 	/* timing */
