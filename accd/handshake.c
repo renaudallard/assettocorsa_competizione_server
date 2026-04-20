@@ -1007,11 +1007,18 @@ write_rating_series(struct ByteBuf *bb, struct Server *s)
 	if (wr_str_raw(bb, "Standard") < 0) return -1;
 	if (wr_str_raw(bb, "") < 0) return -1;
 	if (wr_u32(bb, 1) < 0) return -1;	/* vector count */
-	/* One empty RatingLine: 3 kson_strings + 4 u32 = 22 B. */
-	if (wr_u16(bb, 0) < 0) return -1;	/* str 1 empty */
-	if (wr_u16(bb, 0) < 0) return -1;	/* str 2 empty */
-	if (wr_u16(bb, 0) < 0) return -1;	/* str 3 empty */
+	/*
+	 * Empty RatingLine = 21 bytes exactly, re-counted from the
+	 * pcap dump: 4 × kson_string(empty) + u8 + 3 × u32.  Matches
+	 * the copy ctor (FUN_14000ab30) which carries 4 std::strings
+	 * at +0x08/+0x28/+0x48/+0x68, u8 at +0x88, and 5 u32s —
+	 * the serializer evidently trims the last two u32s off the
+	 * wire.
+	 */
 	for (k = 0; k < 4; k++)
+		if (wr_u16(bb, 0) < 0) return -1;	/* 4 empty strs */
+	if (wr_u8(bb, 0) < 0) return -1;
+	for (k = 0; k < 3; k++)
 		if (wr_u32(bb, 0) < 0) return -1;
 	return 0;
 }
