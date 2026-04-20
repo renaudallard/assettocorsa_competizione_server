@@ -874,14 +874,20 @@ tick_run(struct Server *s)
 				int leader_laps = 0, i;
 				for (i = 0; i < ACC_MAX_CARS; i++) {
 					int lc = s->cars[i].race.lap_count;
-					if (s->cars[i].used && lc > leader_laps)
+					/*
+					 * Include disconnected drivers in
+					 * the leader scan — a driver who was
+					 * leading and disconnected still set
+					 * the benchmark lap count.
+					 */
+					if (s->cars[i].driver_count > 0 &&
+					    lc > leader_laps)
 						leader_laps = lc;
 				}
 				for (i = 0; i < ACC_MAX_CARS; i++) {
 					struct CarEntry *car = &s->cars[i];
 					int pct;
-					if (!car->used ||
-					    car->driver_count == 0)
+					if (car->driver_count == 0)
 						continue;
 					pct = leader_laps > 0
 					    ? (car->race.lap_count * 100)
