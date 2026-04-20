@@ -915,7 +915,7 @@ stint_check_violations(struct Server *s)
 				}
 			}
 			if (violated) {
-				(void)penalty_enqueue(s, i, EXE_DQ, 12, 3,
+				(void)penalty_enqueue(s, i, EXE_DQ, 27, 3,
 				    1, 0,
 				    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
 				continue;	/* already DQ'd */
