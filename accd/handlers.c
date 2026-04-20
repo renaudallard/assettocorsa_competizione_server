@@ -668,6 +668,20 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		    location == 4) ? 1 : 0;
 
 		/*
+		 * Pit-entry timestamp for stop-and-go validation.
+		 * Latch the monotonic clock the first time we see
+		 * in_pit=1 after a non-pit location so the pit-exit
+		 * check below can compute the dwell time the driver
+		 * actually spent in the pit box.
+		 */
+		if (!was_in_pit && race->in_pit) {
+			struct timespec _ts;
+			clock_gettime(CLOCK_MONOTONIC, &_ts);
+			race->pit_entry_ms = (uint64_t)_ts.tv_sec * 1000ull +
+			    (uint64_t)_ts.tv_nsec / 1000000ull;
+		}
+
+		/*
 		 * Driver-stint tracker: accumulate on-track time per
 		 * current_driver_index.  Start when transitioning from
 		 * non-track to Track (location=1); stop on any other
@@ -710,21 +724,55 @@ h_car_location_update(struct Server *s, struct Conn *c,
 			race->pit_crossing_latched = 0;
 
 		/*
-		 * Pit-lane exit: if the front penalty is a DT/SG, mark
-		 * it served.  We don't separately validate stop time
-		 * for SG vs DT — any exit consumes the front penalty.
-		 * Refinement (timing the box stop) would require a
-		 * pit-entry timestamp we don't currently track.
+		 * Pit-lane exit: if the front penalty is a DT/SG,
+		 * validate the dwell time and mark it served.  DT is
+		 * a drive-through and any exit consumes it; SG10/SG20/
+		 * SG30 require at least 10/20/30 seconds in the box.
+		 * We approximate "stopped time in box" with "total
+		 * time in-pit since entry", which is a lower bound for
+		 * SG compliance: a driver who only served enough
+		 * to move through doesn't get the SG cleared.
 		 */
 		if (was_in_pit && !race->in_pit && race->pen.count > 0) {
 			uint8_t k = race->pen.slots[0].kind;
-			if (k == PEN_DT || k == PEN_DTC ||
-			    k == PEN_SG10 || k == PEN_SG10C ||
-			    k == PEN_SG20 || k == PEN_SG20C ||
-			    k == PEN_SG30 || k == PEN_SG30C) {
-				log_info("Car %d served %s on pit exit",
-				    c->car_id, penalty_name(k));
-				penalty_serve_front(s, c->car_id);
+			int is_dt = (k == PEN_DT || k == PEN_DTC);
+			int is_sg10 = (k == PEN_SG10 || k == PEN_SG10C);
+			int is_sg20 = (k == PEN_SG20 || k == PEN_SG20C);
+			int is_sg30 = (k == PEN_SG30 || k == PEN_SG30C);
+			uint32_t required_s = 0;
+
+			if (is_sg10) required_s = 10;
+			else if (is_sg20) required_s = 20;
+			else if (is_sg30) required_s = 30;
+
+			if (is_dt || is_sg10 || is_sg20 || is_sg30) {
+				struct timespec _ts;
+				uint64_t now_ms;
+				uint64_t dwell_ms;
+
+				clock_gettime(CLOCK_MONOTONIC, &_ts);
+				now_ms = (uint64_t)_ts.tv_sec * 1000ull +
+				    (uint64_t)_ts.tv_nsec / 1000000ull;
+				dwell_ms = race->pit_entry_ms > 0
+				    ? now_ms - race->pit_entry_ms : 0;
+				uint32_t dwell_s = (uint32_t)(dwell_ms / 1000);
+
+				if (required_s == 0 || dwell_s >= required_s) {
+					log_info("Car %d served %s on pit "
+					    "exit (dwell=%us, required=%us)",
+					    c->car_id, penalty_name(k),
+					    (unsigned)dwell_s,
+					    (unsigned)required_s);
+					penalty_serve_front(s, c->car_id);
+				} else {
+					log_info("Car %d pit exit without "
+					    "sufficient stop time for %s "
+					    "(dwell=%us, required=%us) — "
+					    "penalty unchanged",
+					    c->car_id, penalty_name(k),
+					    (unsigned)dwell_s,
+					    (unsigned)required_s);
+				}
 			}
 		}
 	}

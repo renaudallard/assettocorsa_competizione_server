@@ -165,6 +165,9 @@ struct CarRaceState {
 	uint8_t		in_pit;
 	uint8_t		pit_crossing_latched;
 	uint8_t		mandatory_pit_served;
+	uint64_t	pit_entry_ms;		/* mono_ms of most recent
+						 * pit entry; used to
+						 * enforce SG stop time */
 	uint8_t		current_tyres;
 	uint8_t		out_of_track_latched;
 	uint8_t		cuts_this_lap;		/* 0x3c force=1 count */
