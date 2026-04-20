@@ -206,6 +206,14 @@ conn_drop(struct Server *s, struct Conn *c)
 		 */
 		stint_stop_tracking(s, c->car_id);
 		/*
+		 * Clear pit_entry_ms so a reconnecting driver who was
+		 * inside the pit box at disconnect doesn't auto-serve
+		 * an SG penalty via a huge `now - pit_entry_ms` dwell
+		 * on the first post-reclaim pit-exit event.  DT still
+		 * serves on any exit (required_s == 0).
+		 */
+		s->cars[c->car_id].race.pit_entry_ms = 0;
+		/*
 		 * Mark the car slot as unused so it can be
 		 * reallocated, but preserve the race state
 		 * (lap times, position) so the car stays in
