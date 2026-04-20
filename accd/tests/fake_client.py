@@ -222,7 +222,39 @@ def recv_framed(sock):
         if not chunk:
             raise ConnectionError("peer closed during body read")
         buf += chunk
-    return buf[2:2 + ln]
+    return buf[2:2 + ln], buf[2 + ln:]
+
+
+def recv_all_frames(sock, trailing, idle_ms=400):
+    """Read every framed TCP message from the server until it stops
+    sending for `idle_ms`.  Returns a list of (msg_id, body) tuples
+    and the leftover bytes that came in but didn't complete a frame.
+    `trailing` is the unparsed tail left over by recv_framed."""
+    frames = []
+    buf = trailing
+    deadline = time.monotonic() + (idle_ms / 1000.0)
+    sock.settimeout(max(0.05, idle_ms / 1000.0))
+    while True:
+        while len(buf) >= 2:
+            ln = buf[0] | (buf[1] << 8)
+            if len(buf) < 2 + ln:
+                break
+            body = buf[2:2 + ln]
+            frames.append((body[0] if body else 0xFF, body))
+            buf = buf[2 + ln:]
+            deadline = time.monotonic() + (idle_ms / 1000.0)
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        try:
+            sock.settimeout(remaining)
+            chunk = sock.recv(8192)
+        except socket.timeout:
+            break
+        if not chunk:
+            break
+        buf += chunk
+    return frames, buf
 
 
 # ------------------------------------------------------------------
@@ -649,8 +681,7 @@ def main():
         sock = socket.socket()
         sock.connect((host, port))
         sock.sendall(build_handshake())
-        body = recv_framed(sock)
-        sock.close()
+        body, trailing = recv_framed(sock)
 
         print(f"Received 0x0b welcome: {len(body)} B")
         try:
@@ -661,6 +692,7 @@ def main():
             print("Anchors reached:")
             for pos, label in ANCHORS:
                 print(f"  {pos:5d}  {label}")
+            sock.close()
             return 2
 
         print(f"car_id = 0x{info['car_index']:04x}  "
@@ -671,10 +703,38 @@ def main():
         print(f"Consumed {info['consumed']} of {info['total']} B "
               f"(leftover {info['leftover']})")
         if info["leftover"] != 0:
-            print("WARN: unparsed trailing bytes — section layout "
-                  "diverged from exe or our server emits extra bytes")
+            print("WARN: unparsed trailing bytes in 0x0b welcome — "
+                  "section layout diverged or server emits extra bytes")
+            sock.close()
             return 3
-        print("PASS: welcome parses cleanly to EOF")
+
+        # Consume the post-accept state-sync burst: 0x28 session_mgr,
+        # 0x36 leaderboard, 0x37 weather, 0x4e rating summary (plus
+        # any out-of-sequence bytes).  Each should arrive as its own
+        # length-prefixed frame.
+        frames, leftover = recv_all_frames(sock, trailing)
+        sock.close()
+
+        print(f"Post-accept frames received: {len(frames)}")
+        expected = {
+            0x28: "SRV_LARGE_STATE_RESPONSE",
+            0x36: "SRV_LEADERBOARD_BCAST",
+            0x37: "SRV_WEATHER_STATUS",
+            0x4e: "SRV_RATING_SUMMARY",
+        }
+        seen = set()
+        for msg_id, body in frames:
+            name = expected.get(msg_id, f"msg 0x{msg_id:02x}")
+            print(f"  {len(body):4d} B  0x{msg_id:02x}  {name}")
+            seen.add(msg_id)
+        missing = [f"0x{mid:02x} ({name})" for mid, name in expected.items()
+                   if mid not in seen]
+        if missing:
+            print(f"WARN: expected frames missing: {', '.join(missing)}")
+        if leftover:
+            print(f"WARN: {len(leftover)} bytes of unframed trailing data")
+            return 4
+        print("PASS: welcome parses cleanly to EOF; follow-up burst framed")
         return 0
     finally:
         if proc is not None:
