@@ -68,36 +68,9 @@ bcast_mono_ms(void)
 int
 bcast_send_one(struct Conn *c, const void *body, size_t len)
 {
-	size_t queued;
-
 	if (c == NULL || c->fd < 0)
 		return -1;
-	if (conn_send_framed(c, body, len) < 0) {
-		log_debug("bcast: send failed to conn=%u fd=%d, "
-		    "marking disconnect", (unsigned)c->conn_id, c->fd);
-		c->state = CONN_DISCONNECT;
-		return -1;
-	}
-	queued = c->tx.wpos - c->tx.rpos;
-	if (queued > c->tx_peak_bytes)
-		c->tx_peak_bytes = queued;
-	if (queued > TX_HARD_CAP) {
-		log_warn("tx backpressure: conn=%u queued=%zu > hard cap "
-		    "(%u), disconnecting slow client",
-		    (unsigned)c->conn_id, queued, TX_HARD_CAP);
-		c->state = CONN_DISCONNECT;
-		return -1;
-	}
-	if (queued > TX_SOFT_CAP) {
-		uint64_t now = bcast_mono_ms();
-		if (now - c->tx_warn_ms > 5000) {
-			log_warn("tx soft cap: conn=%u queued=%zu "
-			    "(peak=%zu)", (unsigned)c->conn_id, queued,
-			    c->tx_peak_bytes);
-			c->tx_warn_ms = now;
-		}
-	}
-	return 0;
+	return conn_send_framed(c, body, len);
 }
 
 /*
@@ -124,7 +97,7 @@ int
 conn_send_framed(struct Conn *c, const void *body, size_t len)
 {
 	unsigned char hdr[6];
-	size_t hdrlen, total, queued_before;
+	size_t hdrlen, total, queued_before, queued_after;
 	ssize_t n;
 
 	if (c == NULL || c->fd < 0)
@@ -132,6 +105,23 @@ conn_send_framed(struct Conn *c, const void *body, size_t len)
 	hdrlen = build_tcp_hdr(hdr, len);
 	total = hdrlen + len;
 	queued_before = c->tx.wpos - c->tx.rpos;
+
+	/*
+	 * Hard cap applied BEFORE queueing this frame.  If a slow
+	 * client has let the backlog swell past TX_HARD_CAP, drop the
+	 * conn instead of appending more bytes to the queue.  Without
+	 * this gate a handful of direct conn_send_framed call sites
+	 * (tick periodic broadcasts, chat relays, welcome send) would
+	 * keep growing c->tx up to BB_MAX_CAP (256 KB) before bb_append
+	 * itself failed — much later and with no warning.
+	 */
+	if (queued_before > TX_HARD_CAP) {
+		log_warn("tx backpressure: conn=%u queued=%zu > hard cap "
+		    "(%u), disconnecting slow client",
+		    (unsigned)c->conn_id, queued_before, TX_HARD_CAP);
+		c->state = CONN_DISCONNECT;
+		return -1;
+	}
 
 	/*
 	 * Fast path: queue is empty, push header + body in one
@@ -200,7 +190,7 @@ conn_send_framed(struct Conn *c, const void *body, size_t len)
 			    len - body_sent) < 0)
 				return -1;
 		}
-		return 0;
+		goto track_queue;
 	}
 
 	/* Queue not empty — preserve order, append the whole frame. */
@@ -208,6 +198,20 @@ conn_send_framed(struct Conn *c, const void *body, size_t len)
 		return -1;
 	if (bb_append(&c->tx, body, len) < 0)
 		return -1;
+
+track_queue:
+	queued_after = c->tx.wpos - c->tx.rpos;
+	if (queued_after > c->tx_peak_bytes)
+		c->tx_peak_bytes = queued_after;
+	if (queued_after > TX_SOFT_CAP) {
+		uint64_t now = bcast_mono_ms();
+		if (now - c->tx_warn_ms > 5000) {
+			log_warn("tx soft cap: conn=%u queued=%zu (peak=%zu)",
+			    (unsigned)c->conn_id, queued_after,
+			    c->tx_peak_bytes);
+			c->tx_warn_ms = now;
+		}
+	}
 	return 0;
 }
 
