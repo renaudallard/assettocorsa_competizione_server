@@ -41,6 +41,7 @@
 #include <time.h>
 
 #include "log.h"
+#include "penalty.h"
 #include "results.h"
 #include "state.h"
 
@@ -224,8 +225,29 @@ results_write(struct Server *s)
 		    car->race.lap_count);
 		fprintf(f, "          \"lastSplitId\": 0\n");
 		fprintf(f, "        },\n");
-		fprintf(f, "        \"missingMandatoryPitstop\": %d\n",
+		fprintf(f, "        \"missingMandatoryPitstop\": %d,\n",
 		    car->race.mandatory_pit_served ? 0 : 1);
+		fprintf(f, "        \"driverPenalties\": [");
+		{
+			int pi;
+			int pfirst = 1;
+			for (pi = 0; pi < car->race.pen.count; pi++) {
+				const struct PenaltyEntry *p =
+				    &car->race.pen.slots[pi];
+				if (!pfirst)
+					fprintf(f, ",");
+				fprintf(f, "\n          {");
+				fprintf(f, " \"penalty\": ");
+				fprint_json_str(f, penalty_name(p->kind));
+				fprintf(f, ", \"reason\": %u, \"served\": %d,"
+				    " \"wireValue\": %u }",
+				    (unsigned)p->reason, (int)p->served,
+				    (unsigned)penalty_wire_value(
+					p->kind, p->reason));
+				pfirst = 0;
+			}
+		}
+		fprintf(f, "\n        ]\n");
 		fprintf(f, "      }");
 		first = 0;
 	}
