@@ -676,6 +676,12 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		log_info("admin: /restart");
 		chat_broadcast(s,"Session restarted by administrator", 4);
 		session_reset(s, s->session.session_index);
+	} else if (chat_prefix(text, "/resetWeekend") ||
+	           chat_prefix(text, "/resetweekend")) {
+		log_info("admin: /resetWeekend");
+		chat_broadcast(s,
+		    "Race weekend reset by administrator", 4);
+		session_reset(s, 0);
 	} else if (chat_prefix(text, "/kick")) {
 		chat_do_kick(s, text + 5, 0, NULL, 0);
 	} else if (chat_prefix(text, "/ban")) {
