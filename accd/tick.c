@@ -242,17 +242,20 @@ broadcast_percar_dirty(struct Server *s)
 			if (peer->car_id == i)
 				continue;
 			/*
-			 * Only apply the per-peer client-timestamp delta
-			 * once both endpoints have pong'd at least once;
-			 * before that last_pong_client_ts is 0 and using
-			 * it would emit a huge synthetic offset (~now)
-			 * into the client's smoothing filter.
+			 * Per-peer client-timestamp delta.  Same pivot as
+			 * write_session_mgr_state (refreshed on every UDP
+			 * packet, so both endpoints are typically within
+				 ~55 ms of each other at 18 Hz car updates).
+			 * Before either endpoint has sent any UDP packet
+			 * the pivot is 0, so leave delta at 0 rather than
+			 * emit a huge synthetic offset into the client's
+			 * smoothing filter.
 			 */
 			if (sender != NULL &&
-			    sender->last_pong_client_ts != 0 &&
-			    peer->last_pong_client_ts != 0)
-				delta = (int32_t)(sender->last_pong_client_ts -
-				    peer->last_pong_client_ts);
+			    sender->last_udp_server_ms != 0 &&
+			    peer->last_udp_server_ms != 0)
+				delta = (int32_t)(sender->last_udp_client_ts -
+				    peer->last_udp_client_ts);
 
 			bb_clear(&bb);
 			if (wr_u8(&bb, msg_id) < 0)
