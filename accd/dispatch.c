@@ -339,9 +339,11 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		if (rtt > 5000)
 			rtt = 5000;
 
-		if (pc->avg_rtt_ms == 0)
+		if (pc->avg_rtt_ms == 0) {
 			pc->avg_rtt_ms = rtt;
-		else
+			log_info("pong: first sample conn=%u rtt=%u ms",
+			    (unsigned)pong_conn, (unsigned)rtt);
+		} else
 			pc->avg_rtt_ms = (pc->avg_rtt_ms * 7 + rtt) / 8;
 
 		/*
