@@ -495,24 +495,19 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
 
 	/*
-	 * Session-best counters scan ALL cars, including those whose
-	 * slot is currently unused: conn_drop preserves race state
-	 * on disconnect so a driver who set the fastest lap and
-	 * then left still contributes to the 'session best' shown
-	 * on the standings sidebar.  Entry count (nc) and cvar8
-	 * still only consider live cars.
+	 * Session-best counters scan every slot whose race state is
+	 * still in this session (session_reset wipes best_lap_ms back
+	 * to 0, so stale prior-session values can't leak in).  Slots
+	 * where the driver disconnected mid-session keep their timing
+	 * so the fastest lap stays visible on the standings sidebar.
+	 * DQ'd cars are excluded so a protested time doesn't show as
+	 * the session best.  Entry count (nc) and cvar8 still consider
+	 * only currently-connected cars.
 	 */
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		struct CarRaceState *r = &s->cars[j].race;
 
-		/*
-		 * Session-best scan gated on used && !disqualified.
-		 * A DQ'd car keeps its personal best_lap_ms but that
-		 * time should not contribute to the session best that
-		 * every client sees.  Also skips unused slots whose
-		 * best_lap_ms is stale from a prior session.
-		 */
-		if (s->cars[j].used && !r->disqualified) {
+		if (!r->disqualified) {
 			if (r->best_lap_ms > 0 &&
 			    r->best_lap_ms < sess_best_lap)
 				sess_best_lap = r->best_lap_ms;
