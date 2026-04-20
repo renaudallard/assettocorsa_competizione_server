@@ -465,6 +465,16 @@ struct Conn {
 	uint32_t	avg_rtt_ms;		/* exponential avg round-trip (from 0x16 pong) */
 	int32_t		clock_offset_ms;	/* server_now - (rtt/2 + client_ts) */
 	uint32_t	last_pong_client_ts;	/* client_ts from most recent 0x16 pong */
+	uint32_t	last_pong_server_ms;	/* server mono_ms at most recent pong;
+						 * pairs with last_pong_client_ts
+						 * so write_session_mgr_state can
+						 * extrapolate the current client
+						 * clock as
+						 *   last_pong_client_ts +
+						 *   (server_now - last_pong_server_ms)
+						 * to avoid the ~1 s lag that
+						 * passing the raw pong ts would
+						 * incur */
 };
 
 /*

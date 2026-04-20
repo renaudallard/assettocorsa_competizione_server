@@ -852,13 +852,28 @@ tick_run(struct Server *s)
 		bb_init(&bb);
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct Conn *c = s->conns[i];
+			uint32_t client_ts_est;
 
 			if (c == NULL || c->state != CONN_AUTH)
 				continue;
+			/*
+			 * Extrapolate the client's clock forward from the
+			 * last pong snapshot so the f32 delta in the 0x28
+			 * body is accurate at emit time rather than lagging
+			 * by up to one pong interval (~1 s).  Matches exe
+			 * FUN_1400418b0 which sums the clock-offset double
+			 * with a drift/time-since-pong term rebuilt from
+			 * every incoming UDP packet.
+			 */
+			if (c->last_pong_server_ms != 0)
+				client_ts_est = c->last_pong_client_ts +
+				    ((uint32_t)now_ms - c->last_pong_server_ms);
+			else
+				client_ts_est = c->last_pong_client_ts;
 			bb_clear(&bb);
 			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
 			    write_session_mgr_state(&bb, s,
-				c->last_pong_client_ts,
+				client_ts_est,
 				c->avg_rtt_ms) == 0)
 				(void)conn_send_framed(c,
 				    bb.data, bb.wpos);
