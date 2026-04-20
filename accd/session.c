@@ -814,10 +814,11 @@ session_advance(struct Server *s)
  * session end when any of the FUN_14012ae10 conditions fires:
  *   ExceededDriverStintLimit  (some driver's total > driverStintTime)
  *   DriverRanNoStint          (a registered driver has 0 ms)
- * The IgnoredDriverStint path (DT→SG30→DQ escalation when a
- * mandatory swap is missed) is not yet implemented; it needs
- * an isMandatoryPitstopSwapDriverRequired flag from eventRules.json
- * plus a mid-race check, not just the race-end scan below.
+ * The IgnoredDriverStint DT fires from h_mandatory_pitstop_served
+ * (handlers.c) when isMandatoryPitstopSwapDriverRequired=1 and the
+ * pit-entry driver is still active at pit-served time.  The exe's
+ * full DT → SG30 → DQ escalation on repeated misses is not yet
+ * implemented; we emit the single DT on each miss.
  */
 
 void
