@@ -1345,8 +1345,6 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	uint8_t msg_id, force;
 	uint64_t ts_raw;
 
-	(void)s;
-
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u8(&r, &force) < 0 ||
