@@ -871,6 +871,12 @@ tick_run(struct Server *s)
 			 */
 			stint_check_violations(s);
 			/*
+			 * Stint checks may have DQ'd cars; re-sort so
+			 * 0x3e session results broadcast + results.json
+			 * emit positions with DQ'd cars at the bottom.
+			 */
+			session_recompute_standings(s);
+			/*
 			 * Update Trust rating based on race outcome.
 			 * Runs only once per session-complete (before
 			 * archive) so we don't inflate TR on repeated
