@@ -609,6 +609,7 @@ h_tyre_compound_update(struct Server *s, struct Conn *c,
 		    (unsigned)c->conn_id, (unsigned)car_id);
 		return 0;
 	}
+	s->cars[c->car_id].race.current_tyres = compound;
 	log_info("tyre: car=%u compound=%u",
 	    (unsigned)car_id, (unsigned)compound);
 
