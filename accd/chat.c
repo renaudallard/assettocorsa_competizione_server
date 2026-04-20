@@ -861,8 +861,10 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			if (cn == NULL || cn->state != CONN_AUTH)
 				continue;
 			snprintf(line, sizeof(line),
-			    "  conn=%u car=%d", (unsigned)cn->conn_id,
-			    cn->car_id);
+			    "  conn=%u car=%d%s%s",
+			    (unsigned)cn->conn_id, cn->car_id,
+			    cn->is_admin ? " [admin]" : "",
+			    cn->is_spectator ? " [spectator]" : "");
 			chat_broadcast(s,line, 4);
 		}
 	} else if (chat_prefix(text, "/hellban")) {
