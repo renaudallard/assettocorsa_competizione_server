@@ -513,6 +513,19 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 		return rb->lap_count - ra->lap_count;
 	if (ra->race_time_ms != rb->race_time_ms)
 		return ra->race_time_ms - rb->race_time_ms;
+	/*
+	 * Race tiebreak: before any lap is complete (and between sector
+	 * splits), lap_count and race_time_ms match for every car.  Fall
+	 * back to grid_position so the pole sitter leads the formation
+	 * lap and the green-flag trigger picks position==1 correctly.
+	 */
+	if (ra->grid_position != rb->grid_position) {
+		int16_t pa = ra->grid_position >= 0
+		    ? ra->grid_position : INT16_MAX;
+		int16_t pb = rb->grid_position >= 0
+		    ? rb->grid_position : INT16_MAX;
+		return pa < pb ? -1 : (pa > pb ? 1 : 0);
+	}
 	return 0;
 }
 
