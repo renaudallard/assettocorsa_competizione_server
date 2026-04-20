@@ -139,6 +139,15 @@ weather_step(struct Server *s)
 	s->weather.track_wetness = clamp01(s->weather.track_wetness);
 
 	s->weather.wind_direction += (float)(sin(t / 1800.0) * 2.0);
+	/* Keep wind direction in [0, 360) so emit f32 stays meaningful
+	 * over long sessions; naive += drifts to arbitrary magnitudes
+	 * and the client reads the raw value for HUD display. */
+	if (s->weather.wind_direction >= 360.0f)
+		s->weather.wind_direction = fmodf(
+		    s->weather.wind_direction, 360.0f);
+	else if (s->weather.wind_direction < 0.0f)
+		s->weather.wind_direction = 360.0f + fmodf(
+		    s->weather.wind_direction, 360.0f);
 	s->weather.wind_speed = (float)(0.1 + 0.1 * sin(t / 2400.0));
 
 	if (dc * dc > 0.0025f || dr * dr > 0.0025f) {
