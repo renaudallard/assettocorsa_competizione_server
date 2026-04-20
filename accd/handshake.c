@@ -279,17 +279,29 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 0xFF) < 0) return -1;
 
 	/*
-	 * v0.2.46 last-known-working shape has NO CarSet sub-block
-	 * between GraphicsInfo and RaceRules.  The AC2 client welcome
-	 * parser (FUN_1434f4390) DOES reference a "post carSet" anchor,
-	 * but its CarSet reader is tolerant of an empty wire payload and
-	 * consumes 0 bytes when nothing is there.  An earlier experiment
-	 * inserted `u16 0` here based on a misread of the exe
-	 * CarSet::writeToBuf, which misaligned the RaceRules reader and
-	 * crashed the real ACC client with 'UDPPacket data read out of
-	 * range'.  Keep the two blocks adjacent until we have a reader
-	 * trace showing the client actually wants CarSet bytes here.
+	 * CarSet sub-block — AC2 client `FUN_1434f4390` parses it via
+	 * the "EventEntity post carSet" anchor at EventEntity+0xb8
+	 * vtable[0x28] (= FUN_1434f3a80 on the client side).  Reader
+	 * layout: u16 count, then count × CarEntity (CarInfo + u16
+	 * driver_count + drivers).  The accServer.exe wire writer is
+	 * CarSet::vtable[0x20] (FUN_14011ccc0) — `u16 count + N entries`
+	 * exactly.  An empty CarSet is just `u16 0`.
+	 *
+	 * Without this block, the client's per-event car-allow hash
+	 * stays empty, so `getCarPathMap` lookups for the player's
+	 * selected car fail and return the "Returning fallback MP car:
+	 * Porsche 991 GT3 R" at FUN_140e23370 — which is exactly the
+	 * "always Porsche in the pre-race garage" symptom reported by a
+	 * real user on a real McLaren pick (2026-04-21).
+	 *
+	 * v0.2.47 briefly added this emit and was bisected to a client
+	 * crash; re-checking the bisection found the crash could have
+	 * come from the coincident DriverInfo-synthesize change
+	 * (44a4b51) which seeded the 41-byte block with zeros.  That
+	 * was later fixed in 247a742, so re-emitting the 2-byte empty
+	 * CarSet here is worth retrying.
 	 */
+	if (wr_u16(bb, 0) < 0) return -1;	/* CarEntity vector count */
 
 	/*
 	 * RaceRules — 16-byte block written field-by-field, matching
