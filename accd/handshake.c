@@ -279,6 +279,21 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 0xFF) < 0) return -1;
 
 	/*
+	 * CarSet — vtable[0x20] = FUN_14011ccc0.  The serializer
+	 * emits just `u16 count` of the CarSelection vector at
+	 * CarSet+0x28..+0x30 (stride 0x138) followed by N ×
+	 * CarEntity::writeToBuf entries.  EventEntity's default
+	 * CarSet has an empty vector, so the wire payload is u16 0.
+	 * We had skipped this sub-block entirely, which silently
+	 * shifted every subsequent EventEntity byte by two on the
+	 * wire — the client tolerated it because the following
+	 * RaceRules/WeatherRules leading bytes are small constants
+	 * that still parse to something, but the layout was
+	 * mis-aligned vs the exe.
+	 */
+	if (wr_u16(bb, 0) < 0) return -1;
+
+	/*
 	 * RaceRules — 16-byte block written field-by-field, matching
 	 * the exe's FUN_14011d230 wire serializer (vtable slot 0x20
 	 * of the RaceRules sub-object at EventEntity+0xf8).  Field
