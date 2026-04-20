@@ -812,11 +812,11 @@ tick_run(struct Server *s)
 
 	/*
 	 * Leaderboard rebroadcast.  useAsyncLeaderboard (settings.json,
-	 * default 1) coalesces fan-out to the CADENCE_LEADERBOARD slot
-	 * only — lap completions bump standings_seq but don't trigger a
-	 * fresh 0x36 mid-tick.  Sync mode (=0) broadcasts on every
-	 * standings change for minimum latency at the cost of extra
-	 * fan-out CPU under heavy lap-completion traffic.
+	 * default 0 = sync) broadcasts on every standings change AND on
+	 * the 75 s cadence, so the HUD timing tower updates immediately
+	 * when positions shift.  Async mode (=1) coalesces fan-out to
+	 * the cadence tick only, trading update latency for CPU under
+	 * heavy lap-completion traffic.
 	 */
 	{
 		int changed = s->session.standings_seq !=
