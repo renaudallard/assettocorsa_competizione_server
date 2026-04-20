@@ -164,7 +164,12 @@ struct CarRaceState {
 	uint8_t		lap_history_count;
 	uint8_t		in_pit;
 	uint8_t		pit_crossing_latched;
-	uint8_t		mandatory_pit_served;
+	uint8_t		mandatory_pit_served;	/* count of 0x54
+						 * ACP_MANDATORY_PITSTOP_
+						 * SERVED messages received
+						 * this session; compared to
+						 * Server.mandatory_pit_count
+						 * at session end */
 	uint64_t	pit_entry_ms;		/* mono_ms of most recent
 						 * pit entry; used to
 						 * enforce SG stop time */

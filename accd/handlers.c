@@ -1435,7 +1435,8 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 		struct CarEntry *ecar = &s->cars[c->car_id];
 		struct CarRaceState *race = &ecar->race;
 
-		race->mandatory_pit_served = 1;
+		if (race->mandatory_pit_served < 255)
+			race->mandatory_pit_served++;
 		penalty_serve_front(s, c->car_id);
 		/*
 		 * Mandatory driver-swap check: if eventRules demands a

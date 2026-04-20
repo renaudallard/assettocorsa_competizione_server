@@ -261,7 +261,8 @@ results_write(struct Server *s)
 		 */
 		fprintf(f, "        \"missingMandatoryPitstop\": %d,\n",
 		    (st == 10 && s->mandatory_pit_count > 0 &&
-			!car->race.mandatory_pit_served) ? 1 : 0);
+			car->race.mandatory_pit_served <
+			    s->mandatory_pit_count) ? 1 : 0);
 		fprintf(f, "        \"driverPenalties\": [");
 		{
 			int pi;

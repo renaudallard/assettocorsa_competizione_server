@@ -930,10 +930,12 @@ stint_check_violations(struct Server *s)
 		 * MANDATORY_PIT).
 		 */
 		if (is_race && s->mandatory_pit_count > 0 &&
-		    r->lap_count > 0 && !r->mandatory_pit_served) {
+		    r->lap_count > 0 &&
+		    r->mandatory_pit_served < s->mandatory_pit_count) {
 			log_info("Car %d ignored mandatory pit (need %u, "
-			    "served 0) -> DQ", i,
-			    (unsigned)s->mandatory_pit_count);
+			    "served %u) -> DQ", i,
+			    (unsigned)s->mandatory_pit_count,
+			    (unsigned)r->mandatory_pit_served);
 			(void)penalty_enqueue(s, i, EXE_DQ, 13, 3, 1, 0,
 			    REASON_IGNORED_MANDATORY_PIT);
 			if (r->disqualified)
