@@ -402,9 +402,7 @@ def parse_event_entity(r):
     r.u16()
     r.u8()
     anchor(r, "EventEntity post graphics")
-    # CarSet: u16 count + count × CarEntity.  Empty set = u16 0.
-    r.u16()
-    anchor(r, "EventEntity post carSet")
+    # (no CarSet — v0.2.46 layout)
     # RaceRules: 16 bytes
     for _ in range(16):
         r.u8()
