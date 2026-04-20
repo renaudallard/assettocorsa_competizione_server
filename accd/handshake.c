@@ -988,25 +988,31 @@ write_mtr(struct ByteBuf *bb, struct Server *s)
  *   str "Standard"        (writeKsonString = u16 len + N bytes)
  *   str ""                (empty second category)
  *   u32 count             (RatingLine vector length)
- *   count × RatingLine    (vtable[0x20], stride 0xa0 in memory)
+ *   count × RatingLine    (vtable[0x20] per entry)
  *
- * We used to emit `u8 1 + 24 zero bytes` after the two strings,
- * which the real ACC client parses as a u32 count of 1 (because
- * the low byte is 0x01) and then expects a full ~160-byte
- * RatingLine entry that doesn't follow.  Result: thousands of
- * "UDPPacket over UDP data read out of range" errors on every
- * welcome, exposed once the CarSet fix advanced the buffer
- * cursor far enough to reach CCR.
- *
- * Emit the correct empty-vector wire (u32 0, no entries).
+ * A real ACC Misano capture (notebook-a/captures/kunos_misano_*.
+ * pcapng) shows Kunos emits **count=1** followed by a 22-byte
+ * all-zero RatingLine entry: `3 × kson_string(empty) + 4 × u32(0)`.
+ * Emitting count=0 with no entries lets the client's welcome
+ * parser fall off the end of the buffer; same error signature as
+ * the old `u8 1 + 24 zeros` bug but with the count truly zero the
+ * trailer is simply ~22 bytes short of what the client expects.
  */
 static int
 write_rating_series(struct ByteBuf *bb, struct Server *s)
 {
+	int k;
+
 	(void)s;
 	if (wr_str_raw(bb, "Standard") < 0) return -1;
 	if (wr_str_raw(bb, "") < 0) return -1;
-	if (wr_u32(bb, 0) < 0) return -1;
+	if (wr_u32(bb, 1) < 0) return -1;	/* vector count */
+	/* One empty RatingLine: 3 kson_strings + 4 u32 = 22 B. */
+	if (wr_u16(bb, 0) < 0) return -1;	/* str 1 empty */
+	if (wr_u16(bb, 0) < 0) return -1;	/* str 2 empty */
+	if (wr_u16(bb, 0) < 0) return -1;	/* str 3 empty */
+	for (k = 0; k < 4; k++)
+		if (wr_u32(bb, 0) < 0) return -1;
 	return 0;
 }
 
