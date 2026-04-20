@@ -184,8 +184,16 @@ conn_drop(struct Server *s, struct Conn *c)
 
 	log_debug("conn_drop: conn=%u fd=%d car=%d state=%d",
 	    (unsigned)c->conn_id, c->fd, c->car_id, (int)c->state);
-	if (c->fd >= 0)
+	/*
+	 * Flush pending TX before closing so kick/ban notify + 0x24
+	 * disconnect broadcast reach the wire.  EAGAIN is accepted as
+	 * "best effort" — we don't block on a slow client since we're
+	 * already tearing down the connection.
+	 */
+	if (c->fd >= 0) {
+		(void)conn_drain_tx(c);
 		close(c->fd);
+	}
 	bb_free(&c->rx);
 	bb_free(&c->tx);
 	free(c->hs_echo);
