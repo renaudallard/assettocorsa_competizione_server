@@ -842,6 +842,41 @@ out:
 
 /* ----- 0x41 ACP_REPORT_PENALTY ---------------------------------- */
 
+/*
+ * Map the client's 0x41 category byte to one of our REASON_* values.
+ * The client's DSQ_* enum (0x3c48440 onwards in AC2-Win64-Shipping.exe)
+ * lists categories in this order:
+ *   0 CUT                1 PITSPEED             2 MANDATORYPIT_IGNORED
+ *   3 DRIVERSTINT_IGNORED 4 EXCEEDED_DRIVERSTINT 5 DAMAGES
+ *   6 SPEEDING_ON_START  7 WRONG_POSITION_ON_START
+ *   8 LIGHTSOFF          9 TROLL                10 PIT_ENTRY
+ *   11 PIT_EXIT          12 WRONGWAY            13 UNKNOWN
+ * We don't yet have a byte-exact RE confirmation of this ordering,
+ * so unknown values fall through to REASON_RACE_CONTROL (which still
+ * produces a valid "Disqualified by Race Control" wire message).
+ */
+static uint8_t
+client_category_to_reason(uint8_t category)
+{
+	switch (category) {
+	case 0:		return REASON_CUTTING;
+	case 1:		return REASON_PIT_SPEEDING;
+	case 2:		return REASON_IGNORED_MANDATORY_PIT;
+	case 3:		return REASON_IGNORED_DRIVER_STINT;
+	case 4:		return REASON_EXCEEDED_DRIVER_STINT_LIMIT;
+	case 5:		return REASON_DAMAGED_CAR;
+	case 6:		return REASON_SPEEDING_ON_START;
+	case 7:		return REASON_WRONG_POSITION_ON_START;
+	case 8:		return REASON_LIGHTS_OFF;
+	case 10:	return REASON_PIT_ENTRY;
+	case 11:	return REASON_PIT_EXIT;
+	case 12:	return REASON_WRONG_WAY;
+	case 9:		/* DSQ_TROLL — no direct enum; fall through. */
+	case 13:	/* DSQ_UNKNOWN — ditto. */
+	default:	return REASON_RACE_CONTROL;
+	}
+}
+
 int
 h_report_penalty(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
@@ -851,7 +886,6 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	uint64_t timestamp;
 	int32_t value;
 
-	(void)s;
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u8(&r, &category) < 0 ||
@@ -866,26 +900,25 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	 * Wire layout per FUN_1400142f0 case 0x41 + FUN_140125f50
 	 * (exe TCP dispatcher, Pass 2026-04-17 decomp):
 	 *   u8  msg_id    = 0x41
-	 *   u8  category  → exe param_4 / local_res20 (reason
-	 *                   marker stored at PenaltySheet +0x58)
-	 *   u8  kind      → exe param_5 (1=DT, 2=SG10, 3=SG20,
-	 *                   4=SG30, 5=TP, 6=DQ)
+	 *   u8  category  → DSQ_* enum index (see client_category_to_reason)
+	 *   u8  kind      → exe param_5 (1=DT, 2=SG10, 3=SG20, 4=SG30,
+	 *                   5=TP, 6=DQ)
 	 *   u64 timestamp → normalized via FUN_140042030 in exe
 	 *   i32 value     → counter increment (0..~3 typically)
 	 *
-	 * The "force" flag was NOT a wire byte — it's computed
-	 * server-side as `(server_config_allow_client_escalation
-	 * && category==0)`.  With our default config = 0, client
-	 * reports never force immediate escalation; they just
-	 * prime the PenaltySheet counter.
+	 * Most client reports arrive with value=0 (the client's own
+	 * PenaltySheet primer on each violation tick) and kind!=DQ.
+	 * For those we keep log-only behaviour — server-side detection
+	 * (3-cut / pit-speeding / stint tracker) is the authoritative
+	 * path for cut / pit / stint penalties.
 	 *
-	 * Kept informational-only: value=0 dominates observed
-	 * traffic (cf. project_first_public_test memory), so even
-	 * if we fed it to penalty_enqueue the counter wouldn't
-	 * reach the 0x100 escalation threshold from client reports
-	 * alone.  Server-side detection (h_out_of_track 3-cut,
-	 * h_car_location_update pit-speeding, driver-stint tracker)
-	 * is the authoritative path.
+	 * BUT: when the client decides on its own that the driver
+	 * committed a DQ-worthy violation (wrong-way, lights-off,
+	 * speeding on start, wrong grid position) it emits kind=DQ.
+	 * These are the four penalty gaps the server has no data to
+	 * detect — trust the client's kind=DQ report and apply it.
+	 * Only the car's own client can self-DQ this way (each conn
+	 * is bound to a single car_id) so there's no grief vector.
 	 */
 	log_info("report penalty: conn=%u car=%d cat=%u kind=%u "
 	    "ts=%llu value=%d",
@@ -893,6 +926,26 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	    (unsigned)kind, (unsigned long long)timestamp, (int)value);
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
+	if (kind != EXE_DQ)
+		return 0;
+	if (s->cars[c->car_id].race.disqualified)
+		return 0;
+	if (s->session.phase != PHASE_FORMATION &&
+	    s->session.phase != PHASE_PRE_SESSION &&
+	    s->session.phase != PHASE_SESSION &&
+	    s->session.phase != PHASE_OVERTIME)
+		return 0;
+	{
+		uint8_t reason = client_category_to_reason(category);
+		char chat[128];
+		log_info("client-reported DQ: car=%d category=%u -> reason=%u",
+		    c->car_id, (unsigned)category, (unsigned)reason);
+		(void)penalty_enqueue(s, c->car_id, EXE_DQ, category,
+		    value > 0 ? value : 3, 1, 0, reason);
+		penalty_format_chat(chat, sizeof(chat), PEN_DQ, reason, 0,
+		    s->cars[c->car_id].race_number);
+		chat_broadcast(s, chat, 4);
+	}
 	return 0;
 }
 
