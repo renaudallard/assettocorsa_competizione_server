@@ -76,6 +76,18 @@ void	ratings_on_lap(struct Server *s, const char *steam_id,
 	    int has_cut, int is_out_lap);
 
 /*
+ * Update a driver's Trust rating when a race session ends.
+ *   completed_pct: 0..100 percentage of leader's lap count the driver
+ *       reached (100 = on the lead lap or better).
+ *   disqualified: non-zero if the driver was DQ'd during the race.
+ * TR moves +10 for a full-race finish, +3 for any partial race,
+ * and -30 for a DQ, saturating at 0..9999.  SA is untouched here.
+ * Sets the "dirty" flag so the next periodic broadcast emits 0x4e.
+ */
+void	ratings_on_race_end(struct Server *s, const char *steam_id,
+	    int completed_pct, int disqualified);
+
+/*
  * Returns non-zero if any driver's rating has changed since the last
  * call to ratings_clear_dirty().  Used by the periodic 0x4e emit.
  */

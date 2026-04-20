@@ -902,6 +902,36 @@ tick_run(struct Server *s)
 			 * StintLimit DQ shows up in the result record.
 			 */
 			stint_check_violations(s);
+			/*
+			 * Update Trust rating based on race outcome.
+			 * Runs only once per session-complete (before
+			 * archive) so we don't inflate TR on repeated
+			 * ticks.  Uses the session results written below.
+			 */
+			if (!s->session.results_written &&
+			    s->session_count > 0 &&
+			    s->sessions[s->session.session_index]
+				.session_type == 10) {
+				int leader_laps = 0, i;
+				for (i = 0; i < ACC_MAX_CARS; i++) {
+					int lc = s->cars[i].race.lap_count;
+					if (s->cars[i].used && lc > leader_laps)
+						leader_laps = lc;
+				}
+				for (i = 0; i < ACC_MAX_CARS; i++) {
+					struct CarEntry *car = &s->cars[i];
+					int pct;
+					if (!car->used ||
+					    car->driver_count == 0)
+						continue;
+					pct = leader_laps > 0
+					    ? (car->race.lap_count * 100)
+					      / leader_laps : 0;
+					ratings_on_race_end(s,
+					    car->drivers[0].steam_id, pct,
+					    car->race.disqualified);
+				}
+			}
 			broadcast_session_results(s);
 			if (!s->session.results_written) {
 				(void)results_write(s);

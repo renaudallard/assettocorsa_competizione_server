@@ -216,6 +216,39 @@ ratings_get(const struct Server *s, const char *steam_id,
 }
 
 void
+ratings_on_race_end(struct Server *s, const char *steam_id,
+    int completed_pct, int disqualified)
+{
+	struct RatingEntry *e;
+	int delta;
+
+	e = lookup(s, steam_id, 1);
+	if (e == NULL)
+		return;
+	if (disqualified)
+		delta = -30;
+	else if (completed_pct >= 100)
+		delta = 10;
+	else if (completed_pct > 0)
+		delta = 3;
+	else
+		return;				/* no laps, no change */
+
+	if (delta < 0) {
+		if ((int)e->tr_x100 + delta < 0)
+			e->tr_x100 = 0;
+		else
+			e->tr_x100 = (uint16_t)((int)e->tr_x100 + delta);
+	} else {
+		if ((uint32_t)e->tr_x100 + (uint32_t)delta > RATINGS_MAX)
+			e->tr_x100 = RATINGS_MAX;
+		else
+			e->tr_x100 = (uint16_t)((int)e->tr_x100 + delta);
+	}
+	s->ratings_dirty = 1;
+}
+
+void
 ratings_on_lap(struct Server *s, const char *steam_id,
     int has_cut, int is_out_lap)
 {
