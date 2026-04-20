@@ -890,7 +890,7 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		if (target >= 0) {
 			log_info("lobby: 0xf4 remote DQ for car %d (%s): %s",
 			    target, s1, s2);
-			(void)penalty_enqueue(s, target, EXE_DQ, 8, 3, 1, 0,
+			(void)penalty_enqueue(s, target, EXE_DQ, 19, 3, 1, 0,
 			    REASON_RACE_CONTROL);
 			snprintf(chat, sizeof(chat),
 			    "Car #%d was disqualified by Race Control: %s",

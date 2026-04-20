@@ -354,12 +354,15 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 					uint8_t inherited = front->reason;
 					char chat[128];
 					if (s->allow_auto_dq) {
+						uint8_t cat;
 						log_info("Car %d failed to "
 						    "serve %s -> DQ",
 						    c->car_id,
 						    penalty_name(front->kind));
+						cat = (uint8_t)penalty_wire_value(
+						    PEN_DQ, inherited);
 						penalty_enqueue(s, c->car_id,
-						    EXE_DQ, 8, 3, 1, 0,
+						    EXE_DQ, cat, 3, 1, 0,
 						    inherited);
 						penalty_format_chat(chat,
 						    sizeof(chat), PEN_DQ,
@@ -367,13 +370,16 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 						    s->cars[c->car_id].race_number);
 						chat_broadcast(s, chat, 4);
 					} else {
+						uint8_t cat;
 						log_info("Car %d failed to "
 						    "serve %s -> SG30 "
 						    "(allowAutoDQ=0)",
 						    c->car_id,
 						    penalty_name(front->kind));
+						cat = (uint8_t)penalty_wire_value(
+						    PEN_SG30, inherited);
 						penalty_enqueue(s, c->car_id,
-						    EXE_SG30, 8, 3, 0, 0,
+						    EXE_SG30, cat, 3, 0, 0,
 						    inherited);
 						penalty_format_chat(chat,
 						    sizeof(chat), PEN_SG30,
@@ -713,7 +719,7 @@ h_car_location_update(struct Server *s, struct Conn *c,
 				log_info("PITLANE SPEEDING for car #%d "
 				    "speed=%.1f m/s -> DQ",
 				    car->race_number, speed);
-				penalty_enqueue(s, c->car_id, EXE_DQ, 8,
+				penalty_enqueue(s, c->car_id, EXE_DQ, 11,
 				    3, 1, 0, REASON_PIT_SPEEDING);
 				penalty_format_chat(chat, sizeof(chat),
 				    PEN_DQ, REASON_PIT_SPEEDING, 0,

@@ -690,7 +690,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		if (chat_parse_int(text + 3, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);
 			if (car_id >= 0) {
-				penalty_enqueue(s, car_id, EXE_DQ, 8, 3,
+				penalty_enqueue(s, car_id, EXE_DQ, 19, 3,
 				    1, 0, REASON_RACE_CONTROL);
 				char chat[128];
 				snprintf(chat, sizeof(chat),

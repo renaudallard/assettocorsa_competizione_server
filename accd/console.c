@@ -192,7 +192,7 @@ cmd_dq(struct Server *s, const char *args)
 		reply("unknown car #%d", car_num);
 		return;
 	}
-	penalty_enqueue(s, car_id, EXE_DQ, 8, 3, 1, 0,
+	penalty_enqueue(s, car_id, EXE_DQ, 19, 3, 1, 0,
 	    REASON_RACE_CONTROL);
 	snprintf(msg, sizeof(msg),
 	    "Car #%d was disqualified by Race Control", car_num);
