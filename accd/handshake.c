@@ -280,12 +280,15 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 
 	/*
 	 * v0.2.46 last-known-working shape has NO CarSet sub-block
-	 * between GraphicsInfo and RaceRules.  An earlier experiment
+	 * between GraphicsInfo and RaceRules.  The AC2 client welcome
+	 * parser (FUN_1434f4390) DOES reference a "post carSet" anchor,
+	 * but its CarSet reader is tolerant of an empty wire payload and
+	 * consumes 0 bytes when nothing is there.  An earlier experiment
 	 * inserted `u16 0` here based on a misread of the exe
-	 * CarSet::writeToBuf, but the real ACC client actually refuses
-	 * welcomes with the extra slot and crashes with 'UDPPacket
-	 * data read out of range'.  Keep the two blocks adjacent until
-	 * we have a CarSet reader trace.
+	 * CarSet::writeToBuf, which misaligned the RaceRules reader and
+	 * crashed the real ACC client with 'UDPPacket data read out of
+	 * range'.  Keep the two blocks adjacent until we have a reader
+	 * trace showing the client actually wants CarSet bytes here.
 	 */
 
 	/*
@@ -1855,6 +1858,30 @@ post_slot_assignment:
 			car->race_number = rnum;
 			car->car_model = cmodel;
 			car->cup_category = ccup;
+			/*
+			 * Diagnostic: hex-dump the tail 16 B of hs_echo so we
+			 * can verify what's at the +0xf0 carModelType slot in
+			 * the wire the client actually sent.  Helps identify
+			 * whether we echo the intended model back — a real
+			 * client typically ends the handshake with 3×u8 + 3×
+			 * bool = 6 B past +0xf0, so byte -6..-4 of the tail
+			 * are (carModelType, cupCategory, templateKey).
+			 */
+			if (c->hs_echo != NULL && c->hs_echo_len >= 16) {
+				size_t tail = c->hs_echo_len - 16;
+				log_info("hs_echo tail cmodel=%u (wire bytes:"
+				    " %02x %02x %02x %02x %02x %02x %02x %02x"
+				    " %02x %02x %02x %02x %02x %02x %02x %02x)",
+				    (unsigned)cmodel,
+				    c->hs_echo[tail + 0], c->hs_echo[tail + 1],
+				    c->hs_echo[tail + 2], c->hs_echo[tail + 3],
+				    c->hs_echo[tail + 4], c->hs_echo[tail + 5],
+				    c->hs_echo[tail + 6], c->hs_echo[tail + 7],
+				    c->hs_echo[tail + 8], c->hs_echo[tail + 9],
+				    c->hs_echo[tail + 10], c->hs_echo[tail + 11],
+				    c->hs_echo[tail + 12], c->hs_echo[tail + 13],
+				    c->hs_echo[tail + 14], c->hs_echo[tail + 15]);
+			}
 			if (team != NULL)
 				snprintf(car->team_name,
 				    sizeof(car->team_name), "%s", team);
