@@ -1848,17 +1848,25 @@ post_slot_assignment:
 		}
 
 		/*
-		 * Grid-position assignment.  entrylist.json
-		 * defaultGridPosition wins when set; otherwise pick the
-		 * next free slot per FUN_140021090 (server_find_grid_slot).
+		 * Grid-position assignment.  Only assigned when the slot
+		 * has no grid position yet — a reclaim (zombie reconnect)
+		 * or a race session that inherited its grid from a prior
+		 * qualy archive already has grid_position set, and we
+		 * must not overwrite it or the driver ends up on the
+		 * wrong row after reconnect.
+		 * When unset: entrylist.json defaultGridPosition wins,
+		 * otherwise pick the next free slot per FUN_140021090
+		 * (server_find_grid_slot).
 		 */
-		if (car->default_grid_position > 0) {
-			car->race.grid_position =
-			    (int16_t)car->default_grid_position;
-		} else {
-			int g = server_find_grid_slot(s);
-			if (g >= 0)
-				car->race.grid_position = (int16_t)g;
+		if (car->race.grid_position < 0) {
+			if (car->default_grid_position > 0) {
+				car->race.grid_position =
+				    (int16_t)car->default_grid_position;
+			} else {
+				int g = server_find_grid_slot(s);
+				if (g >= 0)
+					car->race.grid_position = (int16_t)g;
+			}
 		}
 
 		free(first);
