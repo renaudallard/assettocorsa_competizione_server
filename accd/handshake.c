@@ -836,15 +836,17 @@ write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x44 chg  */
 	if (wr_u32(bb, 0) < 0) return -1;		/* +0x48 windHarmonic */
 	/*
-	 * +0x4c nHarmonics — FUN_140116830 drives its Fourier
-	 * synthesis off this.  nHarmonics==0 or empty sineCoef
-	 * disables variability (static curve, matching our old
-	 * behavior).  Expose at least one harmonic when the server
-	 * is configured dynamic so the client's forecast page
-	 * picks up accd's long-period sin/cos drift instead of
-	 * flat-lining across the weekend.
+	 * +0x4c nHarmonics.  Emit 0 so the client's Fourier
+	 * synthesis falls through the `nHarmonics == 0` early-
+	 * return and treats weather as static.  Attempting to
+	 * expose our drift via non-zero nHarmonics + a synthetic
+	 * sineCoef caused the client's welcome parser to walk off
+	 * the end of the buffer — its count field is almost
+	 * certainly read as a u32 where we emit i16, so a valid
+	 * i16 of 1 turns into a billion-entry u32 loop.  Until the
+	 * count width is pinned down, keep nHarmonics at 0.
 	 */
-	if (wr_u32(bb, is_dynamic ? 1u : 0u) < 0) return -1;
+	if (wr_u32(bb, 0) < 0) return -1;
 	/*
 	 * +0x50 weatherBaseMean is the CLOUD/RAIN variability baseline,
 	 * NOT a temperature.  We were emitting the ambient temperature
@@ -858,23 +860,12 @@ write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x54 baseDev  */
 	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x58 varDev   */
 	/*
-	 * Fourier coefficients.  FUN_140116830 treats sineCoef[0] as
-	 * a per-day linear drift rate and uses sineCoef[k>=1] paired
-	 * with cosineCoef[k-1] as oscillator amplitude/phase for
-	 * harmonic k.  accd's weather.c drifts clouds and rain at
-	 * ~0.1 amplitude over 24 h, so a single sineCoef[0] sized
-	 * to match the randomness level gives the client a
-	 * reasonable forecast curve.  Static weather emits no
-	 * coefficients (same as the exe).
+	 * Both Fourier vectors empty.  See nHarmonics comment above
+	 * — non-zero counts here trigger a runaway read loop on the
+	 * real ACC client.
 	 */
-	if (is_dynamic) {
-		float drift = 0.1f * (float)s->weather.randomness;
-		if (wr_i16(bb, 1) < 0) return -1;
-		if (wr_f32(bb, drift) < 0) return -1;
-	} else {
-		if (wr_i16(bb, 0) < 0) return -1;
-	}
-	if (wr_i16(bb, 0) < 0) return -1;	/* cosineCoeffs: empty */
+	if (wr_i16(bb, 0) < 0) return -1;	/* sineCoeffs: 0 */
+	if (wr_i16(bb, 0) < 0) return -1;	/* cosineCoeffs: 0 */
 	return 0;
 }
 
