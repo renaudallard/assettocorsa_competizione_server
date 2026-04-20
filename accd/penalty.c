@@ -293,12 +293,27 @@ void
 penalty_serve_front(struct Server *s, int car_id)
 {
 	struct PenaltyQueue *q;
+	uint8_t k;
 	int i;
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS)
 		return;
 	q = &s->cars[car_id].race.pen;
 	if (q->count == 0)
+		return;
+	/*
+	 * Only DT / SG kinds are "serve-able" — TP5/TP15 are fixed
+	 * post-race time penalties, DQ is terminal, and anything
+	 * else would be a programming error.  Silently skip so the
+	 * caller (pit-exit detection, mandatory-pit served handler)
+	 * doesn't accidentally evict a TP entry just because the
+	 * driver pit'd.
+	 */
+	k = q->slots[0].kind;
+	if (k != PEN_DT && k != PEN_DTC &&
+	    k != PEN_SG10 && k != PEN_SG10C &&
+	    k != PEN_SG20 && k != PEN_SG20C &&
+	    k != PEN_SG30 && k != PEN_SG30C)
 		return;
 	/* Remove the front entry and slide the rest down. */
 	for (i = 1; i < q->count; i++)

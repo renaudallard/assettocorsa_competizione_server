@@ -406,8 +406,8 @@ done:
  * The 23-byte result_header is emitted from a per-car results struct
  * at stride 0x150 in FUN_1400351f0.  Our struct CarRaceState carries
  * enough to populate all fields except the +0x60 u16 (unknown
- * semantic, always 0 in welcome scenarios) and +0x74 u32 time penalty
- * (we don't track cumulative penalty ms yet).
+ * semantic, always 0 in welcome scenarios); the +0x74 u32 time
+ * penalty is computed via penalty_total_ms().
  *
  * We used to emit write_session_tail (23 bytes) here — same byte
  * count matched the 81-min capture sizes (235/468/706 for 1/2/3
