@@ -795,14 +795,16 @@ session_advance(struct Server *s)
 }
 
 /*
- * Driver-stint tracker — matches FUN_14012ae10 (ExceededDriverStintLimit
- * path) on a per-car, per-driver basis.  Accumulates on-track time into
- * driver_stint_ms[current_driver_index] and enqueues DQ on any driver
- * whose total exceeds the configured `driverStintTime` at session end.
- *
- * The other two FUN_14012ae10 DQs (IgnoredDriverStint, DriverRanNoStint)
- * require extra config state (mandatory-stint count, minimum-stint) that
- * we don't yet parse from eventRules.json.
+ * Driver-stint tracker — matches FUN_14012ae10 on a per-car,
+ * per-driver basis.  Accumulates on-track time into
+ * driver_stint_ms[current_driver_index] and enqueues a DQ at
+ * session end when any of the FUN_14012ae10 conditions fires:
+ *   ExceededDriverStintLimit  (some driver's total > driverStintTime)
+ *   DriverRanNoStint          (a registered driver has 0 ms)
+ * The IgnoredDriverStint path (DT→SG30→DQ escalation when a
+ * mandatory swap is missed) is not yet implemented; it needs
+ * an isMandatoryPitstopSwapDriverRequired flag from eventRules.json
+ * plus a mid-race check, not just the race-end scan below.
  */
 
 void
