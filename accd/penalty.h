@@ -97,6 +97,17 @@ void	penalty_clear_all(struct Server *s);
 const char *
 	penalty_name(uint8_t kind);
 
+/*
+ * Compute the total post-race time penalty (ms) for a car.  Sums
+ * explicit TP5/TP15 entries plus converts any unserved DT/SG at
+ * session end to its time-penalty equivalent (30/40/50/60 s,
+ * handbook V.1.8.11 / FUN_140127440 decomp).  Served entries and
+ * laps_remaining == 0 are skipped.  Usable from tick.c result-
+ * header emission and results.c JSON dump.
+ */
+uint32_t
+	penalty_total_ms(const struct PenaltyQueue *q);
+
 /* Build the chat string for a penalty issuance.  Suffix is chosen
  * from `reason` (e.g. " - cutting") unless `collision` is set, in
  * which case the collision suffix overrides. */

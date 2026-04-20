@@ -52,6 +52,7 @@
 #include "io.h"
 #include "log.h"
 #include "msg.h"
+#include "penalty.h"
 #include "prim.h"
 #include "results.h"
 #include "session.h"
@@ -433,57 +434,15 @@ write_result_header(struct ByteBuf *bb, const struct CarEntry *car,
 	 * screen.
 	 */
 	uint8_t drv_idx = car->current_driver_index;
-	uint32_t penalty_ms = 0;
-	int pi;
-
+	uint32_t penalty_ms = penalty_total_ms(&r->pen);
 	/*
 	 * +0x74 penalty_ms = sum of time penalties the client should
-	 * add to race_time_ms for final standings.  Admin TP5/TP15 are
-	 * unconditional.  An unserved drive-through that the session
-	 * ended on (laps_remaining > 0 at end, hence auto-DQ never
-	 * fired) converts to an 80s time penalty per handbook V.1.8.11.
+	 * add to race_time_ms for final standings.  See
+	 * penalty_total_ms() in penalty.c for the kind-to-seconds
+	 * conversion (admin TP5/TP15 are unconditional; unserved
+	 * DT/SG at race end convert to 30/40/50/60 s per handbook
+	 * V.1.8.11 / FUN_140127440 decomp).
 	 */
-	for (pi = 0; pi < r->pen.count; pi++) {
-		const struct PenaltyEntry *p = &r->pen.slots[pi];
-		switch (p->kind) {
-		case PEN_TP5:
-			penalty_ms += 5000;
-			break;
-		case PEN_TP15:
-			penalty_ms += 15000;
-			break;
-		case PEN_DT:
-		case PEN_DTC:
-			/*
-			 * FUN_140127440 decomp + .rdata: unserved DT at
-			 * race end converts to 30s time penalty
-			 * (DAT_14014bd70 = 30.0).  Was 80s.
-			 */
-			if (!p->served && p->laps_remaining > 0)
-				penalty_ms += 30000;
-			break;
-		case PEN_SG10:
-		case PEN_SG10C:
-			/* DAT_14016b3f8 = 40.0s */
-			if (!p->served && p->laps_remaining > 0)
-				penalty_ms += 40000;
-			break;
-		case PEN_SG20:
-		case PEN_SG20C:
-			/* DAT_14016a258 = 50.0s */
-			if (!p->served && p->laps_remaining > 0)
-				penalty_ms += 50000;
-			break;
-		case PEN_SG30:
-		case PEN_SG30C:
-			/* DAT_1401506a8 = 60.0s */
-			if (!p->served && p->laps_remaining > 0)
-				penalty_ms += 60000;
-			break;
-		default:
-			break;
-		}
-	}
 
 	if (wr_u8(bb, position) < 0) return -1;		/* +0x50 */
 	if (wr_u8(bb, position) < 0) return -1;		/* +0x54 cup_pos */

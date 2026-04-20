@@ -327,6 +327,50 @@ penalty_clear_all(struct Server *s)
 		penalty_clear(s, i);
 }
 
+uint32_t
+penalty_total_ms(const struct PenaltyQueue *q)
+{
+	uint32_t total = 0;
+	int i;
+
+	if (q == NULL)
+		return 0;
+	for (i = 0; i < q->count; i++) {
+		const struct PenaltyEntry *p = &q->slots[i];
+		switch (p->kind) {
+		case PEN_TP5:
+			total += 5000;
+			break;
+		case PEN_TP15:
+			total += 15000;
+			break;
+		case PEN_DT:
+		case PEN_DTC:
+			if (!p->served && p->laps_remaining > 0)
+				total += 30000;
+			break;
+		case PEN_SG10:
+		case PEN_SG10C:
+			if (!p->served && p->laps_remaining > 0)
+				total += 40000;
+			break;
+		case PEN_SG20:
+		case PEN_SG20C:
+			if (!p->served && p->laps_remaining > 0)
+				total += 50000;
+			break;
+		case PEN_SG30:
+		case PEN_SG30C:
+			if (!p->served && p->laps_remaining > 0)
+				total += 60000;
+			break;
+		default:
+			break;
+		}
+	}
+	return total;
+}
+
 const char *
 penalty_name(uint8_t kind)
 {

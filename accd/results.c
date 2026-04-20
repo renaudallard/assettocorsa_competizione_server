@@ -221,6 +221,8 @@ results_write(struct Server *s)
 		    car->race.best_sectors_ms[2]);
 		fprintf(f, "          \"totalTime\": %d,\n",
 		    car->race.race_time_ms);
+		fprintf(f, "          \"totalPenaltyMs\": %u,\n",
+		    (unsigned)penalty_total_ms(&car->race.pen));
 		fprintf(f, "          \"lapCount\": %d,\n",
 		    car->race.lap_count);
 		fprintf(f, "          \"lastSplitId\": 0\n");
