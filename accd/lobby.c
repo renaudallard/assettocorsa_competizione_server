@@ -120,21 +120,6 @@ lobby_now_ms(void)
 	    (uint64_t)ts.tv_nsec / 1000000ull;
 }
 
-/*
- * Time since lobby_init in milliseconds.  Kunos sends small ts
- * values in registration / drivers / keepalive (capture shows
- * ~510000 ms = 8 minutes), suggesting process-uptime not absolute
- * monotonic. We use lobby-module uptime so values stay <2^31 even
- * on long-running servers and match the magnitude Kunos sends.
- */
-static uint32_t lobby_epoch_ms;
-
-static uint32_t
-lobby_uptime_ms(void)
-{
-	return (uint32_t)(lobby_now_ms() - lobby_epoch_ms);
-}
-
 static void
 lobby_random_token(char *out, size_t n)
 {
@@ -169,8 +154,6 @@ lobby_init(struct LobbyClient *l)
 	lobby_random_token(l->token_a, sizeof(l->token_a));
 	lobby_random_token(l->token_b, sizeof(l->token_b));
 	l->state = LOBBY_DISABLED;
-	if (lobby_epoch_ms == 0)
-		lobby_epoch_ms = (uint32_t)lobby_now_ms();
 }
 
 void
