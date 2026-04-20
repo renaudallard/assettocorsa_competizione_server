@@ -1076,8 +1076,50 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	if (bb_append(bb, owner->hs_echo + ci_off, ci_len) < 0)
 		return -1;
 
-	if (wr_u8(bb, 1) < 0) return -1;
-	if (bb_append(bb, owner->hs_echo, drv_len) < 0) return -1;
+	/*
+	 * Driver list.  FUN_140032c90 iterates the entry's DriverInfo
+	 * vector and serializes each via FUN_14011cea0:
+	 *   5 × str_a (first, last, short, ???, ???)
+	 *   + 41 fixed bytes (category, nationality, 12 ratings/flags)
+	 *   + 1 × str_a (long steam_id)
+	 *
+	 * We have the connecting driver's full blob in hs_echo and
+	 * emit it verbatim.  Additional drivers of a multi-driver
+	 * entry (endurance) aren't part of the handshake — synthesize
+	 * minimal but well-formed blobs from entrylist data so the
+	 * client sees the full roster at pre-session.  The two
+	 * unidentified wstring slots (positions 3-4 of the 5) are
+	 * emitted empty; the rating fields are zero until live data
+	 * arrives via driver-swap / ACP_ELO_UPDATE.
+	 */
+	{
+		uint8_t dc = ec->driver_count > 0 ? ec->driver_count : 1;
+		int di;
+
+		if (dc > ACC_MAX_DRIVERS_PER_CAR)
+			dc = ACC_MAX_DRIVERS_PER_CAR;
+		if (wr_u8(bb, dc) < 0) return -1;
+		if (bb_append(bb, owner->hs_echo, drv_len) < 0) return -1;
+		for (di = 1; di < dc; di++) {
+			const struct DriverInfo *dd = &ec->drivers[di];
+			int z;
+
+			if (wr_str_a(bb, dd->first_name) < 0) return -1;
+			if (wr_str_a(bb, dd->last_name) < 0) return -1;
+			if (wr_str_a(bb, dd->short_name) < 0) return -1;
+			if (wr_str_a(bb, "") < 0) return -1;
+			if (wr_str_a(bb, "") < 0) return -1;
+			if (wr_u8(bb, dd->driver_category) < 0) return -1;
+			if (wr_u16(bb, dd->nationality) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			for (z = 0; z < 3; z++)
+				if (wr_u32(bb, 0) < 0) return -1;
+			if (wr_u8(bb, 0) < 0) return -1;
+			for (z = 0; z < 6; z++)
+				if (wr_u32(bb, 0) < 0) return -1;
+			if (wr_str_a(bb, dd->steam_id) < 0) return -1;
+		}
+	}
 
 	/* spawnDef tail: active, u64 ts, 2 u8, 5 dirt, 5 damage,
 	 * u16 elo, u32 stability.  All zero for a fresh spawn. */
