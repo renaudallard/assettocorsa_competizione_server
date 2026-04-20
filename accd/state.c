@@ -195,12 +195,21 @@ conn_drop(struct Server *s, struct Conn *c)
 	}
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
 		/*
+		 * Flush any in-progress stint into driver_stint_ms
+		 * before the slot goes idle.  Without this a driver
+		 * who disconnects mid-lap keeps stint_start_ms latched
+		 * and the stint counter keeps accruing wall-clock until
+		 * session end — if they reconnect the reclaim path
+		 * would not reset stint_start_ms (the guard short-
+		 * circuits a second stint_start_tracking) and the
+		 * stint-violation check would over-count their total.
+		 */
+		stint_stop_tracking(s, c->car_id);
+		/*
 		 * Mark the car slot as unused so it can be
 		 * reallocated, but preserve the race state
 		 * (lap times, position) so the car stays in
-		 * the leaderboard if they had valid laps.
-		 * The Kunos server keeps disconnected cars
-		 * in the standings.
+		 * the leaderboard session-best counters.
 		 */
 		s->cars[c->car_id].used = 0;
 		c->car_id = -1;
