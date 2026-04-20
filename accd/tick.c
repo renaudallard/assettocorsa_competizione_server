@@ -227,7 +227,16 @@ broadcast_percar_dirty(struct Server *s)
 				continue;
 			if (peer->car_id == i)
 				continue;
-			if (sender != NULL)
+			/*
+			 * Only apply the per-peer client-timestamp delta
+			 * once both endpoints have pong'd at least once;
+			 * before that last_pong_client_ts is 0 and using
+			 * it would emit a huge synthetic offset (~now)
+			 * into the client's smoothing filter.
+			 */
+			if (sender != NULL &&
+			    sender->last_pong_client_ts != 0 &&
+			    peer->last_pong_client_ts != 0)
 				delta = (int32_t)(sender->last_pong_client_ts -
 				    peer->last_pong_client_ts);
 
