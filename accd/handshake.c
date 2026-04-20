@@ -1424,7 +1424,20 @@ handshake_handle(struct Server *s, struct Conn *c,
 		log_warn("handshake: short password from fd %d", c->fd);
 		return -1;
 	}
-	if (strcmp(password, s->password) != 0) {
+	if (strcmp(password, s->password) == 0) {
+		/* Regular driver password. */
+		c->is_spectator = 0;
+	} else if (s->spectator_password[0] != '\0' &&
+	    strcmp(password, s->spectator_password) == 0) {
+		/*
+		 * Spectator password: flag the connection so downstream
+		 * code (e.g. monitor.c's PB_CONN_IS_SPECTATOR emit) can
+		 * treat it distinctly.  Same accept path as a driver —
+		 * Kunos doesn't enforce separate slot limits.
+		 */
+		c->is_spectator = 1;
+		log_info("handshake: spectator join from fd %d", c->fd);
+	} else {
 		log_info("rejecting connection: bad password from fd %d",
 		    c->fd);
 		reason = REJECT_PASSWORD;
