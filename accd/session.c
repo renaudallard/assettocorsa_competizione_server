@@ -876,7 +876,14 @@ stint_check_violations(struct Server *s)
 		struct CarRaceState *r;
 		int d;
 
-		if (!car->used)
+		/*
+		 * Enforce on any slot with an identity + lap data so a
+		 * driver who committed a violation and then disconnected
+		 * still shows as DQ'd in the results file.  conn_drop
+		 * flushes stint_start_ms on disconnect, so the pending-
+		 * stint accumulation is accurate.
+		 */
+		if (car->driver_count == 0 || car->race.lap_count == 0)
 			continue;
 		r = &car->race;
 		/* Flush any in-progress stint before checking. */
