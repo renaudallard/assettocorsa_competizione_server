@@ -913,6 +913,33 @@ stint_check_violations(struct Server *s)
 			    (unsigned)s->mandatory_pit_count);
 			(void)penalty_enqueue(s, i, EXE_DQ, 13, 3, 1, 0,
 			    REASON_IGNORED_MANDATORY_PIT);
+			if (r->disqualified)
+				continue;
+		}
+
+		/*
+		 * Driver-ran-no-stint violation (endurance races): if
+		 * the car has multiple registered drivers (driver_count
+		 * > 1) and at least one never took a turn on track,
+		 * DQ with Disqualified_DriverRanNoStint (ServerMonitor
+		 * PenaltyShortcut 28).  Single-driver entries are
+		 * exempt — there's no implied swap obligation.
+		 */
+		if (is_race && car->driver_count > 1 && r->lap_count > 0) {
+			int d, skipped = -1;
+			for (d = 0; d < car->driver_count &&
+			    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
+				if (r->driver_stint_ms[d] == 0) {
+					skipped = d;
+					break;
+				}
+			}
+			if (skipped >= 0) {
+				log_info("Car %d driver %d never took a "
+				    "stint -> DQ", i, skipped);
+				(void)penalty_enqueue(s, i, EXE_DQ, 28, 3, 1, 0,
+				    REASON_DRIVER_RAN_NO_STINT);
+			}
 		}
 	}
 }
