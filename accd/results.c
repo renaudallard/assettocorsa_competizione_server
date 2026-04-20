@@ -160,7 +160,14 @@ results_write(struct Server *s)
 		struct CarEntry *car = &s->cars[i];
 		struct DriverInfo *d;
 
-		if (!car->used)
+		/*
+		 * Emit any slot with an identity (driver_count > 0),
+		 * not just currently-connected ones — a driver who ran
+		 * valid laps and then disconnected should still appear
+		 * in the results file.  session_reset zeroes race state
+		 * between sessions so we can't leak stale data here.
+		 */
+		if (car->driver_count == 0)
 			continue;
 		if (!first)
 			fprintf(f, ",");
@@ -245,8 +252,16 @@ results_write(struct Server *s)
 		    car->race.lap_count);
 		fprintf(f, "          \"lastSplitId\": 0\n");
 		fprintf(f, "        },\n");
+		/*
+		 * missingMandatoryPitstop only applies to races with a
+		 * configured mandatoryPitstopCount; in practice / qualy
+		 * or a race with pit_count=0 there is nothing to miss, so
+		 * emit 0 to avoid a stats-service bug where every car is
+		 * reported as non-compliant.
+		 */
 		fprintf(f, "        \"missingMandatoryPitstop\": %d,\n",
-		    car->race.mandatory_pit_served ? 0 : 1);
+		    (st == 10 && s->mandatory_pit_count > 0 &&
+			!car->race.mandatory_pit_served) ? 1 : 0);
 		fprintf(f, "        \"driverPenalties\": [");
 		{
 			int pi;
