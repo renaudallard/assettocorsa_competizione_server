@@ -266,6 +266,16 @@ session_start(struct Server *s)
 	s->session.ts[1] = s->session.ts[0] + pre_ms;
 	s->session.ts[2] = s->session.ts[1];
 	if (def->session_type == 10) {
+		/*
+		 * Race uses position-triggered stamps for the formation-
+		 * cross and green-cross boundaries, matching the exe's
+		 * FUN_14012f300.  Hold ts[2]..ts[6] at UINT64_MAX until
+		 * those triggers fire so the client's phase compute
+		 * holds at phase 3 (formation lap running) through phase
+		 * 4 (grid countdown / doubleFile) the same way Kunos's
+		 * clients do.
+		 */
+		s->session.ts[2] = UINT64_MAX;
 		s->session.ts[3] = UINT64_MAX;
 		s->session.ts[4] = UINT64_MAX;
 		s->session.ts[5] = UINT64_MAX;
@@ -383,8 +393,8 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		return 0;
 
 	now = mono_ms();
-	if (now < ss->ts[2])
-		return 0;	/* still in pre-race countdown */
+	if (now < ss->ts[1])
+		return 0;	/* still in pre-race waiting countdown */
 
 	if (!ss->formation_ended) {
 		float pre_green = s->green_trigger_start -
@@ -395,11 +405,21 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		if (wrapped_range_contains(leader_pos,
 		    s->formation_trigger_start, pre_green)) {
 			ss->formation_ended = 1;
+			/*
+			 * FUN_14012f300 stamps +0x178 = now + 1000ms on
+			 * formation crossing; the exe's phase-compute
+			 * advances to phase 4 (doubleFile / grid countdown)
+			 * only once that deadline passes.  Mirror it on
+			 * ts[2] so the client runs through phase 3 → 4
+			 * instead of jumping straight past formation.
+			 */
+			ss->ts[2] = now + 1000;
 			log_info("formation end: leader norm_pos=%.3f "
-			    "range=[%.3f, %.3f]",
+			    "range=[%.3f, %.3f] doubleFile_at=%llums",
 			    (double)leader_pos,
 			    (double)s->formation_trigger_start,
-			    (double)pre_green);
+			    (double)pre_green,
+			    (unsigned long long)ss->ts[2]);
 		}
 		return 0;
 	}
