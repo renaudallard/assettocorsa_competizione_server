@@ -454,10 +454,23 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		green_end = silent ? ss->green_trigger : hi;
 		ss->green_fired = 1;
 		dur_ms = (uint64_t)def->duration_min * 60000ull;
-		ss->ts[3] = now;
-		ss->ts[4] = now + dur_ms;
+		/*
+		 * FUN_14012f300 stamps the green_fire_time deadline at
+		 * +0x1b0 = now + 1000ms, and the phase-compute
+		 * FUN_14012e810 only advances to race once (flag &&
+		 * now >= deadline) both hold.  That 1-second grace lets
+		 * the 0x28 phase-broadcast reach every client before the
+		 * session phase flips, so the visible green light lands
+		 * at the same track position the real server produces.
+		 * Skipping the delay made our green fire ~1% of a lap
+		 * earlier (~50 m at racing speed) than Kunos.
+		 */
+		ss->ts[3] = now + 1000;
+		ss->ts[4] = ss->ts[3] + dur_ms;
+		ss->ts[5] = ss->ts[4] +
+		    (uint64_t)s->session_overtime_s * 1000ull;
 		log_info("green flag (%s): leader norm_pos=%.3f trigger=%.3f "
-		    "active_dur=%llums",
+		    "active_dur=%llums fire_in=1000ms",
 		    silent ? "silent" : "verbose",
 		    (double)leader_pos, (double)green_end,
 		    (unsigned long long)dur_ms);
