@@ -1377,15 +1377,6 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 	if (build_welcome_trailer(&bb, s, c) < 0)
 		goto fail;
 
-	/*
-	 * Diagnostic: dump the full 0x0b welcome body so we can
-	 * compare byte-for-byte against a real-server pcap when
-	 * debugging spawnDef / CarSet layout issues.
-	 */
-	log_info("welcome 0x0b body len=%zu (full hex below)",
-	    bb.wpos);
-	log_hexdump("  welcome", bb.data, bb.wpos);
-
 	rc = conn_send_framed(c, bb.data, bb.wpos);
 	bb_free(&bb);
 	if (rc < 0)
@@ -1867,25 +1858,6 @@ post_slot_assignment:
 			car->race_number = rnum;
 			car->car_model = cmodel;
 			car->cup_category = ccup;
-			/*
-			 * Diagnostic: hex-dump the tail 16 B of hs_echo so we
-			 * can verify what's at the +0xf0 carModelType slot in
-			 * the wire the client actually sent.  Helps identify
-			 * whether we echo the intended model back — a real
-			 * client typically ends the handshake with 3×u8 + 3×
-			 * bool = 6 B past +0xf0, so byte -6..-4 of the tail
-			 * are (carModelType, cupCategory, templateKey).
-			 */
-			if (c->hs_echo != NULL && c->hs_echo_len > 0) {
-				log_info("hs_echo cmodel=%u drv_len=%zu "
-				    "hs_echo_len=%zu (full hex below)",
-				    (unsigned)cmodel,
-				    parse_driverinfo_len(c->hs_echo,
-					c->hs_echo_len),
-				    c->hs_echo_len);
-				log_hexdump("  hs_echo",
-				    c->hs_echo, c->hs_echo_len);
-			}
 			if (team != NULL)
 				snprintf(car->team_name,
 				    sizeof(car->team_name), "%s", team);
