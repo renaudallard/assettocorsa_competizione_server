@@ -1377,6 +1377,15 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 	if (build_welcome_trailer(&bb, s, c) < 0)
 		goto fail;
 
+	/*
+	 * Diagnostic: dump the full 0x0b welcome body so we can
+	 * compare byte-for-byte against a real-server pcap when
+	 * debugging spawnDef / CarSet layout issues.
+	 */
+	log_info("welcome 0x0b body len=%zu (full hex below)",
+	    bb.wpos);
+	log_hexdump("  welcome", bb.data, bb.wpos);
+
 	rc = conn_send_framed(c, bb.data, bb.wpos);
 	bb_free(&bb);
 	if (rc < 0)
@@ -1867,20 +1876,15 @@ post_slot_assignment:
 			 * bool = 6 B past +0xf0, so byte -6..-4 of the tail
 			 * are (carModelType, cupCategory, templateKey).
 			 */
-			if (c->hs_echo != NULL && c->hs_echo_len >= 16) {
-				size_t tail = c->hs_echo_len - 16;
-				log_info("hs_echo tail cmodel=%u (wire bytes:"
-				    " %02x %02x %02x %02x %02x %02x %02x %02x"
-				    " %02x %02x %02x %02x %02x %02x %02x %02x)",
+			if (c->hs_echo != NULL && c->hs_echo_len > 0) {
+				log_info("hs_echo cmodel=%u drv_len=%zu "
+				    "hs_echo_len=%zu (full hex below)",
 				    (unsigned)cmodel,
-				    c->hs_echo[tail + 0], c->hs_echo[tail + 1],
-				    c->hs_echo[tail + 2], c->hs_echo[tail + 3],
-				    c->hs_echo[tail + 4], c->hs_echo[tail + 5],
-				    c->hs_echo[tail + 6], c->hs_echo[tail + 7],
-				    c->hs_echo[tail + 8], c->hs_echo[tail + 9],
-				    c->hs_echo[tail + 10], c->hs_echo[tail + 11],
-				    c->hs_echo[tail + 12], c->hs_echo[tail + 13],
-				    c->hs_echo[tail + 14], c->hs_echo[tail + 15]);
+				    parse_driverinfo_len(c->hs_echo,
+					c->hs_echo_len),
+				    c->hs_echo_len);
+				log_hexdump("  hs_echo",
+				    c->hs_echo, c->hs_echo_len);
 			}
 			if (team != NULL)
 				snprintf(car->team_name,
