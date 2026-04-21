@@ -236,23 +236,16 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 
 		race->lap_count++;
 		/*
-		 * Only valid laps (no cut, no out-lap, no force=1 ACP_
-		 * OUT_OF_TRACK during the lap) update the personal best
-		 * AND the personal last-lap time.  The exe's case-0x21
-		 * FUN_14012b380 routes out-laps and cut laps away from
-		 * the scoring path entirely; both values stay at their
-		 * previous state.  Updating last_lap_ms for invalid laps
-		 * leaks the out-lap pit-crawl time to the client, which
-		 * then uses it as the reference for the predicted-lap /
-		 * delta HUD overlay — producing large negative deltas on
-		 * every sector until a real valid lap lands.
+		 * last_lap_ms updates on every lap (valid or invalid) so
+		 * the HUD's "Last Lap" widget always shows the most
+		 * recent lap time.  best_lap_ms only updates on a valid
+		 * lap so a slow out-lap or cut lap doesn't poison the
+		 * personal best.
 		 */
-		if (!invalid) {
-			race->last_lap_ms = lap_ms;
-			if (race->best_lap_ms == 0 ||
-			    lap_ms < race->best_lap_ms)
-				race->best_lap_ms = lap_ms;
-		}
+		race->last_lap_ms = lap_ms;
+		if (!invalid && (race->best_lap_ms == 0 ||
+		    lap_ms < race->best_lap_ms))
+			race->best_lap_ms = lap_ms;
 		/*
 		 * Push the completed lap into the ring-buffer history so
 		 * the 0x36 per-car list 2 (+0x1d8) carries real lap times
@@ -264,20 +257,18 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			    % ACC_LAP_HISTORY;
 			int si;
 
-			race->lap_history_ms[slot] = invalid
-			    ? (int32_t)0x7FFFFFFF : lap_ms;
 			/*
-			 * Capture the per-sector splits for this lap into
-			 * the same ring-buffer slot so the 0x56 garage
-			 * response can surface real per-lap splits.  Use
-			 * 0x7FFFFFFF sentinel for invalid laps so the
-			 * client renders them as dashes just like the
-			 * lap_time_ms field.
+			 * Store the REAL lap time (and sectors) in history
+			 * for every completed lap, valid or not — the 0x56
+			 * garage reply uses this ring buffer to list every
+			 * lap's time.  Kunos also emits real ms for invalid
+			 * laps in the per-car history vector (confirmed via
+			 * pcap decode 2026-04-21).
 			 */
+			race->lap_history_ms[slot] = lap_ms;
 			for (si = 0; si < 3; si++)
-				race->lap_splits_ms[slot][si] = invalid
-				    ? (int32_t)0x7FFFFFFF
-				    : race->sector_ms[si];
+				race->lap_splits_ms[slot][si] =
+				    race->sector_ms[si];
 			if (race->lap_history_count < 0xFF)
 				race->lap_history_count++;
 		}

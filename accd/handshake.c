@@ -665,29 +665,26 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 
 	/*
 	 * Six per-car fields after the driver list.  FUN_140034210 reads
-	 * these at fixed car-struct offsets; we traced each to its
-	 * source via FUN_1400f0090 (car → LeaderboardLine copier) and
-	 * cross-referenced with case 0x2e/0x51 handlers:
+	 * them from the runtime Car struct, but the AC2 client stores
+	 * them at different semantic fields on its side.  Real-client
+	 * testing (2026-04-21) pinned the third u32 as last_lap_ms on
+	 * the client — emitting car_system there (commit d9a0c87) left
+	 * the HUD's last-lap / predicted-lap timers blank because the
+	 * client got 0 for last_lap and computed no delta.
 	 *
-	 *   +0x180  u16   reserved / zero in all observed captures
+	 *   +0x180  u16   reserved
 	 *   +0x1d4  u32   best-lap-ms
-	 *   +0x1b0  u32   low 4 bytes of car_system u64 (FUN_1400142f0
-	 *                 case 0x2e writes u64 at car+0x1b0)
-	 *   +0x1f4  u16   lap count (u32 in struct, u16 truncated on wire)
+	 *   +0x1b0  u32   last-lap-ms (client semantic — drives HUD
+	 *                 last-lap + predicted-lap delta)
+	 *   +0x1f4  u16   lap count
 	 *   +0x1f0  u32   race-time-ms
-	 *   +0x1f8  u8    ELO, clamped to u8 (FUN_1400142f0 case 0x51
-	 *                 writes u32 at car+0x1f8 on ACP_ELO_UPDATE)
-	 *
-	 * We used to put last_lap_ms at +0x1b0 and clamp lap_count to u8
-	 * at +0x1f8, both of which wrote real timing data into wire slots
-	 * the client reads as car-system + ELO.  Emit the correct
-	 * semantics.  last_lap_ms has no dedicated slot in this record —
-	 * the client carries it via 0x1b lap broadcasts instead.
+	 *   +0x1f8  u8    ELO, clamped
 	 */
 	if (wr_u16(bb, 0) < 0) return -1;
 	if (wr_u32(bb, race->best_lap_ms > 0
 	    ? (uint32_t)race->best_lap_ms : 0x7FFFFFFFu) < 0) return -1;
-	if (wr_u32(bb, (uint32_t)ec->last_sys_data) < 0) return -1;
+	if (wr_u32(bb, race->last_lap_ms > 0
+	    ? (uint32_t)race->last_lap_ms : 0x7FFFFFFFu) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)race->lap_count) < 0) return -1;
 	if (wr_u32(bb, race->race_time_ms > 0
 	    ? (uint32_t)race->race_time_ms : 0x7FFFFFFFu) < 0) return -1;
@@ -705,6 +702,14 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			if (race->sector_ms[si] > 0)
 				l1_n = si + 1;
 
+		/*
+		 * l2 carries the full per-car lap history ring buffer.
+		 * Invalid laps store their real ms too so the 0x56
+		 * garage-lookup reply (which shares the same ring
+		 * buffer) surfaces every completion, not just clean
+		 * ones.  The Last-Lap HUD timer is driven by the
+		 * +0x1b0 slot above, not by this list.
+		 */
 		if (race->lap_history_count == 0) {
 			l2_n = 3;
 			l2_buf[0] = (int32_t)0x7FFFFFFF;
