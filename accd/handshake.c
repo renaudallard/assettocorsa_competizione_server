@@ -279,16 +279,17 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 0xFF) < 0) return -1;
 
 	/*
-	 * v0.2.46 last-known-working shape has NO CarSet sub-block
-	 * between GraphicsInfo and RaceRules.  The AC2 client welcome
-	 * parser (FUN_1434f4390) DOES reference a "post carSet" anchor,
-	 * but its CarSet reader is tolerant of an empty wire payload and
-	 * consumes 0 bytes when nothing is there.  An earlier experiment
-	 * inserted `u16 0` here based on a misread of the exe
-	 * CarSet::writeToBuf, which misaligned the RaceRules reader and
-	 * crashed the real ACC client with 'UDPPacket data read out of
-	 * range'.  Keep the two blocks adjacent until we have a reader
-	 * trace showing the client actually wants CarSet bytes here.
+	 * NO CarSet sub-block here.  The AC2 client EventEntity reader
+	 * (FUN_1434f4390) does call vtable[0x28] on `param_1+0xb8`
+	 * between GraphicsInfo and RaceRules, but any emit in this slot
+	 * — even an empty `u16 0` — crashes the real client shortly
+	 * after welcome receipt (confirmed at both v0.2.47 and v0.2.64
+	 * attempts, symptom "Connection reset by peer" right after
+	 * phase transitions).  The u16(0) reader-level theory is
+	 * well-founded but something else in the client's post-welcome
+	 * path is tightly coupled to zero CarSet bytes being present
+	 * between GraphicsInfo and RaceRules — do not touch this until
+	 * a reader trace shows the specific assertion that fires.
 	 */
 
 	/*
@@ -612,14 +613,17 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	if (wr_u16(bb, ec->car_id) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)ec->race_number) < 0) return -1;
 	/*
-	 * FUN_140034210 writes u8 at car+0x58 (cupCategory) then u8 at
-	 * car+0x5c (current_driver_index) — NOT car_model.  The client
-	 * already has car_model from the spawnDef in 0x0b; repeating it
-	 * here shifts the two following fields out of alignment on the
-	 * HUD timing tower.
+	 * FUN_140034210 reads u8 at car+0x58 (car_model) then u8 at
+	 * car+0x5c (cup_category) from the runtime Car struct; the
+	 * client's reader FUN_14352ae00 stores them back at +0x58 and
+	 * +0x5c, where car_model drives per-car name and model display
+	 * in the pre-race garage and HUD timing tower.  A previous
+	 * attempt to emit (cup_category, current_driver_index) here
+	 * made every PRO driver (cup=0) render as car_model=0 =
+	 * Porsche 991 GT3 R — the "always Porsche in garage" regression.
 	 */
+	if (wr_u8(bb, ec->car_model) < 0) return -1;
 	if (wr_u8(bb, ec->cup_category) < 0) return -1;
-	if (wr_u8(bb, ec->current_driver_index) < 0) return -1;
 	if (wr_u16(bb, 0) < 0) return -1;
 
 	if (pq->count > 0 && !pq->slots[0].served) {

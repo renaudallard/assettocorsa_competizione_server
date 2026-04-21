@@ -389,7 +389,8 @@ def parse_season_entity(r):
 
 def parse_event_entity(r):
     """EventEntity: trackName + CircuitInfo + GraphicsInfo + RaceRules +
-    WeatherRules.  No CarSet sub-block in the current welcome layout."""
+    WeatherRules.  No CarSet sub-block in the current welcome layout
+    (empty emit crashes the real ACC client)."""
     r.fmt_a()                         # trackName (Format-A wstring)
     anchor(r, "EventEntity post trackName")
     # CircuitInfo: 3 u8 + 4 f32 = 19 bytes
