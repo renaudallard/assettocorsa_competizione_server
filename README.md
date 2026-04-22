@@ -169,7 +169,10 @@ every wire message, string encoding, and state transition.
   accd matches the 333 Hz cadence with one non-blocking `poll()`
   loop and a 256-packet UDP drain burst, intentionally different
   from the exe's concurrency model but emitting on the same
-  wall-clock schedule.
+  wall-clock schedule.  With zero clients connected the loop
+  blocks in `poll()` for up to 100 ms so the daemon idles near
+  0 % CPU; the 333 Hz busy-wait resumes the instant the first
+  client is accepted.
 - The CP-server stack in `settings.json` is parsed and stored but
   never acted on (`isCPServer`, `isCPInvServer`, `competitionRating
   Min/Max`, `region`, `randomizeTrackWhenEmpty`, etc.) — CP servers

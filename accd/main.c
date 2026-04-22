@@ -336,6 +336,7 @@ main(int argc, char **argv)
 	last_tick_us = mono_us();
 	while (!g_stop) {
 		int slot;
+		int idle;
 
 		npfds = 0;
 		pfds[npfds].fd = srv.tcp_fd;
@@ -391,14 +392,26 @@ main(int argc, char **argv)
 		}
 
 		/*
-		 * Non-blocking poll.  On OpenBSD a poll() with timeout
-		 * < 20 ms still waits ~20 ms (HZ=100 kernel tick +
-		 * rounding), which would pin our tick loop at 50 Hz
-		 * instead of the exe's 333 Hz.  We pick up whatever's
-		 * ready now and spin on sched_yield() until the tick
-		 * deadline — matches the exe's dedicated tick thread.
+		 * Non-blocking poll when a client is connected.  On
+		 * OpenBSD poll() with timeout < 20 ms still waits ~20
+		 * ms (HZ=100 kernel tick + rounding), which would pin
+		 * our tick loop at 50 Hz instead of the exe's 333 Hz.
+		 * We pick up whatever's ready now and spin on
+		 * sched_yield() until the tick deadline — matches the
+		 * exe's dedicated tick thread.
+		 *
+		 * With zero clients we have no 0x1e / 0x28 fan-out
+		 * deadline to honour, so block in poll() for up to 100
+		 * ms.  All tick work is already gated on wall-clock
+		 * cadences (keepalive 1 s, leaderboard 75 s, etc.),
+		 * lobby I/O runs through the same poll fd, and new
+		 * TCP / LAN / console traffic still wakes us within
+		 * the budget.  This drops idle CPU from ~100 % of one
+		 * core to near zero without changing any emission
+		 * cadence.
 		 */
-		r = poll(pfds, (nfds_t)npfds, 0);
+		idle = (srv.nconns == 0);
+		r = poll(pfds, (nfds_t)npfds, idle ? 100 : 0);
 		if (r < 0) {
 			if (errno == EINTR)
 				continue;
@@ -500,11 +513,12 @@ main(int argc, char **argv)
 		 * schedule.  sched_yield() returns in < 1 µs on
 		 * OpenBSD so it doesn't break the 333 Hz deadline
 		 * the way nanosleep/usleep/poll(timeout>0) would.
-		 * The trade-off is ~100 % of one core — which is
-		 * how the Kunos exe runs on Windows too (dedicated
-		 * CreateTimerQueueTimer thread + busy workers).
+		 * Skipped when idle — we already blocked in poll()
+		 * for up to 100 ms and burning CPU here would defeat
+		 * the whole point.
 		 */
-		sched_yield();
+		if (!idle)
+			sched_yield();
 	}
 
 	log_info("accd shutting down");
