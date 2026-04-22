@@ -381,7 +381,7 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 {
 	struct SessionState *ss = &s->session;
 	const struct SessionDef *def;
-	uint64_t now, dur_ms;
+	uint64_t now, dur_ms, fire_delay_ms;
 	float green_end;
 
 	if (!ss->ts_valid || ss->session_index >= s->session_count)
@@ -475,25 +475,40 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		ss->green_fired = 1;
 		dur_ms = (uint64_t)def->duration_min * 60000ull;
 		/*
-		 * FUN_14012f300 stamps the green_fire_time deadline at
-		 * +0x1b0 = now + 1000ms, and the phase-compute
-		 * FUN_14012e810 only advances to race once (flag &&
-		 * now >= deadline) both hold.  That 1-second grace lets
-		 * the 0x28 phase-broadcast reach every client before the
-		 * session phase flips, so the visible green light lands
-		 * at the same track position the real server produces.
-		 * Skipping the delay made our green fire ~1% of a lap
-		 * earlier (~50 m at racing speed) than Kunos.
+		 * Phase 4 (= pre-race with grid lights) lasts from the
+		 * green-position crossing until `now >= ts[3]`.  The exe
+		 * stamps the deadline differently per path:
+		 *
+		 *   silent  (FUN_14012f300, formation_lap_type 3/5):
+		 *           +0x1b0 = now + 1000 ms.  No red-lights
+		 *           countdown — the 1 s grace just lets the 0x28
+		 *           broadcast reach clients before the phase flip.
+		 *
+		 *   verbose (FUN_14012f4a0, formation_lap_type anything
+		 *           else): +0x1b0 = now + rand_float * 0.07629628
+		 *           + 3000 = uniform [3000, 5500] ms.  This 3–5.5
+		 *           s window IS the client-side red-lights
+		 *           countdown (no dedicated opcode; the client
+		 *           renders 5 lights into the remaining time to
+		 *           ts[3]).  A shorter window here makes the
+		 *           HUD lights never appear.
 		 */
-		ss->ts[3] = now + 1000;
+		if (silent) {
+			fire_delay_ms = 1000;
+		} else {
+			double r01 = (double)rand() / (double)RAND_MAX;
+			fire_delay_ms = 3000 + (uint64_t)(r01 * 2500.0);
+		}
+		ss->ts[3] = now + fire_delay_ms;
 		ss->ts[4] = ss->ts[3] + dur_ms;
 		ss->ts[5] = ss->ts[4] +
 		    (uint64_t)s->session_overtime_s * 1000ull;
 		log_info("green flag (%s): leader norm_pos=%.3f trigger=%.3f "
-		    "active_dur=%llums fire_in=1000ms",
+		    "active_dur=%llums fire_in=%llums",
 		    silent ? "silent" : "verbose",
 		    (double)leader_pos, (double)green_end,
-		    (unsigned long long)dur_ms);
+		    (unsigned long long)dur_ms,
+		    (unsigned long long)fire_delay_ms);
 		return silent ? 0 : 1;
 	}
 }

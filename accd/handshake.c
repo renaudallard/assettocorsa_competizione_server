@@ -191,7 +191,7 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 	 */
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
-	if (wr_u8(bb, 2) < 0) return -1;	/* formationLapType */
+	if (wr_u8(bb, s->formation_lap_type) < 0) return -1; /* formationLapType */
 	if (wr_u8(bb, 2) < 0) return -1;	/* shortFormationLap */
 	if (wr_u16(bb, 300) < 0) return -1;	/* postRaceSeconds */
 	if (wr_u8(bb, s->weather.randomness) < 0) return -1; /* weatherRandomness */
@@ -1271,8 +1271,18 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 	if (write_rating_series(bb, s) < 0)
 		return -1;
 
-	/* Final trailer: u8(3) +0x1dc, u8(0), u8(0). */
-	if (wr_u8(bb, 3) < 0) return -1;
+	/*
+	 * Final trailer: formationLapType +0x1dc, u8(0), u8(0).
+	 *
+	 * The client stores this byte at player_ctx+0x630 and also sets
+	 * player_ctx+0x631 = 1 when the value is 4 or 5 (AC2 client
+	 * welcome_parser FUN_14352a150).  The server-side exe dispatch
+	 * at FUN_14002f710:277 selects the silent (1 s) vs verbose
+	 * (3-5.5 s) green-fire path on the same byte via
+	 * `((type - 3) & 0xfd) == 0 ? silent : verbose`.  Values 3/5
+	 * = silent, everything else = verbose with red-lights window.
+	 */
+	if (wr_u8(bb, s->formation_lap_type) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 
