@@ -126,11 +126,14 @@ When 0, fresh handshakes during an active race are rejected with
 REJECT_BAD_SESSION.
 Returning drivers (matching Steam ID) always pass.
 .It Va formationLapType
-Default 3.
+Default 3 (matches exe ctor FUN_14000de10).
 Race-start variant.
-1 = manual (private-server only; verbose with
+3 / 5 run the silent path (FUN_14012f300) with a 1000 ms phase-4
+window and no chat broadcast — the default public-server behaviour.
+1 / 4 run the verbose path (FUN_14012f4a0) with a uniform 3000-5500 ms
+phase-4 window and a
 .Dq Race start initialized
-broadcast), 3 = default rolling start (silent), 5 = short formation.
+system chat; 1 is force-downgraded to 3 by the exe on public servers.
 .It Va isPrepPhaseLocked
 Default 0.
 When 1, freezes the preparation phase so fresh handshakes are

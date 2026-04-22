@@ -166,10 +166,12 @@ def main():
                      f"{EXPECTED_LEN} B — a write_* block changed "
                      f"size.  Verify against the pcap before shipping.")
 
-            # 4. Tail sentinels — must end with u8(3) u8(0) u8(0) preceded
-            #    by the 37-byte RatingSeries block whose first payload
-            #    byte is "Standard" string length.
-            if body[-3:] != b"\x03\x00\x00":
+            # 4. Tail sentinels — must end with u8(formationLapType)
+            #    u8(0) u8(0) preceded by the 37-byte RatingSeries block
+            #    whose first payload byte is "Standard" string length.
+            #    The first byte mirrors s->formation_lap_type (exe
+            #    SessionManager +0x1dc); default is 1 (verbose).
+            if body[-3] not in (0, 1, 2, 3, 4, 5) or body[-2:] != b"\x00\x00":
                 fail(f"missing final 3-byte sentinel; got "
                      f"{body[-3:].hex()}")
             if b"Standard" not in body[-60:]:

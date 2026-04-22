@@ -586,18 +586,18 @@ struct Server {
 	float		green_trigger_end;
 
 	/*
-	 * formationLapType from settings.json (exe +0x1dc), default 3.
-	 * The exe forces value 3 on public servers; value 1 ("Manual")
-	 * and value 5 are allowed on private servers only.  Affects
-	 * the race-start trigger variant:
-	 *   3 or 5 -> FUN_14012f300 silent path (green fires at the
-	 *             randomised trigger +0x294 without broadcasting
-	 *             "Race start initialized" — the client already
-	 *             knows the race started via the synchronized 0x28
-	 *             session state);
-	 *   else   -> FUN_14012f4a0 verbose path (green fires anywhere
-	 *             in the green range; "Race start initialized"
-	 *             chat is broadcast on fire).
+	 * formationLapType from settings.json (exe +0x1dc), default 3
+	 * (matches the exe ctor at FUN_14000de10:32, u16 0x1e03 stored
+	 * at config+0xbc -> byte 0x03).  The exe dispatches green-fire
+	 * on this byte (FUN_14002f710:277, test
+	 * `((type - 3) & 0xfd) == 0`):
+	 *   3 or 5 -> FUN_14012f300 silent path: fires at the rolled
+	 *             trigger +0x294 with a 1 s phase-4 window, no chat.
+	 *   else   -> FUN_14012f4a0 verbose path: fires anywhere in the
+	 *             green range with a uniform 3000-5500 ms phase-4
+	 *             window; broadcasts "Race start initialized" chat.
+	 * On public servers the exe forces value 1 back to 3
+	 * (FUN_140023700:538) — manual formation is private-server only.
 	 */
 	uint8_t		formation_lap_type;
 

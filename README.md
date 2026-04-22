@@ -96,13 +96,13 @@ every wire message, string encoding, and state transition.
 - **Position-based race start** — the green flag fires when the
   leader's normalised track position crosses a randomised trigger
   inside the configured green range, with no time fallback.
-  Mirrors the exe's two formation variants: `formationLapType: 1`
-  runs the verbose path (`FUN_14012f4a0`) and broadcasts
-  "Race start initialized" chat on fire; `3` / `5` (default for
-  public servers) run the silent path (`FUN_14012f300`) with no
-  chat emission.  A 1-second `ts[2]` / `ts[3]` delay matches the
-  exe's phase-3 → phase-4 → phase-5 grace window so the visible
-  lights land at the same track position as Kunos.
+  Mirrors the exe's two formation variants: `formationLapType: 3`
+  (default, matching the exe's constructor) runs the silent path
+  (`FUN_14012f300`) with a 1000 ms phase-4 window and no chat.
+  `formationLapType: 1` or `4` runs the verbose path
+  (`FUN_14012f4a0`) with a uniform 3000-5500 ms phase-4 window and
+  a "Race start initialized" system chat (private-server only; the
+  exe force-downgrades 1 to 3 on public servers).
 - **Race grid from qualy** — race grid derived from the most recent
   prior qualifying session's finishing order.  `defaultGridPosition`
   in `entrylist.json` is used only when no prior Q/P exists.
@@ -283,7 +283,7 @@ tools (never routed off loopback).  `0` disables it.
 | `registerToLobby` | `0` | `1` lists the server publicly in the ACC browser. |
 | `useAsyncLeaderboard` | `0` | `0` broadcasts on every standings change (matches the exe).  `1` coalesces to a 75 s cadence. |
 | `unsafeRejoin` | `1` | `0` refuses fresh mid-race handshakes. |
-| `formationLapType` | `3` | Race-start variant. `1` manual (private only, verbose with "Race start initialized" chat), `3` default rolling (silent), `5` short formation. |
+| `formationLapType` | `3` | Race-start variant (matches exe ctor default). `3` / `5` = silent path (`FUN_14012f300`, 1000 ms phase-4 window, no chat — public-server default). `1` / `4` = verbose path (`FUN_14012f4a0`, random 3000-5500 ms window, "Race start initialized" chat — private servers only; the exe force-downgrades `1` to `3` on public). `2` is rejected and snapped to `3` by both the exe and accd. |
 | `isPrepPhaseLocked` | `0` | `1` freezes the preparation phase; returning drivers still pass (same knob as the `/lockprep` admin command). |
 | `shortFormationLap` | `0` | `1` shortens the formation lap (parsed and passed through; exe forces `1` on public servers). |
 | `writeLatencyFileDumps` | `0` | `1` writes `results/latency_<timestamp>_<P|Q|R>.csv` — per-keepalive row per authenticated conn with `mono_ms,conn_id,steam_id,avg_rtt_ms,clock_offset_ms`.  Rotates at each session boundary. |

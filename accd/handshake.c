@@ -453,16 +453,30 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 		    (double)(conn_rtt / 2);
 
 		/*
-		 * Slots 0-5 valid + slot 6 invalid.  Kunos emits all
-		 * six as soon as session_start has run, regardless of
-		 * whether each boundary has been reached — the f32
-		 * carries the scheduled time projected into the
-		 * client's clock so the client can anticipate upcoming
-		 * phase changes.  Verified against the
-		 * kunos_wine_full_race capture (P session; all six
-		 * slots valid at welcome 0x28).
+		 * Per-slot validity, matching the exe's SessionManager:
+		 * each slot's valid byte (SM +0x100/0x138/0x170/0x1a8/
+		 * 0x1e0/0x218) starts at 0 and is set to 1 only by the
+		 * boundary that owns it — FUN_14012f300 / FUN_14012f4a0
+		 * flip the formation-end, green-fire, active-end and
+		 * overtime-end flags on the position triggers.  The
+		 * wire slot writer FUN_140035130 reads that flag and
+		 * emits u8(0) alone when unset, u8(1) + f32 when set.
+		 *
+		 * Our ts[k] = UINT64_MAX sentinel means "boundary not
+		 * yet scheduled" for race sessions (ts[2..5] stay there
+		 * until formation / green crossings fire).  Emitting
+		 * those as valid with a float projection of UINT64_MAX
+		 * sends the client a ~1.8e19 ms deadline — so far in
+		 * the future the phase-4 / phase-5 render never winds
+		 * up, and the green transition never animates.  Emit
+		 * them as invalid instead, matching the exe.  Slot 6
+		 * (aftercare) we never stamp so it's always invalid.
 		 */
 		for (k = 0; k < 6; k++) {
+			if (s->session.ts[k] == UINT64_MAX) {
+				if (wr_u8(bb, 0) < 0) return -1;
+				continue;
+			}
 			if (wr_u8(bb, 1) < 0) return -1;
 			if (wr_f32(bb,
 			    (float)((double)s->session.ts[k]
