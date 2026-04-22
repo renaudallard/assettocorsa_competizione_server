@@ -95,8 +95,14 @@ every wire message, string encoding, and state transition.
   timers, overtime hold, and weekend reset after the final race.
 - **Position-based race start** — the green flag fires when the
   leader's normalised track position crosses a randomised trigger
-  inside the configured green range, matching `FUN_14012f4a0` with
-  no time fallback.  Broadcasts "Race start initialized" on fire.
+  inside the configured green range, with no time fallback.
+  Mirrors the exe's two formation variants: `formationLapType: 1`
+  runs the verbose path (`FUN_14012f4a0`) and broadcasts
+  "Race start initialized" chat on fire; `3` / `5` (default for
+  public servers) run the silent path (`FUN_14012f300`) with no
+  chat emission.  A 1-second `ts[2]` / `ts[3]` delay matches the
+  exe's phase-3 → phase-4 → phase-5 grace window so the visible
+  lights land at the same track position as Kunos.
 - **Race grid from qualy** — race grid derived from the most recent
   prior qualifying session's finishing order.  `defaultGridPosition`
   in `entrylist.json` is used only when no prior Q/P exists.
@@ -113,8 +119,9 @@ every wire message, string encoding, and state transition.
   (~333 Hz, matching `CreateTimerQueueTimer(Period=3)` in the
   exe's `main`) as `0x1e` (or `0x39` count=1 under `/mp` legacy
   netcode), mirroring FUN_14001a170 / FUN_14001a6a0 in
-  accServer.exe.  Per-peer timestamp adjustment uses the last
-  client-to-client pong delta.
+  accServer.exe.  Per-peer timestamp adjustment uses the sender's
+  and receiver's last-seen UDP client-timestamps so the relayed
+  clock delta is fresh to within one tick.
 - **Weather & in-game clock** — deterministic sin/cos weather with
   seeded cycles; 5-second `0x37` broadcast carrying `weekend_time_s`
   driven by `hourOfDay` × `timeMultiplier`.
@@ -526,7 +533,7 @@ interoperability of an independently created program.
 │   ├── console.{c,h}        stdin admin console (poll-driven).
 │   ├── dispatch.{c,h}       TCP / UDP message dispatchers.
 │   ├── entrylist.{c,h}      entrylist.json reader.
-│   ├── handlers.{c,h}       Per-msg-id handlers (22 TCP + 4 UDP).
+│   ├── handlers.{c,h}       Per-msg-id handlers (22 TCP + 5 UDP).
 │   ├── handshake.{c,h}      ACP_REQUEST_CONNECTION + 0x0b + welcome.
 │   ├── io.{c,h}             Byte buffer + TCP framing layer.
 │   ├── json.{c,h}           Recursive-descent JSON parser.
@@ -554,7 +561,7 @@ interoperability of an independently created program.
 
 </details>
 
-27 modules, ~17,000 lines of portable C99.  No dependencies beyond
+27 modules, ~18,600 lines of portable C99.  No dependencies beyond
 libc, iconv, and libm.
 
 ---
