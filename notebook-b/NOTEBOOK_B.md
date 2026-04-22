@@ -679,7 +679,12 @@ The server also fans out `0x2e` (car system relay) and `0x4f` (driver stint rela
 
 **The server → client direction uses a separate ID namespace from client → server.** An ID like `0x4f` sent from client to server is not the same message as `0x4f` sent from server to client; the two directions have independent handler tables with independent wire formats.
 
-16 distinct server → client message IDs have been identified:
+31 distinct server → client message IDs have been identified across two disjoint connection roles:
+
+- **IDs `0x01`–`0x07`** are emitted **only to SMPR (ServerMonitor) connections** — external monitoring tools such as accweb, accservermanager, emperorservers.  The game client never receives them and has no parser for them in `AC2-Win64-Shipping.exe`.  See §12B for the full protocol.
+- **All other IDs** are emitted to game-client connections.  That's the gameplay sim protocol.
+
+The dedicated server tells the two roles apart at dispatch time via a flag stored at connection-struct offset `+0x1403e`: `FUN_140041480` routes to the SMPR handler (`FUN_140041ac0`, which emits `0x01`–`0x07`) when the flag is set, and to the game-client handler (`FUN_1400142f0`) otherwise.  An accd reimplementation that only targets the game-client path can safely skip `0x01`–`0x07` entirely.
 
 | ID (hex) | ID (dec) | Body fields | Known semantic |
 |---|---|---|---|
@@ -691,9 +696,9 @@ The server also fans out `0x2e` (car system relay) and `0x4f` (driver stint rela
 | `0x06` | 6 | `u8 = 0x06` + protobuf-encoded `ServerMonitorRealtimeUpdate` | **`REALTIME_UPDATE`** — same protobuf message type as ServerMonitor protocol message 6. Periodic per-tick state update emitted from the per-client queued send mechanism. |
 | `0x07` | 7 | `u8 = 0x07` + protobuf-encoded `ServerMonitorLeaderboard` | **`LEADERBOARD_UPDATE`** — same protobuf message type as ServerMonitor protocol message 7. Per-car leaderboard / standings update emitted in the per-car fan-out after every `0x36` leaderboard broadcast and during the post-handshake welcome push. |
 
-**Critical architectural note on `0x01`–`0x07`**: these seven sim-protocol message ids are exactly the **ServerMonitor protocol message types 1–7** documented in §12B, delivered inline over the same TCP socket as the rest of the sim protocol. The dedicated server uses the SAME C++ classes (`ServerMonitorHandshakeResult`, `ServerMonitorConfigurationState`, `ServerMonitorSessionState`, `ServerMonitorCarEntry`, `ServerMonitorConnectionEntry`, `ServerMonitorRealtimeUpdate`, `ServerMonitorLeaderboard`) and the same protobuf serialization for both:
-- The dedicated ServerMonitor channel (separate hosting-tool clients)
-- The in-game sim protocol channel (game-client state push)
+**Critical architectural note on `0x01`–`0x07`**: these seven message ids are exactly the **ServerMonitor protocol message types 1–7** documented in §12B, delivered over TCP to SMPR connections only — **never** to the game-client connection.  The dedicated server uses the same C++ classes (`ServerMonitorHandshakeResult`, `ServerMonitorConfigurationState`, `ServerMonitorSessionState`, `ServerMonitorCarEntry`, `ServerMonitorConnectionEntry`, `ServerMonitorRealtimeUpdate`, `ServerMonitorLeaderboard`) and the same protobuf wire format in both places, but the routing is disjoint:
+- SMPR connections (hosting-tool clients) receive `0x01`–`0x07` exclusively.
+- Game-client connections (the ACC sim) receive every other id in this table.
 
 The dispatching wrapper is a single helper `FUN_14002e080(msg_id, polymorphic_object, send_target)` that:
 1. Initializes a ByteVector
@@ -715,7 +720,7 @@ There are exactly **7 caller sites** in the binary that build the per-class obje
 | `FUN_14001ce70` | `0x06` | `ServerMonitorRealtimeUpdate` | Per-client queued realtime state event |
 | `FUN_14001ca20` | `0x02`, `0x03`, `0x04`, `0x07` | mix | Post-handshake welcome state push (full sync sequence) |
 
-**A reimplementation can therefore use the protobuf schemas already documented in §12B.3 to encode the bodies of `0x01`–`0x07` directly** — there is no separate undocumented wire format. The seven ids are just numbered transport tags identifying which `ServerMonitorProtocolMessage` type follows.
+**A reimplementation that wants SMPR compatibility can use the protobuf schemas documented in §12B.3 to encode the bodies of `0x01`–`0x07` directly** — there is no separate undocumented wire format.  The seven ids are just numbered transport tags identifying which `ServerMonitorProtocolMessage` type follows.  A game-only reimplementation can skip them entirely; no game client depends on them.
 | `0x0b` | 11 | `u16 udp_port` + `u8 0x12` + `u16 nconns` + `u16 conn_id` + `u16 0` + trailer (~2000 bytes) | **Handshake accept response** -- see 5.6.4c. Contains the welcome trailer with session/car/config state. |
 | `0x0c` | 12 | `u32 server_ver` + `u8 0` + `u16 client_ver_echo` + `u16 0` + `u16 protocol_ver` + `u16 0` | **Handshake reject response** (14 bytes) -- see 5.6.4c. Connection closed after sending. |
 | `0x14` | 20 | `u32 server_ms` + `u16 0` + `u16 0` + `u16 0` + `u8 2` + `u8 4` + `u8 100` + `u8 100` (15 bytes) | **UDP keepalive response** — sent in reply to client `0x13`/`0x17`. The `server_ms` field is a monotonic clock timestamp (milliseconds) that the client echoes back in its `0x16` pong to measure round-trip latency. The trailing fields carry per-car timing hints; semantics of the constant values are not fully decoded. |
