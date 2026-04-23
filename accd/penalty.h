@@ -61,6 +61,13 @@ enum penalty_exe_kind {
 uint8_t	penalty_exe_kind_of(uint8_t pen_kind);
 
 /*
+ * Reverse direction: exe kind (1..6) + collision + value back to our
+ * PEN_* enum — distinguishes /dt vs /dtc and TP5 vs TP15 by value.
+ */
+uint8_t	penalty_pen_kind_of(uint8_t exe_kind, int collision,
+			int32_t value);
+
+/*
  * Issue a penalty event matching FUN_140125f50 semantics.
  *   exe_kind  — 1..6 (see enum penalty_exe_kind)
  *   category  — exe local_res20, typically 8 for admin/auto events

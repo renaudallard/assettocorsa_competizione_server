@@ -88,8 +88,8 @@ penalty_exe_kind_of(uint8_t pen_kind)
  * rendering.  Collision only distinguishes /dt vs /dtc (and /sgXX vs
  * /sgXXc); all others ignore collision.
  */
-static uint8_t
-pen_kind_of_exe(uint8_t exe_kind, int collision, int32_t value)
+uint8_t
+penalty_pen_kind_of(uint8_t exe_kind, int collision, int32_t value)
 {
 	switch (exe_kind) {
 	case EXE_DT:	return collision ? PEN_DTC  : PEN_DT;
@@ -114,7 +114,7 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	struct PenaltyQueue *q;
 	struct PenaltyEntry *e;
 	struct timespec ts;
-	uint8_t pen_kind = pen_kind_of_exe(exe_kind, collision, value);
+	uint8_t pen_kind = penalty_pen_kind_of(exe_kind, collision, value);
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
 		return;
