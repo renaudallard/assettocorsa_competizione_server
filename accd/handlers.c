@@ -1004,9 +1004,19 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		return 0;	/* out-of-enum: drop silently */
 	if (s->cars[c->car_id].race.disqualified)
 		return 0;
-	if (s->session.phase != PHASE_FORMATION &&
-	    s->session.phase != PHASE_PRE_SESSION &&
-	    s->session.phase != PHASE_SESSION &&
+	/*
+	 * Only accept client penalty self-reports during the live race
+	 * (PHASE_SESSION / OVERTIME).  The ACC client fires a 0x41 right
+	 * after green with a pseudo-DT / pseudo-DQ that is a formation-
+	 * transition marker, not a real violation — materialising it
+	 * leaves the car with a pending penalty and the client keeps the
+	 * 70 km/h limiter engaged.  Kunos's reference capture shows the
+	 * same marker getting sent (kind=DQ value=0 there) and the stock
+	 * server silently drops it.  Formation-lap / pre-race transitions
+	 * do their own reporting via 0x3d / 0x19 / 0x20 — 0x41 is only
+	 * meaningful once cars are actually racing.
+	 */
+	if (s->session.phase != PHASE_SESSION &&
 	    s->session.phase != PHASE_OVERTIME)
 		return 0;
 	/*
