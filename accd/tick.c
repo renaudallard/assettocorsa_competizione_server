@@ -766,18 +766,23 @@ tick_run(struct Server *s)
 		}
 
 		/*
-		 * Leader pick (exe FUN_1400428d0 gate, relaxed).  The exe
-		 * conjoins on_track (car+0x153 == 1) with the formation-mid
-		 * latch (car+0x204 != 0).  In practice formation_mid_passed
-		 * already subsumes on_track — a car can't drive through the
-		 * 0.6-0.7 normalized-position band without being on track
-		 * when the latch fires.  The strict on_track check blocked
-		 * green flag indefinitely when the client's first 0x32
-		 * location=Track arrived late or a pit-lane transient briefly
-		 * flipped the flag; the client then sat on the grid with
-		 * "launch start procedure" up because ts[3] never left
-		 * UINT64_MAX.  Drop on_track from the gate and rely solely
-		 * on the position-based latch, which we fully control.
+		 * Leader pick — phase-split gate matching exe
+		 * FUN_1400428d0:
+		 *   bVar8==3 (formation phase, !formation_ended):
+		 *     base = on_track && bit  (no fmp)
+		 *   bVar8==4 (post-formation, formation_ended && !green_fired):
+		 *     base && car+0x204 != 0 (fmp required)
+		 * Applying fmp as a blanket gate deadlocks solo races: the
+		 * driver spawns inside the formation-end range (typical
+		 * grid norm_pos = 0.83-0.95), the client holds brakes until
+		 * phase 3 opens, phase 3 opens via formation_end firing,
+		 * formation_end firing needs the gate to pass, and the gate
+		 * fails on fmp which only latches when the car drives
+		 * through 0.6-0.7 — which it can't because brakes are held.
+		 * Kunos's 81-min solo capture shows formation_end firing the
+		 * instant pre-race-waiting elapses (s2 stamps at ts[1]+1000
+		 * with the car still on the grid), confirming that fmp is
+		 * not checked during the formation-end trigger.
 		 */
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			const struct CarEntry *car = &s->cars[i];
@@ -786,7 +791,8 @@ tick_run(struct Server *s)
 				continue;
 			if (car->race.position != 1)
 				continue;
-			if (!car->race.formation_mid_passed)
+			if (s->session.formation_ended &&
+			    !car->race.formation_mid_passed)
 				continue;
 			leader = i;
 			break;
