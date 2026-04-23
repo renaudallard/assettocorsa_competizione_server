@@ -766,18 +766,18 @@ tick_run(struct Server *s)
 		}
 
 		/*
-		 * Leader pick (exe FUN_1400428d0 gate).  The exe sorts all
-		 * cars with gate-pass cars first and picks the front of that
-		 * bucket; here we keep race.position == 1 as the ordering
-		 * source but require the same per-car eligibility:
-		 *   - on_track  mirrors exe car+0x153 == 1 (last 0x32 was
-		 *               location == Track).  Rejects a pole sitter
-		 *               still in the paddock / pit.
-		 *   - formation_mid_passed mirrors exe car+0x204 != 0.  Rejects
-		 *               a car whose position has never crossed the
-		 *               formation-lap midpoint.
-		 * Skipping this gate was the cause of the green flag firing
-		 * while the leader was still sitting on the spawn grid.
+		 * Leader pick (exe FUN_1400428d0 gate, relaxed).  The exe
+		 * conjoins on_track (car+0x153 == 1) with the formation-mid
+		 * latch (car+0x204 != 0).  In practice formation_mid_passed
+		 * already subsumes on_track — a car can't drive through the
+		 * 0.6-0.7 normalized-position band without being on track
+		 * when the latch fires.  The strict on_track check blocked
+		 * green flag indefinitely when the client's first 0x32
+		 * location=Track arrived late or a pit-lane transient briefly
+		 * flipped the flag; the client then sat on the grid with
+		 * "launch start procedure" up because ts[3] never left
+		 * UINT64_MAX.  Drop on_track from the gate and rely solely
+		 * on the position-based latch, which we fully control.
 		 */
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			const struct CarEntry *car = &s->cars[i];
@@ -786,8 +786,7 @@ tick_run(struct Server *s)
 				continue;
 			if (car->race.position != 1)
 				continue;
-			if (!car->race.on_track ||
-			    !car->race.formation_mid_passed)
+			if (!car->race.formation_mid_passed)
 				continue;
 			leader = i;
 			break;
