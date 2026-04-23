@@ -66,10 +66,12 @@
 #define _POSIX_C_SOURCE 200809L
 
 /*
- * arc4random_uniform is native on OpenBSD (via <stdlib.h>) but on
- * glibc it's hidden behind _DEFAULT_SOURCE or only exposed through
- * libbsd's <bsd/stdlib.h>.  Include the BSD header on Linux so we
- * link against -lbsd (Makefile auto-detects).
+ * arc4random_uniform lives in libc on both platforms but the prototype
+ * is feature-gated.  On Linux (glibc) it's only exposed through libbsd's
+ * <bsd/stdlib.h>.  On OpenBSD it sits behind __BSD_VISIBLE, which
+ * _POSIX_C_SOURCE forces to 0 via sys/cdefs.h — so we declare the
+ * prototype by hand.  The symbol is always present in libc so linking
+ * works either way; this just silences the implicit-declaration warning.
  */
 #ifdef __linux__
 #include <bsd/stdlib.h>
@@ -85,8 +87,15 @@
 #include <unistd.h>
 #include <errno.h>
 #include <string.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+
+#ifdef __OpenBSD__
+/* See header comment: __BSD_VISIBLE is forced off by _POSIX_C_SOURCE
+ * so <stdlib.h> hides arc4random_uniform even though libc has it. */
+uint32_t arc4random_uniform(uint32_t);
+#endif
 #include <time.h>
 
 #include "chat.h"
