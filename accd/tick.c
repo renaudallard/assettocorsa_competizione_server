@@ -801,6 +801,42 @@ tick_run(struct Server *s)
 				chat_broadcast(s,
 				    "Race start initialized", 4);
 		}
+		/*
+		 * Diagnostic: once per second while the race is waiting on
+		 * green, dump the gate state for every used car.  Answers
+		 * the question "why hasn't green fired yet" without flooding
+		 * the log at 333 Hz.
+		 */
+		{
+			static uint64_t last_gate_log_ms = 0;
+			if (now_ms - last_gate_log_ms >= 1000) {
+				int j;
+				for (j = 0; j < ACC_MAX_CARS; j++) {
+					const struct CarEntry *car =
+					    &s->cars[j];
+					float pos = -1.0f;
+					if (!car->used)
+						continue;
+					if (car->rt.has_data)
+						memcpy(&pos,
+						    &car->rt.scalar_44,
+						    sizeof(pos));
+					log_info("race-gate: car=%d pos=%d "
+					    "has_data=%d on_track=%d "
+					    "fmp=%d norm_pos=%.3f "
+					    "formation_ended=%d",
+					    j, (int)car->race.position,
+					    car->rt.has_data ? 1 : 0,
+					    car->race.on_track ? 1 : 0,
+					    car->race.formation_mid_passed
+					    ? 1 : 0,
+					    (double)pos,
+					    s->session.formation_ended
+					    ? 1 : 0);
+				}
+				last_gate_log_ms = now_ms;
+			}
+		}
 	}
 
 	/*

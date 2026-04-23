@@ -318,6 +318,31 @@ session_start(struct Server *s)
 	    "pre=%llums dur=%llums ot=%llums post=%llums",
 	    (unsigned long long)pre_ms, (unsigned long long)dur_ms,
 	    (unsigned long long)ot_ms, (unsigned long long)post_ms);
+	/*
+	 * Diagnostic: dump the absolute ts[0..6] values so a failed race
+	 * start can be traced.  UINT64_MAX is logged as "INVAL".
+	 */
+	{
+		int k;
+		char buf[256];
+		size_t off = 0;
+		for (k = 0; k < 7; k++) {
+			int rc;
+			if (s->session.ts[k] == UINT64_MAX)
+				rc = snprintf(buf + off, sizeof(buf) - off,
+				    " ts[%d]=INVAL", k);
+			else
+				rc = snprintf(buf + off, sizeof(buf) - off,
+				    " ts[%d]=%llu(+%lldms)", k,
+				    (unsigned long long)s->session.ts[k],
+				    (long long)s->session.ts[k] -
+				    (long long)now);
+			if (rc <= 0 || (size_t)rc >= sizeof(buf) - off)
+				break;
+			off += (size_t)rc;
+		}
+		log_info("session_start: schedule%s", buf);
+	}
 
 	/*
 	 * Open a per-session latency-dump CSV if writeLatencyFileDumps=1.
@@ -702,8 +727,17 @@ session_tick(struct Server *s)
 	def = &s->sessions[s->session.session_index];
 	now = mono_ms();
 
-	/* Start the session clock when the first driver connects. */
-	if (s->session.phase == PHASE_WAITING && s->nconns > 0) {
+	/*
+	 * Start the session clock when the first driver connects.
+	 * !ts_valid guard stops the double-call right after session_advance:
+	 * session_advance itself calls session_start (ts_valid=1) but leaves
+	 * phase at WAITING until the next compute_phase, so without this
+	 * guard the next tick would re-call session_start and re-roll the
+	 * race green trigger / nudge ts[0]/ts[1] by a few ms.  Matches the
+	 * same guard in handshake.c:2035.
+	 */
+	if (s->session.phase == PHASE_WAITING && s->nconns > 0 &&
+	    !s->session.ts_valid) {
 		session_start(s);
 	}
 
