@@ -977,6 +977,18 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	    s->session.phase != PHASE_SESSION &&
 	    s->session.phase != PHASE_OVERTIME)
 		return 0;
+	/*
+	 * Primer filter.  The client fires 0x41 on every lap / violation
+	 * tick with value=0 as a register-severity heads-up; the exe's
+	 * FUN_140125f50 fresh-branch registers severity without
+	 * materialising a Penalty, so primers never reach the HUD there.
+	 * Our penalty_enqueue DOES materialise on fresh for admin /dt UX,
+	 * so we have to filter primers at this layer instead.  Trust
+	 * kind=DQ unconditionally (client self-DQs carry the violation in
+	 * kind, not value); non-DQ only when value>0 (a real escalation).
+	 */
+	if (kind != EXE_DQ && value <= 0)
+		return 0;
 	{
 		uint8_t reason = client_category_to_reason(category);
 		uint8_t pen_kind;
