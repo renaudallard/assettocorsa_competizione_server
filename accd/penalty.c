@@ -158,10 +158,11 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
  *    only if force; where bVar6 = (force+2)*2 = 4 (SG30) or 6 (DQ).
  *  - EXE_DQ: materialize immediately, race->disqualified=1.
  *
- * Our deviation from exe: we materialize on the fresh-entry path
- * too, so admin /dt visibly adds a Penalty on the first call.
- * The exe's silent-first-call would confuse admins and break the
- * pre-refactor behavior of the reimpl.
+ * Our deviation from exe: the FIRST-ever direct caller entry materializes
+ * in the fresh branch so admin /dt visibly adds a Penalty on the first
+ * call.  Subsequent ladder steps that land on a fresh next-kind sheet
+ * register only — exactly one visible Penalty per call, matching the exe
+ * (so two missed mandatory pits produce DT + SG30, not DT + DT + SG30).
  */
 int
 penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
@@ -222,25 +223,36 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 	/*
 	 * DT/SG ladder — bounded loop mimics exe's `goto LAB_140125fb0`
 	 * pattern, cap iterations so a pathological severity loop can't
-	 * hang the server.
+	 * hang the server.  At most one materialize per ladder call at
+	 * the next fresh kind — matches exe FUN_140125f50, which runs the
+	 * fresh-branch write as a plain register (no materialize) and only
+	 * fires FUN_140126b50 on the non-fresh "step" path.  Our admin UX
+	 * deviation materializes on the FIRST-EVER call (from_step==0) so
+	 * that /dt adds a visible Penalty immediately; every subsequent
+	 * ladder step lands on a register-only fresh sheet.
 	 */
+	int from_step = 0;
 	for (iter = 0; iter < 8; iter++) {
 		st = &race->pen_state[exe_kind];
 
 		if (st->severity == 0) {
 			/*
-			 * Fresh: materialize + set severity (deviation
-			 * from exe — see header comment).  Counter
-			 * initialized to value; the first repeat call
-			 * finds severity != 0 and steps the ladder.
+			 * Fresh.  Register severity + associated metadata
+			 * so the next miss finds us in the non-fresh path.
+			 * Materialize only when this is a direct caller entry
+			 * (admin /dt etc.); skip the materialize when we
+			 * arrived here from a ladder step — the step itself
+			 * already emitted the visible Penalty for the previous
+			 * kind.
 			 */
 			st->severity = exe_kind;
 			st->category = category;
 			st->issued_ms = now_ms;
 			st->reason = reason;
 			st->counter = value;
-			penalty_materialize(s, car_id, exe_kind,
-			    collision, value, reason);
+			if (!from_step)
+				penalty_materialize(s, car_id, exe_kind,
+				    collision, value, reason);
 			return 0;
 		}
 
@@ -252,6 +264,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		penalty_materialize(s, car_id, st->severity, collision,
 		    value, reason);
 		st->issued_ms = now_ms;
+		from_step = 1;
 
 		{
 			uint8_t bVar2 = st->severity;

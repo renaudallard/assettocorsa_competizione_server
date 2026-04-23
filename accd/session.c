@@ -880,9 +880,9 @@ session_advance(struct Server *s)
  *   DriverRanNoStint          (a registered driver has 0 ms)
  * The IgnoredDriverStint DT fires from h_mandatory_pitstop_served
  * (handlers.c) when isMandatoryPitstopSwapDriverRequired=1 and the
- * pit-entry driver is still active at pit-served time.  The exe's
- * full DT → SG30 → DQ escalation on repeated misses is not yet
- * implemented; we emit the single DT on each miss.
+ * pit-entry driver is still active at pit-served time.  Repeated
+ * misses step the DT → SG30 → DQ ladder inside penalty_enqueue
+ * (penalty.c) — one visible Penalty per miss.
  */
 
 void
