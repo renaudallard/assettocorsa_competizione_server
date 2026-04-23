@@ -664,6 +664,7 @@ h_car_location_update(struct Server *s, struct Conn *c,
 
 		race->in_pit = (location == 2 || location == 3 ||
 		    location == 4) ? 1 : 0;
+		race->on_track = (location == 1) ? 1 : 0;
 
 		/*
 		 * Pit-entry timestamp for stop-and-go validation.

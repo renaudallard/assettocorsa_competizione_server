@@ -134,6 +134,12 @@ window and no chat broadcast — the default public-server behaviour.
 phase-4 window and a
 .Dq Race start initialized
 system chat; 1 is force-downgraded to 3 by the exe on public servers.
+In both variants the leader is also gated on the exe's per-car
+eligibility check (FUN_1400428d0 / FUN_1400431e0): the candidate must
+have reported location Track via
+.Dv ACP_CAR_LOCATION_UPDATE
+and must have driven through the 0.6-0.7 formation-lap midpoint, so a
+car still parked in the paddock cannot trigger the green flag.
 .It Va isPrepPhaseLocked
 Default 0.
 When 1, freezes the preparation phase so fresh handshakes are

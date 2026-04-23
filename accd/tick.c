@@ -744,13 +744,53 @@ tick_run(struct Server *s)
 	    !s->session.green_fired) {
 		int i, leader = -1;
 
+		/*
+		 * Per-car formation-mid latch (exe FUN_1400431e0).  One-shot
+		 * set when the car's normalized track position passes through
+		 * [0.6, 0.7] during the formation lap.  A car that never rolls
+		 * out of its paddock slot thus cannot gate the green flag even
+		 * if its reported norm_pos happens to fall in the trigger
+		 * window.
+		 */
 		for (i = 0; i < ACC_MAX_CARS; i++) {
-			if (!s->cars[i].used || !s->cars[i].rt.has_data)
+			struct CarEntry *car = &s->cars[i];
+			float pos;
+
+			if (!car->used || !car->rt.has_data)
 				continue;
-			if (s->cars[i].race.position == 1) {
-				leader = i;
-				break;
-			}
+			if (car->race.formation_mid_passed)
+				continue;
+			memcpy(&pos, &car->rt.scalar_44, sizeof(pos));
+			if (pos > 0.6f && pos < 0.7f)
+				car->race.formation_mid_passed = 1;
+		}
+
+		/*
+		 * Leader pick (exe FUN_1400428d0 gate).  The exe sorts all
+		 * cars with gate-pass cars first and picks the front of that
+		 * bucket; here we keep race.position == 1 as the ordering
+		 * source but require the same per-car eligibility:
+		 *   - on_track  mirrors exe car+0x153 == 1 (last 0x32 was
+		 *               location == Track).  Rejects a pole sitter
+		 *               still in the paddock / pit.
+		 *   - formation_mid_passed mirrors exe car+0x204 != 0.  Rejects
+		 *               a car whose position has never crossed the
+		 *               formation-lap midpoint.
+		 * Skipping this gate was the cause of the green flag firing
+		 * while the leader was still sitting on the spawn grid.
+		 */
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			const struct CarEntry *car = &s->cars[i];
+
+			if (!car->used || !car->rt.has_data)
+				continue;
+			if (car->race.position != 1)
+				continue;
+			if (!car->race.on_track ||
+			    !car->race.formation_mid_passed)
+				continue;
+			leader = i;
+			break;
 		}
 		if (leader >= 0) {
 			float pos;

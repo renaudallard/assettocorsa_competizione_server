@@ -102,7 +102,12 @@ every wire message, string encoding, and state transition.
   `formationLapType: 1` or `4` runs the verbose path
   (`FUN_14012f4a0`) with a uniform 3000-5500 ms phase-4 window and
   a "Race start initialized" system chat (private-server only; the
-  exe force-downgrades 1 to 3 on public servers).
+  exe force-downgrades 1 to 3 on public servers).  The leader is
+  also gated on the exe's per-car eligibility check
+  (`FUN_1400428d0` + `FUN_1400431e0`): must have reported location
+  `Track` via `0x32` and must have driven through the 0.6-0.7
+  formation-lap midpoint, so a car still parked in the paddock
+  cannot fire the green flag.
 - **Race grid from qualy** — race grid derived from the most recent
   prior qualifying session's finishing order.  `defaultGridPosition`
   in `entrylist.json` is used only when no prior Q/P exists.

@@ -200,6 +200,16 @@ struct CarRaceState {
 	uint8_t		formation_lap_done;	/* exe car+0x200 flag */
 	uint8_t		out_lap_done;		/* first lap from pits */
 	uint8_t		disqualified;		/* PEN_DQ terminal flag */
+	uint8_t		on_track;		/* mirrors exe car+0x153:
+						 * last ACP_CAR_LOCATION_UPDATE
+						 * (0x32) had location==Track.
+						 * Gates race-start leader pick. */
+	uint8_t		formation_mid_passed;	/* exe car+0x204 latch:
+						 * one-shot set when rt position
+						 * passes through [0.6, 0.7]
+						 * during the formation lap.
+						 * See FUN_1400431e0.  Bulk-true
+						 * for manual formation. */
 	struct PenaltyQueue	pen;
 	struct PenaltySheetState	pen_state[7];	/* exe kind 1..6 */
 	/*

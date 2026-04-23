@@ -288,6 +288,22 @@ session_start(struct Server *s)
 		    (double)s->session.green_trigger,
 		    (double)s->green_trigger_start,
 		    (double)s->green_trigger_end);
+		/*
+		 * Formation-lap mid latch (exe car+0x204).  Auto-formation
+		 * (type 3/5) clears it so each car must drive through
+		 * [0.6, 0.7] before it can be picked as the green-flag
+		 * leader (FUN_1400431e0).  Manual formation (type 1) skips
+		 * the latch by bulk-setting every car — matches the exe's
+		 * FUN_1400197b0 / FUN_14002aca0 bulk-true branch gated by
+		 * session_mgr +0x140d0 == 1 (manualStart).
+		 */
+		{
+			uint8_t preset = (s->formation_lap_type == 1) ? 1 : 0;
+			int i;
+
+			for (i = 0; i < ACC_MAX_CARS; i++)
+				s->cars[i].race.formation_mid_passed = preset;
+		}
 	} else {
 		s->session.ts[3] = s->session.ts[2];
 		s->session.ts[4] = s->session.ts[3] + dur_ms;
