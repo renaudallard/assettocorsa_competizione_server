@@ -296,6 +296,26 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		race->sector_ms[1] = 0;
 		race->sector_ms[2] = 0;
 		/*
+		 * Broadcast the cut-counter reset.  h_out_of_track sends a
+		 * fresh 0x3c on every cut with the running count; without a
+		 * matching zero-broadcast at the lap boundary the last count
+		 * stays visible on every client's HUD into the next lap,
+		 * producing an orange "N" badge that looks like a penalty
+		 * even though no penalty exists.  Send to ALL including the
+		 * sender so the driver's own HUD row clears as well.
+		 */
+		{
+			struct ByteBuf reset;
+			bb_init(&reset);
+			if (wr_u8(&reset, SRV_OUT_OF_TRACK_RELAY) == 0 &&
+			    wr_u16(&reset, s->cars[c->car_id].car_id) == 0 &&
+			    wr_u16(&reset, 0) == 0 &&
+			    wr_u32(&reset, 0) == 0)
+				(void)bcast_all(s, reset.data, reset.wpos,
+				    0xFFFF);
+			bb_free(&reset);
+		}
+		/*
 		 * Feed the local rating EWMA: clean lap +5 SA, cut -25,
 		 * out-laps skipped.  Keyed by driver steam_id.
 		 */
