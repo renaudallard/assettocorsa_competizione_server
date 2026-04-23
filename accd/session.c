@@ -289,16 +289,24 @@ session_start(struct Server *s)
 		    (double)s->green_trigger_start,
 		    (double)s->green_trigger_end);
 		/*
-		 * Formation-lap mid latch (exe car+0x204).  Auto-formation
-		 * (type 3/5) clears it so each car must drive through
-		 * [0.6, 0.7] before it can be picked as the green-flag
-		 * leader (FUN_1400431e0).  Manual formation (type 1) skips
-		 * the latch by bulk-setting every car — matches the exe's
-		 * FUN_1400197b0 / FUN_14002aca0 bulk-true branch gated by
-		 * session_mgr +0x140d0 == 1 (manualStart).
+		 * Formation-lap mid latch (exe car+0x204) bulk-set to
+		 * match FUN_1400197b0 at session-transition time: its
+		 * else branch fires for every `formation_lap_type != 0`
+		 * (i.e. default, short, manual, verbose) and sets fmp=1
+		 * for all cars before the race begins.  FUN_1400431e0's
+		 * 0.6-0.7 latch only matters for cars that weren't
+		 * present at the transition — mid-race joiners get the
+		 * ctor default fmp=0 and must drive through the band
+		 * before FUN_1400428d0's gate admits them.
+		 *
+		 * Previously we only bulk-set for formation_lap_type==1
+		 * (manual), which deadlocked solo type-3 races: the
+		 * driver reaches the green-trigger position before
+		 * crossing 0.6-0.7 on their way round, gate blocks
+		 * green indefinitely.
 		 */
 		{
-			uint8_t preset = (s->formation_lap_type == 1) ? 1 : 0;
+			uint8_t preset = (s->formation_lap_type != 0) ? 1 : 0;
 			int i;
 
 			for (i = 0; i < ACC_MAX_CARS; i++)
