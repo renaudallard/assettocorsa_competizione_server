@@ -41,6 +41,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -59,12 +60,13 @@
 
 #ifdef __OpenBSD__
 /*
- * pledge(2) is an OpenBSD extension declared in <unistd.h>, but
- * only when _POSIX_C_SOURCE is not defined.  We want the strict
- * POSIX feature set on Linux so we forward-declare pledge here
- * to keep both platforms compiling cleanly.
+ * pledge(2) and unveil(2) are OpenBSD extensions declared in
+ * <unistd.h>, but only when _POSIX_C_SOURCE is not defined.  We want
+ * the strict POSIX feature set on Linux so we forward-declare them
+ * here to keep both platforms compiling cleanly.
  */
 extern int pledge(const char *promises, const char *execpromises);
+extern int unveil(const char *path, const char *permissions);
 #endif
 
 #include "bans.h"
@@ -324,6 +326,28 @@ main(int argc, char **argv)
 	(void)lan_open(&srv.lan_fd);
 
 #ifdef __OpenBSD__
+	/*
+	 * unveil(2) filesystem sandbox: restrict path visibility to the
+	 * two directories accd actually touches at runtime.  cfg_dir
+	 * carries the JSON configs + banlist + ratings + report archive
+	 * + saved setups; results/ takes the per-session JSON writer and
+	 * optional latency-dump CSVs.  Everything else (/etc, home, any
+	 * DLC data paths) becomes ENOENT for this process.
+	 *
+	 * unveil requires each path to exist when called, so precreate
+	 * results/ — results.c otherwise lazily mkdir-s it on first write.
+	 * unveil(NULL, NULL) seals the list.  pledge drops the implicit
+	 * "unveil" promise that OpenBSD grants while the list is open.
+	 */
+	(void)mkdir("results", 0755);
+
+	if (unveil(srv.cfg_dir, "rwc") < 0)
+		log_warn("unveil %s: %s", srv.cfg_dir, strerror(errno));
+	if (unveil("results", "rwc") < 0)
+		log_warn("unveil results: %s", strerror(errno));
+	if (unveil(NULL, NULL) < 0)
+		log_warn("unveil lock: %s", strerror(errno));
+
 	if (pledge("stdio rpath wpath cpath inet", NULL) < 0)
 		log_warn("pledge: %s", strerror(errno));
 #endif
