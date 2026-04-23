@@ -715,7 +715,19 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		else if (location == 0)
 			stint_stop_tracking(s, c->car_id);
 
-		if (location == 2 && car->rt.has_data) {
+		/*
+		 * Pitlane-speeding DQ is gated on s->session.green_fired:
+		 * the penalty is only meaningful once the race is actually
+		 * racing.  During the formation lap the client's own
+		 * routing can briefly report location=Pitlane as the car
+		 * crosses near the pit-exit boundary, and the driver has
+		 * not yet been constrained by the post-green pitlane limit
+		 * — killing the race there before green even fires is a
+		 * false positive.  The check stays live for the whole
+		 * PHASE_SESSION / OVERTIME window.
+		 */
+		if (location == 2 && car->rt.has_data &&
+		    s->session.green_fired) {
 			float vx = car->rt.vec_c[0];
 			float vy = car->rt.vec_c[1];
 			float vz = car->rt.vec_c[2];
