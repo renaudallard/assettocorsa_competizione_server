@@ -166,6 +166,10 @@ every wire message, string encoding, and state transition.
   full wire hexdump of every message.
 - **OpenBSD support** — builds on OpenBSD 7.8 arm64, runs under
   `pledge("stdio rpath wpath cpath inet")` after binding ports.
+- **Zero idle CPU** — with no clients connected the main loop
+  blocks in `poll()` for up to 100 ms per iteration, so the
+  daemon sits near 0 % CPU until the first client is accepted
+  and the 333 Hz tick resumes.
 
 ### Known limitations
 
