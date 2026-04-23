@@ -318,31 +318,6 @@ session_start(struct Server *s)
 	    "pre=%llums dur=%llums ot=%llums post=%llums",
 	    (unsigned long long)pre_ms, (unsigned long long)dur_ms,
 	    (unsigned long long)ot_ms, (unsigned long long)post_ms);
-	/*
-	 * Diagnostic: dump the absolute ts[0..6] values so a failed race
-	 * start can be traced.  UINT64_MAX is logged as "INVAL".
-	 */
-	{
-		int k;
-		char buf[256];
-		size_t off = 0;
-		for (k = 0; k < 7; k++) {
-			int rc;
-			if (s->session.ts[k] == UINT64_MAX)
-				rc = snprintf(buf + off, sizeof(buf) - off,
-				    " ts[%d]=INVAL", k);
-			else
-				rc = snprintf(buf + off, sizeof(buf) - off,
-				    " ts[%d]=%llu(+%lldms)", k,
-				    (unsigned long long)s->session.ts[k],
-				    (long long)s->session.ts[k] -
-				    (long long)now);
-			if (rc <= 0 || (size_t)rc >= sizeof(buf) - off)
-				break;
-			off += (size_t)rc;
-		}
-		log_info("session_start: schedule%s", buf);
-	}
 
 	/*
 	 * Open a per-session latency-dump CSV if writeLatencyFileDumps=1.
@@ -875,6 +850,48 @@ session_overtime_car_finished(struct Server *s)
 	}
 }
 
+/*
+ * Push a 0x28 SRV_LARGE_STATE_RESPONSE to every authenticated conn
+ * using the current session state.  Intended for the transient window
+ * between session_reset (which clears ts_valid so every slot emits as
+ * invalid) and session_start (which populates ts[] and sets ts_valid=1
+ * again).  Kunos's reference capture shows a ~150 ms gap with one
+ * all-INV 0x28 right at the sidx transition; emitting the same frame
+ * signals the session-index change cleanly to the client so it can
+ * reset its per-session state before the valid slot values come in.
+ */
+static void
+broadcast_session_mgr_state_all(struct Server *s)
+{
+	int i;
+	struct ByteBuf bb;
+	struct timespec _ts;
+	uint64_t now_ms;
+
+	clock_gettime(CLOCK_MONOTONIC, &_ts);
+	now_ms = (uint64_t)_ts.tv_sec * 1000ull + (uint64_t)_ts.tv_nsec / 1000000ull;
+
+	bb_init(&bb);
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+		uint32_t client_ts_est;
+
+		if (c == NULL || c->state != CONN_AUTH)
+			continue;
+		if (c->last_udp_server_ms != 0)
+			client_ts_est = c->last_udp_client_ts +
+			    ((uint32_t)now_ms - c->last_udp_server_ms);
+		else
+			client_ts_est = c->last_pong_client_ts;
+		bb_clear(&bb);
+		if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
+		    write_session_mgr_state(&bb, s, client_ts_est,
+			c->avg_rtt_ms) == 0)
+			(void)conn_send_framed(c, bb.data, bb.wpos);
+	}
+	bb_free(&bb);
+}
+
 void
 session_advance(struct Server *s)
 {
@@ -896,11 +913,20 @@ session_advance(struct Server *s)
 		log_info("session: weekend complete, resetting to "
 		    "session 0");
 		session_reset(s, 0);
+		/*
+		 * Transient all-INV 0x28 between reset and start.  Matches
+		 * the ~150 ms gap observed in Kunos's reference race-start
+		 * capture; signals the session-index change to the client
+		 * so it can clear per-session state before the valid slot
+		 * timestamps come in.
+		 */
+		broadcast_session_mgr_state_all(s);
 		if (s->nconns > 0)
 			session_start(s);
 		return;
 	}
 	session_reset(s, next);
+	broadcast_session_mgr_state_all(s);
 	if (s->nconns > 0)
 		session_start(s);
 }
