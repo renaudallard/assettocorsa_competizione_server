@@ -44,6 +44,85 @@
 #include "session.h"
 #include "state.h"
 
+/*
+ * Per-track formation / green trigger ranges, transcribed from exe
+ * FUN_14012c510.  The exe seeds ServerConfiguration +0x14106 /
+ * +0xa0834 / +0x14107 from this table at startup, overriding the ctor
+ * zeros, and the same values then flow through FUN_14012f270 into
+ * SessionManager +0x288 / +0x28c / +0x290 at every race session_start.
+ *
+ * formation_start: normalised track pos where FUN_14012f300 stamps
+ *                  ts[2] the first time the leader is inside
+ *                  [formation_start, green_start - 0.05].
+ * green_start / green_end: range that triggers ts[3] — on most tracks
+ *                  this straddles the start/finish line (values near
+ *                  1.0 or wrapping to low 0.0x on tracks whose s/f
+ *                  sits a few metres past the last corner).
+ *
+ * Tracks not in this table keep the Server-ctor defaults
+ * (0.80 / 0.89 / 0.96), which are the monza-ish values the memory
+ * note used to call universal.  Event.json overrides run after this
+ * lookup and still win.
+ */
+struct TrackZones {
+	const char *name;
+	float formation_start;
+	float green_start;
+	float green_end;
+};
+
+static const struct TrackZones track_zones[] = {
+	{"monza",          0.8000f, 0.9916f, 1.0000f},
+	{"brands_hatch",   0.7299f, 0.9765f, 1.0000f},
+	{"misano",         0.7499f, 0.9700f, 0.9900f},
+	{"paul_ricard",    0.7849f, 0.9914f, 1.0000f},
+	{"zolder",         0.7776f, 0.9917f, 1.0000f},
+	{"silverstone",    0.7973f, 0.9940f, 1.0000f},
+	{"hungaroring",    0.7886f, 0.9800f, 1.0000f},
+	{"barcelona",      0.7670f, 0.9838f, 1.0000f},
+	{"zandvoort",      0.6927f, 0.9752f, 0.9850f},
+	{"imola",          0.7824f, 0.0150f, 0.0340f},
+	{"cota",           0.8815f, 0.0454f, 0.0606f},
+	{"indianapolis",   0.6999f, 0.9572f, 0.9922f},
+	{"watkins_glen",   0.7810f, 0.9707f, 0.9936f},
+	{"valencia",       0.7478f, 0.9800f, 1.0000f},
+	{"oval",           0.7849f, 0.9914f, 1.0000f},
+	{"kyalami",        0.7252f, 1.0000f, 0.0173f},
+	{"mount_panorama", 0.8559f, 0.0100f, 0.0205f},
+	{"suzuka",         0.7824f, 0.9856f, 1.0000f},
+	{"laguna_seca",    0.6332f, 0.9721f, 1.0000f},
+	{"oulton_park",    0.7758f, 0.9867f, 1.0000f},
+	{"snetterton",     0.7477f, 0.9867f, 1.0000f},
+	{"donington",      0.7824f, 0.0144f, 0.0240f},
+	{"red_bull_ring",  0.9434f, 0.9933f, 1.0000f},
+};
+
+void
+track_zones_apply(struct Server *s)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof(track_zones) / sizeof(track_zones[0]); i++) {
+		if (strcmp(s->track, track_zones[i].name) == 0) {
+			s->formation_trigger_start =
+			    track_zones[i].formation_start;
+			s->green_trigger_start = track_zones[i].green_start;
+			s->green_trigger_end = track_zones[i].green_end;
+			log_info("track zones: %s formation=%.4f "
+			    "green=[%.4f, %.4f]", s->track,
+			    (double)s->formation_trigger_start,
+			    (double)s->green_trigger_start,
+			    (double)s->green_trigger_end);
+			return;
+		}
+	}
+	log_info("track zones: %s not in per-track table — using "
+	    "defaults %.3f / %.3f / %.3f", s->track,
+	    (double)s->formation_trigger_start,
+	    (double)s->green_trigger_start,
+	    (double)s->green_trigger_end);
+}
+
 void
 server_init(struct Server *s)
 {

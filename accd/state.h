@@ -680,6 +680,16 @@ struct Server {
 void	server_init(struct Server *s);
 void	server_free(struct Server *s);
 
+/*
+ * Seed s->formation_trigger_start / green_trigger_start / green_trigger_end
+ * from a per-track table matching exe FUN_14012c510.  Caller must have
+ * populated s->track (the track-id string after year-suffix stripping)
+ * before invoking.  Tracks not in the table keep the current values —
+ * call from config_load after the track string is ready and before
+ * event.json's formation/green override block runs so JSON still wins.
+ */
+void	track_zones_apply(struct Server *s);
+
 /* Allocate a new Conn for an accepted fd.  Returns NULL on full. */
 struct Conn *
 	conn_new(struct Server *s, int fd, const struct sockaddr_in *peer);

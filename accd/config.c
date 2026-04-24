@@ -358,6 +358,14 @@ config_load(struct Server *s, const char *cfg_dir)
 			    s->track[tlen - 1] <= '9')
 				s->track[tlen - 5] = '\0';
 		}
+		/*
+		 * Seed the formation / green trigger ranges from the per-
+		 * track table (exe FUN_14012c510).  Event.json override
+		 * block below still wins if the operator set explicit
+		 * values.  Must run AFTER the year-suffix strip so the
+		 * name matches ("brands_hatch_2019" -> "brands_hatch").
+		 */
+		track_zones_apply(s);
 
 		sessions = json_obj_get(event, "sessions");
 		n = json_arr_len(sessions);
