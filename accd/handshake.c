@@ -191,7 +191,7 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 	 */
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
-	if (wr_u8(bb, s->formation_lap_type) < 0) return -1; /* formationLapType */
+	if (wr_u8(bb, 2) < 0) return -1;	/* formationLapType (OnlineRules "inherit" sentinel — runtime value is in the +0x1dc tail, not here; Kunos wire shows 0x02 regardless of ServerSettings.formationLapType) */
 	if (wr_u8(bb, 2) < 0) return -1;	/* shortFormationLap */
 	if (wr_u16(bb, 300) < 0) return -1;	/* postRaceSeconds */
 	if (wr_u8(bb, s->weather.randomness) < 0) return -1; /* weatherRandomness */
