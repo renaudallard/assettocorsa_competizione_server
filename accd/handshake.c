@@ -194,7 +194,7 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 2) < 0) return -1;	/* formationLapType (OnlineRules "inherit" sentinel — runtime value is in the +0x1dc tail, not here; Kunos wire shows 0x02 regardless of ServerSettings.formationLapType) */
 	if (wr_u8(bb, 2) < 0) return -1;	/* shortFormationLap */
 	if (wr_u16(bb, 300) < 0) return -1;	/* postRaceSeconds */
-	if (wr_u8(bb, s->weather.randomness) < 0) return -1; /* weatherRandomness */
+	if (wr_u8(bb, 10) < 0) return -1;	/* weatherRandomness (OnlineRules ctor constant — runtime value travels via EventConfig.weatherRandomness and the WeatherStatus isDynamic bit, not here) */
 	if (wr_u8(bb, 3) < 0) return -1;	/* trackMedalsRequirement */
 	if (wr_u8(bb, 2) < 0) return -1;
 	if (wr_u8(bb, 2) < 0) return -1;
