@@ -109,6 +109,68 @@ randomize_green_trigger(const struct Server *s)
 	return p;
 }
 
+/*
+ * Auto-derive shortFormationLap from the session list.  Matches
+ * exe FUN_140029eb0 line 261-270 which sets ServerState+0x230 = 1
+ * unless at least one race session has duration > 0x99c (= 2460);
+ * with duration in seconds that's a 41-minute threshold, so any
+ * race ≥ 41 minutes flips the flag to 0 (standard formation).
+ *
+ * The JSON "shortFormationLap" key in settings.json lands on a
+ * different struct (SettingsConfig+0x110 per FUN_140106300 line
+ * 619-621) and is NOT used for the formation_start transform —
+ * the transform reads only the auto-derived byte.  We keep
+ * s->short_formation_lap loaded for parity but ignore it here.
+ */
+static uint8_t
+auto_short_formation(const struct Server *s)
+{
+	int i;
+	for (i = 0; i < s->session_count; i++) {
+		const struct SessionDef *def = &s->sessions[i];
+		if (def->session_type == 10 && def->duration_min >= 41)
+			return 0;	/* long race exists */
+	}
+	return 1;	/* short formation */
+}
+
+/*
+ * FUN_14012f640 transform.  When formation_lap_type is not 3 or 5
+ * (i.e. anything other than the silent path), the exe shifts the
+ * formation_start trigger earlier in the lap before storing it in
+ * SessionManager+0x288.  The shift depends on the auto-derived
+ * short-formation byte:
+ *
+ *   shortFormation == 0 (long): start -= 0.16, wrap at 0
+ *   shortFormation != 0 AND start > 0.7: start -= 0.5
+ *
+ * Without this, brands_hatch (formation_start = 0.7299) on a
+ * non-silent formation type fires the formation-end gate at 73 %
+ * of the lap on our server while the windows server fires it at
+ * 22-57 % depending on whether a 41+ min race is in the schedule.
+ *
+ * Exe call site: FUN_14002f710 line 148-150:
+ *   if ((formation_lap_type - 3) & 0xfd) != 0
+ *       fVar43 = FUN_14012f640(fVar43, ServerState+0x230);
+ */
+static float
+effective_formation_start(const struct Server *s)
+{
+	float v = s->formation_trigger_start;
+
+	if (s->formation_lap_type == 3 || s->formation_lap_type == 5)
+		return v;	/* silent path — no transform */
+	if (auto_short_formation(s) == 0) {
+		v -= 0.16f;
+		if (v < 0.0f)
+			v += 1.0f;
+		return v;
+	}
+	if (v > 0.7f)
+		return v - 0.5f;
+	return v;
+}
+
 void
 session_reset(struct Server *s, uint8_t session_index)
 {
@@ -288,6 +350,14 @@ session_start(struct Server *s)
 		    (double)s->session.green_trigger,
 		    (double)s->green_trigger_start,
 		    (double)s->green_trigger_end);
+		log_info("session_start: formation_lap_type=%u "
+		    "shortFormation auto=%u (json=%u) "
+		    "formation_start raw=%.4f effective=%.4f",
+		    (unsigned)s->formation_lap_type,
+		    (unsigned)auto_short_formation(s),
+		    (unsigned)s->short_formation_lap,
+		    (double)s->formation_trigger_start,
+		    (double)effective_formation_start(s));
 		/*
 		 * Formation-lap mid latch (exe car+0x204) bulk-set to
 		 * match FUN_1400197b0 at session-transition time: its
@@ -421,13 +491,13 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		return 0;	/* still in pre-race waiting countdown */
 
 	if (!ss->formation_ended) {
+		float fstart = effective_formation_start(s);
 		float pre_green = s->green_trigger_start -
 		    FORMATION_PRE_GREEN_EPS;
 
 		if (pre_green < 0.0f)
 			pre_green += 1.0f;
-		if (wrapped_range_contains(leader_pos,
-		    s->formation_trigger_start, pre_green)) {
+		if (wrapped_range_contains(leader_pos, fstart, pre_green)) {
 			ss->formation_ended = 1;
 			/*
 			 * FUN_14012f300 stamps +0x178 = now + 1000ms on
@@ -440,8 +510,7 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 			ss->ts[2] = now + 1000;
 			log_info("formation end: leader norm_pos=%.3f "
 			    "range=[%.3f, %.3f] doubleFile_at=%llums",
-			    (double)leader_pos,
-			    (double)s->formation_trigger_start,
+			    (double)leader_pos, (double)fstart,
 			    (double)pre_green,
 			    (unsigned long long)ss->ts[2]);
 		}
