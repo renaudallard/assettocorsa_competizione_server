@@ -780,9 +780,21 @@ tick_run(struct Server *s)
 		 * Leader pick — phase-split gate matching exe
 		 * FUN_1400428d0:
 		 *   bVar8==3 (formation phase, !formation_ended):
-		 *     base = on_track && bit  (no fmp)
-		 *   bVar8==4 (post-formation, formation_ended && !green_fired):
-		 *     base && car+0x204 != 0 (fmp required)
+		 *     car+0x153 == 1 (on track) AND (car+0x1b0 & 0x20) == 0
+		 *   bVar8 != 3 (post-formation, formation_ended/green_fired):
+		 *     above AND car+0x204 != 0 (fmp required)
+		 * The exe sorts conns and picks the first one passing the
+		 * gate (FUN_14002f710:273-276); off-track / disconnected
+		 * cars sort to the end and don't fire the trigger.
+		 *
+		 * We mirror that by walking cars in race-position order
+		 * (= what the exe's sort settles on for normal racing) and
+		 * stopping on the first that passes the gate, rather than
+		 * hard-pinning to position 1.  Without this, an in-pit or
+		 * off-track P1 in a multi-driver session blocks the
+		 * formation_end trigger forever — the windows server would
+		 * have already moved on to P2.
+		 *
 		 * Applying fmp as a blanket gate deadlocks solo races: the
 		 * driver spawns inside the formation-end range (typical
 		 * grid norm_pos = 0.83-0.95), the client holds brakes until
@@ -795,18 +807,28 @@ tick_run(struct Server *s)
 		 * with the car still on the grid), confirming that fmp is
 		 * not checked during the formation-end trigger.
 		 */
-		for (i = 0; i < ACC_MAX_CARS; i++) {
-			const struct CarEntry *car = &s->cars[i];
+		{
+			int16_t best_pos = INT16_MAX;
 
-			if (!car->used || !car->rt.has_data)
-				continue;
-			if (car->race.position != 1)
-				continue;
-			if (s->session.formation_ended &&
-			    !car->race.formation_mid_passed)
-				continue;
-			leader = i;
-			break;
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				const struct CarEntry *car = &s->cars[i];
+
+				if (!car->used || !car->rt.has_data)
+					continue;
+				if (!car->race.on_track)
+					continue;
+				if ((car->last_sys_data & 0x20) != 0)
+					continue;
+				if (s->session.formation_ended &&
+				    !car->race.formation_mid_passed)
+					continue;
+				if (car->race.position < 1)
+					continue;
+				if (car->race.position < best_pos) {
+					best_pos = car->race.position;
+					leader = i;
+				}
+			}
 		}
 		if (leader >= 0) {
 			float pos;
