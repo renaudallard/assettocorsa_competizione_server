@@ -71,30 +71,44 @@ struct TrackZones {
 	float green_end;
 };
 
+/*
+ * Values transcribed from FUN_14012c510 in accServer.exe.  Each
+ * float matches the IEEE-754 hex literal the exe stores for that
+ * track; tools that bit-compare the wire payload against a Kunos
+ * reference will see byte parity.  Order follows the exe table.
+ *
+ * Earlier revisions of this table conflated several adjacent
+ * entries (hungaroring used the nurburgring values; oval used
+ * paul_ricard_gt4; red_bull_ring used nurburgring_24h) and three
+ * tracks were missing.  Aligning fixes those.
+ */
 static const struct TrackZones track_zones[] = {
-	{"monza",          0.8000f, 0.9916f, 1.0000f},
-	{"brands_hatch",   0.7299f, 0.9765f, 1.0000f},
-	{"misano",         0.7499f, 0.9700f, 0.9900f},
-	{"paul_ricard",    0.7849f, 0.9914f, 1.0000f},
-	{"zolder",         0.7776f, 0.9917f, 1.0000f},
-	{"silverstone",    0.7973f, 0.9940f, 1.0000f},
-	{"hungaroring",    0.7886f, 0.9800f, 1.0000f},
-	{"barcelona",      0.7670f, 0.9838f, 1.0000f},
-	{"zandvoort",      0.6927f, 0.9752f, 0.9850f},
-	{"imola",          0.7824f, 0.0150f, 0.0340f},
-	{"cota",           0.8815f, 0.0454f, 0.0606f},
-	{"indianapolis",   0.6999f, 0.9572f, 0.9922f},
-	{"watkins_glen",   0.7810f, 0.9707f, 0.9936f},
-	{"valencia",       0.7478f, 0.9800f, 1.0000f},
-	{"oval",           0.7849f, 0.9914f, 1.0000f},
-	{"kyalami",        0.7252f, 1.0000f, 0.0173f},
-	{"mount_panorama", 0.8559f, 0.0100f, 0.0205f},
-	{"suzuka",         0.7824f, 0.9856f, 1.0000f},
-	{"laguna_seca",    0.6332f, 0.9721f, 1.0000f},
-	{"oulton_park",    0.7758f, 0.9867f, 1.0000f},
-	{"snetterton",     0.7477f, 0.9867f, 1.0000f},
-	{"donington",      0.7824f, 0.0144f, 0.0240f},
-	{"red_bull_ring",  0.9434f, 0.9933f, 1.0000f},
+	{"monza",           0.8000000f, 0.9915550f, 0.9999990f},
+	{"brands_hatch",    0.7299440f, 0.9765050f, 0.9999990f},
+	{"misano",          0.7499020f, 0.9700000f, 0.9899990f},
+	{"paul_ricard",     0.7849070f, 0.9914120f, 0.9999990f},
+	{"zolder",          0.7776030f, 0.9916960f, 0.9999990f},
+	{"silverstone",     0.7973160f, 0.9940350f, 0.9999990f},
+	{"hungaroring",     0.7578200f, 0.0000000f, 0.0079990f},
+	{"nurburgring",     0.7885620f, 0.9800000f, 0.9999990f},
+	{"barcelona",       0.7669800f, 0.9838080f, 0.9999990f},
+	{"zandvoort",       0.6926740f, 0.9752370f, 0.9849750f},
+	{"imola",           0.7824390f, 0.0150000f, 0.0340000f},
+	{"cota",            0.8814730f, 0.0454040f, 0.0605880f},
+	{"indianapolis",    0.6999490f, 0.9571550f, 0.9922090f},
+	{"watkins_glen",    0.7810060f, 0.9706860f, 0.9935680f},
+	{"valencia",        0.7477980f, 0.9800000f, 0.9999990f},
+	{"oval",            0.8600000f, 0.9709720f, 0.9900000f},
+	{"paul_ricard_gt4", 0.7849070f, 0.9914120f, 0.9999990f},
+	{"kyalami",         0.7251550f, 0.9999990f, 0.0173290f},
+	{"mount_panorama",  0.8559040f, 0.0100000f, 0.0204910f},
+	{"suzuka",          0.7824390f, 0.9856350f, 0.9999990f},
+	{"laguna_seca",     0.6331840f, 0.9721280f, 0.9999990f},
+	{"oulton_park",     0.7757550f, 0.9866660f, 0.9999990f},
+	{"snetterton",      0.7477380f, 0.9866660f, 0.9999990f},
+	{"donington",       0.7824390f, 0.0143790f, 0.0240000f},
+	{"red_bull_ring",   0.7749770f, 0.0000000f, 0.0192060f},
+	{"nurburgring_24h", 0.9434080f, 0.9933010f, 0.9999990f},
 };
 
 void
