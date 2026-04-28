@@ -470,6 +470,31 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 * in the 0x36 prefix), which makes the client's predicted-
 		 * lap display show a delta before any valid lap exists.
 		 */
+
+		/*
+		 * S/F crossing (sector_index == 2) is also the unconditional
+		 * lap-complete trigger in the exe (FUN_1400142f0 case 0x21
+		 * line 464: car+0x1e8 = 0).  It runs without the all-sectors-
+		 * set gate that h_sector_split_bulk uses, so a formation lap
+		 * S/F (which can fire 0x21 alone, without 0x20 sector splits)
+		 * still clears the cut counter.  Without this the orange "N"
+		 * cut badge from formation-lap track-limit nudges leaks into
+		 * lap 1 even though the driver did nothing.
+		 */
+		if (sector == 2) {
+			struct ByteBuf reset;
+			race->cuts_this_lap = 0;
+			race->last_cut_ms = 0;
+			race->out_of_track_latched = 0;
+			bb_init(&reset);
+			if (wr_u8(&reset, SRV_OUT_OF_TRACK_RELAY) == 0 &&
+			    wr_u16(&reset, s->cars[c->car_id].car_id) == 0 &&
+			    wr_u16(&reset, 0) == 0 &&
+			    wr_u32(&reset, 0) == 0)
+				(void)bcast_all(s, reset.data, reset.wpos,
+				    0xFFFF);
+			bb_free(&reset);
+		}
 	}
 	log_info("sector split single: car=%d split=%d lap=%d",
 	    c->car_id, (int)split_time, (int)lap_time);
