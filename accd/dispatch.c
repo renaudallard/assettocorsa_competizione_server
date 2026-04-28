@@ -38,6 +38,7 @@
 #include <arpa/inet.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <string.h>
 #include <time.h>
 
 #include "bcast.h"
@@ -244,13 +245,25 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 	case ACP_KEEPALIVE_A:		/* 0x13 */
 	case ACP_KEEPALIVE_B: {		/* 0x17 */
 		/*
-		 * The real client sends 0x13 + u16(conn_id).  The
-		 * server replies with a 0x14 keepalive carrying the
-		 * server timestamp and per-car timing hints.  This
-		 * also serves as the UDP peer-address association:
-		 * the first keepalive from a client teaches the
-		 * server which UDP source port belongs to which
-		 * TCP connection.
+		 * Two distinct callers, distinguished by body length:
+		 *
+		 *   3-byte form  msg_id + u16(conn_id)
+		 *     The real client sends this once a second from its
+		 *     in-session UDP socket.  The server replies with a
+		 *     15-byte 0x14 keepalive carrying server_ms + per-conn
+		 *     ping aggregates; this also teaches the server which
+		 *     UDP source port belongs to which TCP connection so
+		 *     subsequent 0x1e car_updates can be relayed.
+		 *
+		 *   7-byte form  msg_id + u32(client_ts) + u16(server_port)
+		 *     The lobby's server-browser probe (FUN_1410f2370 in
+		 *     the AC2 client).  Sent by every client browsing the
+		 *     server list, before any TCP connect.  The exe
+		 *     unconditionally echoes the body back as a 7-byte
+		 *     0x17 reply (FUN_140027f80 lines 619-635); the client
+		 *     measures `local_now - client_ts` from the echoed
+		 *     timestamp to populate the PING column.  Without a
+		 *     reply the lobby browser shows "—".
 		 */
 		struct Reader kr;
 		uint16_t ka_conn_id = 0;
@@ -258,6 +271,18 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		struct Conn *kc;
 		struct timespec kts;
 		uint32_t srv_ms;
+
+		if (len >= 7) {
+			/* Lobby-probe echo — must reply regardless of
+			 * whether the source has a TCP connection. */
+			unsigned char echo[7];
+			echo[0] = ACP_KEEPALIVE_B;	/* 0x17 */
+			memcpy(echo + 1, buf + 1, 6);
+			(void)sendto(s->udp_fd, echo, sizeof echo, 0,
+			    (const struct sockaddr *)peer,
+			    (socklen_t)sizeof(*peer));
+			return;
+		}
 
 		rd_init(&kr, buf, len);
 		(void)rd_skip(&kr, 1);		/* msg_id */
