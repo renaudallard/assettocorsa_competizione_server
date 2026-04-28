@@ -242,6 +242,7 @@ plain UTF-8 — detection is automatic.
 ./accd /path/to/other/cfg        # explicit path
 ./accd -c /path/to/cfg           # alternative syntax
 ./accd -d                        # enable debug tracing
+./accd -V                        # print version and exit
 ```
 
 <details>

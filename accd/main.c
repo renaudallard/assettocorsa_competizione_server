@@ -269,7 +269,7 @@ main(int argc, char **argv)
 	const char *cfg_dir = "cfg";
 	uint64_t last_tick_us;
 
-	while ((ch = getopt(argc, argv, "dc:")) != -1) {
+	while ((ch = getopt(argc, argv, "dc:V")) != -1) {
 		switch (ch) {
 		case 'd':
 			g_debug = 1;
@@ -277,9 +277,16 @@ main(int argc, char **argv)
 		case 'c':
 			cfg_dir = optarg;
 			break;
+		case 'V':
+#ifdef ACCD_VERSION_STR
+			printf("accd %s\n", ACCD_VERSION_STR);
+#else
+			printf("accd (dev)\n");
+#endif
+			return 0;
 		default:
 			fprintf(stderr,
-			    "usage: accd [-d] [-c cfgdir]\n");
+			    "usage: accd [-d] [-c cfgdir] | -V\n");
 			return 1;
 		}
 	}
