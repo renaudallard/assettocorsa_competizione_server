@@ -496,8 +496,11 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			bb_free(&reset);
 		}
 	}
-	log_info("sector split single: car=%d split=%d lap=%d",
-	    c->car_id, (int)split_time, (int)lap_time);
+	log_info("sector split single: car=%d split=%d lap=%d "
+	    "flag_b=%u car_field=0x%04x flag_d=%u cuts=%u",
+	    c->car_id, (int)split_time, (int)lap_time,
+	    (unsigned)flag_b, (unsigned)car_field, (unsigned)flag_d,
+	    (unsigned)s->cars[c->car_id].race.cuts_this_lap);
 
 	/* Build the transformed 0x3b broadcast. Body:
 	 *   u16 car_id + u32 split_time + u8 flag + u32 lap_time +
