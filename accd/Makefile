@@ -34,12 +34,14 @@ OBJS =		main.o \
 		weather.o
 
 # Read the project VERSION file and bake it into the binary as
-# ACCD_VERSION_STR.  Looks at ../VERSION first (source-tree layout),
-# then ./VERSION (deployed-flat layout, e.g. when only accd/* is
-# scp'd to a target host), then falls back to "dev".  The `!=`
-# shell-expansion syntax is supported by both BSD make and GNU make
-# >= 4.0.
-ACCD_VERSION !=	(cat ../VERSION 2>/dev/null || cat VERSION 2>/dev/null \
+# ACCD_VERSION_STR.  Prefers ./VERSION (deployed-flat layout, where
+# the deploy script copies VERSION next to the Makefile) over
+# ../VERSION (source-tree layout, where VERSION is at the project
+# root) so a stale parent-dir VERSION on a target host can't
+# shadow the freshly-shipped one.  Falls back to "dev".  The `!=`
+# shell-expansion syntax is supported by both BSD make and GNU
+# make >= 4.0.
+ACCD_VERSION !=	(cat VERSION 2>/dev/null || cat ../VERSION 2>/dev/null \
 		    || echo dev) | tr -d '[:space:]'
 
 # Internal flags always applied.  User-supplied CFLAGS / LDFLAGS
