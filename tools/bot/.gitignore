@@ -1,0 +1,15 @@
+# Build artefacts
+bot
+*.o
+
+# Local logs from test runs
+*.log
+*.pid
+
+# Racing-line CSVs derived from Kunos data — do not commit.
+# Generate locally with parse_ai.py or extract_racing_line.py.
+waypoints/
+*.csv
+
+# Source .ai files from a local ACC install.
+*.ai

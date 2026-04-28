@@ -1,0 +1,1418 @@
+/*
+ * Copyright (c) 2025-2026 Renaud Allard
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without
+ * modification, are permitted provided that the following conditions
+ * are met:
+ * 1. Redistributions of source code must retain the above copyright
+ *    notice, this list of conditions and the following disclaimer.
+ * 2. Redistributions in binary form must reproduce the above copyright
+ *    notice, this list of conditions and the following disclaimer in the
+ *    documentation and/or other materials provided with the distribution.
+ *
+ * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS "AS IS" AND
+ * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+ * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+ * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
+ * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+ * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
+ * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+ * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+ * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+ * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
+ * SUCH DAMAGE.
+ */
+/*
+ * bot.c — protocol-test driving bot for ACC dedicated servers.
+ *
+ * Connects via TCP, runs the ACP_REQUEST_CONNECTION (0x09) handshake,
+ * then drives a real-track polyline at ~30 Hz over UDP.  Models:
+ *   - formation lap (lap 0 at <70 km/h, accelerates after lap wrap)
+ *   - pit-stop with sub-22 m/s velocity + location=Pitlane so the
+ *     server's pit-speeding penalty never fires
+ *   - racing line loaded from a CSV waypoint file (norm_pos x y z),
+ *     defaulting to a stadium-shape loop if no file is supplied
+ *
+ * Built for protocol/wire validation — kinematic physics only, no
+ * input model, no slip, no kerb usage.  Lap times come out around
+ * 110-120 % of human pace; this is intentional.  Not a cheat tool.
+ *
+ * Build:   make            (or  cc -O2 -Wall -o bot bot.c -lm)
+ * Usage:   ./bot --host H --tcp P [--race N] [--name S] [--track FILE]
+ *                [--length M] [--pit-on-lap N] [--laps N]
+ */
+
+#define _POSIX_C_SOURCE 200809L
+#define _USE_MATH_DEFINES
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+#include <arpa/inet.h>
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <math.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <signal.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/socket.h>
+#include <sys/time.h>
+#include <time.h>
+#include <unistd.h>
+
+#define TICK_MS			33		/* ~30 Hz */
+#define V_FORMATION		16.0f		/* 57.6 km/h, under 70 limit */
+#define V_RACE			85.0f		/* 306 km/h, GT3 top speed */
+#define V_PITLANE		18.0f		/* 64.8 km/h, under 80 limit */
+#define DEFAULT_LENGTH_M	4000.0f
+#define MAX_WAYPOINTS		2048	/* monza: 1152, brands_hatch: 777 */
+
+/*
+ * Kinematic physics model — see compute_corner_radius() and the
+ * main loop's speed update.  GT3-class car with separable tyre /
+ * aero / wear contributions to effective µ:
+ *
+ *   µ_dry      = base mechanical grip (fresh tyres, no aero)
+ *   µ_aero(v)  = µ_dry + K_AERO · v²   (downforce; ~+0.5 at top sp)
+ *   µ_eff(v,t) = µ_aero(v) · wear_factor(t)   (linear wear with time)
+ *
+ *   accel = 8 m/s² (out of corner; constant — kinematic approx)
+ *   brake = 25 m/s² (≈ 2.5 g, GT3 dry-track typical)
+ */
+#define MU_DRY			1.0f
+#define K_AERO			6.0e-5f		/* µ adds ≈ 0.43 at 85 m/s */
+#define G_ACCEL			9.81f
+#define A_ACCEL			8.0f
+#define A_BRAKE			25.0f
+#define BRAKE_LOOKAHEAD_S	4.0f
+#define TYRE_WEAR_PER_MIN	0.005f		/* 30 % grip loss after 60' */
+#define TYRE_WEAR_FLOOR		0.7f		/* µ never drops below 70 % */
+#define LATERAL_RECOVERY_TAU_S	1.8f		/* time const for bump back */
+
+#define LOC_NONE	0
+#define LOC_TRACK	1
+#define LOC_PITLANE	2
+#define LOC_PITENTRY	3
+#define LOC_PITEXIT	4
+
+static volatile sig_atomic_t g_stop;
+static void on_sigint(int s) { (void)s; g_stop = 1; }
+
+static uint32_t mono_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint32_t)((uint64_t)ts.tv_sec * 1000 +
+	    (uint64_t)ts.tv_nsec / 1000000);
+}
+
+/* ------------------------------------------------------------------ */
+/* tiny byte buffer */
+static uint8_t bb_buf[8192];
+static size_t bb_n;
+static void bb_reset(void) { bb_n = 0; }
+static void bb_u8(uint8_t v) { bb_buf[bb_n++] = v; }
+static void bb_u16(uint16_t v)
+{
+	bb_buf[bb_n++] = v & 0xff;
+	bb_buf[bb_n++] = (v >> 8) & 0xff;
+}
+static void bb_u32(uint32_t v)
+{
+	bb_buf[bb_n++] = v & 0xff;
+	bb_buf[bb_n++] = (v >> 8) & 0xff;
+	bb_buf[bb_n++] = (v >> 16) & 0xff;
+	bb_buf[bb_n++] = (v >> 24) & 0xff;
+}
+static void bb_f32(float f) { uint32_t u; memcpy(&u, &f, 4); bb_u32(u); }
+static void bb_pad(size_t n) { memset(bb_buf + bb_n, 0, n); bb_n += n; }
+
+/* Format-A wstring: u8 count + count * u32 codepoint. */
+static void bb_fmta(const char *s)
+{
+	size_t i, n = strlen(s);
+	bb_u8((uint8_t)n);
+	for (i = 0; i < n; i++)
+		bb_u32((uint8_t)s[i]);
+}
+
+/* ------------------------------------------------------------------ */
+/* DriverInfo + CarInfo bodies — match fake_client.py byte-for-byte. */
+
+static void build_driver_info(const char *first, const char *last,
+    const char *shortn, const char *steam)
+{
+	bb_fmta(first);
+	bb_fmta("");
+	bb_fmta(last);
+	bb_fmta("");
+	bb_fmta(shortn);
+	bb_u8(1);
+	bb_u16(0);
+	bb_u8(0);
+	bb_u32(0x1f7); bb_u32(0x11); bb_u32(0xf3);
+	bb_u8(0);
+	bb_u32(0); bb_u32(0);
+	bb_u32(200); bb_u32(0x1f8); bb_u32(0xf3); bb_u32(0x155);
+	bb_fmta(steam);
+}
+
+static void build_car_info(uint8_t car_model, uint32_t race_number)
+{
+	bb_u32(0); bb_u32(0); bb_u32(car_model);
+	bb_u8(0); bb_u8(0);
+	bb_u32(0);
+	bb_u8(0);
+	bb_u32(0); bb_u32(0); bb_u32(0);
+	bb_u8(0); bb_u8(0); bb_u8(0); bb_u8(0);
+	bb_u32(race_number);
+	bb_u32(0);
+	bb_u8(0); bb_u8(0);
+	bb_fmta("");
+	bb_u8(0);
+	bb_fmta("BotTeam");
+	bb_u16(0);
+	bb_fmta("");
+	bb_fmta("");
+	bb_u16(0);
+	bb_u8(0);
+	bb_u8(car_model);
+	bb_u8(0);
+	bb_u8(0); bb_u8(0); bb_u8(0);
+}
+
+static int build_handshake(const char *first, const char *last,
+    const char *shortn, const char *steam, uint32_t race_number,
+    uint8_t *out, size_t *out_len)
+{
+	uint8_t body[2048];
+	size_t blen;
+
+	bb_reset();
+	bb_u8(0x09);
+	bb_u16(0x0100);
+	bb_fmta("");
+	build_driver_info(first, last, shortn, steam);
+	bb_pad(8);
+	build_car_info(35, race_number);
+	while (bb_n <= 200)
+		bb_u8(0);
+	blen = bb_n;
+	memcpy(body, bb_buf, blen);
+
+	if (*out_len < blen + 2)
+		return -1;
+	out[0] = blen & 0xff;
+	out[1] = (blen >> 8) & 0xff;
+	memcpy(out + 2, body, blen);
+	*out_len = blen + 2;
+	return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* TCP frame I/O */
+
+static int tcp_connect(const char *host, uint16_t port)
+{
+	struct sockaddr_in sa;
+	int fd;
+	memset(&sa, 0, sizeof sa);
+	sa.sin_family = AF_INET;
+	sa.sin_port = htons(port);
+	if (inet_pton(AF_INET, host, &sa.sin_addr) != 1) {
+		struct hostent *he = gethostbyname(host);
+		if (!he) { fprintf(stderr, "bad host\n"); return -1; }
+		memcpy(&sa.sin_addr, he->h_addr_list[0], sizeof sa.sin_addr);
+	}
+	fd = socket(AF_INET, SOCK_STREAM, 0);
+	if (fd < 0) return -1;
+	if (connect(fd, (struct sockaddr *)&sa, sizeof sa) < 0) {
+		perror("connect");
+		close(fd);
+		return -1;
+	}
+	return fd;
+}
+
+static int recv_n(int fd, void *p, size_t n)
+{
+	uint8_t *q = p;
+	while (n) {
+		ssize_t r = recv(fd, q, n, 0);
+		if (r <= 0) return -1;
+		q += r;
+		n -= r;
+	}
+	return 0;
+}
+
+static int recv_frame(int fd, uint8_t *out, size_t cap, size_t *got)
+{
+	uint8_t lh[2];
+	uint16_t ln;
+	if (recv_n(fd, lh, 2) < 0) return -1;
+	ln = lh[0] | (lh[1] << 8);
+	if (ln > cap) return -1;
+	if (recv_n(fd, out, ln) < 0) return -1;
+	*got = ln;
+	return 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* UDP packet builders */
+
+static size_t pkt_keepalive(uint8_t *out, uint16_t conn_id)
+{
+	bb_reset();
+	bb_u8(0x13);
+	bb_u16(conn_id);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+static size_t pkt_pong(uint8_t *out, uint16_t conn_id,
+    uint32_t srv_ts_echo, uint32_t client_ts)
+{
+	bb_reset();
+	bb_u8(0x16);
+	bb_u16(conn_id);
+	bb_u32(srv_ts_echo);
+	bb_u32(client_ts);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+static size_t pkt_location(uint8_t *out, uint16_t car_id, uint8_t loc)
+{
+	bb_reset();
+	bb_u8(0x32);
+	bb_u16(car_id);
+	bb_u8(loc);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x21 ACP_SECTOR_SPLIT_SINGLE — TCP framed.
+ * Body: u8 + i32 split_ms + i32 lap_ms + u8 sector + u16 car_field +
+ *       u8 flag.  Server transforms to 0x3b for relay. */
+static size_t pkt_sector_split(uint8_t *out, int32_t split_ms,
+    int32_t lap_ms, uint8_t sector, uint16_t car_field)
+{
+	bb_reset();
+	bb_u8(0x21);
+	bb_u32((uint32_t)split_ms);
+	bb_u32((uint32_t)lap_ms);
+	bb_u8(sector);
+	bb_u16(car_field);
+	bb_u8(0);			/* flag_d, unused */
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x54 ACP_MANDATORY_PITSTOP_SERVED — TCP framed.
+ * Body: u8 + u16 car_id. */
+static size_t pkt_mandatory_pit_served(uint8_t *out, uint16_t car_id)
+{
+	bb_reset();
+	bb_u8(0x54);
+	bb_u16(car_id);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x2f ACP_TYRE_COMPOUND_UPDATE — TCP framed.
+ * Body: u8 + u16 car_id + u8 compound (0=dry, 1=wet). */
+static size_t pkt_tyre_compound(uint8_t *out, uint16_t car_id,
+    uint8_t compound)
+{
+	bb_reset();
+	bb_u8(0x2f);
+	bb_u16(car_id);
+	bb_u8(compound);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x43 ACP_DAMAGE_ZONES_UPDATE — TCP framed.
+ * Body: u8 + 5 × u8 zone (front, rear, left, right, centre).  No
+ * car_id field — the server uses the conn's c->car_id. */
+static size_t pkt_damage_zones(uint8_t *out, const uint8_t zones[5])
+{
+	bb_reset();
+	bb_u8(0x43);
+	bb_u8(zones[0]); bb_u8(zones[1]); bb_u8(zones[2]);
+	bb_u8(zones[3]); bb_u8(zones[4]);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x46 ACP_CAR_DIRT_UPDATE — TCP framed.
+ * Body: u8 + 5 × u8 dirt-level per tyre.  Server stores but doesn't
+ * relay (per Kunos pcap); the welcome trailer carries dirt for late
+ * joiners. */
+static size_t pkt_car_dirt(uint8_t *out, const uint8_t dirt[5])
+{
+	bb_reset();
+	bb_u8(0x46);
+	bb_u8(dirt[0]); bb_u8(dirt[1]); bb_u8(dirt[2]);
+	bb_u8(dirt[3]); bb_u8(dirt[4]);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* TCP-frame helper: prepend u16 length and send via the TCP socket. */
+static void send_tcp_framed(int tcp_fd, const uint8_t *body, size_t n)
+{
+	uint8_t buf[280];
+	if (n + 2 > sizeof buf) return;
+	buf[0] = (uint8_t)(n & 0xff);
+	buf[1] = (uint8_t)((n >> 8) & 0xff);
+	memcpy(buf + 2, body, n);
+	(void)send(tcp_fd, buf, n + 2, MSG_NOSIGNAL);
+}
+
+/*
+ * 0x1e ACP_CAR_UPDATE — 68 bytes.
+ * scalar_44 (offset 57) is reinterpreted as f32 by accd to read the
+ * normalized track position used for formation/green triggers.
+ */
+static size_t pkt_car_update(uint8_t *out, uint16_t conn_id,
+    uint16_t car_id, uint8_t seq, uint32_t client_ts_ms,
+    float pos_x, float pos_y, float pos_z,
+    float vel_x, float vel_y, float vel_z,
+    float norm_pos)
+{
+	bb_reset();
+	bb_u8(0x1e);
+	bb_u16(conn_id);
+	bb_u16(car_id);
+	bb_u8(seq);
+	bb_u32(client_ts_ms);
+	bb_f32(pos_x); bb_f32(pos_y); bb_f32(pos_z);
+	bb_f32(0); bb_f32(0); bb_f32(0);
+	bb_f32(vel_x); bb_f32(vel_y); bb_f32(vel_z);
+	bb_u8(0); bb_u8(0); bb_u8(0); bb_u8(0);
+	bb_u8(0); bb_u8(0); bb_u16(0);
+	bb_u8(0); bb_u8(0); bb_u8(0);
+	{
+		uint32_t u; memcpy(&u, &norm_pos, 4);
+		bb_u32(u);
+	}
+	bb_u8(0); bb_u8(0); bb_u8(0); bb_u8(0);
+	bb_u8(0);
+	bb_u8(0); bb_u8(0);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* ------------------------------------------------------------------ */
+/* Racing line: array of waypoints sorted by norm_pos. */
+
+struct Waypoint {
+	float u, x, y, z, v;
+	float radius;		/* local curvature radius in m, 1e6 for straights */
+};
+static struct Waypoint g_wp[MAX_WAYPOINTS];
+static int g_wp_n;
+static float g_track_length_m;	/* derived from cumulative chord distance */
+
+/*
+ * Per-waypoint local radius of curvature.  Circumradius of the
+ * triangle formed by the waypoint and its two neighbours:
+ *   R = |a| |b| |c| / (4 · area)
+ * Smooths over a 5-point window so single-waypoint noise doesn't
+ * create false "corners" on straights.  Cornering speed is computed
+ * per tick from current effective grip (tyre wear × aero), not
+ * baked in here, so changing µ live recomputes the limit.
+ */
+static void compute_corner_radii(void)
+{
+	int i, j;
+	if (g_wp_n < 3) {
+		for (i = 0; i < g_wp_n; i++)
+			g_wp[i].radius = 1e6f;
+		return;
+	}
+	for (i = 0; i < g_wp_n; i++) {
+		int prev = (i + g_wp_n - 1) % g_wp_n;
+		int next = (i + 1) % g_wp_n;
+		float ax = g_wp[prev].x, az = g_wp[prev].z;
+		float bx = g_wp[i].x,    bz = g_wp[i].z;
+		float cx = g_wp[next].x, cz = g_wp[next].z;
+		float ab = sqrtf((bx-ax)*(bx-ax) + (bz-az)*(bz-az));
+		float bc = sqrtf((cx-bx)*(cx-bx) + (cz-bz)*(cz-bz));
+		float ca = sqrtf((ax-cx)*(ax-cx) + (az-cz)*(az-cz));
+		float area2 = fabsf((bx-ax)*(cz-az) - (bz-az)*(cx-ax));
+		float r;
+		if (area2 < 1e-3f || ab < 0.1f || bc < 0.1f)
+			r = 1e6f;	/* near-collinear → straight */
+		else
+			r = (ab * bc * ca) / (2.0f * area2);
+		g_wp[i].radius = r;
+	}
+	/* 5-point box smooth on radius (wraps). */
+	{
+		float tmp[MAX_WAYPOINTS];
+		for (i = 0; i < g_wp_n; i++) {
+			float sum = 0;
+			for (j = -2; j <= 2; j++) {
+				int k = (i + j + g_wp_n) % g_wp_n;
+				sum += g_wp[k].radius;
+			}
+			tmp[i] = sum / 5.0f;
+		}
+		for (i = 0; i < g_wp_n; i++)
+			g_wp[i].radius = tmp[i];
+	}
+}
+
+/*
+ * Solve v² = µ_eff(v) · g · R  for v, where
+ *   µ_eff(v) = (µ_dry + K_AERO · v²) · wear_factor
+ * Closed-form: v² · (1 − K_AERO · g · R · wear) = µ_dry · g · R · wear
+ *           ⇒ v² = µ_dry · g · R · wear / (1 − K_AERO · g · R · wear)
+ * Falls back to V_RACE if the denominator goes non-positive
+ * (very long radius + lots of downforce; corner is effectively flat).
+ */
+static float v_corner_for_radius(float r, float wear)
+{
+	float gR = G_ACCEL * r * wear;
+	float denom = 1.0f - K_AERO * gR;
+	float v2;
+	if (denom <= 1e-3f)
+		return V_RACE;
+	v2 = MU_DRY * gR / denom;
+	if (v2 < 0)
+		return V_RACE;
+	float v = sqrtf(v2);
+	return v > V_RACE ? V_RACE : v;
+}
+
+/* Lowest cornering speed within brake_dist metres ahead of u_now,
+ * using the current effective grip (tyre wear).  Used as the look-
+ * ahead target so the bot starts braking before the apex. */
+static float min_corner_ahead(float u_now, float brake_dist, float wear)
+{
+	float u_step = brake_dist / g_track_length_m;
+	float u_end = u_now + u_step;
+	int i;
+	float lo = V_RACE;
+	for (i = 0; i < g_wp_n; i++) {
+		float u = g_wp[i].u;
+		int in_range;
+		if (u_end < 1.0f)
+			in_range = (u >= u_now && u <= u_end);
+		else
+			in_range = (u >= u_now || u <= u_end - 1.0f);
+		if (in_range) {
+			float v = v_corner_for_radius(g_wp[i].radius, wear);
+			if (v < lo)
+				lo = v;
+		}
+	}
+	return lo;
+}
+
+/* Compute total racing-line length by summing chord distance between
+ * consecutive waypoints (closing the loop back to wp[0]). */
+static void compute_track_length(void)
+{
+	int i;
+	g_track_length_m = 0;
+	for (i = 1; i < g_wp_n; i++) {
+		float dx = g_wp[i].x - g_wp[i - 1].x;
+		float dy = g_wp[i].y - g_wp[i - 1].y;
+		float dz = g_wp[i].z - g_wp[i - 1].z;
+		g_track_length_m += sqrtf(dx*dx + dy*dy + dz*dz);
+	}
+	if (g_wp_n > 1) {
+		float dx = g_wp[0].x - g_wp[g_wp_n - 1].x;
+		float dy = g_wp[0].y - g_wp[g_wp_n - 1].y;
+		float dz = g_wp[0].z - g_wp[g_wp_n - 1].z;
+		g_track_length_m += sqrtf(dx*dx + dy*dy + dz*dz);
+	}
+}
+
+/*
+ * Native .ai loader — Kunos AISpline binary format from
+ * `<install>/AC2/Content/Cache/<track>/fastlane.ai`.  See
+ * reference_acc_ai_file_format.md for full RE notes.  Layout:
+ *   u32 version, num_points, reserved_a, reserved_b
+ *   num_points × 36 B: 3 f64 position + 12 B unused
+ *   u32 num_payloads (== num_points)
+ *   num_payloads × 80 B (v ≥ 8) or 72 B (v < 8): per-point AI data;
+ *      payload+0x00 (speed) is zero in every shipped fastlane.ai —
+ *      Kunos computes speeds dynamically.  We skip the payload
+ *      block entirely and let V_RACE drive the bot.
+ */
+static int load_waypoints_ai(const char *path)
+{
+	FILE *f;
+	uint32_t header[4];
+	uint32_t num_points;
+	int i;
+
+	f = fopen(path, "rb");
+	if (!f) {
+		fprintf(stderr, "track: cannot open %s: %s\n", path,
+		    strerror(errno));
+		return -1;
+	}
+	if (fread(header, sizeof header, 1, f) != 1) {
+		fprintf(stderr, "track: %s: header read failed\n", path);
+		fclose(f);
+		return -1;
+	}
+	num_points = header[1];
+	if (num_points < 2 || num_points > MAX_WAYPOINTS) {
+		fprintf(stderr, "track: %s: implausible num_points=%u "
+		    "(MAX_WAYPOINTS=%d)\n", path, num_points, MAX_WAYPOINTS);
+		fclose(f);
+		return -1;
+	}
+	g_wp_n = 0;
+	for (i = 0; i < (int)num_points; i++) {
+		double xyz[3];
+		uint8_t tail[12];
+		if (fread(xyz, sizeof xyz, 1, f) != 1 ||
+		    fread(tail, sizeof tail, 1, f) != 1) {
+			fprintf(stderr, "track: %s: short spline read at "
+			    "%d\n", path, i);
+			fclose(f);
+			return -1;
+		}
+		g_wp[g_wp_n].u = (float)i / (float)num_points;
+		g_wp[g_wp_n].x = (float)xyz[0];
+		g_wp[g_wp_n].y = (float)xyz[1];
+		g_wp[g_wp_n].z = (float)xyz[2];
+		g_wp[g_wp_n].v = V_RACE;
+		g_wp_n++;
+	}
+	/* Don't bother reading payloads or the GRID DATA tail — we
+	 * have everything we need (positions). */
+	fclose(f);
+	compute_track_length();
+	/* Re-derive norm_pos from cumulative chord distance now that
+	 * we have all points loaded. */
+	{
+		float cum = 0;
+		g_wp[0].u = 0;
+		for (i = 1; i < g_wp_n; i++) {
+			float dx = g_wp[i].x - g_wp[i - 1].x;
+			float dy = g_wp[i].y - g_wp[i - 1].y;
+			float dz = g_wp[i].z - g_wp[i - 1].z;
+			cum += sqrtf(dx*dx + dy*dy + dz*dz);
+			g_wp[i].u = g_track_length_m > 0 ?
+			    cum / g_track_length_m : (float)i / num_points;
+		}
+	}
+	compute_corner_radii();
+	printf("[bot] loaded %d waypoints from %s (length=%.0f m, "
+	    "version=%u, .ai format — speeds derived from curvature)\n",
+	    g_wp_n, path, g_track_length_m, header[0]);
+	return 0;
+}
+
+/* Detect format by extension — .ai goes through the binary loader,
+ * everything else through the CSV path. */
+static int load_waypoints(const char *path)
+{
+	const char *ext;
+	FILE *f;
+	char line[256];
+	int with_speed = 0, no_speed = 0;
+
+	ext = strrchr(path, '.');
+	if (ext && strcmp(ext, ".ai") == 0)
+		return load_waypoints_ai(path);
+
+	f = fopen(path, "r");
+	if (!f) {
+		fprintf(stderr, "track: cannot open %s: %s\n", path,
+		    strerror(errno));
+		return -1;
+	}
+	g_wp_n = 0;
+	while (fgets(line, sizeof line, f)) {
+		float u, x, y, z, v;
+		int n;
+		if (line[0] == '#' || line[0] == '\n') continue;
+		n = sscanf(line,
+		    "%f%*[ ,\t]%f%*[ ,\t]%f%*[ ,\t]%f%*[ ,\t]%f",
+		    &u, &x, &y, &z, &v);
+		if (n < 4)
+			continue;
+		if (g_wp_n >= MAX_WAYPOINTS) {
+			fprintf(stderr, "track: > %d waypoints, truncating\n",
+			    MAX_WAYPOINTS);
+			break;
+		}
+		g_wp[g_wp_n].u = u;
+		g_wp[g_wp_n].x = x;
+		g_wp[g_wp_n].y = y;
+		g_wp[g_wp_n].z = z;
+		/* Some .ai files (Kunos fastlane.ai) carry geometry but
+		 * leave the speed column zero — the AI computes speeds
+		 * from curvature at runtime.  Treat 0 as "use V_RACE"
+		 * so the bot doesn't stall. */
+		if (n == 5 && v > 0.1f) {
+			g_wp[g_wp_n].v = v;
+			with_speed++;
+		} else {
+			g_wp[g_wp_n].v = V_RACE;
+			no_speed++;
+		}
+		g_wp_n++;
+	}
+	fclose(f);
+	if (g_wp_n < 2) {
+		fprintf(stderr, "track: %s has < 2 waypoints\n", path);
+		return -1;
+	}
+	compute_track_length();
+	compute_corner_radii();
+	printf("[bot] loaded %d waypoints from %s (length=%.0f m, "
+	    "with_speed=%d no_speed=%d)\n",
+	    g_wp_n, path, g_track_length_m, with_speed, no_speed);
+	return 0;
+}
+
+/* Default trajectory: stadium shape (two semicircles + two straights).
+ * Synthesized when no --track CSV is given so the bot still has a
+ * non-trivial closed loop.  Speed is constant V_RACE — there's no
+ * recorded racing line to derive a profile from. */
+static void default_waypoints(void)
+{
+	const int N = 64;
+	const float L = 200.0f;
+	const float R = 80.0f;
+	int i;
+
+	g_wp_n = N + 1;
+	for (i = 0; i <= N; i++) {
+		float u = (float)i / (float)N;
+		float s = u * (2.0f * L + 2.0f * (float)M_PI * R);
+		float x, z;
+		if (s < L) { x = s; z = R; }
+		else if (s < L + (float)M_PI * R) {
+			float t = (s - L) / R;
+			x = L + R * sinf(t);
+			z = R * cosf(t);
+		} else if (s < 3.0f * L + (float)M_PI * R) {
+			x = L - (s - (L + (float)M_PI * R));
+			z = -R;
+		} else {
+			float t = (s - 3.0f * L - (float)M_PI * R) / R;
+			x = -L - R * sinf(t);
+			z = -R * cosf(t);
+		}
+		g_wp[i].u = u;
+		g_wp[i].x = x;
+		g_wp[i].y = 0;
+		g_wp[i].z = z;
+		g_wp[i].v = V_RACE;
+	}
+	compute_track_length();
+	compute_corner_radii();
+}
+
+/* Linear-interpolated speed at the given norm_pos (matches
+ * waypoint_at's interpolation strategy). */
+static float waypoint_speed(float u)
+{
+	int i;
+	while (u < 0) u += 1.0f;
+	while (u >= 1.0f) u -= 1.0f;
+	for (i = 0; i < g_wp_n - 1; i++) {
+		if (u >= g_wp[i].u && u <= g_wp[i + 1].u) {
+			float du = g_wp[i + 1].u - g_wp[i].u;
+			float t = du > 1e-6f ? (u - g_wp[i].u) / du : 0;
+			return g_wp[i].v + t * (g_wp[i + 1].v - g_wp[i].v);
+		}
+	}
+	return g_wp[0].v;
+}
+
+/* Lookup: interpolate (x,y,z) at given norm_pos in [0,1). */
+static void waypoint_at(float u, float *x, float *y, float *z)
+{
+	int i;
+	while (u < 0) u += 1.0f;
+	while (u >= 1.0f) u -= 1.0f;
+	for (i = 0; i < g_wp_n - 1; i++) {
+		if (u >= g_wp[i].u && u <= g_wp[i + 1].u) {
+			float du = g_wp[i + 1].u - g_wp[i].u;
+			float t = du > 1e-6f ? (u - g_wp[i].u) / du : 0;
+			*x = g_wp[i].x + t * (g_wp[i + 1].x - g_wp[i].x);
+			*y = g_wp[i].y + t * (g_wp[i + 1].y - g_wp[i].y);
+			*z = g_wp[i].z + t * (g_wp[i + 1].z - g_wp[i].z);
+			return;
+		}
+	}
+	*x = g_wp[0].x; *y = g_wp[0].y; *z = g_wp[0].z;
+}
+
+/* ------------------------------------------------------------------ */
+/* Session bring-up: TCP connect → handshake → 0x0b parse → UDP setup.
+ * Returns 0 on success, -1 on failure (caller should back off + retry).
+ * On success populates *tcp_fd_out, *udp_fd_out, *udp_peer_out, and
+ * *conn_id_out / *car_id_out from the welcome header. */
+static int
+connect_session(const char *host, uint16_t tcp_port,
+    const char *first_name, const char *last_name,
+    const char *short_name, const char *steam,
+    uint32_t race_number,
+    int *tcp_fd_out, int *udp_fd_out,
+    struct sockaddr_in *udp_peer_out,
+    uint16_t *conn_id_out, uint32_t *car_id_out,
+    size_t *trailer_len_out)
+{
+	uint8_t hs[2048], welcome[65536];
+	size_t hs_len = sizeof hs, wl;
+	int tcp_fd, udp_fd;
+	uint16_t udp_port;
+	struct sockaddr_in udp_peer;
+
+	tcp_fd = tcp_connect(host, tcp_port);
+	if (tcp_fd < 0)
+		return -1;
+	if (build_handshake(first_name, last_name, short_name, steam,
+	    race_number, hs, &hs_len) < 0) {
+		close(tcp_fd);
+		return -1;
+	}
+	if (send(tcp_fd, hs, hs_len, MSG_NOSIGNAL) != (ssize_t)hs_len) {
+		close(tcp_fd);
+		return -1;
+	}
+	if (recv_frame(tcp_fd, welcome, sizeof welcome, &wl) < 0) {
+		close(tcp_fd);
+		return -1;
+	}
+	if (wl < 10 || welcome[0] != 0x0b) {
+		fprintf(stderr, "[bot] reply 0x%02x len=%zu (expected 0x0b)\n",
+		    welcome[0], wl);
+		close(tcp_fd);
+		return -1;
+	}
+	udp_port = welcome[1] | (welcome[2] << 8);
+	*conn_id_out = welcome[4] | (welcome[5] << 8);
+	*car_id_out = welcome[6] | (welcome[7] << 8) |
+	    (welcome[8] << 16) | (welcome[9] << 24);
+	*trailer_len_out = wl;
+
+	udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
+	if (udp_fd < 0) { close(tcp_fd); return -1; }
+	memset(&udp_peer, 0, sizeof udp_peer);
+	udp_peer.sin_family = AF_INET;
+	udp_peer.sin_port = htons(udp_port);
+	if (inet_pton(AF_INET, host, &udp_peer.sin_addr) != 1) {
+		struct hostent *he = gethostbyname(host);
+		if (!he) { close(tcp_fd); close(udp_fd); return -1; }
+		memcpy(&udp_peer.sin_addr, he->h_addr_list[0],
+		    sizeof udp_peer.sin_addr);
+	}
+
+	{
+		int fl = fcntl(udp_fd, F_GETFL, 0);
+		fcntl(udp_fd, F_SETFL, fl | O_NONBLOCK);
+		fl = fcntl(tcp_fd, F_GETFL, 0);
+		fcntl(tcp_fd, F_SETFL, fl | O_NONBLOCK);
+	}
+
+	*tcp_fd_out = tcp_fd;
+	*udp_fd_out = udp_fd;
+	*udp_peer_out = udp_peer;
+	return 0;
+}
+
+/* ------------------------------------------------------------------ */
+
+static void usage(const char *p)
+{
+	fprintf(stderr,
+	    "Usage: %s --host H --tcp P [--race N] [--name S] [--track FILE]\n"
+	    "          [--length M] [--pit-on-lap N] [--laps N]\n"
+	    "\n"
+	    "  --host           server hostname or IP\n"
+	    "  --tcp            TCP port (default 9232)\n"
+	    "  --race           race number (default 911)\n"
+	    "  --name           driver first name (default Bot)\n"
+	    "  --track FILE     CSV waypoints (norm_pos x y z [speed]);\n"
+	    "                   default is a synthetic stadium loop\n"
+	    "  --length M       override the track length (default: derive\n"
+	    "                   from cumulative waypoint distance)\n"
+	    "  --pit-on-lap N   enter pit on lap N (1-based; default never)\n"
+	    "  --laps N         stop after N completed laps (default loop)\n"
+	    "  --grid N         starting grid position (1-based; 1=pole)\n"
+	    "  --mid-race       join an in-progress race (skip formation)\n"
+	    "  --no-mandatory-pit  do not send 0x54 after pit traversal\n"
+	    "  --bump M         one-shot lateral kick of M metres\n"
+	    "  --bump-at-lap N  apply the kick at the start of lap N\n",
+	    p);
+}
+
+int main(int argc, char **argv)
+{
+	const char *host = NULL, *track_path = NULL;
+	const char *name = "Bot";
+	uint16_t tcp_port = 9232;
+	uint32_t race_number = 911;
+	float track_length_override = -1.0f;
+	int pit_on_lap = -1;
+	int max_laps = -1;
+	int grid_pos = 1;		/* 1-based; 1 = pole */
+	int mid_race = 0;		/* skip formation lap */
+	int mandatory_pit = 1;		/* send 0x54 after pit traversal */
+	float bump_metres = 0;		/* one-shot lateral kick magnitude */
+	int bump_at_lap = -1;		/* lap on which to apply the bump */
+	char steam[32];
+	uint8_t pkt[256];
+	uint16_t conn_id;
+	uint32_t car_id;
+	int tcp_fd, udp_fd;
+	struct sockaddr_in udp_peer;
+	uint32_t tick = 0, t0_ms;
+	uint8_t seq = 0;
+	float u_pos = 0.0f;
+	int lap = 0;
+	int last_loc = LOC_TRACK;
+	float last_x = 0, last_z = 0, last_y = 0;
+	int have_last = 0;
+	uint32_t lap_start_ms = 0;
+	uint32_t sector_start_ms = 0;
+	int last_sector = 0;
+	int pit_served_this_visit = 0;
+	int reconnect_count = 0;
+	uint32_t reconnect_backoff_ms = 1000;
+	float v_current = 0;	/* physics: actual speed, smoothed toward target */
+	float lateral_offset = 0;	/* metres off the racing line; > 0 = right */
+	uint32_t on_track_ms = 0;	/* total ms with location=Track for tyre wear */
+	int bump_applied_for_lap = -1;
+	uint8_t damage[5] = {0,0,0,0,0};	/* front, rear, left, right, centre */
+	uint8_t car_dirt[5] = {0,0,0,0,0};	/* per-tyre dirt accumulator */
+	uint8_t tyre_compound = 0;		/* 0 = dry, 1 = wet */
+
+	static struct option opts[] = {
+		{"host",        required_argument, 0, 'H'},
+		{"tcp",         required_argument, 0, 'T'},
+		{"race",        required_argument, 0, 'R'},
+		{"name",        required_argument, 0, 'N'},
+		{"track",       required_argument, 0, 't'},
+		{"length",      required_argument, 0, 'L'},
+		{"pit-on-lap",  required_argument, 0, 'P'},
+		{"laps",        required_argument, 0, 'l'},
+		{"grid",        required_argument, 0, 'G'},
+		{"mid-race",    no_argument,       0, 'M'},
+		{"no-mandatory-pit", no_argument,  0, 'X'},
+		{"bump",        required_argument, 0, 'B'},
+		{"bump-at-lap", required_argument, 0, 'A'},
+		{"help",        no_argument,       0, 'h'},
+		{0,0,0,0}
+	};
+	int o;
+	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXB:A:h",
+	    opts, NULL)) != -1) {
+		switch (o) {
+		case 'H': host = optarg; break;
+		case 'T': tcp_port = (uint16_t)atoi(optarg); break;
+		case 'R': race_number = (uint32_t)atoi(optarg); break;
+		case 'N': name = optarg; break;
+		case 't': track_path = optarg; break;
+		case 'L': track_length_override = (float)atof(optarg); break;
+		case 'P': pit_on_lap = atoi(optarg); break;
+		case 'l': max_laps = atoi(optarg); break;
+		case 'G': grid_pos = atoi(optarg); break;
+		case 'M': mid_race = 1; break;
+		case 'X': mandatory_pit = 0; break;
+		case 'B': bump_metres = (float)atof(optarg); break;
+		case 'A': bump_at_lap = atoi(optarg); break;
+		case 'h': usage(argv[0]); return 0;
+		default:  usage(argv[0]); return 2;
+		}
+	}
+	if (!host) { usage(argv[0]); return 2; }
+
+	signal(SIGINT, on_sigint);
+	signal(SIGTERM, on_sigint);
+	setvbuf(stdout, NULL, _IOLBF, 0);
+
+	if (track_path) {
+		if (load_waypoints(track_path) < 0)
+			return 1;
+	} else {
+		default_waypoints();
+		printf("[bot] using synthetic stadium loop (%d waypoints, "
+		    "%.0f m)\n", g_wp_n, g_track_length_m);
+	}
+	if (track_length_override > 0)
+		g_track_length_m = track_length_override;
+
+	snprintf(steam, sizeof steam, "S7656119900%07u",
+	    (unsigned)race_number);
+
+	/* Initial connection (must succeed before driving). */
+	{
+		size_t wl;
+		if (connect_session(host, tcp_port, name, "Driver", "BOT",
+		    steam, race_number, &tcp_fd, &udp_fd, &udp_peer,
+		    &conn_id, &car_id, &wl) < 0) {
+			fprintf(stderr, "[bot] initial connect failed\n");
+			return 1;
+		}
+		printf("[bot] welcome ok: conn=%u car=%u udp=%u "
+		    "(trailer %zu B)\n", conn_id, (unsigned)car_id,
+		    ntohs(udp_peer.sin_port), wl);
+	}
+
+	{
+		size_t n = pkt_keepalive(pkt, conn_id);
+		sendto(udp_fd, pkt, n, 0,
+		    (struct sockaddr *)&udp_peer, sizeof udp_peer);
+	}
+
+	/* Tell the server which tyre compound we're starting on so the
+	 * leaderboard / spectator HUD shows it.  Default = dry (0). */
+	{
+		size_t n = pkt_tyre_compound(pkt, (uint16_t)car_id,
+		    tyre_compound);
+		send_tcp_framed(tcp_fd, pkt, n);
+	}
+
+	t0_ms = mono_ms();
+	/*
+	 * Grid offset: each slot sits ~5 m behind the next on a real
+	 * starting grid.  Express as a fraction of the lap: 5 m on a
+	 * 4 km track is 0.00125 — small enough to keep grid positions
+	 * inside the pre-start segment near norm_pos = 1.0.  Pole
+	 * (grid=1) sits at u = 1 - 0.00125, slot 20 at u = 1 - 0.025.
+	 */
+	{
+		float grid_step = 5.0f / g_track_length_m;
+		float u0 = 1.0f - (float)grid_pos * grid_step;
+		while (u0 < 0) u0 += 1.0f;
+		u_pos = u0;
+	}
+	if (mid_race) {
+		lap = 1;
+		printf("[bot] --mid-race: skipping formation, starting at "
+		    "lap=1 (race in progress)\n");
+	}
+	printf("[bot] formation @ %.1f m/s, racing = recorded line speed "
+	    "(pit cap %.1f m/s), track=%.0fm grid=%d pit_on_lap=%d "
+	    "mandatory_pit=%d\n",
+	    V_FORMATION, V_PITLANE, g_track_length_m, grid_pos,
+	    pit_on_lap, mandatory_pit);
+	lap_start_ms = 0;
+	sector_start_ms = 0;
+	last_sector = (u_pos < 1.0f / 3.0f) ? 0 :
+	    (u_pos < 2.0f / 3.0f) ? 1 : 2;
+
+	while (!g_stop) {
+		struct timespec slp = {0, TICK_MS * 1000000L};
+		uint32_t now = mono_ms();
+		uint32_t client_ts = now - t0_ms;
+		float dt = TICK_MS / 1000.0f;
+		float v_target;
+		uint8_t loc;
+		float px, py, pz, vx, vy, vz;
+		uint8_t rxbuf[2048];
+		ssize_t rn;
+
+		/*
+		 * Phase model:
+		 *   - lap 0 = formation: cap velocity at V_FORMATION
+		 *     (under 70 km/h) so the client's formation-lap speed cap
+		 *     never trips.  Server's leader-position trigger fires
+		 *     formation_end and green when we cross the per-track
+		 *     ranges regardless of how slowly we're going.
+		 *   - lap >= 1 = racing: drive at the *recorded racing-line
+		 *     speed* at the current norm_pos.  Slow in corners, fast
+		 *     on straights — geometry comes from the pcap-extracted
+		 *     waypoints, not a hand-tuned constant.
+		 *   - if --pit-on-lap matches and we're in the pit window
+		 *     (last/first 5% of norm_pos), report Pitlane and cap at
+		 *     V_PITLANE so the 22.22 m/s pit-speeding DQ never fires.
+		 */
+		/*
+		 * Tyre wear factor based on time spent on track this
+		 * session.  Linear taper, never below 70 % grip.
+		 */
+		float wear_factor;
+		{
+			float minutes = on_track_ms / 60000.0f;
+			wear_factor = 1.0f - TYRE_WEAR_PER_MIN * minutes;
+			if (wear_factor < TYRE_WEAR_FLOOR)
+				wear_factor = TYRE_WEAR_FLOOR;
+		}
+
+		/*
+		 * Target speed for this tick.  Recorded racing-line speed
+		 * (from a pcap) wins if present; otherwise the curvature-
+		 * derived corner limit kicks in, with a brake-distance
+		 * look-ahead so we slow before the apex, not at it.
+		 * Effective grip blends mechanical µ + aero µ_aero(v) +
+		 * tyre wear; v_corner_for_radius() does the closed-form.
+		 */
+		v_target = waypoint_speed(u_pos);
+		{
+			int wp_i = (int)(u_pos * g_wp_n) % g_wp_n;
+			float v_here, v_ahead;
+			if (wp_i < 0) wp_i += g_wp_n;
+			v_here = v_corner_for_radius(
+			    g_wp[wp_i].radius, wear_factor);
+			v_ahead = min_corner_ahead(u_pos,
+			    v_current * BRAKE_LOOKAHEAD_S, wear_factor);
+			if (v_here < v_target)
+				v_target = v_here;
+			if (v_ahead < v_target)
+				v_target = v_ahead;
+		}
+		loc = LOC_TRACK;
+		if (lap == 0 && v_target > V_FORMATION)
+			v_target = V_FORMATION;
+		if (pit_on_lap > 0 && lap == pit_on_lap) {
+			if (u_pos > 0.95f) {
+				if (v_target > V_PITLANE)
+					v_target = V_PITLANE;
+				loc = (last_loc == LOC_TRACK) ?
+				    LOC_PITENTRY : LOC_PITLANE;
+			} else if (u_pos < 0.05f) {
+				if (v_target > V_PITLANE)
+					v_target = V_PITLANE;
+				loc = (last_loc == LOC_PITLANE) ?
+				    LOC_PITEXIT : LOC_PITLANE;
+			}
+		}
+
+		/*
+		 * Smooth speed toward target with separate accel / brake
+		 * limits.  Real GT3 cars accelerate at ~8 m/s² off-corner
+		 * and brake at ~25 m/s² (~2.5 g).  The instantaneous
+		 * speed v_current is what we report in vec_c and what
+		 * advances u_pos — physically consistent.
+		 */
+		{
+			float dv = v_target - v_current;
+			float dv_max = (dv > 0 ? A_ACCEL : A_BRAKE) * dt;
+			if (dv > dv_max) dv = dv_max;
+			else if (dv < -dv_max) dv = -dv_max;
+			v_current += dv;
+			if (v_current < 0) v_current = 0;
+		}
+
+		/* Advance norm_pos at v_current / track_length. */
+		u_pos += v_current * dt / g_track_length_m;
+		if (u_pos >= 1.0f) {
+			u_pos -= 1.0f;
+			lap++;
+			printf("[bot] lap %d completed at t=%us "
+			    "(tyre %.0f%%)\n",
+			    lap, (unsigned)(client_ts / 1000),
+			    wear_factor * 100.0f);
+			if (max_laps > 0 && lap >= max_laps)
+				g_stop = 1;
+			/* Bump test: at the start of lap N, kick the bot
+			 * laterally off the racing line by --bump metres.
+			 * It steers back exponentially with τ = 1.8 s.
+			 * Going off-line takes a bit of damage + dirt. */
+			if (lap == bump_at_lap &&
+			    bump_applied_for_lap != lap &&
+			    fabsf(bump_metres) > 0.01f) {
+				int i;
+				lateral_offset += bump_metres;
+				bump_applied_for_lap = lap;
+				/* Bump impacts: front + a side panel + dirt
+				 * on all tyres. */
+				if (damage[0] < 240) damage[0] += 15;
+				if (bump_metres > 0) {
+					if (damage[3] < 240) damage[3] += 10;
+				} else {
+					if (damage[2] < 240) damage[2] += 10;
+				}
+				for (i = 0; i < 5; i++)
+					if (car_dirt[i] < 250)
+						car_dirt[i] += 5;
+				printf("[bot] BUMP at lap=%d: offset=%+.1f m, "
+				    "damage=[%u,%u,%u,%u,%u] dirt+=5\n",
+				    lap, lateral_offset, damage[0],
+				    damage[1], damage[2], damage[3],
+				    damage[4]);
+			}
+
+			/* Per-lap dirt creep — accumulate slowly with on-
+			 * track time so late joiners' welcome trailer
+			 * carries plausible weathering. */
+			{
+				int i;
+				for (i = 0; i < 5; i++)
+					if (car_dirt[i] < 250)
+						car_dirt[i] += 1;
+			}
+
+			/* End-of-lap damage + dirt sync.  0x43 broadcasts
+			 * to peers, 0x46 only updates server-side cache
+			 * (per Kunos pcap behaviour) but is needed for
+			 * subsequent welcome trailers. */
+			{
+				size_t n = pkt_damage_zones(pkt, damage);
+				send_tcp_framed(tcp_fd, pkt, n);
+				n = pkt_car_dirt(pkt, car_dirt);
+				send_tcp_framed(tcp_fd, pkt, n);
+			}
+		}
+
+		/* Lateral-offset recovery — exponential decay toward
+		 * the racing line.  Steering correction is implicit:
+		 * the offset shrinks each tick, the reported position
+		 * tracks the shrinking offset, and the bot rejoins the
+		 * line over a few seconds. */
+		lateral_offset *=
+		    expf(-dt / LATERAL_RECOVERY_TAU_S);
+		if (fabsf(lateral_offset) < 0.05f)
+			lateral_offset = 0;
+
+		/* Tyre wear: only ticks while on track. */
+		if (loc == LOC_TRACK)
+			on_track_ms += TICK_MS;
+
+		/*
+		 * Sector splits.  Three sectors of equal norm_pos length
+		 * (0..1/3, 1/3..2/3, 2/3..1).  When the bot crosses a
+		 * boundary, emit 0x21 with the just-finished sector's
+		 * split time and the cumulative lap time so far.
+		 */
+		{
+			int new_sector = (u_pos < 1.0f / 3.0f) ? 0 :
+			    (u_pos < 2.0f / 3.0f) ? 1 : 2;
+			if (new_sector != last_sector) {
+				if (lap_start_ms == 0)
+					lap_start_ms = client_ts;
+				if (sector_start_ms == 0)
+					sector_start_ms = client_ts;
+				int32_t split = (int32_t)
+				    (client_ts - sector_start_ms);
+				int32_t lap_t = (int32_t)
+				    (client_ts - lap_start_ms);
+				uint8_t pkt2[32];
+				size_t n = pkt_sector_split(pkt2, split,
+				    lap_t, (uint8_t)last_sector,
+				    (uint16_t)car_id);
+				send_tcp_framed(tcp_fd, pkt2, n);
+				/* Sector-2 → sector-0 transition is the
+				 * lap-end; rebase both timers. */
+				if (last_sector == 2 && new_sector == 0)
+					lap_start_ms = client_ts;
+				sector_start_ms = client_ts;
+				last_sector = new_sector;
+			}
+		}
+
+		/*
+		 * Mandatory pit served: emit 0x54 once per pit visit,
+		 * after the bot has fully exited the pitlane (location
+		 * went Pitlane / PitExit / ... → Track again).
+		 */
+		if (pit_on_lap > 0 && lap == pit_on_lap &&
+		    last_loc != LOC_TRACK)
+			pit_served_this_visit = 1;
+		if (pit_served_this_visit && loc == LOC_TRACK &&
+		    mandatory_pit) {
+			uint8_t pkt2[16];
+			size_t n = pkt_mandatory_pit_served(pkt2,
+			    (uint16_t)car_id);
+			send_tcp_framed(tcp_fd, pkt2, n);
+			printf("[bot] mandatory pit served (0x54) at lap=%d "
+			    "u=%.3f\n", lap, u_pos);
+			pit_served_this_visit = 0;
+		}
+
+		waypoint_at(u_pos, &px, &py, &pz);
+
+		/* Apply current lateral offset along the right-hand
+		 * normal to the local tangent.  Tangent ≈ next-here on
+		 * the racing line; right-hand normal in 2D = (-tz, tx). */
+		if (fabsf(lateral_offset) > 0.01f) {
+			float u_next = u_pos + 0.001f;
+			float nx, ny, nz;
+			waypoint_at(u_next, &nx, &ny, &nz);
+			float tx = nx - px, tz = nz - pz;
+			float tm = sqrtf(tx*tx + tz*tz);
+			if (tm > 1e-4f) {
+				/* Right-hand normal in the (x, z) plane. */
+				float nrx = -tz / tm;
+				float nrz =  tx / tm;
+				px += lateral_offset * nrx;
+				pz += lateral_offset * nrz;
+			}
+		}
+
+		/* Velocity vector: tangent direction × v_current.  Tangent
+		 * comes from the position delta between consecutive ticks;
+		 * magnitude is the physics-smoothed speed.  This decouples
+		 * "where the bot is heading" from "how fast it's going" so
+		 * a sudden waypoint snap doesn't spike vec_c. */
+		if (have_last) {
+			float dx = px - last_x;
+			float dz = pz - last_z;
+			float dy = py - last_y;
+			float mag = sqrtf(dx*dx + dy*dy + dz*dz);
+			if (mag > 1e-4f) {
+				float k = v_current / mag;
+				vx = dx * k;
+				vy = dy * k;
+				vz = dz * k;
+			} else {
+				vx = vy = vz = 0;
+			}
+		} else {
+			vx = vy = vz = 0;
+		}
+		last_x = px; last_y = py; last_z = pz;
+		have_last = 1;
+		last_loc = loc;
+
+		/* Drain incoming TCP so the kernel rcv buffer doesn't
+		 * back-pressure server sends.  We don't parse anything,
+		 * but a 0-byte recv means the peer closed — trigger
+		 * reconnect.  Same for any non-EAGAIN error. */
+		{
+			int disconnected = 0;
+			while ((rn = recv(tcp_fd, rxbuf, sizeof rxbuf, 0)) > 0)
+				;
+			if (rn == 0) {
+				disconnected = 1;
+			} else if (rn < 0 && errno != EAGAIN &&
+			    errno != EWOULDBLOCK && errno != EINTR) {
+				disconnected = 1;
+			}
+			if (disconnected) {
+				printf("[bot] disconnected (tcp), reconnecting "
+				    "after %ums...\n", reconnect_backoff_ms);
+				close(tcp_fd);
+				close(udp_fd);
+				{
+					struct timespec ts = {
+					    reconnect_backoff_ms / 1000,
+					    (long)(reconnect_backoff_ms % 1000)
+					        * 1000000L
+					};
+					nanosleep(&ts, NULL);
+				}
+				while (!g_stop) {
+					size_t wl;
+					if (connect_session(host, tcp_port,
+					    name, "Driver", "BOT", steam,
+					    race_number, &tcp_fd, &udp_fd,
+					    &udp_peer, &conn_id, &car_id,
+					    &wl) == 0) {
+						reconnect_count++;
+						printf("[bot] reconnected "
+						    "#%d: conn=%u car=%u "
+						    "(trailer %zu B), "
+						    "resuming at u=%.3f "
+						    "lap=%d\n",
+						    reconnect_count, conn_id,
+						    (unsigned)car_id, wl,
+						    u_pos, lap);
+						/* First UDP keepalive
+						 * to register the peer
+						 * with the new conn. */
+						{
+						    size_t kn =
+							pkt_keepalive(pkt,
+							    conn_id);
+						    sendto(udp_fd, pkt, kn,
+							0, (struct sockaddr *)
+							&udp_peer,
+							sizeof udp_peer);
+						}
+						reconnect_backoff_ms = 1000;
+						break;
+					}
+					reconnect_backoff_ms =
+					    reconnect_backoff_ms < 10000
+					    ? reconnect_backoff_ms * 2
+					    : 10000;
+					printf("[bot] reconnect failed, "
+					    "retry in %ums\n",
+					    reconnect_backoff_ms);
+					{
+					struct timespec ts = {
+					    reconnect_backoff_ms / 1000,
+					    (long)(reconnect_backoff_ms % 1000)
+					        * 1000000L
+					};
+					nanosleep(&ts, NULL);
+				}
+				}
+				if (g_stop) break;
+				/* Don't drain more bytes this tick — the
+				 * fresh tcp_fd has nothing yet. */
+				continue;
+			}
+		}
+
+		/* Drain incoming UDP, answer keepalives. */ /* DBG */
+		while ((rn = recv(udp_fd, rxbuf, sizeof rxbuf, 0)) > 0) {
+			if (rn >= 7 && rxbuf[0] == 0x14) {
+				uint32_t srv_ts =
+				    rxbuf[1] | (rxbuf[2] << 8) |
+				    (rxbuf[3] << 16) | (rxbuf[4] << 24);
+				size_t n = pkt_pong(pkt, conn_id, srv_ts,
+				    client_ts);
+				sendto(udp_fd, pkt, n, 0,
+				    (struct sockaddr *)&udp_peer,
+				    sizeof udp_peer);
+			}
+		}
+
+		if (tick % 30 == 0) {
+			size_t n = pkt_keepalive(pkt, conn_id);
+			sendto(udp_fd, pkt, n, 0,
+			    (struct sockaddr *)&udp_peer, sizeof udp_peer);
+		}
+
+		/* 0x32 location updates go over TCP (framed); only 0x1e
+		 * car_update + keepalives + pong travel on UDP. */
+		if (tick % 5 == 0) {
+			size_t n = pkt_location(pkt, (uint16_t)car_id, loc);
+			send_tcp_framed(tcp_fd, pkt, n);
+		}
+
+		{
+			size_t n = pkt_car_update(pkt, conn_id,
+			    (uint16_t)car_id, seq++, client_ts,
+			    px, py, pz, vx, vy, vz, u_pos);
+			sendto(udp_fd, pkt, n, 0,
+			    (struct sockaddr *)&udp_peer, sizeof udp_peer);
+		}
+
+		if (tick % 60 == 0) {
+			float vm = sqrtf(vx*vx + vy*vy + vz*vz);
+			const char *phase = (lap == 0) ? "FORM" : "RACE";
+			const char *lname =
+			    (loc == LOC_PITENTRY) ? "PitEntry" :
+			    (loc == LOC_PITLANE)  ? "Pitlane"  :
+			    (loc == LOC_PITEXIT)  ? "PitExit"  : "Track";
+			printf("[bot] t=%us lap=%d %s u=%.3f v=%.1f m/s "
+			    "(%.0f km/h) loc=%s pos=(%.0f,%.0f)\n",
+			    (unsigned)(client_ts / 1000), lap, phase, u_pos,
+			    vm, vm * 3.6f, lname, px, pz);
+		}
+
+		tick++;
+		nanosleep(&slp, NULL);
+	}
+
+	close(udp_fd);
+	close(tcp_fd);
+	printf("[bot] stopped after %d laps, %u ticks\n", lap,
+	    (unsigned)tick);
+	return 0;
+}
