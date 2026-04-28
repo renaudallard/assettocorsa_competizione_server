@@ -52,6 +52,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <limits.h>
 #include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -71,6 +72,7 @@
 #define V_PITLANE		18.0f		/* 64.8 km/h, under 80 limit */
 #define DEFAULT_LENGTH_M	4000.0f
 #define MAX_WAYPOINTS		2048	/* monza: 1152, brands_hatch: 777 */
+#define ACC_MAX_GRID		60	/* server's hard cap on car slots */
 
 /*
  * Kinematic physics model — see compute_corner_radius() and the
@@ -106,7 +108,10 @@ static void on_sigint(int s) { (void)s; g_stop = 1; }
 static uint32_t mono_ms(void)
 {
 	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) {
+		perror("clock_gettime");
+		exit(1);
+	}
 	return (uint32_t)((uint64_t)ts.tv_sec * 1000 +
 	    (uint64_t)ts.tv_nsec / 1000000);
 }
@@ -833,6 +838,46 @@ connect_session(const char *host, uint16_t tcp_port,
 
 /* ------------------------------------------------------------------ */
 
+/*
+ * Parse a long from a CLI option, validate range, fail loud on
+ * garbage.  atoi() silently returns 0 on parse failure, which
+ * masks user typos as "valid 0" and corrupts later state.
+ */
+static int
+parse_long_arg(const char *opt, const char *s, long lo, long hi, long *out)
+{
+	char *end;
+	long v;
+
+	errno = 0;
+	v = strtol(s, &end, 10);
+	if (errno != 0 || end == s || *end != '\0' || v < lo || v > hi) {
+		fprintf(stderr,
+		    "[bot] bad %s: \"%s\" (expected integer in [%ld..%ld])\n",
+		    opt, s, lo, hi);
+		return -1;
+	}
+	*out = v;
+	return 0;
+}
+
+static int
+parse_float_arg(const char *opt, const char *s, float *out)
+{
+	char *end;
+	float v;
+
+	errno = 0;
+	v = strtof(s, &end);
+	if (errno != 0 || end == s || *end != '\0') {
+		fprintf(stderr, "[bot] bad %s: \"%s\" (expected number)\n",
+		    opt, s);
+		return -1;
+	}
+	*out = v;
+	return 0;
+}
+
 static void usage(const char *p)
 {
 	fprintf(stderr,
@@ -916,22 +961,60 @@ int main(int argc, char **argv)
 		{0,0,0,0}
 	};
 	int o;
+	long lv;
 	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXB:A:h",
 	    opts, NULL)) != -1) {
 		switch (o) {
 		case 'H': host = optarg; break;
-		case 'T': tcp_port = (uint16_t)atoi(optarg); break;
-		case 'R': race_number = (uint32_t)atoi(optarg); break;
+		case 'T':
+			if (parse_long_arg("--tcp", optarg, 1, 65535, &lv) < 0)
+				return 2;
+			tcp_port = (uint16_t)lv;
+			break;
+		case 'R':
+			if (parse_long_arg("--race", optarg, 0, INT32_MAX,
+			    &lv) < 0)
+				return 2;
+			race_number = (uint32_t)lv;
+			break;
 		case 'N': name = optarg; break;
 		case 't': track_path = optarg; break;
-		case 'L': track_length_override = (float)atof(optarg); break;
-		case 'P': pit_on_lap = atoi(optarg); break;
-		case 'l': max_laps = atoi(optarg); break;
-		case 'G': grid_pos = atoi(optarg); break;
+		case 'L':
+			if (parse_float_arg("--length", optarg,
+			    &track_length_override) < 0)
+				return 2;
+			break;
+		case 'P':
+			if (parse_long_arg("--pit-on-lap", optarg, 1, INT_MAX,
+			    &lv) < 0)
+				return 2;
+			pit_on_lap = (int)lv;
+			break;
+		case 'l':
+			if (parse_long_arg("--laps", optarg, 1, INT_MAX,
+			    &lv) < 0)
+				return 2;
+			max_laps = (int)lv;
+			break;
+		case 'G':
+			if (parse_long_arg("--grid", optarg, 1, ACC_MAX_GRID,
+			    &lv) < 0)
+				return 2;
+			grid_pos = (int)lv;
+			break;
 		case 'M': mid_race = 1; break;
 		case 'X': mandatory_pit = 0; break;
-		case 'B': bump_metres = (float)atof(optarg); break;
-		case 'A': bump_at_lap = atoi(optarg); break;
+		case 'B':
+			if (parse_float_arg("--bump", optarg,
+			    &bump_metres) < 0)
+				return 2;
+			break;
+		case 'A':
+			if (parse_long_arg("--bump-at-lap", optarg, 1, INT_MAX,
+			    &lv) < 0)
+				return 2;
+			bump_at_lap = (int)lv;
+			break;
 		case 'h': usage(argv[0]); return 0;
 		default:  usage(argv[0]); return 2;
 		}
@@ -940,6 +1023,13 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, on_sigint);
 	signal(SIGTERM, on_sigint);
+	/*
+	 * Ignore SIGPIPE.  MSG_NOSIGNAL covers Linux at the syscall
+	 * site, but BSDs don't honour it on TCP send() — without
+	 * SIG_IGN here, an abrupt peer disconnect would terminate
+	 * the bot instead of taking the reconnect path.
+	 */
+	signal(SIGPIPE, SIG_IGN);
 	setvbuf(stdout, NULL, _IOLBF, 0);
 
 	if (track_path) {
@@ -953,6 +1043,10 @@ int main(int argc, char **argv)
 	if (track_length_override > 0)
 		g_track_length_m = track_length_override;
 
+	/* Format produces "S7656119900" (11) + 7 digits + NUL = 19 bytes.
+	 * Static assert guards against shrinking the buffer in future
+	 * refactors. */
+	_Static_assert(sizeof steam >= 20, "steam buffer too small");
 	snprintf(steam, sizeof steam, "S7656119900%07u",
 	    (unsigned)race_number);
 
@@ -1312,11 +1406,25 @@ int main(int argc, char **argv)
 					    &udp_peer, &conn_id, &car_id,
 					    &wl) == 0) {
 						reconnect_count++;
+						/*
+						 * Reset lap / sector timers
+						 * — otherwise the next
+						 * sector_split carries the
+						 * pre-disconnect base and
+						 * reports a wildly inflated
+						 * sector time.  Sacrifices
+						 * the in-flight lap as
+						 * out-lap, which the server
+						 * already discards anyway.
+						 */
+						lap_start_ms = 0;
+						sector_start_ms = 0;
 						printf("[bot] reconnected "
 						    "#%d: conn=%u car=%u "
 						    "(trailer %zu B), "
 						    "resuming at u=%.3f "
-						    "lap=%d\n",
+						    "lap=%d (sector timer "
+						    "reset)\n",
 						    reconnect_count, conn_id,
 						    (unsigned)car_id, wl,
 						    u_pos, lap);
