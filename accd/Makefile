@@ -33,10 +33,20 @@ OBJS =		main.o \
 		tick.o \
 		weather.o
 
+# Read the project VERSION file and bake it into the binary as
+# ACCD_VERSION_STR.  Looks at ../VERSION first (source-tree layout),
+# then ./VERSION (deployed-flat layout, e.g. when only accd/* is
+# scp'd to a target host), then falls back to "dev".  The `!=`
+# shell-expansion syntax is supported by both BSD make and GNU make
+# >= 4.0.
+ACCD_VERSION !=	(cat ../VERSION 2>/dev/null || cat VERSION 2>/dev/null \
+		    || echo dev) | tr -d '[:space:]'
+
 # Internal flags always applied.  User-supplied CFLAGS / LDFLAGS
 # / LIBS are appended after these so platform-specific paths can
 # override without losing the compiler warnings.
 ACCD_CFLAGS =	-std=c99 -Wall -Wextra -Wpedantic -O2 -g \
+		-DACCD_VERSION_STR='"${ACCD_VERSION}"' \
 		-I/usr/local/include
 ACCD_LDFLAGS =	-L/usr/local/lib
 ACCD_LIBS =	-lm
@@ -61,6 +71,12 @@ ${PROG}: ${OBJS}
 	echo ${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD ${LIBS}; \
 	${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD ${LIBS}
 
+# main.o embeds ACCD_VERSION_STR via -DACCD_VERSION_STR=...
+# defined in ACCD_CFLAGS at make-invocation time.  After bumping
+# VERSION, run `make clean && make` so the new value is baked in;
+# touching main.c alone is not enough because the dependency
+# system can't see the macro change.  The deploy script already
+# does clean+make.
 main.o: main.c bans.h config.h console.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c main.c
 

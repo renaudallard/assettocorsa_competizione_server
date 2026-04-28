@@ -298,7 +298,13 @@ main(int argc, char **argv)
 	bans_load(&srv.bans, cfg_dir);
 	ratings_load(&srv);
 
-	log_info("accd phase 1 starting (pid %d)", (int)getpid());
+	log_info("accd %s starting (pid %d)",
+#ifdef ACCD_VERSION_STR
+	    ACCD_VERSION_STR,
+#else
+	    "(dev)",
+#endif
+	    (int)getpid());
 	log_info("config: tcp=%d udp=%d max=%d lan=%d track=\"%s\"",
 	    srv.tcp_port, srv.udp_port, srv.max_connections,
 	    srv.lan_discovery, srv.track);
