@@ -212,12 +212,26 @@ session_reset(struct Server *s, uint8_t session_index)
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarRaceState *r = &s->cars[i].race;
+		/*
+		 * Preserve on_track across the per-session memset.  It
+		 * mirrors the most recent ACP_CAR_LOCATION_UPDATE
+		 * (location == Track), which the client only re-sends
+		 * when the location *changes* — so a driver who's
+		 * already on the grid at session_start doesn't re-emit
+		 * one, and zeroing on_track here would leave the new
+		 * leader-pick gate (FUN_1400428d0 mirror in tick.c)
+		 * permanently blocked.  The remaining race-state
+		 * fields (laps, cuts, latches) all want the fresh
+		 * zero, so memset stays.
+		 */
+		uint8_t saved_on_track = r->on_track;
 
 		memset(r, 0, sizeof(*r));
 		r->best_lap_ms = 0;
 		r->last_lap_ms = 0;
 		r->position = (int16_t)(i + 1);
 		r->grid_position = -1;
+		r->on_track = saved_on_track;
 	}
 
 	/*
