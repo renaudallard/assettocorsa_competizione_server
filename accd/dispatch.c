@@ -278,12 +278,43 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * handler can compute round-trip time. */
 		kc->keepalive_sent_ms = srv_ms;
 
+		/*
+		 * Per FUN_140029b20 + FUN_1400336d0 in accServer.exe and
+		 * verified against the kunos_wine_full_race.pcap, the 0x14
+		 * body carries three u16 ping values after srv_ms:
+		 *   u16  this_conn_rtt_ms    (recipient's own avg RTT)
+		 *   u16  server_avg_ping_ms  (mean RTT across active conns)
+		 *   u16  server_max_ping_ms  (max RTT across active conns)
+		 *   u8 × 4  cpu/qos pcts
+		 * The client's HUD reads these to render the ping badge —
+		 * a hardcoded 0 here makes the in-game ping display read 0.
+		 */
+		uint16_t avg_ping = 0, max_ping = 0;
+		{
+			uint32_t sum = 0;
+			int count = 0;
+			int i;
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct Conn *cc = s->conns[i];
+				if (cc == NULL)
+					continue;
+				if (cc->avg_rtt_ms == 0)
+					continue;
+				sum += cc->avg_rtt_ms;
+				count++;
+				if (cc->avg_rtt_ms > max_ping)
+					max_ping = (uint16_t)cc->avg_rtt_ms;
+			}
+			if (count > 0)
+				avg_ping = (uint16_t)(sum / count);
+		}
+
 		bb_init(&reply);
 		if (wr_u8(&reply, SRV_KEEPALIVE_14) == 0 &&
 		    wr_u32(&reply, srv_ms) == 0 &&
-		    wr_u16(&reply, kc->conn_id) == 0 &&
-		    wr_u16(&reply, 0) == 0 &&
-		    wr_u16(&reply, 0) == 0 &&
+		    wr_u16(&reply, (uint16_t)kc->avg_rtt_ms) == 0 &&
+		    wr_u16(&reply, avg_ping) == 0 &&
+		    wr_u16(&reply, max_ping) == 0 &&
 		    wr_u8(&reply, 2) == 0 &&
 		    wr_u8(&reply, 4) == 0 &&
 		    wr_u8(&reply, 100) == 0 &&

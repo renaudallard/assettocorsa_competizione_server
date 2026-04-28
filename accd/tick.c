@@ -279,36 +279,47 @@ broadcast_percar_dirty(struct Server *s)
  * Send a 0x14 keepalive to each authenticated connection via
  * UDP.  The exe (FUN_140029b20) sends this per-peer over UDP;
  * the client replies with 0x16 pong only to UDP keepalives.
- * If sent via TCP (our old path), the client ignores it and
- * never pongs, so clock_offset_ms stays 0 and per-peer
- * timestamp adjustment is a no-op.
  *
- * Body: u8 0x14 + u32 server_ms + additional timing hints.
- * We send a minimal version with the server timestamp.
+ * Body (verified against kunos_wine_full_race.pcap):
+ *   u8   0x14
+ *   u32  server_ms
+ *   u16  this conn's avg RTT (ms)            ← per-recipient
+ *   u16  server-wide average RTT (ms)
+ *   u16  server-wide max RTT (ms)
+ *   u8 × 4  cpu/qos hints (2/4/100/100)
+ * Total 15 bytes.  The client reads u16 #1 to render its ping
+ * badge; a hardcoded 0 here makes the in-game ping display read
+ * 0 ms even with measurable RTT in flight.
  */
 static void
 broadcast_keepalive(struct Server *s, uint8_t msg_id)
 {
-	/*
-	 * Kunos FUN_140029b20 / FUN_1400336d0 body:
-	 *   u8  msg_id (0x14)
-	 *   u32 server_ms
-	 *   u16 conn_id of THIS recipient     (exe: param_3, per-peer)
-	 *   u16 conn stats slot (+0x10)        (0 — we don't track)
-	 *   u16 conn stats slot (+0x12)        (0)
-	 *   u8  2 / u8 4 / u8 100 / u8 100     (fixed timing hints)
-	 * Total 15 bytes.  The conn_id is the per-recipient echo — the
-	 * client filters on `conn_id == my_conn_id` before emitting
-	 * a 0x16 pong, so a hardcoded 0 kept every client's ping HUD
-	 * at `-- ms` and left avg_rtt_ms stuck at 0 on the server.
-	 */
 	unsigned char pkt[15];
 	int i;
 	struct timespec ts;
 	uint32_t srv_ms;
+	uint16_t avg_ping = 0, max_ping = 0;
 
 	if (s->udp_fd < 0)
 		return;
+
+	/* Server-wide ping aggregate over auth'd conns with a pong. */
+	{
+		uint32_t sum = 0;
+		int count = 0;
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct Conn *cc = s->conns[i];
+			if (cc == NULL || cc->avg_rtt_ms == 0)
+				continue;
+			sum += cc->avg_rtt_ms;
+			count++;
+			if (cc->avg_rtt_ms > max_ping)
+				max_ping = (uint16_t)cc->avg_rtt_ms;
+		}
+		if (count > 0)
+			avg_ping = (uint16_t)(sum / count);
+	}
+
 	clock_gettime(CLOCK_MONOTONIC, &ts);
 	srv_ms = (uint32_t)((uint64_t)ts.tv_sec * 1000 +
 	    (uint64_t)ts.tv_nsec / 1000000);
@@ -318,10 +329,10 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 	pkt[2]  = (unsigned char)((srv_ms >> 8) & 0xff);
 	pkt[3]  = (unsigned char)((srv_ms >> 16) & 0xff);
 	pkt[4]  = (unsigned char)((srv_ms >> 24) & 0xff);
-	pkt[7]  = 0;
-	pkt[8]  = 0;
-	pkt[9]  = 0;
-	pkt[10] = 0;
+	pkt[7]  = (unsigned char)(avg_ping & 0xff);
+	pkt[8]  = (unsigned char)((avg_ping >> 8) & 0xff);
+	pkt[9]  = (unsigned char)(max_ping & 0xff);
+	pkt[10] = (unsigned char)((max_ping >> 8) & 0xff);
 	pkt[11] = 2;
 	pkt[12] = 4;
 	pkt[13] = 100;
@@ -329,11 +340,13 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct Conn *c = s->conns[i];
+		uint16_t per_conn_ping;
 
 		if (c == NULL || c->state != CONN_AUTH)
 			continue;
-		pkt[5] = (unsigned char)(c->conn_id & 0xff);
-		pkt[6] = (unsigned char)((c->conn_id >> 8) & 0xff);
+		per_conn_ping = (uint16_t)c->avg_rtt_ms;
+		pkt[5] = (unsigned char)(per_conn_ping & 0xff);
+		pkt[6] = (unsigned char)((per_conn_ping >> 8) & 0xff);
 		c->keepalive_sent_ms = srv_ms;
 		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
 		    (const struct sockaddr *)&c->peer,
