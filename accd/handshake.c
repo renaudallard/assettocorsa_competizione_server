@@ -1569,12 +1569,19 @@ handshake_handle(struct Server *s, struct Conn *c,
 				snprintf(steam_buf, sizeof(steam_buf),
 				    "%s", steam);
 
-			/* Skip middle bytes, parse CarInfo. */
-			(void)rd_skip(&r, 8);
-			(void)rd_skip(&r, 4);		/* carModelKey */
-			(void)rd_skip(&r, 4);		/* teamGuid */
-			(void)rd_i32(&r, &rnum);	/* raceNumber */
-			(void)rd_skip(&r, 33);		/* skin fields */
+			/* Skip middle bytes, parse CarInfo.  Per
+			 * FUN_14011c7c0 (ACC client's CarInfo::writeToPacket)
+			 * the wire layout is:
+			 *   +0..+11   3 × u32   (carModelKey, teamGuid,
+			 *                        carModelType-as-u32)
+			 *   +12..+34  23 B      misc skin/cup/banner/handle
+			 *   +35..+38  i32       raceNumber
+			 *   +39..+44  6 B       trailing
+			 *   +45+      str_a customSkinName, ... */
+			(void)rd_skip(&r, 8);		/* DriverInfo / CarInfo separator */
+			(void)rd_skip(&r, 35);		/* CarInfo header up to raceNumber */
+			(void)rd_i32(&r, &rnum);	/* raceNumber at body +35 */
+			(void)rd_skip(&r, 6);		/* tail before customSkinName */
 			if (rd_can_str_a(&r)) {		/* customSkinName */
 				(void)rd_str_a(&r, &skip_str);
 				free(skip_str); skip_str = NULL;
