@@ -281,6 +281,21 @@ struct SessionState {
 	uint8_t		formation_ended;
 	uint8_t		green_fired;
 	float		green_trigger;
+
+	/*
+	 * Snapshot of the last-emitted 0x28 phase descriptor state, used
+	 * by tick.c to detect changes and re-emit the wire frame the way
+	 * accServer.exe FUN_14002f710 does (line 716-749 + line 799-800):
+	 * compare current ts[]/phase against the snapshot; on any change
+	 * push 0x28 to every auth conn within one tick and refresh the
+	 * snapshot.  Without this an event-driven phase transition (e.g.
+	 * formation_end stamps ts[2]) is invisible to clients until the
+	 * next scheduled emit, which delays the corresponding HUD state
+	 * by up to one period.
+	 */
+	uint64_t	last_emit_ts[7];
+	uint8_t		last_emit_phase;
+	uint8_t		last_emit_valid;	/* 0 until first emit */
 };
 
 /*

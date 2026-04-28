@@ -75,7 +75,6 @@
  * measured against mono_ms().  Rate is now a property of the
  * cadence itself, not of the underlying tick period.
  */
-#define CADENCE_SESSION_STATE_MS	1000	/* 0x28 ~1 Hz per-client */
 #define CADENCE_KEEPALIVE_MS		1000	/* 0x14 ~1 Hz */
 #define CADENCE_WEATHER_MS		5000	/* 0x37 every 5 s */
 #define CADENCE_LEADERBOARD_MS		75000	/* 0x36 async-coalesce */
@@ -715,7 +714,6 @@ tick_run(struct Server *s)
 	 */
 	static uint64_t last_keepalive_ms = 0;
 	static uint64_t last_leaderboard_ms = 0;
-	static uint64_t last_session_state_ms = 0;
 	static uint64_t last_weather_ms = 0;
 	/*
 	 * Tick-rate probe.  Every 60 s of wall-clock, log the observed
@@ -892,56 +890,89 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * 0x28 session state per-connection broadcast.
-	 *
-	 * The exe sends 0x28 to every client every tick (~1s)
-	 * as a continuous heartbeat (confirmed by 902-message
-	 * Kunos capture).  Each message is built per-connection
-	 * with a per-client time base from FUN_1400418b0.
+	 * 0x28 session state broadcast — event-driven, mirroring exe
+	 * FUN_14002f710 line 716-749.  The exe checks each tick whether
+	 * the current phase byte or any of the 7 phase descriptors
+	 * (valid + deadline) differs from a snapshot stored on the
+	 * server, and emits 0x28 to every auth conn the moment any byte
+	 * changes.  After the emit, FUN_14002f710:799-800 refreshes the
+	 * snapshot.  The earlier 1 Hz scheduled emit was a misreading of
+	 * the pcap (the recurring frames were 0x14 keepalives, not
+	 * 0x28).  Sending on a cadence delays phase transitions on the
+	 * client by up to one period, since the deadline that ts[2]
+	 * stamping records is only visible to the client when the next
+	 * 0x28 arrives — visible to drivers as the formation-end zone
+	 * landing late and snapping instead of counting down.
 	 */
-	if (now_ms - last_session_state_ms >= CADENCE_SESSION_STATE_MS &&
-	    s->nconns > 0) {
-		struct ByteBuf bb;
-		int i;
+	{
+		uint8_t cur_phase = s->session.phase;
+		int changed = !s->session.last_emit_valid;
+		int k;
 
-		/*
-		 * Per-peer body (each conn gets its own clock-base
-		 * projected timestamps), but the scratch buffer itself
-		 * is reused across all peers to avoid one malloc+free
-		 * per conn per second.
-		 */
-		bb_init(&bb);
-		for (i = 0; i < ACC_MAX_CARS; i++) {
-			struct Conn *c = s->conns[i];
-			uint32_t client_ts_est;
+		if (!changed && cur_phase != s->session.last_emit_phase)
+			changed = 1;
+		for (k = 0; k < 7 && !changed; k++)
+			if (s->session.ts[k] != s->session.last_emit_ts[k])
+				changed = 1;
 
-			if (c == NULL || c->state != CONN_AUTH)
-				continue;
+		if (changed) {
+			if (s->nconns > 0) {
+				struct ByteBuf bb;
+				int i;
+
+				/*
+				 * Per-peer body (each conn gets its own
+				 * clock-base projected timestamps); the
+				 * scratch buffer is reused across all peers
+				 * to avoid one malloc+free per conn per emit.
+				 */
+				bb_init(&bb);
+				for (i = 0; i < ACC_MAX_CARS; i++) {
+					struct Conn *c = s->conns[i];
+					uint32_t client_ts_est;
+
+					if (c == NULL ||
+					    c->state != CONN_AUTH)
+						continue;
+					/*
+					 * Extrapolate the client's clock from
+					 * the freshest UDP pivot (refreshed on
+					 * every pong AND car update, so at
+					 * 18 Hz it's never more than ~55 ms
+					 * stale).  Tracks the client's live
+					 * clock regardless of client↔server
+					 * tick-rate skew.
+					 */
+					if (c->last_udp_server_ms != 0)
+						client_ts_est =
+						    c->last_udp_client_ts +
+						    ((uint32_t)now_ms -
+						    c->last_udp_server_ms);
+					else
+						client_ts_est =
+						    c->last_pong_client_ts;
+					bb_clear(&bb);
+					if (wr_u8(&bb,
+					    SRV_LARGE_STATE_RESPONSE) == 0 &&
+					    write_session_mgr_state(&bb, s,
+						client_ts_est,
+						c->avg_rtt_ms) == 0)
+						(void)conn_send_framed(c,
+						    bb.data, bb.wpos);
+				}
+				bb_free(&bb);
+			}
 			/*
-			 * Extrapolate the client's clock from the freshest
-			 * UDP pivot (refreshed on every pong AND car update,
-			 * so at 18 Hz it's never more than ~55 ms stale).
-			 * This collapses the need for a separate drift
-			 * accumulator a la exe FUN_1400419e0 +0x280d0 — the
-			 * pivot itself is already current, so client_ts_est
-			 * tracks the client's live clock regardless of
-			 * client↔server tick-rate skew.
+			 * Refresh the snapshot regardless of whether we sent
+			 * to anyone — keeps the change detector from
+			 * re-firing forever when no clients are connected.
 			 */
-			if (c->last_udp_server_ms != 0)
-				client_ts_est = c->last_udp_client_ts +
-				    ((uint32_t)now_ms - c->last_udp_server_ms);
-			else
-				client_ts_est = c->last_pong_client_ts;
-			bb_clear(&bb);
-			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
-			    write_session_mgr_state(&bb, s,
-				client_ts_est,
-				c->avg_rtt_ms) == 0)
-				(void)conn_send_framed(c,
-				    bb.data, bb.wpos);
+			s->session.last_emit_phase = cur_phase;
+			for (k = 0; k < 7; k++)
+				s->session.last_emit_ts[k] =
+				    s->session.ts[k];
+			s->session.last_emit_valid = 1;
 		}
-		bb_free(&bb);
-		last_session_state_ms = now_ms;
 	}
 
 	/*
