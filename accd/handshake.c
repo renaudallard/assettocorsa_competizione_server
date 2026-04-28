@@ -1569,19 +1569,25 @@ handshake_handle(struct Server *s, struct Conn *c,
 				snprintf(steam_buf, sizeof(steam_buf),
 				    "%s", steam);
 
-			/* Skip middle bytes, parse CarInfo.  Per
-			 * FUN_14011c7c0 (ACC client's CarInfo::writeToPacket)
-			 * the wire layout is:
-			 *   +0..+11   3 × u32   (carModelKey, teamGuid,
-			 *                        carModelType-as-u32)
-			 *   +12..+34  23 B      misc skin/cup/banner/handle
-			 *   +35..+38  i32       raceNumber
-			 *   +39..+44  6 B       trailing
-			 *   +45+      str_a customSkinName, ... */
+			/*
+			 * Skip middle bytes, parse CarInfo.  Wire offsets
+			 * pinned against the AC2 client's JSON serializer
+			 * (FUN_1434e9a70):
+			 *
+			 *   "raceNumber"        ← struct +0x30 = body +8
+			 *   "raceNumberPadding" ← struct +0x54 = body +35
+			 *
+			 * The "raceNumber" field is the visible race number
+			 * the HUD draws on the car door / leaderboard
+			 * column.  An earlier shift to body+35 read the
+			 * "padding" slot instead, which is -1 / 0xFFFFFFFF
+			 * when the driver hasn't configured a number,
+			 * making every connecting car render as #65535.
+			 */
 			(void)rd_skip(&r, 8);		/* DriverInfo / CarInfo separator */
-			(void)rd_skip(&r, 35);		/* CarInfo header up to raceNumber */
-			(void)rd_i32(&r, &rnum);	/* raceNumber at body +35 */
-			(void)rd_skip(&r, 6);		/* tail before customSkinName */
+			(void)rd_skip(&r, 8);		/* CarInfo +0..+7 (2 × u32 ids) */
+			(void)rd_i32(&r, &rnum);	/* raceNumber at body +8 (struct +0x30) */
+			(void)rd_skip(&r, 33);		/* CarInfo +12..+44 (skin / cup / etc) */
 			if (rd_can_str_a(&r)) {		/* customSkinName */
 				(void)rd_str_a(&r, &skip_str);
 				free(skip_str); skip_str = NULL;
