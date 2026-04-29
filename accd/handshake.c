@@ -551,7 +551,7 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		if (!s->cars[j].used)
 			continue;
 		nc++;
-		if (r->formation_lap_done)
+		if (r->formation_mid_passed)
 			cvar8 = 1;
 	}
 
@@ -663,7 +663,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	}
 
 	if (cvar8) {
-		if (wr_u8(bb, race->formation_lap_done) < 0) return -1;
+		if (wr_u8(bb, race->formation_mid_passed) < 0) return -1;
 	}
 
 	if (wr_u8(bb, pq->count) < 0) return -1;
