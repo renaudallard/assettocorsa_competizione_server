@@ -1649,6 +1649,54 @@ handshake_handle(struct Server *s, struct Conn *c,
 		}
 
 		/*
+		 * Rating thresholds (handbook III.2.2).  Drivers below
+		 * the configured trackMedalsRequirement /
+		 * safetyRatingRequirement / racecraftRatingRequirement
+		 * floor are rejected with REJECT_CP_RATING (= reject
+		 * code 10) before they reach a car slot.  Skip
+		 * spectators — they don't take a slot and can't disrupt
+		 * the field.  When all thresholds are 0 the gate is a
+		 * no-op for open servers.
+		 */
+		if (!c->is_spectator &&
+		    (s->track_medals_required > 0 ||
+		     s->safety_rating_required > 0 ||
+		     s->racecraft_rating_required > 0)) {
+			uint16_t sa = 0, tr = 0;
+
+			ratings_get(s, steam_buf, &sa, &tr);
+			/*
+			 * Stored ratings are ×100 (5000 = 50.00).  The
+			 * handbook thresholds are integer 0..99.  No
+			 * server-side track medals tracking yet, so the
+			 * trackMedalsRequirement gate is satisfied if
+			 * the operator left it at 0; non-zero medal
+			 * floors will need a separate ledger when we
+			 * wire that up.
+			 */
+			if (s->safety_rating_required > 0 &&
+			    sa / 100 < s->safety_rating_required) {
+				log_info("rejecting %s: SA %u < required %u",
+				    steam_buf, (unsigned)(sa / 100),
+				    (unsigned)s->safety_rating_required);
+				reason = REJECT_CP_RATING;
+				free(first); free(last); free(sname);
+				free(steam); free(team);
+				goto reply;
+			}
+			if (s->racecraft_rating_required > 0 &&
+			    tr / 100 < s->racecraft_rating_required) {
+				log_info("rejecting %s: RC %u < required %u",
+				    steam_buf, (unsigned)(tr / 100),
+				    (unsigned)s->racecraft_rating_required);
+				reason = REJECT_CP_RATING;
+				free(first); free(last); free(sname);
+				free(steam); free(team);
+				goto reply;
+			}
+		}
+
+		/*
 		 * Quick-reconnect detection (FUN_140025690 in accServer.exe,
 		 * logs "Removed connection due to (quick) reconnect").  If an
 		 * already-authenticated peer has this steam_id, detach it

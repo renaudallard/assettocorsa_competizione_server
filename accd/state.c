@@ -283,6 +283,34 @@ conn_drop(struct Server *s, struct Conn *c)
 		bb_free(&bb);
 		log_info("Sent car %d disco to %d clients",
 		    c->car_id, s->nconns - 1);
+
+		/*
+		 * ignorePrematureDisconnects (handbook III.2.2): when 0
+		 * (default) penalize a driver who quits the race before
+		 * it ends.  Apply a TR rating delta only — SA stays
+		 * untouched since pulling the plug isn't an unsafe
+		 * driving event per se.  Skip when the setting is 1, in
+		 * P/Q sessions, or if we're already past the active
+		 * phase (COMPLETED / RESULTS — race already over).
+		 */
+		if (!s->ignore_premature_disconnects &&
+		    s->session.session_index < s->session_count &&
+		    s->sessions[s->session.session_index].session_type
+		    == 10 &&
+		    (s->session.phase == PHASE_SESSION ||
+		     s->session.phase == PHASE_OVERTIME) &&
+		    drv->steam_id[0] != '\0') {
+			/*
+			 * No public ratings_apply_delta; reuse
+			 * ratings_on_race_end's "0% completion" path
+			 * which applies a -30 TR delta when the
+			 * disqualified flag is set.  We don't actually
+			 * DSQ the slot — the delta is what matters here.
+			 */
+			ratings_on_race_end(s, drv->steam_id, 0, 1);
+			log_info("premature disconnect: %s, TR penalty applied",
+			    drv->steam_id);
+		}
 	}
 
 	log_debug("conn_drop: conn=%u fd=%d car=%d state=%d",

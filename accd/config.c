@@ -329,11 +329,15 @@ config_load(struct Server *s, const char *cfg_dir)
 		 * setting higher values without rating reqs would have
 		 * the lobby silently re-clamp them anyway.
 		 */
+		s->track_medals_required = (uint8_t)json_obj_get_int(
+		    settings, "trackMedalsRequirement", 0);
+		s->safety_rating_required = (uint8_t)json_obj_get_int(
+		    settings, "safetyRatingRequirement", 0);
+		s->racecraft_rating_required = (uint8_t)json_obj_get_int(
+		    settings, "racecraftRatingRequirement", 0);
 		if (s->max_car_slots > 10 &&
-		    json_obj_get_int(settings, "trackMedalsRequirement", 0)
-		    < 3 &&
-		    json_obj_get_int(settings, "safetyRatingRequirement", 0)
-		    < 70)
+		    s->track_medals_required < 3 &&
+		    s->safety_rating_required < 70)
 			s->max_car_slots = 10;
 		json_free(settings);
 	}

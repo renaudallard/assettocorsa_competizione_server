@@ -593,6 +593,17 @@ struct Server {
 	char		car_group[16];
 	char		track[ACC_TRACK_NAME_LEN];
 	int		ignore_premature_disconnects;
+	/*
+	 * Rating thresholds from settings.json (handbook III.2.2).
+	 * 0 = no requirement.  Drivers below the configured floor get
+	 * the handshake rejected before they reach a car slot.
+	 *   trackMedalsRequirement      0..3
+	 *   safetyRatingRequirement     0..99 (×100 stored on the wire)
+	 *   racecraftRatingRequirement  0..99 (×100 stored on the wire)
+	 */
+	uint8_t		track_medals_required;
+	uint8_t		safety_rating_required;
+	uint8_t		racecraft_rating_required;
 	int		dump_leaderboards;
 	int		dump_entry_list;	/* settings.json
 						 * dumpEntryList: write
