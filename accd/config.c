@@ -335,6 +335,20 @@ config_load(struct Server *s, const char *cfg_dir)
 		    settings, "safetyRatingRequirement", 0);
 		s->racecraft_rating_required = (uint8_t)json_obj_get_int(
 		    settings, "racecraftRatingRequirement", 0);
+		/*
+		 * isRaceLocked (handbook III.2.2): default 1.  Inverse
+		 * of unsafe_rejoin which already controls the same
+		 * mid-race-join gate.  Reading both keeps backwards
+		 * compat with operators using either name.
+		 */
+		s->is_race_locked = (uint8_t)json_obj_get_int(settings,
+		    "isRaceLocked", 1);
+		if (s->is_race_locked)
+			s->unsafe_rejoin = 0;
+		else
+			s->unsafe_rejoin = 1;
+		s->randomize_track_when_empty = (uint8_t)json_obj_get_int(
+		    settings, "randomizeTrackWhenEmpty", 0);
 		if (s->max_car_slots > 10 &&
 		    s->track_medals_required < 3 &&
 		    s->safety_rating_required < 70)
@@ -415,6 +429,8 @@ config_load(struct Server *s, const char *cfg_dir)
 		    event, "trackTemp", 0);
 		s->event_version = (uint32_t)json_obj_get_int(event,
 		    "configVersion", 0);
+		copy_str(s->meta_data, sizeof(s->meta_data),
+		    json_obj_get_str(event, "metaData"));
 		{
 			const struct json_node *fn, *gs, *ge;
 			fn = json_obj_get(event,

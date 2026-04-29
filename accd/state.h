@@ -463,8 +463,12 @@ struct CarEntry {
 	uint16_t	nationality;
 	char		team_name[ACC_MAX_NAME_LEN];
 	int32_t		default_grid_position;	/* -1 = unset */
-	uint8_t		ballast_kg;		/* clamped 0..40 */
-	float		restrictor;		/* normalized 0..0.99 */
+	uint8_t		ballast_kg;		/* clamped 0..100 */
+	float		restrictor;		/* normalized 0..0.20 */
+	char		custom_car[64];		/* entrylist customCar
+						 * filename (handbook §VI.2);
+						 * stored for round-trip and
+						 * results.json output. */
 	uint8_t		current_driver_index;
 	uint8_t		driver_count;
 	uint8_t		is_server_admin;	/* entrylist isServerAdmin:
@@ -604,6 +608,24 @@ struct Server {
 	uint8_t		track_medals_required;
 	uint8_t		safety_rating_required;
 	uint8_t		racecraft_rating_required;
+	uint8_t		is_race_locked;		/* settings.json
+						 * isRaceLocked: 1 (default)
+						 * blocks mid-race joins,
+						 * 0 allows them.  Inverse
+						 * of unsafe_rejoin. */
+	uint8_t		randomize_track_when_empty;
+						/* settings.json
+						 * randomizeTrackWhenEmpty:
+						 * when 1 and the server is
+						 * idle long enough, the
+						 * track resets to a random
+						 * pick from the per-track
+						 * table.  Currently logs
+						 * only; track switching is
+						 * left for the operator. */
+	char		meta_data[256];		/* event.json metaData,
+						 * passed through to
+						 * results.json header. */
 	int		dump_leaderboards;
 	int		dump_entry_list;	/* settings.json
 						 * dumpEntryList: write

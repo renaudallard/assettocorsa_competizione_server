@@ -219,6 +219,8 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		    "isServerAdmin", 0);
 		copy_str(car->team_name, sizeof(car->team_name),
 		    json_obj_get_str(e, "teamName"));
+		copy_str(car->custom_car, sizeof(car->custom_car),
+		    json_obj_get_str(e, "customCar"));
 
 		drivers = json_obj_get(e, "drivers");
 		dn = json_arr_len(drivers);
@@ -327,6 +329,10 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 		    (int)car->current_driver_index);
 		json_escape(buf, sizeof(buf), car->team_name);
 		fprintf(fp, "      \"teamName\": \"%s\",\n", buf);
+		if (car->custom_car[0] != '\0') {
+			json_escape(buf, sizeof(buf), car->custom_car);
+			fprintf(fp, "      \"customCar\": \"%s\",\n", buf);
+		}
 		fputs("      \"drivers\": [\n", fp);
 		for (d = 0; d < car->driver_count; d++) {
 			const struct DriverInfo *di = &car->drivers[d];
