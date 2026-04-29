@@ -742,6 +742,21 @@ struct Server {
 	uint8_t			pit_refuelling_required;
 	uint8_t			pit_tyre_change_required;
 	uint8_t			tyre_set_count;		/* default 1 */
+
+	/*
+	 * Per (track, carModel) BoP additive ballast / restrictor
+	 * loaded from cfg/bop.json (handbook VI.3).  Applied at car
+	 * assignment on top of any entrylist-supplied values.  Up to
+	 * ACC_MAX_BOP entries; unused slots zero-initialised.
+	 */
+#define ACC_MAX_BOP 256
+	struct BoPEntry {
+		char		track[ACC_TRACK_NAME_LEN];
+		uint8_t		car_model;
+		uint8_t		ballast_kg;
+		uint8_t		restrictor_pct;
+	} bop[ACC_MAX_BOP];
+	int			bop_count;
 	char			cfg_dir[256];	/* for saving bans */
 
 	/* timing */

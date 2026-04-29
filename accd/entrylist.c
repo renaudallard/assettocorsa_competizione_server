@@ -355,3 +355,101 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 	log_info("entrylist_save: wrote %s", path);
 	return 0;
 }
+
+int
+bop_load(struct Server *s, const char *cfg_dir)
+{
+	char path[512];
+	char *raw, *utf8;
+	size_t rawlen;
+	char err[256] = "";
+	struct json_node *root;
+	const struct json_node *entries;
+	size_t i, n;
+
+	s->bop_count = 0;
+
+	snprintf(path, sizeof(path), "%s/bop.json", cfg_dir);
+	raw = read_file(path, &rawlen);
+	if (raw == NULL) {
+		/* Optional file: not present is normal. */
+		return 0;
+	}
+	utf8 = decode_cfg_bytes(raw, rawlen);
+	free(raw);
+	if (utf8 == NULL) {
+		log_warn("bop: decode failed for %s", path);
+		return -1;
+	}
+	root = json_parse(utf8, strlen(utf8), err, sizeof(err));
+	free(utf8);
+	if (root == NULL) {
+		log_warn("bop: parse failed: %s", err);
+		return -1;
+	}
+
+	entries = json_obj_get(root, "entries");
+	n = json_arr_len(entries);
+	for (i = 0; i < n && s->bop_count < ACC_MAX_BOP; i++) {
+		const struct json_node *e = json_arr_at(entries, i);
+		const char *tname = json_obj_get_str(e, "track");
+		int model = json_obj_get_int(e, "carModel", -1);
+		int kg = json_obj_get_int(e, "ballastKg", 0);
+		int rest = json_obj_get_int(e, "restrictor", 0);
+		struct BoPEntry *out;
+
+		if (tname == NULL || model < 0 || model > 255)
+			continue;
+		if (kg < 0)
+			kg = 0;
+		if (kg > 100)
+			kg = 100;
+		if (rest < 0)
+			rest = 0;
+		if (rest > 20)
+			rest = 20;
+		out = &s->bop[s->bop_count++];
+		snprintf(out->track, sizeof(out->track), "%s", tname);
+		out->car_model = (uint8_t)model;
+		out->ballast_kg = (uint8_t)kg;
+		out->restrictor_pct = (uint8_t)rest;
+	}
+	json_free(root);
+	log_info("bop.json: %d entries loaded", s->bop_count);
+	return s->bop_count;
+}
+
+void
+bop_apply(const struct Server *s, struct CarEntry *car)
+{
+	int i;
+	int new_kg;
+	float new_restrictor;
+
+	if (car == NULL || s->bop_count == 0 || s->track[0] == '\0')
+		return;
+	for (i = 0; i < s->bop_count; i++) {
+		const struct BoPEntry *b = &s->bop[i];
+		if (b->car_model != car->car_model)
+			continue;
+		if (strcmp(b->track, s->track) != 0)
+			continue;
+		new_kg = (int)car->ballast_kg + (int)b->ballast_kg;
+		if (new_kg > 100)
+			new_kg = 100;
+		car->ballast_kg = (uint8_t)new_kg;
+		new_restrictor = car->restrictor +
+		    (float)b->restrictor_pct / 100.0f;
+		if (new_restrictor > 0.20f)
+			new_restrictor = 0.20f;
+		car->restrictor = new_restrictor;
+		log_info("bop applied: car=%u model=%u track=%s "
+		    "+%ukg +%u%% -> %ukg / %.2f",
+		    (unsigned)car->car_id, (unsigned)car->car_model,
+		    s->track,
+		    (unsigned)b->ballast_kg,
+		    (unsigned)b->restrictor_pct,
+		    (unsigned)car->ballast_kg, (double)car->restrictor);
+		return;	/* one match per car */
+	}
+}

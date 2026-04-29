@@ -562,6 +562,7 @@ config_load(struct Server *s, const char *cfg_dir)
 	 * not fatal (open server with no forced grid).
 	 */
 	(void)entrylist_load(s, cfg_dir);
+	(void)bop_load(s, cfg_dir);
 
 	/*
 	 * configVersion roll-up — the Kunos exe reads this key from each
