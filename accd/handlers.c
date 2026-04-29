@@ -466,31 +466,20 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		return 0;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
-		uint8_t sector = flag_b < 3 ? flag_b : 0;
-
-		race->sector_ms[sector] = split_time;
-		/*
-		 * Intentionally do not touch best_sectors_ms here.  The
-		 * exe's split handler (FUN_14012b4c0) only propagates the
-		 * out-lap bit onto the lap record; scoring into bests runs
-		 * inside FUN_14012b380 at lap completion, gated on the
-		 * lap not being an out-lap.  Updating best per-split leaks
-		 * out-lap splits into the session-wide best sectors (sent
-		 * in the 0x36 prefix), which makes the client's predicted-
-		 * lap display show a delta before any valid lap exists.
-		 */
 
 		/*
-		 * S/F crossing (sector_index == 2) is also the unconditional
-		 * lap-complete trigger in the exe (FUN_1400142f0 case 0x21
-		 * line 464: car+0x1e8 = 0).  It runs without the all-sectors-
-		 * set gate that h_sector_split_bulk uses, so a formation lap
-		 * S/F (which can fire 0x21 alone, without 0x20 sector splits)
-		 * still clears the cut counter.  Without this the orange "N"
-		 * cut badge from formation-lap track-limit nudges leaks into
-		 * lap 1 even though the driver did nothing.
+		 * 0x21 is the lap-completed message in the exe, not a single
+		 * sector split (FUN_1400142f0 case 0x21 logs "New laptime: %d
+		 * for carId %d"; flag_b is one of two flag bytes the exe reads
+		 * but does not interpret as a sector index).  Reset the cut
+		 * latch + counter on every 0x21, since each one corresponds to
+		 * an S/F crossing.  Earlier code gated the reset on
+		 * `flag_b == 2` under the assumption that flag_b was a sector
+		 * index; with a real client that's whatever bit pattern the
+		 * client puts in flag1, so the reset rarely fired and the
+		 * orange "N" cut badge stuck into the next lap.
 		 */
-		if (sector == 2) {
+		{
 			struct ByteBuf reset;
 			race->cuts_this_lap = 0;
 			race->last_cut_ms = 0;
