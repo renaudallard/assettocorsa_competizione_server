@@ -560,6 +560,13 @@ struct Server {
 	char		track[ACC_TRACK_NAME_LEN];
 	int		ignore_premature_disconnects;
 	int		dump_leaderboards;
+	int		dump_entry_list;	/* settings.json
+						 * dumpEntryList: write
+						 * cfg/entrylist.json at
+						 * each session COMPLETED
+						 * with final positions
+						 * baked into
+						 * defaultGridPosition. */
 	int		force_entry_list;
 	int		register_to_lobby;	/* settings.json knob */
 	int		max_car_slots;		/* settings.json maxCarSlots,

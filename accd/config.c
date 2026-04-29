@@ -269,6 +269,8 @@ config_load(struct Server *s, const char *cfg_dir)
 		    s->ignore_premature_disconnects);
 		s->dump_leaderboards = json_obj_get_int(settings,
 		    "dumpLeaderboards", s->dump_leaderboards);
+		s->dump_entry_list = json_obj_get_int(settings,
+		    "dumpEntryList", s->dump_entry_list);
 		s->allow_auto_dq = json_obj_get_int(settings,
 		    "allowAutoDQ", s->allow_auto_dq);
 		s->register_to_lobby = json_obj_get_int(settings,

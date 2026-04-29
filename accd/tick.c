@@ -54,6 +54,7 @@
 #include "msg.h"
 #include "penalty.h"
 #include "prim.h"
+#include "entrylist.h"
 #include "results.h"
 #include "session.h"
 #include "state.h"
@@ -1065,7 +1066,36 @@ tick_run(struct Server *s)
 			}
 			broadcast_session_results(s);
 			if (!s->session.results_written) {
-				(void)results_write(s);
+				/*
+				 * dumpLeaderboards = 1 in settings.json:
+				 * write the per-session results.json.
+				 * Operators who explicitly disable the
+				 * dump (set 0) skip the file but still get
+				 * the broadcast / archive paths.
+				 */
+				if (s->dump_leaderboards)
+					(void)results_write(s);
+				/*
+				 * dumpEntryList = 1: snapshot the entry
+				 * list with each car's final position
+				 * baked into defaultGridPosition.  Useful
+				 * after Quali so operators can use the
+				 * file to seed the next race's grid via an
+				 * external workflow; harmless after P/R.
+				 */
+				if (s->dump_entry_list) {
+					int ci;
+					for (ci = 0; ci < ACC_MAX_CARS; ci++) {
+						struct CarEntry *cc =
+						    &s->cars[ci];
+						if (cc->driver_count == 0)
+							continue;
+						if (cc->race.position >= 1)
+							cc->default_grid_position
+							    = cc->race.position;
+					}
+					(void)entrylist_save(s, s->cfg_dir);
+				}
 				s->session.results_written = 1;
 			}
 			/*
