@@ -1453,7 +1453,46 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	log_info("Receives driver stint reset for car %d", c->car_id);
+	log_info("Receives driver stint reset for car %d (force=%u)",
+	    c->car_id, (unsigned)force);
+
+	/*
+	 * Race "Tow Penalty" (ESC to garage during the race).  The
+	 * voluntary stint reset (force == 0) arriving during a race
+	 * session is the protocol signal that the driver chose to
+	 * return to the pit box; the client teleports the car and
+	 * cuts the engine.  Per spec the server does NOT DSQ the
+	 * driver — they remain classified by laps completed before
+	 * the ESC — but a mandatory wait timer is enforced before the
+	 * driver can rejoin (simulated tow + repair).  We track the
+	 * wait window in CarRaceState so results.json reflects
+	 * which cars went through it; no server-side block on
+	 * subsequent inputs since the client is the authority on
+	 * "engine cut" / "wait until timer" rendering.
+	 *
+	 * Skip outside race phases (P/Q stint resets are routine
+	 * driver swaps, not tow penalties).
+	 */
+	if (force == 0 &&
+	    s->session.session_index < s->session_count &&
+	    s->sessions[s->session.session_index].session_type == 10 &&
+	    (s->session.phase == PHASE_SESSION ||
+	     s->session.phase == PHASE_OVERTIME)) {
+		struct CarRaceState *r = &s->cars[c->car_id].race;
+		struct timespec _t;
+		uint64_t now;
+		const uint64_t TOW_WAIT_MS = 30000ull;
+
+		clock_gettime(CLOCK_MONOTONIC, &_t);
+		now = (uint64_t)_t.tv_sec * 1000ull +
+		    (uint64_t)_t.tv_nsec / 1000000ull;
+		r->in_tow = 1;
+		r->tow_until_ms = now + TOW_WAIT_MS;
+		log_info("tow penalty: car=%d, wait %llums "
+		    "(lap=%d, race_time=%dms preserved)",
+		    c->car_id, (unsigned long long)TOW_WAIT_MS,
+		    r->lap_count, r->race_time_ms);
+	}
 
 	/*
 	 * Relay 0x4f to all other clients.  Two variants (see
