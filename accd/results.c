@@ -269,32 +269,150 @@ results_write(struct Server *s)
 			    s->mandatory_pit_count) ? 1 : 0);
 		fprintf(f, "        \"towPenalty\": %d,\n",
 		    (int)car->race.in_tow);
-		fprintf(f, "        \"driverPenalties\": [");
+		/*
+		 * driverTotalTimes[] per handbook §VIII.1 — per-driver
+		 * accumulated stint time (ms) for endurance / driver-
+		 * swap classification.  Populated from
+		 * driver_stint_ms[d].
+		 */
+		fprintf(f, "        \"driverTotalTimes\": [");
 		{
-			int pi;
-			int pfirst = 1;
-			for (pi = 0; pi < car->race.pen.count; pi++) {
-				const struct PenaltyEntry *p =
-				    &car->race.pen.slots[pi];
-				if (!pfirst)
-					fprintf(f, ",");
-				fprintf(f, "\n          {");
-				fprintf(f, " \"penalty\": ");
-				fprint_json_str(f, penalty_name(p->kind));
-				fprintf(f, ", \"reason\": %u, \"served\": %d,"
-				    " \"wireValue\": %u }",
-				    (unsigned)p->reason, (int)p->served,
-				    (unsigned)penalty_wire_value(
-					p->kind, p->reason));
-				pfirst = 0;
+			int dj;
+			int dfirst = 1;
+
+			for (dj = 0; dj < car->driver_count &&
+			    dj < ACC_MAX_DRIVERS_PER_CAR; dj++) {
+				if (!dfirst)
+					fprintf(f, ", ");
+				fprintf(f, "%d",
+				    (int)car->race.driver_stint_ms[dj]);
+				dfirst = 0;
 			}
 		}
-		fprintf(f, "\n        ]\n");
+		fprintf(f, "]\n");
 		fprintf(f, "      }");
 		first = 0;
 	}
 	fprintf(f, "\n    ]\n");
-	fprintf(f, "  }\n");
+	fprintf(f, "  },\n");
+
+	/*
+	 * Top-level laps[] per handbook §VIII.1 — flat list of every
+	 * lap any car completed in this session, in chronological
+	 * order (we approximate by walking each car's ring buffer in
+	 * order).  isValidForBest = 0 ms entry means we recorded the
+	 * sentinel for an invalid lap; treat negative / zero as
+	 * invalid.
+	 */
+	fprintf(f, "  \"laps\": [");
+	{
+		int lap_first = 1, ci, hi;
+
+		for (ci = 0; ci < ACC_MAX_CARS && ci < s->max_connections;
+		    ci++) {
+			struct CarEntry *cc = &s->cars[ci];
+			int hcount;
+
+			if (cc->driver_count == 0)
+				continue;
+			hcount = cc->race.lap_history_count > ACC_LAP_HISTORY
+			    ? ACC_LAP_HISTORY
+			    : cc->race.lap_history_count;
+			for (hi = 0; hi < hcount; hi++) {
+				int lap_ms = cc->race.lap_history_ms[hi];
+				int s0 = cc->race.lap_splits_ms[hi][0];
+				int s1 = cc->race.lap_splits_ms[hi][1];
+				int s2 = cc->race.lap_splits_ms[hi][2];
+				int valid = (lap_ms > 0 &&
+				    lap_ms != 0x7fffffff);
+
+				if (!lap_first)
+					fprintf(f, ",");
+				fprintf(f, "\n    {");
+				fprintf(f, " \"carId\": %u,", cc->car_id);
+				fprintf(f, " \"driverIndex\": %u,",
+				    (unsigned)cc->current_driver_index);
+				fprintf(f, " \"laptime\": %d,",
+				    valid ? lap_ms : 0);
+				fprintf(f, " \"isValidForBest\": %s,",
+				    valid ? "true" : "false");
+				fprintf(f, " \"splits\": [%d, %d, %d]",
+				    s0, s1, s2);
+				fprintf(f, " }");
+				lap_first = 0;
+			}
+		}
+	}
+	fprintf(f, "\n  ],\n");
+
+	/*
+	 * Top-level penalties[] per handbook §VIII.1.  carId +
+	 * driverIndex name the receiver, reason / penalty / penaltyValue
+	 * describe the kind, served / violationInLap / clearedInLap
+	 * track its lifecycle.  We don't yet track which lap each
+	 * penalty was issued on or served on, so violationInLap and
+	 * clearedInLap default to -1 (unknown).
+	 */
+	fprintf(f, "  \"penalties\": [");
+	{
+		int pen_first = 1, ci, pi;
+
+		for (ci = 0; ci < ACC_MAX_CARS && ci < s->max_connections;
+		    ci++) {
+			struct CarEntry *cc = &s->cars[ci];
+
+			if (cc->driver_count == 0)
+				continue;
+			for (pi = 0; pi < cc->race.pen.count; pi++) {
+				const struct PenaltyEntry *p =
+				    &cc->race.pen.slots[pi];
+				const char *pname = "Unknown";
+				int pvalue = 0;
+
+				switch (p->kind) {
+				case PEN_DT: case PEN_DTC:
+					pname = "DriveThrough"; pvalue = 3;
+					break;
+				case PEN_SG10: case PEN_SG10C:
+					pname = "StopAndGo_10"; pvalue = 10;
+					break;
+				case PEN_SG20: case PEN_SG20C:
+					pname = "StopAndGo_20"; pvalue = 20;
+					break;
+				case PEN_SG30: case PEN_SG30C:
+					pname = "StopAndGo_30"; pvalue = 30;
+					break;
+				case PEN_TP5:
+					pname = "TimePenalty_5"; pvalue = 5;
+					break;
+				case PEN_TP15:
+					pname = "TimePenalty_15"; pvalue = 15;
+					break;
+				default:
+					break;
+				}
+				if (!pen_first)
+					fprintf(f, ",");
+				fprintf(f, "\n    {");
+				fprintf(f, " \"carId\": %u,", cc->car_id);
+				fprintf(f, " \"driverIndex\": %u,",
+				    (unsigned)cc->current_driver_index);
+				fprintf(f, " \"reason\": %u,",
+				    (unsigned)p->reason);
+				fprintf(f, " \"penalty\": ");
+				fprint_json_str(f, pname);
+				fprintf(f, ", \"penaltyValue\": %d,",
+				    pvalue);
+				fprintf(f, " \"served\": %s,",
+				    p->served ? "true" : "false");
+				fprintf(f, " \"violationInLap\": -1,");
+				fprintf(f, " \"clearedInLap\": -1");
+				fprintf(f, " }");
+				pen_first = 0;
+			}
+		}
+	}
+	fprintf(f, "\n  ]\n");
 	fprintf(f, "}\n");
 	if (fclose(f) != 0) {
 		log_warn("results: fclose %s: %s", path, strerror(errno));
