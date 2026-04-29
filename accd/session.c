@@ -861,9 +861,34 @@ session_tick(struct Server *s)
 		} else if (def->session_type == 10) {
 			s->session.overtime_hold = 1;
 			s->session.cars_in_overtime = (int16_t)racing;
-			log_info("overtime: hold active, %d cars racing",
-			    racing);
+			s->session.overtime_hold_started_ms = now;
+			log_info("overtime: hold active, %d cars racing "
+			    "(hard cap in %us)", racing,
+			    (unsigned)s->session_overtime_s);
 		}
+	}
+
+	/*
+	 * sessionOverTimeSeconds hard stop — close the session for
+	 * everyone once the configured grace has elapsed since the hold
+	 * began, regardless of how many cars are still on track.  Without
+	 * this a single AFK / crashed driver in OVERTIME holds the lobby
+	 * forever.  Spec: "Once this timer expires, the server executes a
+	 * 'Hard Stop,' instantly closing the session for everyone".
+	 */
+	if (s->session.overtime_hold &&
+	    s->session_overtime_s > 0 &&
+	    s->session.overtime_hold_started_ms != 0 &&
+	    now - s->session.overtime_hold_started_ms >=
+		(uint64_t)s->session_overtime_s * 1000ull) {
+		log_info("overtime: hard stop after %us, %d cars still "
+		    "out — releasing hold", (unsigned)s->session_overtime_s,
+		    (int)s->session.cars_in_overtime);
+		s->session.overtime_hold = 0;
+		s->session.cars_in_overtime = 0;
+		s->session.ts[5] = now;
+		if (s->session.ts[6] <= now)
+			s->session.ts[6] = now + 5000;
 	}
 
 	/*

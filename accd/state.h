@@ -266,6 +266,14 @@ struct SessionState {
 	int		ts_valid;	/* non-zero once populated */
 	uint8_t		overtime_hold;	/* freeze phase at OVERTIME */
 	int16_t		cars_in_overtime;/* cars still finishing */
+	/*
+	 * Wall-clock at which overtime_hold was first asserted.  Used as
+	 * the anchor for the sessionOverTimeSeconds hard cap so a single
+	 * AFK car can't hold the lobby past the configured grace.  Once
+	 * (now - overtime_hold_started_ms) exceeds session_overtime_s,
+	 * the hold is force-released regardless of cars_in_overtime.
+	 */
+	uint64_t	overtime_hold_started_ms;
 
 	/*
 	 * Race green-flag position gate (FUN_14012f4a0 in accServer.exe).
