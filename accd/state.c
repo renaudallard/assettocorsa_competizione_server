@@ -109,6 +109,15 @@ static const struct TrackZones track_zones[] = {
 	{"donington",       0.7824390f, 0.0143790f, 0.0240000f},
 	{"red_bull_ring",   0.7749770f, 0.0000000f, 0.0192060f},
 	{"nurburgring_24h", 0.9434080f, 0.9933010f, 0.9999990f},
+	/*
+	 * "spa" is the 27th entry the per-track audit treated as a
+	 * placeholder.  It is actually Spa-Francorchamps, with the
+	 * 3-char track name stored at DAT_14016b6f8 in the exe.
+	 * Verified against accd/tmp/capture2/spa_session.pcapng,
+	 * whose CircuitInfo bytes decode to
+	 * 0.9048780 / 0.1000000 / 0.1155060.
+	 */
+	{"spa",             0.9048780f, 0.1000000f, 0.1155060f},
 };
 
 void
