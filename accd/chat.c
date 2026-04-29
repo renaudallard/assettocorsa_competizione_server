@@ -153,13 +153,15 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	}
 	car = &s->cars[car_id];
 	if (is_ballast) {
-		if (value > 40) value = 40;
+		/* Handbook V: ballast 0..100 kg. */
+		if (value > 100) value = 100;
 		if (value < 0) value = 0;
 		car->ballast_kg = (uint8_t)value;
 		snprintf(chat, sizeof(chat),
 		    "Assigned %d kg to car #%d", value, car_num);
 	} else {
-		if (value > 99) value = 99;
+		/* Handbook V: restrictor 0..20 %. */
+		if (value > 20) value = 20;
 		if (value < 0) value = 0;
 		car->restrictor = (float)value / 100.0f;
 		snprintf(chat, sizeof(chat),
