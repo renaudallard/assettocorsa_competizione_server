@@ -387,12 +387,15 @@ struct RatingEntry {
 };
 
 struct AssistRules {
-	uint8_t		stability_control_max;
+	uint8_t		stability_control_max;	/* 0..100 cap */
 	uint8_t		disable_autosteer;
 	uint8_t		disable_auto_pit_limiter;
 	uint8_t		disable_auto_gear;
 	uint8_t		disable_auto_clutch;
 	uint8_t		disable_ideal_line;
+	uint8_t		disable_auto_engine_start;
+	uint8_t		disable_auto_wiper;
+	uint8_t		disable_auto_lights;
 };
 
 /*

@@ -145,9 +145,12 @@ write_season_entity(struct ByteBuf *bb, struct Server *s)
 	    s->assist.disable_auto_gear : 2) < 0) return -1;
 	if (wr_u8(bb, s->assist.disable_auto_clutch ?
 	    s->assist.disable_auto_clutch : 2) < 0) return -1;
-	if (wr_u8(bb, 2) < 0) return -1;	/* disable_auto_engine */
-	if (wr_u8(bb, 2) < 0) return -1;	/* disable_auto_wiper */
-	if (wr_u8(bb, 2) < 0) return -1;	/* disable_auto_lights */
+	if (wr_u8(bb, s->assist.disable_auto_engine_start ?
+	    s->assist.disable_auto_engine_start : 2) < 0) return -1;
+	if (wr_u8(bb, s->assist.disable_auto_wiper ?
+	    s->assist.disable_auto_wiper : 2) < 0) return -1;
+	if (wr_u8(bb, s->assist.disable_auto_lights ?
+	    s->assist.disable_auto_lights : 2) < 0) return -1;
 
 	/* GraphicsRules: stable defaults. */
 	if (wr_u8(bb, 0) < 0) return -1;

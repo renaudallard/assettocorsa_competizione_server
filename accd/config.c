@@ -543,5 +543,64 @@ config_load(struct Server *s, const char *cfg_dir)
 			    (unsigned)min_ver);
 	}
 
+	/*
+	 * assistRules.json — per-handbook III.2.5.  All fields default
+	 * to 0 = allowed (ACC convention).  The handshake builder
+	 * (handshake.c:130) maps 0 to wire value 2 ("no restriction")
+	 * and 1 to wire value 1 ("disabled"), so unset operators get
+	 * the spec's permissive default.  Optional file: missing /
+	 * unparseable assistRules.json leaves everything at zero.
+	 */
+	{
+		const struct json_node *assist;
+
+		assist = load_json(cfg_dir, "assistRules.json");
+		if (assist != NULL) {
+			s->assist.stability_control_max = (uint8_t)
+			    json_obj_get_int(assist,
+				"stabilityControlLevelMax",
+				s->assist.stability_control_max);
+			s->assist.disable_autosteer = (uint8_t)
+			    json_obj_get_int(assist, "disableAutosteer",
+				s->assist.disable_autosteer);
+			s->assist.disable_auto_pit_limiter = (uint8_t)
+			    json_obj_get_int(assist,
+				"disableAutoPitLimiter",
+				s->assist.disable_auto_pit_limiter);
+			s->assist.disable_auto_gear = (uint8_t)
+			    json_obj_get_int(assist, "disableAutoGear",
+				s->assist.disable_auto_gear);
+			s->assist.disable_auto_clutch = (uint8_t)
+			    json_obj_get_int(assist, "disableAutoClutch",
+				s->assist.disable_auto_clutch);
+			s->assist.disable_ideal_line = (uint8_t)
+			    json_obj_get_int(assist, "disableIdealLine",
+				s->assist.disable_ideal_line);
+			s->assist.disable_auto_engine_start = (uint8_t)
+			    json_obj_get_int(assist,
+				"disableAutoEngineStart",
+				s->assist.disable_auto_engine_start);
+			s->assist.disable_auto_wiper = (uint8_t)
+			    json_obj_get_int(assist, "disableAutoWiper",
+				s->assist.disable_auto_wiper);
+			s->assist.disable_auto_lights = (uint8_t)
+			    json_obj_get_int(assist, "disableAutoLights",
+				s->assist.disable_auto_lights);
+			log_info("assistRules.json: stability_max=%u "
+			    "autosteer=%u pitlim=%u gear=%u clutch=%u "
+			    "ideal=%u engstart=%u wiper=%u lights=%u",
+			    (unsigned)s->assist.stability_control_max,
+			    (unsigned)s->assist.disable_autosteer,
+			    (unsigned)s->assist.disable_auto_pit_limiter,
+			    (unsigned)s->assist.disable_auto_gear,
+			    (unsigned)s->assist.disable_auto_clutch,
+			    (unsigned)s->assist.disable_ideal_line,
+			    (unsigned)s->assist.disable_auto_engine_start,
+			    (unsigned)s->assist.disable_auto_wiper,
+			    (unsigned)s->assist.disable_auto_lights);
+			json_free(assist);
+		}
+	}
+
 	return 0;
 }
