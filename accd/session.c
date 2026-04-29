@@ -666,8 +666,23 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	}
 	if (ra->lap_count != rb->lap_count)
 		return rb->lap_count - ra->lap_count;
-	if (ra->race_time_ms != rb->race_time_ms)
-		return ra->race_time_ms - rb->race_time_ms;
+	/*
+	 * Effective race time = raw cumulative lap time + unserved
+	 * DT/SG converted to +30/+40/+50/+60 s + admin TP5/TP15.
+	 * penalty_total_ms() handles the conversion (penalty.c:358);
+	 * folding it into the comparison here means the position sort
+	 * reflects the spec's post-race classification rule even on the
+	 * live leaderboard, so a driver carrying an unserved DT shows
+	 * behind whoever served theirs in the pit.
+	 */
+	{
+		int64_t ea = (int64_t)ra->race_time_ms +
+		    (int64_t)penalty_total_ms(&ra->pen);
+		int64_t eb = (int64_t)rb->race_time_ms +
+		    (int64_t)penalty_total_ms(&rb->pen);
+		if (ea != eb)
+			return ea < eb ? -1 : 1;
+	}
 	/*
 	 * Race tiebreak: before any lap is complete (and between sector
 	 * splits), lap_count and race_time_ms match for every car.  Fall
