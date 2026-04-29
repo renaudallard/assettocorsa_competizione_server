@@ -252,13 +252,25 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	rain = s->weather.current_rain > 0
 	    ? s->weather.current_rain : 0.0f;
 
-	/* CircuitInfo header (3 u8 + 4 f32 = 19 bytes). */
+	/*
+	 * CircuitInfo header (3 u8 + 4 f32 = 19 bytes).
+	 *
+	 * The 4 f32s are the per-track triple (formation_trigger_start,
+	 * green_trigger_start, green_trigger_end) followed by a 1.0
+	 * baseGrip constant.  The AC2 client uses the triple to render
+	 * the formation 70 km/h zone and the leader-distance zone on the
+	 * HUD; passing wrong values puts those zones at wrong norm_pos.
+	 *
+	 * The leading `01 20 03` is constant across every Kunos capture
+	 * (brands_hatch, misano), likely a section-version / sector-count
+	 * header rather than a per-track field.
+	 */
 	if (wr_u8(bb, 0x01) < 0) return -1;
 	if (wr_u8(bb, 0x20) < 0) return -1;
 	if (wr_u8(bb, 0x03) < 0) return -1;
-	if (wr_f32(bb, 0.9f) < 0) return -1;
-	if (wr_f32(bb, s->weather.clouds * 0.1f) < 0) return -1;
-	if (wr_f32(bb, rain * 0.1f) < 0) return -1;
+	if (wr_f32(bb, s->formation_trigger_start) < 0) return -1;
+	if (wr_f32(bb, s->green_trigger_start) < 0) return -1;
+	if (wr_f32(bb, s->green_trigger_end) < 0) return -1;
 	if (wr_f32(bb, 1.0f) < 0) return -1;
 
 	/*
