@@ -1056,14 +1056,19 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	/*
 	 * Primer filter.  The client fires 0x41 on every lap / violation
 	 * tick with value=0 as a register-severity heads-up; the exe's
-	 * FUN_140125f50 fresh-branch registers severity without
-	 * materialising a Penalty, so primers never reach the HUD there.
-	 * Our penalty_enqueue DOES materialise on fresh for admin /dt UX,
-	 * so we have to filter primers at this layer instead.  Trust
-	 * kind=DQ unconditionally (client self-DQs carry the violation in
-	 * kind, not value); non-DQ only when value>0 (a real escalation).
+	 * FUN_140125f50 fresh-branch (140125f50:147-153) stores the kind
+	 * in the per-car-per-kind PenaltySheet without pushing a Penalty
+	 * onto the sheet's inner vector, so primers never paint anything
+	 * on the HUD there.  Our penalty_enqueue materialises on fresh for
+	 * admin /dt UX, so we filter primers here.  Drop every value<=0
+	 * call regardless of kind: kind=DQ value=0 from a real client
+	 * (e.g. cat=10 PIT_ENTRY) used to slip through and materialise a
+	 * phantom DQ.  Real DQ events for the four categories the server
+	 * can't infer (wrong-way, lights-off, speeding-on-start, wrong
+	 * grid) are handled by server-side detection elsewhere; we don't
+	 * trust the client's self-DQ here.
 	 */
-	if (kind != EXE_DQ && value <= 0)
+	if (value <= 0)
 		return 0;
 	{
 		uint8_t reason = client_category_to_reason(category);
