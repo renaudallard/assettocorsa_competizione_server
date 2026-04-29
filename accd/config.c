@@ -481,15 +481,73 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "mandatoryPitstopCount", 0);
 			int swap_req = json_obj_get_int(rules,
 			    "isMandatoryPitstopSwapDriverRequired", 0);
+			int qst = json_obj_get_int(rules,
+			    "qualifyStandingType",
+			    s->qualify_standing_type);
+			int pit_window = json_obj_get_int(rules,
+			    "pitWindowLengthSec", -1);
+			int max_drv_time = json_obj_get_int(rules,
+			    "maxTotalDrivingTime", -1);
+			int max_drvs = json_obj_get_int(rules,
+			    "maxDriversCount", s->max_drivers_count);
+			int refuel = json_obj_get_int(rules,
+			    "isRefuellingAllowedInRace",
+			    s->refuelling_allowed);
+			int refuel_fixed = json_obj_get_int(rules,
+			    "isRefuellingTimeFixed",
+			    s->refuelling_time_fixed);
+			int pit_refuel = json_obj_get_int(rules,
+			    "isMandatoryPitstopRefuellingRequired",
+			    s->pit_refuelling_required);
+			int pit_tyres = json_obj_get_int(rules,
+			    "isMandatoryPitstopTyreChangeRequired",
+			    s->pit_tyre_change_required);
+			int tyre_sets = json_obj_get_int(rules,
+			    "tyreSetCount", s->tyre_set_count);
+
 			if (stint_min < 0)
 				stint_min = 0;
 			if (pit_count < 0)
 				pit_count = 0;
 			if (pit_count > 255)
 				pit_count = 255;
+			if (max_drvs < 1)
+				max_drvs = 1;
+			if (max_drvs > 255)
+				max_drvs = 255;
+			if (tyre_sets < 1)
+				tyre_sets = 1;
+			if (tyre_sets > 255)
+				tyre_sets = 255;
 			s->driver_stint_time_s = (uint32_t)stint_min * 60u;
 			s->mandatory_pit_count = (uint8_t)pit_count;
 			s->mandatory_swap_required = swap_req ? 1 : 0;
+			s->qualify_standing_type = (uint8_t)
+			    (qst >= 0 && qst <= 1 ? qst : 1);
+			s->pit_window_length_s = pit_window;
+			s->max_total_driving_time_s = max_drv_time;
+			s->max_drivers_count = (uint8_t)max_drvs;
+			s->refuelling_allowed = refuel ? 1 : 0;
+			s->refuelling_time_fixed = refuel_fixed ? 1 : 0;
+			s->pit_refuelling_required = pit_refuel ? 1 : 0;
+			s->pit_tyre_change_required = pit_tyres ? 1 : 0;
+			s->tyre_set_count = (uint8_t)tyre_sets;
+			log_info("eventRules.json: stint=%us pits=%u "
+			    "swap=%u qstand=%u pitwin=%ds maxdrvtime=%ds "
+			    "maxdrvs=%u refuel=%u/fixed=%u "
+			    "pit_refuel=%u pit_tyres=%u tyresets=%u",
+			    (unsigned)s->driver_stint_time_s,
+			    (unsigned)s->mandatory_pit_count,
+			    (unsigned)s->mandatory_swap_required,
+			    (unsigned)s->qualify_standing_type,
+			    s->pit_window_length_s,
+			    s->max_total_driving_time_s,
+			    (unsigned)s->max_drivers_count,
+			    (unsigned)s->refuelling_allowed,
+			    (unsigned)s->refuelling_time_fixed,
+			    (unsigned)s->pit_refuelling_required,
+			    (unsigned)s->pit_tyre_change_required,
+			    (unsigned)s->tyre_set_count);
 			json_free(rules);
 		}
 	}

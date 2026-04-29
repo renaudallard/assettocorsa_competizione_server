@@ -159,6 +159,16 @@ server_init(struct Server *s)
 	s->post_qualy_s = 10;
 	s->post_race_s = 15;
 	s->config_version = 0;
+	/* eventRules.json defaults — match the handbook III.2.4 spec. */
+	s->qualify_standing_type = 1;	/* superpole */
+	s->pit_window_length_s = -1;	/* unset sentinel */
+	s->max_total_driving_time_s = -1;
+	s->max_drivers_count = 1;
+	s->refuelling_allowed = 1;
+	s->refuelling_time_fixed = 0;
+	s->pit_refuelling_required = 0;
+	s->pit_tyre_change_required = 0;
+	s->tyre_set_count = 1;
 	snprintf(s->car_group, sizeof(s->car_group), "FreeForAll");
 	lobby_init(&s->lobby);
 	for (int i = 0; i < ACC_MAX_CARS; i++)

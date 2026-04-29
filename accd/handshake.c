@@ -310,35 +310,43 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		uint16_t stint_wire = stint_s > 0 && stint_s <= 0xfffe
 		    ? (uint16_t)stint_s : (uint16_t)0xffff;
 		uint8_t mandatory_pits = s->mandatory_pit_count;
+		uint16_t pit_window_wire =
+		    s->pit_window_length_s > 0 &&
+		    s->pit_window_length_s <= 0xfffe
+		    ? (uint16_t)s->pit_window_length_s
+		    : (uint16_t)0xffff;
+		uint16_t max_drv_time_wire =
+		    s->max_total_driving_time_s > 0 &&
+		    s->max_total_driving_time_s <= 0xfffe
+		    ? (uint16_t)s->max_total_driving_time_s
+		    : (uint16_t)0xffff;
 
-		/* +0x28 qualifyStandingType (0=best lap, 1=superpole).
-		 * Kunos default = 1; we don't implement superpole so
-		 * keep the exe's default value. */
-		if (wr_u8(bb, 0x01) < 0) return -1;
-		/* +0x2c superpoleMaxCar, signed-int-to-u8 with 0xff as
-		 * "unset" sentinel.  No superpole => -1. */
+		/* +0x28 qualifyStandingType (0=best lap, 1=superpole). */
+		if (wr_u8(bb, s->qualify_standing_type) < 0) return -1;
+		/* +0x2c superpoleMaxCar, 0xff = unset.  We don't enforce
+		 * superpole so keep the unset sentinel. */
 		if (wr_u8(bb, 0xff) < 0) return -1;
-		/* +0x30 pitWindowLengthSec — u16 on wire, -1 unset. */
-		if (wr_u16(bb, 0xffff) < 0) return -1;
+		/* +0x30 pitWindowLengthSec — u16 on wire, 0xffff unset. */
+		if (wr_u16(bb, pit_window_wire) < 0) return -1;
 		/* +0x34 driverStintTimeSec from eventRules.driverStintTime,
-		 * truncated to u16, -1 when unset. */
+		 * truncated to u16, 0xffff unset. */
 		if (wr_u16(bb, stint_wire) < 0) return -1;
-		/* +0x38 isRefuellingAllowedInRace (bool).  Default on. */
-		if (wr_u8(bb, 0x01) < 0) return -1;
-		/* +0x39 isRefuellingTimeFixed (bool).  Default off. */
-		if (wr_u8(bb, 0x00) < 0) return -1;
+		/* +0x38 isRefuellingAllowedInRace (bool). */
+		if (wr_u8(bb, s->refuelling_allowed) < 0) return -1;
+		/* +0x39 isRefuellingTimeFixed (bool). */
+		if (wr_u8(bb, s->refuelling_time_fixed) < 0) return -1;
 		/* +0x3a maxDriversCount — u8 on wire. */
-		if (wr_u8(bb, 0x01) < 0) return -1;
+		if (wr_u8(bb, s->max_drivers_count) < 0) return -1;
 		/* +0x3c mandatoryPitstopCount — u8 on wire. */
 		if (wr_u8(bb, mandatory_pits) < 0) return -1;
-		/* +0x40 maxTotalDrivingTime — u16 on wire, -1 unset. */
-		if (wr_u16(bb, 0xffff) < 0) return -1;
-		/* +0x44..+0x46 three mandatory-pit boolean toggles. */
-		if (wr_u8(bb, 0x00) < 0) return -1;
-		if (wr_u8(bb, 0x00) < 0) return -1;
-		if (wr_u8(bb, 0x00) < 0) return -1;
-		/* Trailing tyreSetCount (u8) — default 1. */
-		if (wr_u8(bb, 0x01) < 0) return -1;
+		/* +0x40 maxTotalDrivingTime — u16 on wire, 0xffff unset. */
+		if (wr_u16(bb, max_drv_time_wire) < 0) return -1;
+		/* +0x44..+0x46 mandatory-pit sub-flags. */
+		if (wr_u8(bb, s->pit_refuelling_required) < 0) return -1;
+		if (wr_u8(bb, s->pit_tyre_change_required) < 0) return -1;
+		if (wr_u8(bb, s->mandatory_swap_required) < 0) return -1;
+		/* Trailing tyreSetCount (u8). */
+		if (wr_u8(bb, s->tyre_set_count) < 0) return -1;
 	}
 
 	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */

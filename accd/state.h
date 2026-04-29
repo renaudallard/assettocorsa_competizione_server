@@ -729,6 +729,19 @@ struct Server {
 	uint32_t		driver_stint_time_s; /* eventRules.driverStintTime*60 (0 = no limit) */
 	uint8_t			mandatory_pit_count; /* eventRules.mandatoryPitstopCount (0 = none) */
 	uint8_t			mandatory_swap_required; /* eventRules.isMandatoryPitstopSwapDriverRequired */
+	/*
+	 * Remaining eventRules.json fields per handbook III.2.4.
+	 * 0xff / 0xffff sentinels mean "unset" on the wire.
+	 */
+	uint8_t			qualify_standing_type;	/* 0=bestlap, 1=superpole */
+	int32_t			pit_window_length_s;	/* -1 = unset */
+	int32_t			max_total_driving_time_s;/* -1 = unset */
+	uint8_t			max_drivers_count;	/* default 1 */
+	uint8_t			refuelling_allowed;	/* 1=allowed (default) */
+	uint8_t			refuelling_time_fixed;	/* 0=variable (default) */
+	uint8_t			pit_refuelling_required;
+	uint8_t			pit_tyre_change_required;
+	uint8_t			tyre_set_count;		/* default 1 */
 	char			cfg_dir[256];	/* for saving bans */
 
 	/* timing */
