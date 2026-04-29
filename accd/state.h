@@ -210,6 +210,23 @@ struct CarRaceState {
 						 * during the formation lap.
 						 * See FUN_1400431e0.  Bulk-true
 						 * for manual formation. */
+	uint8_t		quali_eligible_to_finish;
+						/* Set per-car at the moment a
+						 * Quali session timer expires
+						 * (= phase enters OVERTIME) for
+						 * cars that were on-track and
+						 * outside the pit at that
+						 * instant.  Cleared when the
+						 * car either completes a lap
+						 * or invalidates one during
+						 * overtime, mirroring the
+						 * "right to finish" / "instant
+						 * drop" rules.  When no car
+						 * still has the flag set the
+						 * Quali overtime can collapse
+						 * even before
+						 * sessionOverTimeSeconds
+						 * elapses. */
 	struct PenaltyQueue	pen;
 	struct PenaltySheetState	pen_state[7];	/* exe kind 1..6 */
 	/*

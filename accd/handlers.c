@@ -413,8 +413,17 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		 * didn't change (lap count/time updated). */
 		s->session.standings_seq++;
 
-		if (s->session.phase == PHASE_OVERTIME)
+		if (s->session.phase == PHASE_OVERTIME) {
 			session_overtime_car_finished(s);
+			/*
+			 * Quali "Right to Finish": an eligible car that
+			 * crosses S/F during overtime has used its right
+			 * — drop the flag so the hold can collapse once
+			 * the rest of the eligible set finishes.  No-op
+			 * for race or for cars that were never eligible.
+			 */
+			session_quali_drop_eligibility(s, c->car_id);
+		}
 	} else {
 		log_info("sector split: car=%d sector=%u time=%dms "
 		    "clock=%d",
@@ -923,6 +932,14 @@ h_out_of_track(struct Server *s, struct Conn *c,
 			if (race->cuts_this_lap < 255)
 				race->cuts_this_lap++;
 			race->last_cut_ms = now_ms;
+			/*
+			 * Quali "Instant Drop": invalidating the flying
+			 * lap during Quali overtime ends the car's
+			 * session immediately.  No-op outside Quali
+			 * overtime or for a car that wasn't eligible.
+			 */
+			if (s->session.phase == PHASE_OVERTIME)
+				session_quali_drop_eligibility(s, c->car_id);
 			log_info("out-of-track: car=%d ts=%d cuts=%u",
 			    c->car_id, (int)ts_raw,
 			    (unsigned)race->cuts_this_lap);

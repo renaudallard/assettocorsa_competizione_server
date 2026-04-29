@@ -122,6 +122,15 @@ uint8_t	session_phase_to_wire(uint8_t p);
 void	session_overtime_car_finished(struct Server *s);
 
 /*
+ * Quali "Right to Finish" / "Instant Drop": clear a car's
+ * eligibility-to-finish flag and decrement the hold counter.
+ * No-op outside Quali OVERTIME.  Call from the lap-invalidation
+ * path (h_out_of_track) and from the lap-completion path when
+ * the closing car was eligible.
+ */
+void	session_quali_drop_eligibility(struct Server *s, int car_id);
+
+/*
  * Race formation-/green-flag position gate (FUN_14012f4a0 equivalent).
  * Called every tick during race PHASE_PRE_SESSION with the leader's
  * normalized track position (0..1) and current monotonic ms.  Flips
