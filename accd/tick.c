@@ -1056,6 +1056,17 @@ tick_run(struct Server *s)
 					int pct;
 					if (car->driver_count == 0)
 						continue;
+					/*
+					 * Skip slots that already received a
+					 * rating delta in conn_drop's premature-
+					 * DC branch (cars[].used cleared but
+					 * driver_count and steam_id preserved).
+					 * Without this guard the same steam_id
+					 * gets a -30 TR from conn_drop and then
+					 * another +3/+10 here at COMPLETED.
+					 */
+					if (!car->used)
+						continue;
 					pct = leader_laps > 0
 					    ? (car->race.lap_count * 100)
 					      / leader_laps : 0;
