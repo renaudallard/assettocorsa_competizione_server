@@ -91,6 +91,22 @@ int	penalty_enqueue(struct Server *s, int car_id,
 uint16_t
 	penalty_wire_value(uint8_t kind, uint8_t reason);
 
+/*
+ * True for the eight DT/SG kinds, including the collision variants.
+ * Used by penalty_serve_front, the lap-end deadline tick, and the
+ * pit-exit dwell check to decide which queue entries are
+ * "serve-able" (TP and DQ are not).
+ */
+int	penalty_kind_is_dtsg(uint8_t kind);
+
+/*
+ * Find the slot index of the first unserved DT/SG entry in the
+ * queue, or -1 if there is none.  Used by the lap-end deadline
+ * tick, the pit-exit serve check, and penalty_serve_front itself
+ * — all three previously open-coded the same scan.
+ */
+int	penalty_first_unserved_dtsg(const struct PenaltyQueue *q);
+
 /* Mark the front penalty as served (for stop-and-go / drive-through). */
 void	penalty_serve_front(struct Server *s, int car_id);
 

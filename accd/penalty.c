@@ -296,11 +296,34 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 	return -1;
 }
 
+int
+penalty_kind_is_dtsg(uint8_t k)
+{
+	return k == PEN_DT  || k == PEN_DTC  ||
+	    k == PEN_SG10 || k == PEN_SG10C ||
+	    k == PEN_SG20 || k == PEN_SG20C ||
+	    k == PEN_SG30 || k == PEN_SG30C;
+}
+
+int
+penalty_first_unserved_dtsg(const struct PenaltyQueue *q)
+{
+	int i;
+
+	for (i = 0; i < q->count; i++) {
+		if (q->slots[i].served)
+			continue;
+		if (penalty_kind_is_dtsg(q->slots[i].kind))
+			return i;
+	}
+	return -1;
+}
+
 void
 penalty_serve_front(struct Server *s, int car_id)
 {
 	struct PenaltyQueue *q;
-	int i, idx;
+	int idx;
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS)
 		return;
@@ -309,27 +332,11 @@ penalty_serve_front(struct Server *s, int car_id)
 		return;
 	/*
 	 * Only DT / SG kinds are serve-able — TP5/TP15 are fixed
-	 * post-race time penalties, DQ is terminal.  Find the FIRST
-	 * serve-able entry, skipping any TP/DQ/etc. ahead of it; if
-	 * we just inspected slots[0] a TP enqueued before a real DT
-	 * (admin /tp followed by a cut DT, or a TP escalation that
-	 * landed first) would block service of the trailing DT
-	 * indefinitely and the auto-DQ-on-3-laps fallback would
-	 * never fire either.
+	 * post-race time penalties, DQ is terminal.  A TP enqueued
+	 * before a real DT (admin /tp then a cut DT) at slots[0]
+	 * would otherwise block service of the trailing DT.
 	 */
-	idx = -1;
-	for (i = 0; i < q->count; i++) {
-		uint8_t k = q->slots[i].kind;
-		if (q->slots[i].served)
-			continue;
-		if (k == PEN_DT || k == PEN_DTC ||
-		    k == PEN_SG10 || k == PEN_SG10C ||
-		    k == PEN_SG20 || k == PEN_SG20C ||
-		    k == PEN_SG30 || k == PEN_SG30C) {
-			idx = i;
-			break;
-		}
-	}
+	idx = penalty_first_unserved_dtsg(q);
 	if (idx < 0)
 		return;
 	/*

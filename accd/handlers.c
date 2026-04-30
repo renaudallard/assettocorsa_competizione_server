@@ -339,33 +339,10 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		 * direct PEN_DQ, not via this serve-deadline path.
 		 */
 		if (race->pen.count > 0 && !race->disqualified) {
-			struct PenaltyEntry *front = NULL;
-			int is_dtsg = 0;
-			int pi;
-			/*
-			 * Walk the queue past any served entries (kept around
-			 * so results.json can report them) to find the first
-			 * unserved DT/SG; that's the one whose service
-			 * deadline ticks down.
-			 */
-			for (pi = 0; pi < race->pen.count; pi++) {
-				if (race->pen.slots[pi].served)
-					continue;
-				front = &race->pen.slots[pi];
-				switch (front->kind) {
-				case PEN_DT: case PEN_DTC:
-				case PEN_SG10: case PEN_SG10C:
-				case PEN_SG20: case PEN_SG20C:
-				case PEN_SG30: case PEN_SG30C:
-					is_dtsg = 1;
-					break;
-				default:
-					break;
-				}
-				break;
-			}
-			if (front != NULL && is_dtsg &&
-			    front->laps_remaining > 0) {
+			int pi = penalty_first_unserved_dtsg(&race->pen);
+			struct PenaltyEntry *front = pi >= 0
+			    ? &race->pen.slots[pi] : NULL;
+			if (front != NULL && front->laps_remaining > 0) {
 				front->laps_remaining--;
 				if (front->laps_remaining == 0) {
 					uint8_t inherited = front->reason;
@@ -796,31 +773,19 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		 * to move through doesn't get the SG cleared.
 		 */
 		if (was_in_pit && !race->in_pit && race->pen.count > 0) {
-			/*
-			 * Pick the first unserved entry — served records
-			 * stay in the queue so results.json can report
-			 * them, so slots[0] may already be a served kind.
-			 */
-			uint8_t k = 0;
-			int pi;
-			int is_dt = 0, is_sg10 = 0, is_sg20 = 0, is_sg30 = 0;
+			int pi = penalty_first_unserved_dtsg(&race->pen);
+			uint8_t k = pi >= 0
+			    ? race->pen.slots[pi].kind : 0;
 			uint32_t required_s = 0;
-			for (pi = 0; pi < race->pen.count; pi++) {
-				if (race->pen.slots[pi].served)
-					continue;
-				k = race->pen.slots[pi].kind;
-				is_dt = (k == PEN_DT || k == PEN_DTC);
-				is_sg10 = (k == PEN_SG10 || k == PEN_SG10C);
-				is_sg20 = (k == PEN_SG20 || k == PEN_SG20C);
-				is_sg30 = (k == PEN_SG30 || k == PEN_SG30C);
-				break;
-			}
 
-			if (is_sg10) required_s = 10;
-			else if (is_sg20) required_s = 20;
-			else if (is_sg30) required_s = 30;
+			if (k == PEN_SG10 || k == PEN_SG10C)
+				required_s = 10;
+			else if (k == PEN_SG20 || k == PEN_SG20C)
+				required_s = 20;
+			else if (k == PEN_SG30 || k == PEN_SG30C)
+				required_s = 30;
 
-			if (is_dt || is_sg10 || is_sg20 || is_sg30) {
+			if (pi >= 0) {
 				uint64_t now_ms = mono_ms();
 				uint64_t dwell_ms = race->pit_entry_ms > 0
 				    ? now_ms - race->pit_entry_ms : 0;
