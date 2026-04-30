@@ -1130,34 +1130,8 @@ tick_run(struct Server *s)
 	if (ratings_is_dirty(s) &&
 	    now_ms - s->ratings_last_emit_ms >= CADENCE_RATINGS_MS) {
 		struct ByteBuf wb;
-		int j, nc = 0, ok = 1;
-		for (j = 0; j < ACC_MAX_CARS; j++)
-			if (s->cars[j].used)
-				nc++;
 		bb_init(&wb);
-		ok = wr_u8(&wb, SRV_RATING_SUMMARY) == 0;
-		ok = ok && wr_u8(&wb, (uint8_t)nc) == 0;
-		for (j = 0; j < ACC_MAX_CARS && ok; j++) {
-			uint16_t sa = 5000, tr = 5000;
-			if (!s->cars[j].used)
-				continue;
-			ratings_get(s,
-			    s->cars[j].drivers[0].steam_id, &sa, &tr);
-			ok = ok && wr_u16(&wb, s->cars[j].car_id) == 0;
-			ok = ok && wr_u8(&wb, 0) == 0;
-			ok = ok && wr_u16(&wb, sa) == 0;
-			ok = ok && wr_u16(&wb, tr) == 0;
-			ok = ok && wr_i16(&wb, -1) == 0;
-			ok = ok && wr_i16(&wb, -1) == 0;
-			/*
-			 * Same tail as the welcome and disconnect 0x4e
-			 * paths: str_a steam_id, not a u8 0 pad.  See
-			 * FUN_14002f710 tail for the reference write.
-			 */
-			ok = ok && wr_str_a(&wb,
-			    s->cars[j].drivers[0].steam_id) == 0;
-		}
-		if (ok)
+		if (build_rating_summary(&wb, s) == 0)
 			(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
 		bb_free(&wb);
 		ratings_clear_dirty(s);

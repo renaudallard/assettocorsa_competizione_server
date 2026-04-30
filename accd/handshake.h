@@ -104,4 +104,12 @@ int	write_leaderboard_section(struct ByteBuf *bb, struct Server *s);
 int	write_car_leaderboard_record(struct ByteBuf *bb,
 		const struct CarEntry *ec, uint8_t cvar8);
 
+/*
+ * Build the 0x4e SRV_RATING_SUMMARY body for every used car
+ * (welcome trailer fan-out and the periodic broadcast use the
+ * same shape).  bb is appended to; ownership stays with the
+ * caller.  Returns 0 on success, -1 on a writer error mid-build.
+ */
+int	build_rating_summary(struct ByteBuf *bb, const struct Server *s);
+
 #endif /* ACCD_HANDSHAKE_H */

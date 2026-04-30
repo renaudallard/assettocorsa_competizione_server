@@ -845,6 +845,48 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 }
 
 /*
+ * 0x4e SRV_RATING_SUMMARY body (multi-car).  Walked by the welcome
+ * trailer fan-out and by the periodic broadcast in tick_run; both
+ * sites previously inlined this exact build, leading to two-site
+ * drift hazard the moment the wire shape changes.  Body per-car
+ * matches FUN_14002f710's tail layout: u16 car_id, u8 0, u16 SA,
+ * u16 TR, i16 -1, i16 -1, str_a steam_id.
+ */
+int
+build_rating_summary(struct ByteBuf *bb, const struct Server *s)
+{
+	int j, nc = 0;
+
+	for (j = 0; j < ACC_MAX_CARS; j++)
+		if (s->cars[j].used)
+			nc++;
+	if (wr_u8(bb, SRV_RATING_SUMMARY) < 0) return -1;
+	if (wr_u8(bb, (uint8_t)nc) < 0) return -1;
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		uint16_t sa = 5000, tr = 5000;
+		const char *sid;
+
+		if (!s->cars[j].used)
+			continue;
+		sid = s->cars[j].drivers[0].steam_id;
+		ratings_get(s, sid, &sa, &tr);
+		if (wr_u16(bb, s->cars[j].car_id) < 0) return -1;
+		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u16(bb, sa) < 0) return -1;
+		if (wr_u16(bb, tr) < 0) return -1;
+		if (wr_i16(bb, -1) < 0) return -1;
+		if (wr_i16(bb, -1) < 0) return -1;
+		/*
+		 * FUN_14002f710 tail of each entry is str_a steam_id
+		 * (via the generic string writer at 14004d390), not a
+		 * u8 0 pad — real steam_ids are ~17-18 chars.
+		 */
+		if (wr_str_a(bb, sid) < 0) return -1;
+	}
+	return 0;
+}
+
+/*
  * WeatherData::serialize body (FUN_14011e660, vtable[0x20] on the
  * WeatherData object stored at param_1[0x1410e]).  JSON counterpart
  * at vtable[0x18] = FUN_140113b00 pinned the field names.
@@ -2202,61 +2244,10 @@ reply:
 			 * Previous spec had an extra u32 extra_rating before
 			 * the steam_id — the capture does not contain it.
 			 */
-			{
-				int j, nc = 0;
-				int ok = 1;
-
-				for (j = 0; j < ACC_MAX_CARS; j++)
-					if (s->cars[j].used)
-						nc++;
-				bb_init(&wb);
-				ok = wr_u8(&wb, SRV_RATING_SUMMARY) == 0;
-				ok = ok && wr_u8(&wb, (uint8_t)nc) == 0;
-				for (j = 0; j < ACC_MAX_CARS && ok; j++) {
-					if (!s->cars[j].used)
-						continue;
-					ok = ok && wr_u16(&wb,
-					    s->cars[j].car_id) == 0;
-					ok = ok && wr_u8(&wb, 0) == 0;
-					/*
-					 * Welcome 0x4e per-car body is
-					 * u16 car_id + u8 0 + u16 SA + u16 TR
-					 * + u32 0xFFFFFFFF + u8 0 (14-byte
-					 * single-car capture).  Real SA/TR
-					 * values come from the local ratings
-					 * ledger keyed by steam_id.
-					 */
-					{
-						uint16_t sa = 5000, tr = 5000;
-						const char *sid =
-						    s->cars[j].drivers[0]
-						    .steam_id;
-						ratings_get(s, sid, &sa, &tr);
-						ok = ok && wr_u16(&wb, sa) == 0;
-						ok = ok && wr_u16(&wb, tr) == 0;
-					}
-					ok = ok && wr_i16(&wb, -1) == 0;
-					ok = ok && wr_i16(&wb, -1) == 0;
-					/*
-					 * FUN_14002f710 tail of each 0x4e
-					 * entry is str_a steam_id (via the
-					 * generic string writer at 14004d390),
-					 * not a u8 0.  The prior pad would be
-					 * accepted as a zero-length str_a only
-					 * by accident; real steam_ids are
-					 * ~17-18 chars, and the rating HUD
-					 * maps each per-entry body back to its
-					 * driver by that id.
-					 */
-					ok = ok && wr_str_a(&wb,
-					    s->cars[j].drivers[0].steam_id)
-					    == 0;
-				}
-				if (ok)
-					(void)bcast_all(s, wb.data,
-					    wb.wpos, 0xFFFF);
-				bb_free(&wb);
-			}
+			bb_init(&wb);
+			if (build_rating_summary(&wb, s) == 0)
+				(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
+			bb_free(&wb);
 		}
 
 		log_debug("welcome sequence sent: 0x2e+0x4f bcast + "
