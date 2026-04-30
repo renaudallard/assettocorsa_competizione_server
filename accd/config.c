@@ -339,14 +339,22 @@ config_load(struct Server *s, const char *cfg_dir)
 		 * isRaceLocked (handbook III.2.2): default 1.  Inverse
 		 * of unsafe_rejoin which already controls the same
 		 * mid-race-join gate.  Reading both keeps backwards
-		 * compat with operators using either name.
+		 * compat with operators using either name.  Only override
+		 * unsafe_rejoin when isRaceLocked is actually present in
+		 * the JSON; otherwise an operator who set unsafeRejoin
+		 * earlier would lose their setting to the default.
 		 */
-		s->is_race_locked = (uint8_t)json_obj_get_int(settings,
-		    "isRaceLocked", 1);
-		if (s->is_race_locked)
-			s->unsafe_rejoin = 0;
-		else
-			s->unsafe_rejoin = 1;
+		{
+			const struct json_node *rl = json_obj_get(settings,
+			    "isRaceLocked");
+			if (rl != NULL && rl->kind == JSON_NUM) {
+				s->is_race_locked = (uint8_t)rl->u.num;
+				s->unsafe_rejoin =
+				    s->is_race_locked ? 0 : 1;
+			} else {
+				s->is_race_locked = s->unsafe_rejoin ? 0 : 1;
+			}
+		}
 		s->randomize_track_when_empty = (uint8_t)json_obj_get_int(
 		    settings, "randomizeTrackWhenEmpty", 0);
 		if (s->max_car_slots > 10 &&
