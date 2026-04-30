@@ -336,9 +336,16 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 
 		/* +0x28 qualifyStandingType (0=best lap, 1=superpole). */
 		if (wr_u8(bb, s->qualify_standing_type) < 0) return -1;
-		/* +0x2c superpoleMaxCar, 0xff = unset.  We don't enforce
-		 * superpole so keep the unset sentinel. */
-		if (wr_u8(bb, 0xff) < 0) return -1;
+		/*
+		 * +0x2c superpoleMaxCar.  AC2 stores this as u32 at +0x154
+		 * (zero-extended from our u8) and an HUD widget appears to
+		 * format "OBLIGATOIRE %d/%d" with this field as the
+		 * numerator and mandatoryPitstopCount as the denominator —
+		 * a 0xff "unset sentinel" guess produced "255/0" in race
+		 * sessions where mandatoryPitstopCount=0.  Emit 0 instead;
+		 * the widget collapses to "0/0" which the client hides.
+		 */
+		if (wr_u8(bb, 0) < 0) return -1;
 		/* +0x30 pitWindowLengthSec — u16 on wire, 0xffff unset. */
 		if (wr_u16(bb, pit_window_wire) < 0) return -1;
 		/* +0x34 driverStintTimeSec from eventRules.driverStintTime,
