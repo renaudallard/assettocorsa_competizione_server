@@ -447,8 +447,15 @@ config_load(struct Server *s, const char *cfg_dir)
 			if (ge != NULL && ge->kind == JSON_NUM)
 				s->green_trigger_end = (float)ge->u.num;
 		}
-		s->session.track_temp = (uint8_t)(
-		    s->session.ambient_temp + 8);
+		/*
+		 * Fall back to ambient+8 only when the operator didn't set
+		 * trackTemp (or set it to 0).  Earlier code overwrote the
+		 * JSON value unconditionally, so any non-zero trackTemp in
+		 * event.json was silently ignored.
+		 */
+		if (s->session.track_temp == 0)
+			s->session.track_temp = (uint8_t)(
+			    s->session.ambient_temp + 8);
 
 		{
 			float clouds = (float)json_obj_get_int(event,
