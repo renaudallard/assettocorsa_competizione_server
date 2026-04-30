@@ -74,6 +74,13 @@ mono_ms(void)
 #define ACC_MAX_CARS		64
 #define ACC_CAR_ID_BASE		1001
 #define ACC_MAX_DRIVERS_PER_CAR	4
+
+/*
+ * Sentinel u32 written for "no lap recorded yet" / "best sector
+ * absent" slots in the 0x36 leaderboard record and the welcome
+ * trailer.  Matches FUN_140034210's INT32_MAX wire literal.
+ */
+#define LAP_TIME_INVALID	0x7FFFFFFFu
 #define ACC_MAX_NAME_LEN	64
 #define ACC_TRACK_NAME_LEN	48
 #define ACC_MAX_SESSIONS	16

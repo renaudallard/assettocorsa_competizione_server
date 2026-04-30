@@ -583,11 +583,11 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	 * We compute them by scanning per-car best_lap / best_sectors.
 	 */
 	if (wr_u32(bb, sess_best_lap == INT32_MAX
-	    ? 0x7FFFFFFFu : (uint32_t)sess_best_lap) < 0) return -1;
+	    ? LAP_TIME_INVALID : (uint32_t)sess_best_lap) < 0) return -1;
 	if (wr_u8(bb, 3) < 0) return -1;
 	for (d = 0; d < 3; d++)
 		if (wr_u32(bb, sess_best_sec[d] == INT32_MAX
-		    ? 0x7FFFFFFFu : (uint32_t)sess_best_sec[d]) < 0)
+		    ? LAP_TIME_INVALID : (uint32_t)sess_best_sec[d]) < 0)
 			return -1;
 	if (wr_u8(bb, cvar8) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)nc) < 0) return -1;
@@ -742,12 +742,12 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 */
 	if (wr_u16(bb, 0) < 0) return -1;
 	if (wr_u32(bb, race->best_lap_ms > 0
-	    ? (uint32_t)race->best_lap_ms : 0x7FFFFFFFu) < 0) return -1;
+	    ? (uint32_t)race->best_lap_ms : LAP_TIME_INVALID) < 0) return -1;
 	if (wr_u32(bb, race->last_lap_ms > 0
-	    ? (uint32_t)race->last_lap_ms : 0x7FFFFFFFu) < 0) return -1;
+	    ? (uint32_t)race->last_lap_ms : LAP_TIME_INVALID) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)race->lap_count) < 0) return -1;
 	if (wr_u32(bb, race->race_time_ms > 0
-	    ? (uint32_t)race->race_time_ms : 0x7FFFFFFFu) < 0) return -1;
+	    ? (uint32_t)race->race_time_ms : LAP_TIME_INVALID) < 0) return -1;
 	if (wr_u8(bb, ec->last_elo < 0xff
 	    ? (uint8_t)ec->last_elo : 0xff) < 0) return -1;
 
@@ -772,9 +772,9 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		 */
 		if (race->lap_history_count == 0) {
 			l2_n = 3;
-			l2_buf[0] = (int32_t)0x7FFFFFFF;
-			l2_buf[1] = (int32_t)0x7FFFFFFF;
-			l2_buf[2] = (int32_t)0x7FFFFFFF;
+			l2_buf[0] = (int32_t)LAP_TIME_INVALID;
+			l2_buf[1] = (int32_t)LAP_TIME_INVALID;
+			l2_buf[2] = (int32_t)LAP_TIME_INVALID;
 		} else {
 			int nh = race->lap_history_count < ACC_LAP_HISTORY
 			    ? race->lap_history_count : ACC_LAP_HISTORY;

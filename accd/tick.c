@@ -503,7 +503,7 @@ write_result_header(struct ByteBuf *bb, const struct CarEntry *car,
 	if (wr_u32(bb, (uint32_t)r->lap_count) < 0) return -1;	/* +0x5c */
 	if (wr_u16(bb, 0) < 0) return -1;		/* +0x60 unknown */
 	if (wr_u32(bb, r->best_lap_ms > 0
-	    ? (uint32_t)r->best_lap_ms : 0x7FFFFFFFu) < 0) return -1;	/* +0x64 */
+	    ? (uint32_t)r->best_lap_ms : LAP_TIME_INVALID) < 0) return -1;	/* +0x64 */
 	if (wr_u32(bb, r->race_time_ms > 0
 	    ? (uint32_t)r->race_time_ms : 0) < 0) return -1;	/* +0x68 */
 	if (wr_u8(bb, r->formation_lap_done) < 0) return -1;	/* +0x6c */
