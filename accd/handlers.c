@@ -1340,7 +1340,7 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
-	uint8_t msg_id, payload, state;
+	uint8_t msg_id, sub_state, conn_state;
 	uint16_t car_id;
 	struct CarEntry *car;
 	int i;
@@ -1348,12 +1348,11 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u16(&r, &car_id) < 0 ||
-	    rd_u8(&r, &payload) < 0 ||
-	    rd_u8(&r, &state) < 0) {
+	    rd_u8(&r, &sub_state) < 0 ||
+	    rd_u8(&r, &conn_state) < 0) {
 		log_warn("h_driver_swap_state_request: short body");
 		return 0;
 	}
-	(void)payload;	/* exe reads it for the REQ-3 lambda only */
 	if (check_car_owner(c, car_id) < 0) {
 		log_warn("ACP_DRIVER_SWAP_STATE_REQUEST for the wrong "
 		    "carId: %u (Connection owns %d)",
@@ -1362,44 +1361,39 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 	}
 	car = &s->cars[c->car_id];
 
-	/*
-	 * Exe FUN_1400142f0 case 0x4a dispatches on the second u8
-	 * (bVar11), which is also the new connection-swap state it
-	 * writes back at +0xa01dc.  The first u8 is closure data
-	 * for the REQ-3 callback and isn't part of the dispatch.
-	 */
-	switch (state) {
+	switch (sub_state) {
 	case 2:
-		/* Foreign / Initiate: apply state directly. */
+		/*
+		 * Initiate: set the requesting driver's swap state
+		 * to the value the client sent.
+		 */
 		if (car->current_driver_index < car->driver_count)
-			car->swap_state[car->current_driver_index] = state;
+			car->swap_state[car->current_driver_index] = conn_state;
 		break;
 	case 3:
 		/*
-		 * Request: bump any slot at state 3 or 4 back to 2,
-		 * then apply state to the requesting driver.  Matches
-		 * exe loop body `(byte - 3U) < 2` at line 1136.
+		 * Confirm: bump any slot at state 3 (REQ_PENDING)
+		 * back to 2 (FOREIGN), then apply conn_state.
 		 */
 		for (i = 0; i < car->driver_count; i++)
-			if (car->swap_state[i] == 3 ||
-			    car->swap_state[i] == 4)
+			if (car->swap_state[i] == 3)
 				car->swap_state[i] = 2;
 		if (car->current_driver_index < car->driver_count)
-			car->swap_state[car->current_driver_index] = state;
+			car->swap_state[car->current_driver_index] = conn_state;
 		break;
 	case 4:
-		/* Execute: apply state directly. */
+		/* Execute: set requesting driver to EXECUTING. */
 		if (car->current_driver_index < car->driver_count)
-			car->swap_state[car->current_driver_index] = state;
+			car->swap_state[car->current_driver_index] = 4;
 		break;
 	default:
 		log_warn("DriverSwap Request for type %u is not "
-		    "implemented", (unsigned)state);
+		    "implemented", (unsigned)sub_state);
 		return 0;
 	}
 
-	log_info("driver swap state request: car=%u state=%u",
-	    (unsigned)car_id, (unsigned)state);
+	log_info("driver swap state request: car=%u sub=%u state=%u",
+	    (unsigned)car_id, (unsigned)sub_state, (unsigned)conn_state);
 	broadcast_swap_state(s, car);
 	return 0;
 }
