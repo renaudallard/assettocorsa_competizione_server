@@ -769,12 +769,19 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		 * buffer) surfaces every completion, not just clean
 		 * ones.  The Last-Lap HUD timer is driven by the
 		 * +0x1b0 slot above, not by this list.
+		 *
+		 * Empty case: emit u8(0) and no entries, matching the
+		 * exe (FUN_140034210:316-325 derives count from the raw
+		 * std::vector<uint32_t> pointers, which is 0 for a car
+		 * that hasn't completed a lap yet).  Pre-v0.2.99 we
+		 * emitted three LAP_TIME_INVALID sentinels here, which
+		 * (a) painted three blank/dashed rows on the HUD before
+		 * any lap was driven and (b) forced wide_flag=1 even
+		 * pre-race, switching the sector list to u32 encoding
+		 * while the exe stayed in u16.
 		 */
 		if (race->lap_history_count == 0) {
-			l2_n = 3;
-			l2_buf[0] = (int32_t)LAP_TIME_INVALID;
-			l2_buf[1] = (int32_t)LAP_TIME_INVALID;
-			l2_buf[2] = (int32_t)LAP_TIME_INVALID;
+			l2_n = 0;
 		} else {
 			int nh = race->lap_history_count < ACC_LAP_HISTORY
 			    ? race->lap_history_count : ACC_LAP_HISTORY;
