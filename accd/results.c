@@ -39,6 +39,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <time.h>
+#include <unistd.h>
 
 #include "log.h"
 #include "penalty.h"
@@ -85,6 +86,7 @@ results_write(struct Server *s)
 {
 	char dir[256];
 	char path[512];
+	char tmp_path[520];
 	char ts[32];
 	struct tm tm;
 	time_t now;
@@ -109,10 +111,19 @@ results_write(struct Server *s)
 	strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm);
 	snprintf(path, sizeof(path), "%s/%s_%s.json",
 	    dir, ts, session_type_str(st));
+	snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
 
-	f = fopen(path, "w");
+	/*
+	 * Write to <path>.tmp + fsync + rename to make the final
+	 * results.json atomic.  fopen("w") on the final path would
+	 * truncate then stream; a crash mid-write left a half-written
+	 * results.json that downstream stats parsers couldn't load,
+	 * with no backup.
+	 */
+	f = fopen(tmp_path, "w");
 	if (f == NULL) {
-		log_warn("results: fopen %s: %s", path, strerror(errno));
+		log_warn("results: fopen %s: %s",
+		    tmp_path, strerror(errno));
 		return -1;
 	}
 
@@ -417,8 +428,26 @@ results_write(struct Server *s)
 	}
 	fprintf(f, "\n  ]\n");
 	fprintf(f, "}\n");
+	if (fflush(f) != 0) {
+		log_warn("results: fflush %s: %s",
+		    tmp_path, strerror(errno));
+		fclose(f);
+		(void)unlink(tmp_path);
+		return -1;
+	}
+	if (fsync(fileno(f)) != 0)
+		log_warn("results: fsync %s: %s",
+		    tmp_path, strerror(errno));
 	if (fclose(f) != 0) {
-		log_warn("results: fclose %s: %s", path, strerror(errno));
+		log_warn("results: fclose %s: %s",
+		    tmp_path, strerror(errno));
+		(void)unlink(tmp_path);
+		return -1;
+	}
+	if (rename(tmp_path, path) != 0) {
+		log_warn("results: rename %s -> %s: %s",
+		    tmp_path, path, strerror(errno));
+		(void)unlink(tmp_path);
 		return -1;
 	}
 
