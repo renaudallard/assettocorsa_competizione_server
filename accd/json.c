@@ -282,13 +282,55 @@ parse_string(struct parser *p)
 					}
 					cp = (cp << 4) | v;
 				}
+				/*
+				 * Combine UTF-16 surrogate pairs into a
+				 * single supplementary codepoint before the
+				 * UTF-8 encode.  Without this, "😀"
+				 * landed as two separate 3-byte UTF-8
+				 * sequences for invalid surrogate code points,
+				 * producing malformed UTF-8 in the parsed
+				 * string.
+				 */
+				if (cp >= 0xD800 && cp <= 0xDBFF &&
+				    p->pos + 6 <= p->len &&
+				    p->src[p->pos] == '\\' &&
+				    p->src[p->pos + 1] == 'u') {
+					unsigned int low = 0;
+					int j;
+					for (j = 0; j < 4; j++) {
+						char hc = p->src[p->pos + 2 + j];
+						unsigned int v;
+						if (hc >= '0' && hc <= '9')
+							v = (unsigned int)(hc - '0');
+						else if (hc >= 'a' && hc <= 'f')
+							v = (unsigned int)(hc - 'a' + 10);
+						else if (hc >= 'A' && hc <= 'F')
+							v = (unsigned int)(hc - 'A' + 10);
+						else {
+							low = 0;
+							break;
+						}
+						low = (low << 4) | v;
+					}
+					if (low >= 0xDC00 && low <= 0xDFFF) {
+						p->pos += 6;
+						cp = 0x10000 +
+						    (((cp - 0xD800) << 10) |
+						     (low - 0xDC00));
+					}
+				}
 				if (cp < 0x80) {
 					out[used++] = (char)cp;
 				} else if (cp < 0x800) {
 					out[used++] = (char)(0xC0 | (cp >> 6));
 					out[used++] = (char)(0x80 | (cp & 0x3F));
-				} else {
+				} else if (cp < 0x10000) {
 					out[used++] = (char)(0xE0 | (cp >> 12));
+					out[used++] = (char)(0x80 | ((cp >> 6) & 0x3F));
+					out[used++] = (char)(0x80 | (cp & 0x3F));
+				} else {
+					out[used++] = (char)(0xF0 | (cp >> 18));
+					out[used++] = (char)(0x80 | ((cp >> 12) & 0x3F));
 					out[used++] = (char)(0x80 | ((cp >> 6) & 0x3F));
 					out[used++] = (char)(0x80 | (cp & 0x3F));
 				}
