@@ -326,6 +326,8 @@ penalty_serve_front(struct Server *s, int car_id)
 	idx = -1;
 	for (i = 0; i < q->count; i++) {
 		uint8_t k = q->slots[i].kind;
+		if (q->slots[i].served)
+			continue;
 		if (k == PEN_DT || k == PEN_DTC ||
 		    k == PEN_SG10 || k == PEN_SG10C ||
 		    k == PEN_SG20 || k == PEN_SG20C ||
@@ -336,10 +338,16 @@ penalty_serve_front(struct Server *s, int car_id)
 	}
 	if (idx < 0)
 		return;
-	/* Remove that entry and slide the rest down. */
-	for (i = idx + 1; i < q->count; i++)
-		q->slots[i - 1] = q->slots[i];
-	q->count--;
+	/*
+	 * Mark the entry served instead of dropping it from the queue.
+	 * Keeping the served record around lets results.json report
+	 * "served": true for the penalties the driver actually paid
+	 * off — without this, all entries that survive to session end
+	 * are unserved (the served ones were silently removed) so the
+	 * served field always reported false.
+	 */
+	q->slots[idx].served = 1;
+	q->slots[idx].laps_remaining = 0;
 }
 
 void

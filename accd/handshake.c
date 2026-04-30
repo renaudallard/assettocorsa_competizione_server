@@ -664,14 +664,32 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	if (wr_u8(bb, ec->cup_category) < 0) return -1;
 	if (wr_u16(bb, 0) < 0) return -1;
 
-	if (pq->count > 0 && !pq->slots[0].served) {
-		float remaining = (float)pq->slots[0].laps_remaining;
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_u16(bb, penalty_wire_value(pq->slots[0].kind,
-		    pq->slots[0].reason)) < 0) return -1;
-		if (wr_f32(bb, remaining) < 0) return -1;
-	} else {
-		if (wr_u8(bb, 0) < 0) return -1;
+	{
+		/*
+		 * Find the first unserved entry to populate the active-
+		 * penalty prefix.  Now that penalty_serve_front leaves
+		 * served entries in the queue (so results.json can report
+		 * them), slots[0] may be a served record while a later
+		 * slot still holds the live penalty.
+		 */
+		int active = -1;
+		for (pi = 0; pi < pq->count; pi++) {
+			if (!pq->slots[pi].served) {
+				active = pi;
+				break;
+			}
+		}
+		if (active >= 0) {
+			float remaining =
+			    (float)pq->slots[active].laps_remaining;
+			if (wr_u8(bb, 1) < 0) return -1;
+			if (wr_u16(bb, penalty_wire_value(
+			    pq->slots[active].kind,
+			    pq->slots[active].reason)) < 0) return -1;
+			if (wr_f32(bb, remaining) < 0) return -1;
+		} else {
+			if (wr_u8(bb, 0) < 0) return -1;
+		}
 	}
 
 	if (cvar8) {
