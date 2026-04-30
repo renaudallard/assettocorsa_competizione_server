@@ -352,7 +352,6 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		    ? 65535 : (uint16_t)c->avg_rtt_ms;
 		pkt[5] = (unsigned char)(per_conn_ping & 0xff);
 		pkt[6] = (unsigned char)((per_conn_ping >> 8) & 0xff);
-		c->keepalive_sent_ms = srv_ms;
 		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
 		    (const struct sockaddr *)&c->peer,
 		    sizeof(c->peer));

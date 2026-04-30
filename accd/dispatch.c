@@ -299,10 +299,6 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		srv_ms = (uint32_t)((uint64_t)kts.tv_sec * 1000 +
 		    (uint64_t)kts.tv_nsec / 1000000);
 
-		/* Record when this keepalive was sent so the pong
-		 * handler can compute round-trip time. */
-		kc->keepalive_sent_ms = srv_ms;
-
 		/*
 		 * Per FUN_140029b20 + FUN_1400336d0 in accServer.exe and
 		 * verified against the kunos_wine_full_race.pcap, the 0x14

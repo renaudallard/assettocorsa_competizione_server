@@ -528,7 +528,6 @@ struct Conn {
 	uint64_t	tx_warn_ms;	/* rate-limit soft-cap warnings */
 	unsigned char	*hs_echo;	/* raw handshake body to echo in trailer */
 	size_t		 hs_echo_len;
-	uint32_t	keepalive_sent_ms;	/* server mono ms when last 0x14 sent */
 	uint64_t	accepted_mono_ms;	/* mono_ms at TCP accept; unauth
 						 * conns past CONN_UNAUTH_TIMEOUT_MS
 						 * are reaped so port scanners don't
