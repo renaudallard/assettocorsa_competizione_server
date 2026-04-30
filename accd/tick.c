@@ -344,7 +344,12 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 
 		if (c == NULL || c->state != CONN_AUTH)
 			continue;
-		per_conn_ping = (uint16_t)c->avg_rtt_ms;
+		/* Clamp like build_percar_body does — a stalled link can
+		 * push avg_rtt_ms past 65535 and the silent cast wraps to
+		 * a small value, which the HUD renders as a misleadingly
+		 * low ping. */
+		per_conn_ping = c->avg_rtt_ms > 65535
+		    ? 65535 : (uint16_t)c->avg_rtt_ms;
 		pkt[5] = (unsigned char)(per_conn_ping & 0xff);
 		pkt[6] = (unsigned char)((per_conn_ping >> 8) & 0xff);
 		c->keepalive_sent_ms = srv_ms;
