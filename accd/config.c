@@ -439,12 +439,12 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "greenFlagTriggerNormalizedRangeStart");
 			ge = json_obj_get(event,
 			    "greenFlagTriggerNormalizedRangeEnd");
-			if (fn != NULL)
+			if (fn != NULL && fn->kind == JSON_NUM)
 				s->formation_trigger_start =
 				    (float)fn->u.num;
-			if (gs != NULL)
+			if (gs != NULL && gs->kind == JSON_NUM)
 				s->green_trigger_start = (float)gs->u.num;
-			if (ge != NULL)
+			if (ge != NULL && ge->kind == JSON_NUM)
 				s->green_trigger_end = (float)ge->u.num;
 		}
 		s->session.track_temp = (uint8_t)(
@@ -466,9 +466,9 @@ config_load(struct Server *s, const char *cfg_dir)
 				    event, "cloudLevel");
 				const struct json_node *rn = json_obj_get(
 				    event, "rain");
-				if (cn != NULL)
+				if (cn != NULL && cn->kind == JSON_NUM)
 					clouds = (float)cn->u.num;
-				if (rn != NULL)
+				if (rn != NULL && rn->kind == JSON_NUM)
 					rain = (float)rn->u.num;
 			}
 			{
