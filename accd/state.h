@@ -81,6 +81,15 @@ mono_ms(void)
  * trailer.  Matches FUN_140034210's INT32_MAX wire literal.
  */
 #define LAP_TIME_INVALID	0x7FFFFFFFu
+
+/*
+ * Default ambient temperature in degrees Celsius, used as a
+ * fallback whenever event.json doesn't set one (or sets it to
+ * zero).  Lifted to a single named constant so the 5 wire
+ * emission sites that fall back to a literal 22 / 22.0f can't
+ * drift in either value or type.
+ */
+#define ACC_DEFAULT_AMBIENT_C	22
 #define ACC_MAX_NAME_LEN	64
 #define ACC_TRACK_NAME_LEN	48
 #define ACC_MAX_SESSIONS	16

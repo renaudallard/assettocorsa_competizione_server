@@ -191,7 +191,7 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 		return -1;
 
 	ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 22.0f;
+	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 

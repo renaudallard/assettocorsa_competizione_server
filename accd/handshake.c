@@ -246,7 +246,7 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 	int i;
 
 	ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 22.0f;
+	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 	rain = s->weather.current_rain > 0
@@ -926,7 +926,7 @@ int
 write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 {
 	float ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 22.0f;
+	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
 	float wind_speed = s->weather.wind_speed;
 	float wind_dir = s->weather.wind_direction;
 	uint32_t is_dynamic = s->weather.randomness > 0 ? 1 : 0;
@@ -979,7 +979,7 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	    : s->weather.dry_line_wetness;
 
 	ambient = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : 22.0f;
+	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 

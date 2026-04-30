@@ -209,7 +209,7 @@ monitor_build_session_state(struct ByteBuf *bb, const struct Server *s)
 	if (pb_w_float(bb, PB_SS_IDEAL_LINE_GRIP, 0.95f) < 0)
 		return -1;
 	if (pb_w_int32(bb, PB_SS_AMBIENT_TEMP,
-	    s->session.ambient_temp > 0 ? s->session.ambient_temp : 22) < 0)
+	    s->session.ambient_temp > 0 ? s->session.ambient_temp : ACC_DEFAULT_AMBIENT_C) < 0)
 		return -1;
 	if (pb_w_int32(bb, PB_SS_ROAD_TEMP,
 	    s->session.track_temp > 0 ? s->session.track_temp : 26) < 0)
