@@ -324,8 +324,13 @@ lobby_send_init_blob(struct LobbyClient *l, uint16_t tcp_port)
 			sent += (size_t)n;
 			continue;
 		}
-		if (n < 0 && errno == EINTR)
+		if (n < 0 && (errno == EINTR ||
+		    errno == EAGAIN || errno == EWOULDBLOCK)) {
+			/* Non-blocking lobby fd: poll briefly and retry. */
+			struct pollfd pfd = { l->fd, POLLOUT, 0 };
+			(void)poll(&pfd, 1, 1000);
 			continue;
+		}
 		log_warn("lobby: init write: %s",
 		    n < 0 ? strerror(errno) : "short write");
 		return -1;
