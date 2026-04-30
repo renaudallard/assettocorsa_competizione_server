@@ -47,6 +47,7 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 
 /*
  * ByteBuf -- growable byte buffer.
@@ -94,5 +95,26 @@ int	bb_take_frame(struct ByteBuf *bb,
  * Returns 0 on success, -1 on error (errno set).
  */
 int	tcp_send_framed(int fd, const void *body, size_t len);
+
+/*
+ * Atomic file-write helpers.  fopen("w") truncates the destination
+ * before incrementally streaming, so a crash or OOM mid-write
+ * leaves the file half-written.  atomic_open opens
+ * <path>.tmp for the caller to fprintf/fputs into; atomic_close
+ * does fflush + fsync + fclose + rename onto the real path so an
+ * observer sees either the previous content or the new content,
+ * never a torn write.
+ *
+ * tmp_out must have room for at least strlen(path) + 5 bytes
+ * (".tmp\0").  `who` is a short tag included in any log warning.
+ *
+ * atomic_open returns NULL on failure (errno set + log_warn fired).
+ * atomic_close returns 0 on success, -1 on any failure (logs and
+ * unlinks the .tmp on error).
+ */
+FILE	*atomic_open(char *tmp_out, size_t tmp_sz, const char *path,
+	    const char *who);
+int	atomic_close(FILE *fp, const char *tmp_path, const char *path,
+	    const char *who);
 
 #endif /* ACCD_IO_H */

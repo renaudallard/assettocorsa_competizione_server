@@ -45,6 +45,7 @@
 #include <unistd.h>
 
 #include "entrylist.h"
+#include "io.h"
 #include "json.h"
 #include "log.h"
 #include "state.h"
@@ -297,18 +298,10 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 	int i, first_entry = 1;
 
 	snprintf(path, sizeof(path), "%s/entrylist.json", cfg_dir);
-	snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
-	/*
-	 * Write to entrylist.json.tmp + fsync + rename so a crash
-	 * mid-write doesn't leave the operator's entrylist truncated
-	 * with no backup.
-	 */
-	fp = fopen(tmp_path, "w");
-	if (fp == NULL) {
-		log_warn("entrylist_save: %s: %s",
-		    tmp_path, strerror(errno));
+	fp = atomic_open(tmp_path, sizeof(tmp_path), path,
+	    "entrylist_save");
+	if (fp == NULL)
 		return -1;
-	}
 	fputs("{\n  \"entries\": [\n", fp);
 	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
 		const struct CarEntry *car = &s->cars[i];
@@ -365,28 +358,8 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 		fputs("\n      ]\n    }", fp);
 	}
 	fputs("\n  ],\n  \"configVersion\": 1\n}\n", fp);
-	if (fflush(fp) != 0) {
-		log_warn("entrylist_save: fflush %s: %s",
-		    tmp_path, strerror(errno));
-		fclose(fp);
-		(void)unlink(tmp_path);
+	if (atomic_close(fp, tmp_path, path, "entrylist_save") < 0)
 		return -1;
-	}
-	if (fsync(fileno(fp)) != 0)
-		log_warn("entrylist_save: fsync %s: %s",
-		    tmp_path, strerror(errno));
-	if (fclose(fp) != 0) {
-		log_warn("entrylist_save: fclose %s: %s",
-		    tmp_path, strerror(errno));
-		(void)unlink(tmp_path);
-		return -1;
-	}
-	if (rename(tmp_path, path) != 0) {
-		log_warn("entrylist_save: rename %s -> %s: %s",
-		    tmp_path, path, strerror(errno));
-		(void)unlink(tmp_path);
-		return -1;
-	}
 	log_info("entrylist_save: wrote %s", path);
 	return 0;
 }

@@ -34,6 +34,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 #include <errno.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
@@ -273,6 +274,56 @@ tcp_send_framed(int fd, const void *body, size_t len)
 			return -1;
 		}
 		sent += (size_t)n;
+	}
+	return 0;
+}
+
+FILE *
+atomic_open(char *tmp_out, size_t tmp_sz, const char *path,
+    const char *who)
+{
+	FILE *fp;
+	int n = snprintf(tmp_out, tmp_sz, "%s.tmp", path);
+
+	if (n < 0 || (size_t)n >= tmp_sz) {
+		log_warn("%s: tmp path too long for %s", who, path);
+		errno = ENAMETOOLONG;
+		return NULL;
+	}
+	fp = fopen(tmp_out, "w");
+	if (fp == NULL) {
+		log_warn("%s: fopen %s: %s",
+		    who, tmp_out, strerror(errno));
+		return NULL;
+	}
+	return fp;
+}
+
+int
+atomic_close(FILE *fp, const char *tmp_path, const char *path,
+    const char *who)
+{
+	if (fflush(fp) != 0) {
+		log_warn("%s: fflush %s: %s",
+		    who, tmp_path, strerror(errno));
+		fclose(fp);
+		(void)unlink(tmp_path);
+		return -1;
+	}
+	if (fsync(fileno(fp)) != 0)
+		log_warn("%s: fsync %s: %s",
+		    who, tmp_path, strerror(errno));
+	if (fclose(fp) != 0) {
+		log_warn("%s: fclose %s: %s",
+		    who, tmp_path, strerror(errno));
+		(void)unlink(tmp_path);
+		return -1;
+	}
+	if (rename(tmp_path, path) != 0) {
+		log_warn("%s: rename %s -> %s: %s",
+		    who, tmp_path, path, strerror(errno));
+		(void)unlink(tmp_path);
+		return -1;
 	}
 	return 0;
 }
