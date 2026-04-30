@@ -792,17 +792,19 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 
 		/*
 		 * FUN_140034210 scans both sector lists; if ANY value
-		 * >= 0x10000, it switches BOTH lists to u32 encoding.
-		 * Otherwise each value is written as u16 capped at 0xffff.
-		 * The sentinel 0x7FFFFFFF for empty laps forces wide mode
+		 * >= LAP_WIDE_PIVOT (= 65536 ms = 65.536 s) it switches
+		 * BOTH lists to u32 encoding.  Otherwise each value is
+		 * written as u16 capped at 0xffff.  The sentinel
+		 * LAP_TIME_INVALID for empty laps forces wide mode
 		 * naturally, so narrow mode only kicks in when every
 		 * sector is a real sub-65 s split.
 		 */
+#define LAP_WIDE_PIVOT	0x10000u
 		for (si = 0; si < l1_n; si++)
-			if ((uint32_t)race->sector_ms[si] >= 0x10000u)
+			if ((uint32_t)race->sector_ms[si] >= LAP_WIDE_PIVOT)
 				wide_flag = 1;
 		for (si = 0; si < l2_n; si++)
-			if ((uint32_t)l2_buf[si] >= 0x10000u)
+			if ((uint32_t)l2_buf[si] >= LAP_WIDE_PIVOT)
 				wide_flag = 1;
 
 		if (wr_u8(bb, wide_flag) < 0) return -1;
@@ -813,7 +815,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				if (wr_u32(bb, v) < 0) return -1;
 			} else {
 				if (wr_u16(bb,
-				    v >= 0x10000u ? 0xffffu
+				    v >= LAP_WIDE_PIVOT ? 0xffffu
 				    : (uint16_t)v) < 0) return -1;
 			}
 		}
@@ -824,7 +826,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				if (wr_u32(bb, v) < 0) return -1;
 			} else {
 				if (wr_u16(bb,
-				    v >= 0x10000u ? 0xffffu
+				    v >= LAP_WIDE_PIVOT ? 0xffffu
 				    : (uint16_t)v) < 0) return -1;
 			}
 		}
