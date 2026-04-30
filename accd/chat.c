@@ -959,8 +959,6 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		chat_broadcast(s, s->legacy_netcode
 		    ? "Server now uses legacy netcode"
 		    : "Server is now in regular mode", 4);
-	} else if (chat_prefix(text, "/debug")) {
-		log_info("admin: /debug (toggle)");
 	} else if (chat_prefix(text, "/lockprep")) {
 		s->preparation_locked = 1;
 		chat_broadcast(s, "Preparation phase is now LOCKED — no "
