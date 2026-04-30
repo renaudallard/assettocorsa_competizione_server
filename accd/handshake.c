@@ -476,14 +476,8 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 	 * of what the client's clock reads right now.
 	 */
 	if (s->session.ts_valid) {
-		struct timespec _ts;
-		double now;
-		double client_adj;
-
-		clock_gettime(CLOCK_MONOTONIC, &_ts);
-		now = (double)_ts.tv_sec * 1000.0 +
-		    (double)_ts.tv_nsec / 1000000.0;
-		client_adj = (double)conn_client_ts +
+		double now = (double)mono_ms();
+		double client_adj = (double)conn_client_ts +
 		    (double)(conn_rtt / 2);
 
 		/*
@@ -2108,11 +2102,7 @@ reply:
 	{
 		struct ByteBuf notify;
 		uint64_t timestamp_ms;
-		struct timespec ts;
-
-		clock_gettime(CLOCK_MONOTONIC, &ts);
-		timestamp_ms = (uint64_t)ts.tv_sec * 1000ull +
-		    (uint64_t)ts.tv_nsec / 1000000ull;
+		timestamp_ms = mono_ms();
 
 		/*
 		 * Notify already-connected clients that a new car

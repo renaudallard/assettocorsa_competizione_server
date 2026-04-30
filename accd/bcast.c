@@ -55,16 +55,6 @@
 #define TX_SOFT_CAP	(32u * 1024u)
 #define TX_HARD_CAP	(64u * 1024u)
 
-static uint64_t
-bcast_mono_ms(void)
-{
-	struct timespec ts;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000ull +
-	    (uint64_t)ts.tv_nsec / 1000000ull;
-}
-
 int
 bcast_send_one(struct Conn *c, const void *body, size_t len)
 {
@@ -204,7 +194,7 @@ track_queue:
 	if (queued_after > c->tx_peak_bytes)
 		c->tx_peak_bytes = queued_after;
 	if (queued_after > TX_SOFT_CAP) {
-		uint64_t now = bcast_mono_ms();
+		uint64_t now = mono_ms();
 		if (now - c->tx_warn_ms > 5000) {
 			log_warn("tx soft cap: conn=%u queued=%zu (peak=%zu)",
 			    (unsigned)c->conn_id, queued_after,

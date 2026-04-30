@@ -51,16 +51,6 @@
 #include "session.h"
 #include "state.h"
 
-static uint64_t
-mono_ms(void)
-{
-	struct timespec ts;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000ull +
-	    (uint64_t)ts.tv_nsec / 1000000ull;
-}
-
 /*
  * Formation / green-flag position gate range.  The exe reads three
  * floats via a virtual deserializer at vtable slot 0x140142b70
@@ -1115,11 +1105,7 @@ broadcast_session_mgr_state_all(struct Server *s)
 {
 	int i;
 	struct ByteBuf bb;
-	struct timespec _ts;
-	uint64_t now_ms;
-
-	clock_gettime(CLOCK_MONOTONIC, &_ts);
-	now_ms = (uint64_t)_ts.tv_sec * 1000ull + (uint64_t)_ts.tv_nsec / 1000000ull;
+	uint64_t now_ms = mono_ms();
 
 	bb_init(&bb);
 	for (i = 0; i < ACC_MAX_CARS; i++) {

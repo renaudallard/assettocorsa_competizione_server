@@ -81,15 +81,6 @@
 #define CADENCE_LEADERBOARD_MS		75000	/* 0x36 async-coalesce */
 #define CADENCE_RATINGS_MS		81000	/* 0x4e debounce (.rdata) */
 
-static uint64_t
-tick_mono_ms(void)
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000ull +
-	    (uint64_t)ts.tv_nsec / 1000000ull;
-}
-
 /*
  * Write the 63-byte per-car body used by both 0x1e and each
  * 0x39 batch element.  Layout from FUN_14001a170 / FUN_14001a6a0
@@ -296,7 +287,6 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 {
 	unsigned char pkt[15];
 	int i;
-	struct timespec ts;
 	uint32_t srv_ms;
 	uint16_t avg_ping = 0, max_ping = 0;
 
@@ -320,9 +310,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 			avg_ping = (uint16_t)(sum / count);
 	}
 
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	srv_ms = (uint32_t)((uint64_t)ts.tv_sec * 1000 +
-	    (uint64_t)ts.tv_nsec / 1000000);
+	srv_ms = (uint32_t)mono_ms();
 
 	pkt[0]  = msg_id;
 	pkt[1]  = (unsigned char)(srv_ms & 0xff);
@@ -734,7 +722,7 @@ tick_run(struct Server *s)
 	 */
 	static uint64_t tickprobe_start_ms = 0;
 	static uint32_t tickprobe_start_count = 0;
-	uint64_t now_ms = tick_mono_ms();
+	uint64_t now_ms = mono_ms();
 
 	s->tick_count++;
 	if (tickprobe_start_ms == 0) {

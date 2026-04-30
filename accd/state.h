@@ -36,11 +36,39 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <time.h>
 #include <netinet/in.h>
 
 #include "io.h"
 #include "lobby.h"
 #include "msg.h"
+
+/*
+ * mono_ms / mono_us: monotonic-clock "milliseconds since boot".
+ * Used everywhere — phase scheduling, RTT computation, debounce
+ * gates, log timestamps.  Kept as a static inline in this
+ * universally-included header so the body has exactly one
+ * source of truth (avoids the type-drift the previous four
+ * file-local copies in bcast.c, session.c, tick.c, main.c
+ * were starting to develop).
+ */
+static inline uint64_t
+mono_us(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000000ull +
+	    (uint64_t)ts.tv_nsec / 1000ull;
+}
+
+static inline uint64_t
+mono_ms(void)
+{
+	struct timespec ts;
+	clock_gettime(CLOCK_MONOTONIC, &ts);
+	return (uint64_t)ts.tv_sec * 1000ull +
+	    (uint64_t)ts.tv_nsec / 1000000ull;
+}
 
 #define ACC_MAX_BANS		256
 #define ACC_MAX_CARS		64

@@ -726,10 +726,7 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		 * actually spent in the pit box.
 		 */
 		if (!was_in_pit && race->in_pit) {
-			struct timespec _ts;
-			clock_gettime(CLOCK_MONOTONIC, &_ts);
-			race->pit_entry_ms = (uint64_t)_ts.tv_sec * 1000ull +
-			    (uint64_t)_ts.tv_nsec / 1000000ull;
+			race->pit_entry_ms = mono_ms();
 			race->pit_entry_driver_index =
 			    car->current_driver_index;
 		}
@@ -824,14 +821,8 @@ h_car_location_update(struct Server *s, struct Conn *c,
 			else if (is_sg30) required_s = 30;
 
 			if (is_dt || is_sg10 || is_sg20 || is_sg30) {
-				struct timespec _ts;
-				uint64_t now_ms;
-				uint64_t dwell_ms;
-
-				clock_gettime(CLOCK_MONOTONIC, &_ts);
-				now_ms = (uint64_t)_ts.tv_sec * 1000ull +
-				    (uint64_t)_ts.tv_nsec / 1000000ull;
-				dwell_ms = race->pit_entry_ms > 0
+				uint64_t now_ms = mono_ms();
+				uint64_t dwell_ms = race->pit_entry_ms > 0
 				    ? now_ms - race->pit_entry_ms : 0;
 				uint32_t dwell_s = (uint32_t)(dwell_ms / 1000);
 
@@ -919,12 +910,7 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		return 0;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
-		struct timespec now_ts;
-		uint64_t now_ms;
-
-		clock_gettime(CLOCK_MONOTONIC, &now_ts);
-		now_ms = (uint64_t)now_ts.tv_sec * 1000ull +
-		    (uint64_t)now_ts.tv_nsec / 1000000ull;
+		uint64_t now_ms = mono_ms();
 
 		/*
 		 * Latch gate: skip if we've already counted a cut within
@@ -1492,15 +1478,9 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	    (s->session.phase == PHASE_SESSION ||
 	     s->session.phase == PHASE_OVERTIME)) {
 		struct CarRaceState *r = &s->cars[c->car_id].race;
-		struct timespec _t;
-		uint64_t now;
 		const uint64_t TOW_WAIT_MS = 30000ull;
-
-		clock_gettime(CLOCK_MONOTONIC, &_t);
-		now = (uint64_t)_t.tv_sec * 1000ull +
-		    (uint64_t)_t.tv_nsec / 1000000ull;
 		r->in_tow = 1;
-		r->tow_until_ms = now + TOW_WAIT_MS;
+		r->tow_until_ms = mono_ms() + TOW_WAIT_MS;
 		log_info("tow penalty: car=%d, wait %llums "
 		    "(lap=%d, race_time=%dms preserved)",
 		    c->car_id, (unsigned long long)TOW_WAIT_MS,
@@ -1957,13 +1937,8 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	 * on every 0x1e — minus the explicit drift accumulator, because
 	 * the 18 Hz 0x1e cadence keeps the pivot fresh to within ~55 ms.
 	 */
-	{
-		struct timespec _ts;
-		clock_gettime(CLOCK_MONOTONIC, &_ts);
-		c->last_udp_client_ts = client_ts_ms;
-		c->last_udp_server_ms = (uint32_t)((uint64_t)_ts.tv_sec
-		    * 1000 + (uint64_t)_ts.tv_nsec / 1000000);
-	}
+	c->last_udp_client_ts = client_ts_ms;
+	c->last_udp_server_ms = (uint32_t)mono_ms();
 
 	/* Three Vector3 blocks (3 * 12 = 36 bytes). */
 	for (i = 0; i < 3; i++)

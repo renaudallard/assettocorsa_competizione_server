@@ -235,22 +235,6 @@ handle_udp(struct Server *s)
 
 /* ----- main loop ------------------------------------------------- */
 
-static uint64_t
-mono_us(void)
-{
-	struct timespec ts;
-
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000000ull +
-	    (uint64_t)ts.tv_nsec / 1000ull;
-}
-
-static uint64_t
-mono_ms(void)
-{
-	return mono_us() / 1000ull;
-}
-
 int
 main(int argc, char **argv)
 {

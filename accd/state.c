@@ -215,12 +215,7 @@ conn_new(struct Server *s, int fd, const struct sockaddr_in *peer)
 	c = calloc(1, sizeof(*c));
 	if (c == NULL)
 		return NULL;
-	{
-		struct timespec ts;
-		clock_gettime(CLOCK_MONOTONIC, &ts);
-		c->accepted_mono_ms = (uint64_t)ts.tv_sec * 1000ull +
-		    (uint64_t)ts.tv_nsec / 1000000ull;
-	}
+	c->accepted_mono_ms = mono_ms();
 	c->fd = fd;
 	c->peer = *peer;
 	c->state = CONN_UNAUTH;

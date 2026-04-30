@@ -269,7 +269,6 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		uint16_t ka_conn_id = 0;
 		struct ByteBuf reply;
 		struct Conn *kc;
-		struct timespec kts;
 		uint32_t srv_ms;
 
 		if (len >= 7) {
@@ -295,9 +294,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		/* Learn / update the UDP peer address. */
 		kc->peer = *peer;
 
-		clock_gettime(CLOCK_MONOTONIC, &kts);
-		srv_ms = (uint32_t)((uint64_t)kts.tv_sec * 1000 +
-		    (uint64_t)kts.tv_nsec / 1000000);
+		srv_ms = (uint32_t)mono_ms();
 
 		/*
 		 * Per FUN_140029b20 + FUN_1400336d0 in accServer.exe and
@@ -371,7 +368,6 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		uint16_t pong_conn = 0;
 		uint32_t pong_srv_ts = 0, pong_client_ts = 0;
 		struct Conn *pc;
-		struct timespec pts;
 		uint32_t now_ms, rtt;
 
 		rd_init(&pr, buf, len);
@@ -384,9 +380,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		if (pc == NULL)
 			return;
 
-		clock_gettime(CLOCK_MONOTONIC, &pts);
-		now_ms = (uint32_t)((uint64_t)pts.tv_sec * 1000 +
-		    (uint64_t)pts.tv_nsec / 1000000);
+		now_ms = (uint32_t)mono_ms();
 		rtt = now_ms - pong_srv_ts;
 		if (rtt > 5000)
 			rtt = 5000;

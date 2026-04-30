@@ -113,7 +113,6 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 {
 	struct PenaltyQueue *q;
 	struct PenaltyEntry *e;
-	struct timespec ts;
 	uint8_t pen_kind = penalty_pen_kind_of(exe_kind, collision, value);
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
@@ -140,9 +139,7 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	}
 	if (exe_kind == EXE_DQ)
 		s->cars[car_id].race.disqualified = 1;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	e->issued_ms = (uint64_t)ts.tv_sec * 1000ull +
-	    (uint64_t)ts.tv_nsec / 1000000ull;
+	e->issued_ms = mono_ms();
 }
 
 /*
@@ -171,7 +168,6 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 {
 	struct CarRaceState *race;
 	struct PenaltySheetState *st;
-	struct timespec now_ts;
 	uint64_t now_ms;
 	int iter;
 
@@ -181,9 +177,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		return -1;
 
 	race = &s->cars[car_id].race;
-	clock_gettime(CLOCK_MONOTONIC, &now_ts);
-	now_ms = (uint64_t)now_ts.tv_sec * 1000ull +
-	    (uint64_t)now_ts.tv_nsec / 1000000ull;
+	now_ms = mono_ms();
 
 	/* Immediate-effect special case: DQ. */
 	if (exe_kind == EXE_DQ) {

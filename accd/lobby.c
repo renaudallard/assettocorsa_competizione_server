@@ -120,14 +120,6 @@ uint32_t arc4random_uniform(uint32_t);
 #define LOBBY_MSG_DRIVERS	0x00
 #define LOBBY_MSG_KEEPALIVE	0x0d
 
-static uint64_t
-lobby_now_ms(void)
-{
-	struct timespec ts;
-	clock_gettime(CLOCK_MONOTONIC, &ts);
-	return (uint64_t)ts.tv_sec * 1000ull +
-	    (uint64_t)ts.tv_nsec / 1000000ull;
-}
 
 static void
 lobby_random_token(char *out, size_t n)
@@ -151,7 +143,7 @@ lobby_set_state(struct LobbyClient *l, enum lobby_state s)
 	if (l->state != s)
 		log_info("lobby: state %s -> %s", names[l->state], names[s]);
 	l->state = s;
-	l->state_entered_ms = lobby_now_ms();
+	l->state_entered_ms = mono_ms();
 }
 
 void
@@ -621,7 +613,7 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 			    s->session.session_index < s->session_count &&
 			    s->sessions[s->session.session_index]
 				.session_type == 10 &&
-			    lobby_now_ms() >= s->session.ts[2])
+			    mono_ms() >= s->session.ts[2])
 				p = 4;
 			else
 				p = 3;
@@ -660,7 +652,7 @@ lobby_send_session_update(struct LobbyClient *l, const struct Server *s)
 	rc = lobby_send_framed(l, bb.data, bb.wpos);
 	bb_free(&bb);
 	if (rc == 0) {
-		l->last_session_update_ms = lobby_now_ms();
+		l->last_session_update_ms = mono_ms();
 		l->session_dirty = 0;
 		log_info("lobby: Sent session update to lobby (type=%u "
 		    "phase=%u trem=%ds)",
@@ -757,7 +749,7 @@ lobby_send_keepalive(struct LobbyClient *l, const struct Server *s)
 	rc = lobby_send_framed(l, bb.data, bb.wpos);
 	bb_free(&bb);
 	if (rc == 0) {
-		l->last_keepalive_ms = lobby_now_ms();
+		l->last_keepalive_ms = mono_ms();
 		log_info("lobby: Sent keepalive (load=%u seq=%u)",
 		    (unsigned)load, (unsigned)seq);
 	}
@@ -1138,7 +1130,7 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 	    l->state == LOBBY_PERMANENTLY_DISABLED)
 		return;
 
-	now = lobby_now_ms();
+	now = mono_ms();
 
 	switch (l->state) {
 	case LOBBY_DISCONNECTED:
