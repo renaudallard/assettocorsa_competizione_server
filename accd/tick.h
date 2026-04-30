@@ -49,4 +49,21 @@ void	tick_run(struct Server *s);
 int	build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 		struct Server *s, int32_t clock_adj);
 
+/*
+ * Compute server-wide aggregate pings across active conns.  Used
+ * by both the periodic 0x14 keepalive broadcast and the 0x13
+ * keepalive reply path in dispatch.c.
+ */
+void	compute_server_pings(const struct Server *s,
+		uint16_t *avg_out, uint16_t *max_out);
+
+/*
+ * Pack a 15-byte 0x14 keepalive body into pkt.  Same shape for the
+ * periodic broadcast and the per-conn reply on 0x13 — body carries
+ * (msg_id, srv_ms, conn_rtt, avg_ping, max_ping, 2/4/100/100).
+ */
+void	build_keepalive_pkt(unsigned char pkt[15], uint8_t msg_id,
+		uint32_t srv_ms, uint16_t conn_rtt,
+		uint16_t avg_ping, uint16_t max_ping);
+
 #endif /* ACCD_TICK_H */

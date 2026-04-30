@@ -282,41 +282,41 @@ broadcast_percar_dirty(struct Server *s)
  * badge; a hardcoded 0 here makes the in-game ping display read
  * 0 ms even with measurable RTT in flight.
  */
-static void
-broadcast_keepalive(struct Server *s, uint8_t msg_id)
+void
+compute_server_pings(const struct Server *s,
+    uint16_t *avg_out, uint16_t *max_out)
 {
-	unsigned char pkt[15];
+	uint32_t sum = 0;
+	int count = 0;
+	uint16_t max_ping = 0;
 	int i;
-	uint32_t srv_ms;
-	uint16_t avg_ping = 0, max_ping = 0;
 
-	if (s->udp_fd < 0)
-		return;
-
-	/* Server-wide ping aggregate over auth'd conns with a pong. */
-	{
-		uint32_t sum = 0;
-		int count = 0;
-		for (i = 0; i < ACC_MAX_CARS; i++) {
-			struct Conn *cc = s->conns[i];
-			if (cc == NULL || cc->avg_rtt_ms == 0)
-				continue;
-			sum += cc->avg_rtt_ms;
-			count++;
-			if (cc->avg_rtt_ms > max_ping)
-				max_ping = (uint16_t)cc->avg_rtt_ms;
-		}
-		if (count > 0)
-			avg_ping = (uint16_t)(sum / count);
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *cc = s->conns[i];
+		if (cc == NULL || cc->avg_rtt_ms == 0)
+			continue;
+		sum += cc->avg_rtt_ms;
+		count++;
+		if (cc->avg_rtt_ms > max_ping)
+			max_ping = cc->avg_rtt_ms > 65535
+			    ? 65535 : (uint16_t)cc->avg_rtt_ms;
 	}
+	*avg_out = count > 0 ? (uint16_t)(sum / count) : 0;
+	*max_out = max_ping;
+}
 
-	srv_ms = (uint32_t)mono_ms();
-
+void
+build_keepalive_pkt(unsigned char pkt[15], uint8_t msg_id,
+    uint32_t srv_ms, uint16_t conn_rtt, uint16_t avg_ping,
+    uint16_t max_ping)
+{
 	pkt[0]  = msg_id;
 	pkt[1]  = (unsigned char)(srv_ms & 0xff);
 	pkt[2]  = (unsigned char)((srv_ms >> 8) & 0xff);
 	pkt[3]  = (unsigned char)((srv_ms >> 16) & 0xff);
 	pkt[4]  = (unsigned char)((srv_ms >> 24) & 0xff);
+	pkt[5]  = (unsigned char)(conn_rtt & 0xff);
+	pkt[6]  = (unsigned char)((conn_rtt >> 8) & 0xff);
 	pkt[7]  = (unsigned char)(avg_ping & 0xff);
 	pkt[8]  = (unsigned char)((avg_ping >> 8) & 0xff);
 	pkt[9]  = (unsigned char)(max_ping & 0xff);
@@ -325,6 +325,21 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 	pkt[12] = 4;
 	pkt[13] = 100;
 	pkt[14] = 100;
+}
+
+static void
+broadcast_keepalive(struct Server *s, uint8_t msg_id)
+{
+	unsigned char pkt[15];
+	int i;
+	uint32_t srv_ms;
+	uint16_t avg_ping, max_ping;
+
+	if (s->udp_fd < 0)
+		return;
+
+	compute_server_pings(s, &avg_ping, &max_ping);
+	srv_ms = (uint32_t)mono_ms();
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct Conn *c = s->conns[i];
@@ -338,8 +353,8 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		 * low ping. */
 		per_conn_ping = c->avg_rtt_ms > 65535
 		    ? 65535 : (uint16_t)c->avg_rtt_ms;
-		pkt[5] = (unsigned char)(per_conn_ping & 0xff);
-		pkt[6] = (unsigned char)((per_conn_ping >> 8) & 0xff);
+		build_keepalive_pkt(pkt, msg_id, srv_ms, per_conn_ping,
+		    avg_ping, max_ping);
 		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
 		    (const struct sockaddr *)&c->peer,
 		    sizeof(c->peer));

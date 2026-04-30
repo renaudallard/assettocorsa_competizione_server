@@ -50,6 +50,7 @@
 #include "msg.h"
 #include "prim.h"
 #include "state.h"
+#include "tick.h"
 
 /* ----- one TCP message ------------------------------------------- */
 
@@ -267,7 +268,6 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		struct Reader kr;
 		uint16_t ka_conn_id = 0;
-		struct ByteBuf reply;
 		struct Conn *kc;
 		uint32_t srv_ms;
 
@@ -307,41 +307,18 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * The client's HUD reads these to render the ping badge —
 		 * a hardcoded 0 here makes the in-game ping display read 0.
 		 */
-		uint16_t avg_ping = 0, max_ping = 0;
-		{
-			uint32_t sum = 0;
-			int count = 0;
-			int i;
-			for (i = 0; i < ACC_MAX_CARS; i++) {
-				struct Conn *cc = s->conns[i];
-				if (cc == NULL)
-					continue;
-				if (cc->avg_rtt_ms == 0)
-					continue;
-				sum += cc->avg_rtt_ms;
-				count++;
-				if (cc->avg_rtt_ms > max_ping)
-					max_ping = (uint16_t)cc->avg_rtt_ms;
-			}
-			if (count > 0)
-				avg_ping = (uint16_t)(sum / count);
-		}
+		uint16_t avg_ping, max_ping;
+		uint16_t conn_rtt;
+		unsigned char pkt[15];
 
-		bb_init(&reply);
-		if (wr_u8(&reply, SRV_KEEPALIVE_14) == 0 &&
-		    wr_u32(&reply, srv_ms) == 0 &&
-		    wr_u16(&reply, (uint16_t)kc->avg_rtt_ms) == 0 &&
-		    wr_u16(&reply, avg_ping) == 0 &&
-		    wr_u16(&reply, max_ping) == 0 &&
-		    wr_u8(&reply, 2) == 0 &&
-		    wr_u8(&reply, 4) == 0 &&
-		    wr_u8(&reply, 100) == 0 &&
-		    wr_u8(&reply, 100) == 0) {
-			(void)sendto(s->udp_fd, reply.data, reply.wpos, 0,
-			    (const struct sockaddr *)peer,
-			    (socklen_t)sizeof(*peer));
-		}
-		bb_free(&reply);
+		compute_server_pings(s, &avg_ping, &max_ping);
+		conn_rtt = kc->avg_rtt_ms > 65535
+		    ? 65535 : (uint16_t)kc->avg_rtt_ms;
+		build_keepalive_pkt(pkt, SRV_KEEPALIVE_14, srv_ms,
+		    conn_rtt, avg_ping, max_ping);
+		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
+		    (const struct sockaddr *)peer,
+		    (socklen_t)sizeof(*peer));
 		return;
 	}
 
