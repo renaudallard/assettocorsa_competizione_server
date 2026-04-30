@@ -556,6 +556,11 @@ json_parse(const char *src, size_t len, char *err, size_t errsz)
 	p.err = err;
 	p.errsz = errsz;
 
+	if (len > SIZE_MAX / SLAB_OVERHEAD) {
+		if (err != NULL && errsz > 0)
+			snprintf(err, errsz, "json: input too large");
+		return NULL;
+	}
 	cap = len * SLAB_OVERHEAD;
 	if (cap < SLAB_MIN)
 		cap = SLAB_MIN;
