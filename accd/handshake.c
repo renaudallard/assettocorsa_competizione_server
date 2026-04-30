@@ -441,13 +441,23 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 {
 	const struct SessionDef *def;
 	int k;
+	uint8_t idx;
 
 	if (s->session_count == 0)
 		return -1;
-	def = &s->sessions[s->session.session_index];
+	/*
+	 * Clamp session_index to the active range — session_reset can
+	 * leave session_index past session_count (PHASE_RESULTS path
+	 * after a weekend wraps), and writing the welcome trailer
+	 * during that window would otherwise read past the in-use
+	 * sessions[] entries.
+	 */
+	idx = s->session.session_index < s->session_count
+	    ? s->session.session_index : 0;
+	def = &s->sessions[idx];
 
 	/* First byte: session index (NOT phase). */
-	if (wr_u8(bb, s->session.session_index) < 0)
+	if (wr_u8(bb, idx) < 0)
 		return -1;
 
 	/*
@@ -1855,8 +1865,9 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 * Reconnects skip all three via post_slot_assignment.
 		 */
 		if (s->session_count > 0) {
-			uint8_t stype = s->sessions[s->session.session_index]
-			    .session_type;
+			uint8_t sidx = s->session.session_index < s->session_count
+			    ? s->session.session_index : 0;
+			uint8_t stype = s->sessions[sidx].session_type;
 			const char *why = NULL;
 
 			if (!s->unsafe_rejoin && stype == 10 &&
