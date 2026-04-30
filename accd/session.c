@@ -1063,10 +1063,12 @@ session_overtime_car_finished(struct Server *s)
 	if (s->session.cars_in_overtime > 0)
 		s->session.cars_in_overtime--;
 	if (s->session.cars_in_overtime <= 0) {
+		uint64_t now = mono_ms();
 		uint64_t grace = post_grace_ms(s);
 		s->session.overtime_hold = 0;
-		s->session.ts[5] = mono_ms() + grace;
-		s->session.ts[6] = s->session.ts[5] + grace;
+		s->session.ts[5] = now;
+		if (s->session.ts[6] <= now)
+			s->session.ts[6] = now + grace;
 		log_info("overtime: all cars finished, releasing hold "
 		    "(post=%llums)", (unsigned long long)grace);
 	} else {
