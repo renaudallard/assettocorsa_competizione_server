@@ -41,6 +41,16 @@
 #include <string.h>
 #include <time.h>
 
+#ifdef __linux__
+#include <bsd/stdlib.h>
+#endif
+#ifdef __OpenBSD__
+/* See lobby.c header comment: __BSD_VISIBLE is forced off by
+ * _POSIX_C_SOURCE so <stdlib.h> hides arc4random_uniform even
+ * though libc has it. */
+uint32_t arc4random_uniform(uint32_t);
+#endif
+
 #include "bcast.h"
 #include "handshake.h"
 #include "log.h"
@@ -97,11 +107,11 @@ randomize_green_trigger(const struct Server *s)
 
 	if (start <= end) {
 		span = end - start;
-		p = (float)rand() / (float)RAND_MAX;
+		p = (float)arc4random_uniform(1u << 24) / (float)(1u << 24);
 		return start + p * span;
 	}
 	span = (end + 1.0f) - start;
-	p = (float)rand() / (float)RAND_MAX;
+	p = (float)arc4random_uniform(1u << 24) / (float)(1u << 24);
 	p = start + p * span;
 	if (p >= 1.0f)
 		p -= 1.0f;
@@ -642,8 +652,8 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		if (silent) {
 			fire_delay_ms = 1000;
 		} else {
-			double r01 = (double)rand() / (double)RAND_MAX;
-			fire_delay_ms = 3000 + (uint64_t)(r01 * 2500.0);
+			fire_delay_ms = 3000 +
+			    (uint64_t)arc4random_uniform(2501);
 		}
 		ss->ts[3] = now + fire_delay_ms;
 		ss->ts[4] = ss->ts[3] + dur_ms;
