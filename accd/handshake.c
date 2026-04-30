@@ -2246,7 +2246,7 @@ reply:
 			 */
 			bb_init(&wb);
 			if (build_rating_summary(&wb, s) == 0)
-				(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
+				(void)bcast_all(s, wb.data, wb.wpos, BCAST_EXCEPT_NONE);
 			bb_free(&wb);
 		}
 

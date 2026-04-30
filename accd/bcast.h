@@ -79,10 +79,11 @@ int	conn_drain_tx(struct Conn *c);
 
 /*
  * Send a framed TCP message to every authenticated connection
- * except the one identified by except_conn_id (use 0xFFFF for
- * "exclude nobody").  Returns the number of clients that
- * received the message.
+ * except the one identified by except_conn_id (pass
+ * BCAST_EXCEPT_NONE for "exclude nobody").  Returns the number of
+ * clients that received the message.
  */
+#define BCAST_EXCEPT_NONE	0xFFFFu
 int	bcast_all(struct Server *s, const void *body, size_t len,
 		uint16_t except_conn_id);
 

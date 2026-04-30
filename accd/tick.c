@@ -379,7 +379,7 @@ broadcast_leaderboard(struct Server *s)
 		goto done;
 	if (write_leaderboard_section(&bb, s) < 0)
 		goto done;
-	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+	(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
 	log_info("Updated leaderboard for %d clients", s->nconns);
 done:
 	bb_free(&bb);
@@ -442,7 +442,7 @@ broadcast_grid(struct Server *s)
 			goto done;
 		emitted++;
 	}
-	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+	(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
 	log_info("Sending grid positions: %d cars", n);
 done:
 	bb_free(&bb);
@@ -1147,7 +1147,7 @@ tick_run(struct Server *s)
 		struct ByteBuf wb;
 		bb_init(&wb);
 		if (build_rating_summary(&wb, s) == 0)
-			(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
+			(void)bcast_all(s, wb.data, wb.wpos, BCAST_EXCEPT_NONE);
 		bb_free(&wb);
 		ratings_clear_dirty(s);
 		s->ratings_last_emit_ms = now_ms;
@@ -1165,7 +1165,7 @@ tick_run(struct Server *s)
 		(void)weather_step(s);
 		bb_init(&bb);
 		if (weather_build_broadcast(s, &bb) == 0)
-			(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+			(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
 		bb_free(&bb);
 		last_weather_ms = now_ms;
 	}

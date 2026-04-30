@@ -114,7 +114,7 @@ chat_broadcast(struct Server *s, const char *text, uint8_t chat_type)
 	    wr_str_a(&out, text) == 0 &&
 	    wr_i32(&out, 0) == 0 &&
 	    wr_u8(&out, chat_type) == 0)
-		(void)bcast_all(s, out.data, out.wpos, 0xFFFF);
+		(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
 	bb_free(&out);
 }
 
@@ -183,7 +183,7 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	    wr_u16(&out,
 		(uint16_t)(car->restrictor * 100.0f + 0.5f)) == 0 &&
 	    wr_u32(&out, (uint32_t)car->ballast_kg) == 0)
-		(void)bcast_all(s, out.data, out.wpos, 0xFFFF);
+		(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
 	bb_free(&out);
 
 	chat_broadcast(s, chat, 4);
@@ -415,7 +415,7 @@ chat_weekend_reset_broadcast(struct Server *s)
 		bb_init(&wb);
 		if (wr_u8(&wb, SRV_RACE_WEEKEND_RESET) == 0 &&
 		    write_trailer_weather_data(&wb, s) == 0)
-			(void)bcast_all(s, wb.data, wb.wpos, 0xFFFF);
+			(void)bcast_all(s, wb.data, wb.wpos, BCAST_EXCEPT_NONE);
 		bb_free(&wb);
 	}
 
@@ -551,7 +551,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				for (i = 0; i < car->driver_count; i++)
 					(void)wr_u8(&bb, car->swap_state[i]);
 				(void)bcast_all(s, bb.data, bb.wpos,
-				    0xFFFF);
+				    BCAST_EXCEPT_NONE);
 			}
 			bb_free(&bb);
 		}

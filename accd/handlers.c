@@ -129,7 +129,7 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	    wr_u8(&out, quality) < 0)
 		goto out;
 	/* Exe sends to ALL including sender (confirmed by capture). */
-	rc = bcast_all(s, out.data, out.wpos, 0xFFFF);
+	rc = bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
 	(void)rc;
 out:
 	bb_free(&out);
@@ -305,7 +305,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			    wr_u16(&reset, 0) == 0 &&
 			    wr_u32(&reset, 0) == 0)
 				(void)bcast_all(s, reset.data, reset.wpos,
-				    0xFFFF);
+				    BCAST_EXCEPT_NONE);
 			bb_free(&reset);
 		}
 		/*
@@ -473,7 +473,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			    wr_u16(&reset, 0) == 0 &&
 			    wr_u32(&reset, 0) == 0)
 				(void)bcast_all(s, reset.data, reset.wpos,
-				    0xFFFF);
+				    BCAST_EXCEPT_NONE);
 			bb_free(&reset);
 		}
 	}
@@ -1192,7 +1192,7 @@ broadcast_swap_state(struct Server *s, struct CarEntry *car)
 	for (i = 0; i < car->driver_count; i++)
 		if (wr_u8(&bb, car->swap_state[i]) < 0)
 			goto done;
-	(void)bcast_all(s, bb.data, bb.wpos, 0xFFFF);
+	(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
 done:
 	bb_free(&bb);
 }
@@ -1315,7 +1315,7 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	if (wr_u8(&out, SRV_DRIVER_SWAP_NOTIFY) == 0 &&
 	    wr_u16(&out, car_id) == 0 &&
 	    wr_u8(&out, swap_code) == 0)
-		(void)bcast_all(s, out.data, out.wpos, 0xFFFF);
+		(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
 	bb_free(&out);
 
 	/* Broadcast reset swap state. */
