@@ -292,13 +292,21 @@ int
 entrylist_save(const struct Server *s, const char *cfg_dir)
 {
 	char path[512];
+	char tmp_path[520];
 	FILE *fp;
 	int i, first_entry = 1;
 
 	snprintf(path, sizeof(path), "%s/entrylist.json", cfg_dir);
-	fp = fopen(path, "w");
+	snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+	/*
+	 * Write to entrylist.json.tmp + fsync + rename so a crash
+	 * mid-write doesn't leave the operator's entrylist truncated
+	 * with no backup.
+	 */
+	fp = fopen(tmp_path, "w");
 	if (fp == NULL) {
-		log_warn("entrylist_save: %s: %s", path, strerror(errno));
+		log_warn("entrylist_save: %s: %s",
+		    tmp_path, strerror(errno));
 		return -1;
 	}
 	fputs("{\n  \"entries\": [\n", fp);
@@ -357,7 +365,28 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 		fputs("\n      ]\n    }", fp);
 	}
 	fputs("\n  ],\n  \"configVersion\": 1\n}\n", fp);
-	fclose(fp);
+	if (fflush(fp) != 0) {
+		log_warn("entrylist_save: fflush %s: %s",
+		    tmp_path, strerror(errno));
+		fclose(fp);
+		(void)unlink(tmp_path);
+		return -1;
+	}
+	if (fsync(fileno(fp)) != 0)
+		log_warn("entrylist_save: fsync %s: %s",
+		    tmp_path, strerror(errno));
+	if (fclose(fp) != 0) {
+		log_warn("entrylist_save: fclose %s: %s",
+		    tmp_path, strerror(errno));
+		(void)unlink(tmp_path);
+		return -1;
+	}
+	if (rename(tmp_path, path) != 0) {
+		log_warn("entrylist_save: rename %s -> %s: %s",
+		    tmp_path, path, strerror(errno));
+		(void)unlink(tmp_path);
+		return -1;
+	}
 	log_info("entrylist_save: wrote %s", path);
 	return 0;
 }
