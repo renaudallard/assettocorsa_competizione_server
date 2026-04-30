@@ -298,9 +298,7 @@ conn_drop(struct Server *s, struct Conn *c)
 		 * phase (COMPLETED / RESULTS — race already over).
 		 */
 		if (!s->ignore_premature_disconnects &&
-		    s->session.session_index < s->session_count &&
-		    s->sessions[s->session.session_index].session_type
-		    == 10 &&
+		    session_is_race(s) &&
 		    (s->session.phase == PHASE_SESSION ||
 		     s->session.phase == PHASE_OVERTIME) &&
 		    drv->steam_id[0] != '\0') {

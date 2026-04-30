@@ -1472,9 +1472,7 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	 * Skip outside race phases (P/Q stint resets are routine
 	 * driver swaps, not tow penalties).
 	 */
-	if (force == 0 &&
-	    s->session.session_index < s->session_count &&
-	    s->sessions[s->session.session_index].session_type == 10 &&
+	if (force == 0 && session_is_race(s) &&
 	    (s->session.phase == PHASE_SESSION ||
 	     s->session.phase == PHASE_OVERTIME)) {
 		struct CarRaceState *r = &s->cars[c->car_id].race;
@@ -1653,10 +1651,11 @@ h_load_setup(struct Server *s, struct Conn *c,
 	slot = (int)car_id - ACC_CAR_ID_BASE;
 	if (slot >= 0 && slot < ACC_MAX_CARS && s->cars[slot].used)
 		car = &s->cars[slot];
-	if (s->session_count > 0 &&
-	    s->session.session_index < s->session_count)
-		my_sess_type = s->sessions[s->session.session_index]
-		    .session_type;
+	{
+		uint8_t cur = session_cur_type(s);
+		if (cur != 0xff)
+			my_sess_type = cur;
+	}
 
 	/*
 	 * Pick the race state to serve:

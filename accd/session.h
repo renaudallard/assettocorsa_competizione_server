@@ -149,4 +149,19 @@ int	session_advance_race_triggers(struct Server *s,
 const char *
 	session_phase_name(uint8_t phase);
 
+/*
+ * Current session_type with bound-checked index.  Returns 0xff
+ * when session_index is out of range (PHASE_RESULTS post-weekend
+ * window, or before any session is configured).
+ *
+ * The is_race / is_qualy wrappers replace the
+ * `session_index < session_count && sessions[].session_type == N`
+ * pattern that recurred in 12+ sites and shipped two real bugs in
+ * v0.2.97 (Quali overtime double-count and welcome session_index
+ * OOB) when individual sites forgot one half of the guard.
+ */
+uint8_t	session_cur_type(const struct Server *s);
+int	session_is_race(const struct Server *s);
+int	session_is_qualy(const struct Server *s);
+
 #endif /* ACCD_SESSION_H */

@@ -161,6 +161,26 @@ effective_formation_start(const struct Server *s)
 	return v;
 }
 
+uint8_t
+session_cur_type(const struct Server *s)
+{
+	if (s->session.session_index >= s->session_count)
+		return 0xff;
+	return s->sessions[s->session.session_index].session_type;
+}
+
+int
+session_is_race(const struct Server *s)
+{
+	return session_cur_type(s) == 10;
+}
+
+int
+session_is_qualy(const struct Server *s)
+{
+	return session_cur_type(s) == 4;
+}
+
 void
 session_reset(struct Server *s, uint8_t session_index)
 {
@@ -318,8 +338,7 @@ post_grace_ms(const struct Server *s)
 {
 	uint16_t cfg;
 
-	if (s->session.session_index < s->session_count &&
-	    s->sessions[s->session.session_index].session_type == 10)
+	if (session_is_race(s))
 		cfg = s->post_race_s;
 	else
 		cfg = s->post_qualy_s;
@@ -1030,8 +1049,7 @@ session_overtime_car_finished(struct Server *s)
 	 * the counter collapses ~2x as fast as expected and the hold releases
 	 * before the rest of the eligible field has crossed.
 	 */
-	if (s->session.session_index < s->session_count &&
-	    s->sessions[s->session.session_index].session_type != 10)
+	if (!session_is_race(s))
 		return;
 	if (s->session.cars_in_overtime > 0)
 		s->session.cars_in_overtime--;
@@ -1225,9 +1243,7 @@ void
 stint_check_violations(struct Server *s)
 {
 	int i;
-	int is_race =
-	    s->session.session_index < s->session_count &&
-	    s->sessions[s->session.session_index].session_type == 10;
+	int is_race = session_is_race(s);
 
 	if (s->driver_stint_time_s == 0 && s->mandatory_pit_count == 0)
 		return;	/* no enforcement configured */
