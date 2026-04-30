@@ -47,6 +47,14 @@
 #include "state.h"
 
 /*
+ * Sender string for SRV_CHAT_OR_STATE messages originating from
+ * the server (admin announcements, DSQ chat, kick/ban broadcasts).
+ * The AC2 client groups chat by exact sender match, so a typo
+ * would silently split the sender into two HUD lanes.
+ */
+#define RC_SENDER	"Race Control"
+
+/*
  * Process a chat message from c with the given UTF-8 text.
  * Returns 1 if the message was a command (admin or &swap) and
  * has been fully handled (no chat broadcast needed).  Returns 0

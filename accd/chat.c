@@ -110,7 +110,7 @@ chat_broadcast(struct Server *s, const char *text, uint8_t chat_type)
 		return;
 	bb_init(&out);
 	if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
-	    wr_str_a(&out, "Race Control") == 0 &&
+	    wr_str_a(&out, RC_SENDER) == 0 &&
 	    wr_str_a(&out, text) == 0 &&
 	    wr_i32(&out, 0) == 0 &&
 	    wr_u8(&out, chat_type) == 0)
@@ -269,7 +269,7 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 
 		bb_init(&out);
 		if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
-		    wr_str_a(&out, "Race Control") == 0 &&
+		    wr_str_a(&out, RC_SENDER) == 0 &&
 		    wr_str_a(&out, reason) == 0 &&
 		    wr_i32(&out, 0) == 0 &&
 		    wr_u8(&out, 5) == 0)
@@ -496,7 +496,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			 */
 			bb_init(&out);
 			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
-			    wr_str_a(&out, "Race Control") == 0 &&
+			    wr_str_a(&out, RC_SENDER) == 0 &&
 			    wr_str_a(&out, "You are now server admin") == 0 &&
 			    wr_i32(&out, 0) == 0 &&
 			    wr_u8(&out, 4) == 0)

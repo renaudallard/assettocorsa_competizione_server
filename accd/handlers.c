@@ -1814,7 +1814,7 @@ h_ctrl_info(struct Server *s, struct Conn *c,
 			continue;
 		bb_init(&bb);
 		if (wr_u8(&bb, SRV_CHAT_OR_STATE) == 0 &&
-		    wr_str_a(&bb, "Race Control") == 0 &&
+		    wr_str_a(&bb, RC_SENDER) == 0 &&
 		    wr_str_a(&bb, off >= 250
 			? "Received ctrl info, but message is too long. "
 			"Please check logs" : chat) == 0 &&
