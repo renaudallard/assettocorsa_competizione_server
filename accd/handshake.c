@@ -2036,11 +2036,17 @@ post_slot_assignment:
 
 		/*
 		 * entrylist isServerAdmin: auto-elevate this conn to admin
-		 * without requiring /admin <pw>.  Matches the exe's
-		 * FUN_140018390 which sets conn->admin byte when the entry's
-		 * +0x6e flag is non-zero on join.
+		 * if the operator hasn't set an admin password.  Matches the
+		 * exe's FUN_140018390 which always elevates on the +0x6e
+		 * flag.  We diverge: when adminPassword is configured the
+		 * password challenge is the authoritative gate, so an
+		 * entrylist match without /admin <pw> shouldn't grant
+		 * privileges — the steam_id is client-supplied and not
+		 * Steam-ticket-verified, and an attacker who knows an
+		 * admin steam_id would otherwise bypass the password.
+		 * Open servers (empty adminPassword) keep the auto-elevation.
 		 */
-		if (car->is_server_admin)
+		if (car->is_server_admin && s->admin_password[0] == '\0')
 			c->is_admin = 1;
 
 		/*
