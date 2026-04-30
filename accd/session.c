@@ -1033,6 +1033,16 @@ session_overtime_car_finished(struct Server *s)
 {
 	if (!s->session.overtime_hold)
 		return;
+	/*
+	 * Quali tracks its eligible-car count via session_quali_drop_eligibility,
+	 * which decrements cars_in_overtime once per car that uses its right
+	 * to finish.  If we also decrement here on every Quali lap completion
+	 * the counter collapses ~2x as fast as expected and the hold releases
+	 * before the rest of the eligible field has crossed.
+	 */
+	if (s->session.session_index < s->session_count &&
+	    s->sessions[s->session.session_index].session_type != 10)
+		return;
 	if (s->session.cars_in_overtime > 0)
 		s->session.cars_in_overtime--;
 	if (s->session.cars_in_overtime <= 0) {
