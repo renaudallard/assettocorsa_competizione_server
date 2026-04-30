@@ -110,23 +110,16 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	 * ignore it" guard: once the session has passed OVERTIME the
 	 * leaderboard is frozen, and any late-arriving lap report
 	 * should not mutate state.  Still relay 0x1b so other clients
-	 * see the number for UI, but skip the internal bookkeeping.
+	 * see the number for UI, but skip the internal bookkeeping —
+	 * the exe relays unconditionally (case 0x19 in 1400142f0.c
+	 * has no isSessionOver guard before its broadcast).
 	 */
-	if (s->session.phase >= PHASE_COMPLETED) {
-		log_info("lap ignored: session over (car=%d)",
-		    c->car_id);
-		return 0;
-	}
 	race = &s->cars[c->car_id].race;
-
-	/*
-	 * 0x19 fires on sector/checkpoint crossings, not on full
-	 * lap completion.  Do NOT increment lap_count here; the
-	 * real lap completion arrives as 0x20 ACP_SECTOR_SPLIT bulk
-	 * which carries sector times and a valid lap total.  Track
-	 * current_lap_ms for display and relay the event as 0x1b.
-	 */
-	race->current_lap_ms = lap_time_ms;
+	if (s->session.phase < PHASE_COMPLETED)
+		race->current_lap_ms = lap_time_ms;
+	else
+		log_info("lap state ignored: session over (car=%d)",
+		    c->car_id);
 
 	bb_init(&out);
 	if (wr_u8(&out, SRV_LAP_BROADCAST) < 0 ||
