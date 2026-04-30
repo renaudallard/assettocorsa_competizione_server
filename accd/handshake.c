@@ -1727,7 +1727,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 
 		/* Ban check. */
 		if (bans_contains(&s->bans, steam_buf)) {
-			log_info("rejecting banned steam_id %s", steam_buf);
+			log_debug("rejecting banned steam_id %s", steam_buf);
 			reason = REJECT_BANNED;
 			free(first); free(last); free(sname);
 			free(steam); free(team);

@@ -295,7 +295,7 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 
 		if (bans_add(&s->bans, sid) == 0) {
 			bans_save(&s->bans, s->cfg_dir);
-			log_info("admin: banned steam_id %s", sid);
+			log_debug("admin: banned steam_id %s", sid);
 		}
 	}
 	if (reply != NULL)
