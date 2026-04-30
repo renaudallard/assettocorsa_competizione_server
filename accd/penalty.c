@@ -306,8 +306,7 @@ void
 penalty_serve_front(struct Server *s, int car_id)
 {
 	struct PenaltyQueue *q;
-	uint8_t k;
-	int i;
+	int i, idx;
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS)
 		return;
@@ -315,21 +314,30 @@ penalty_serve_front(struct Server *s, int car_id)
 	if (q->count == 0)
 		return;
 	/*
-	 * Only DT / SG kinds are "serve-able" — TP5/TP15 are fixed
-	 * post-race time penalties, DQ is terminal, and anything
-	 * else would be a programming error.  Silently skip so the
-	 * caller (pit-exit detection, mandatory-pit served handler)
-	 * doesn't accidentally evict a TP entry just because the
-	 * driver pit'd.
+	 * Only DT / SG kinds are serve-able — TP5/TP15 are fixed
+	 * post-race time penalties, DQ is terminal.  Find the FIRST
+	 * serve-able entry, skipping any TP/DQ/etc. ahead of it; if
+	 * we just inspected slots[0] a TP enqueued before a real DT
+	 * (admin /tp followed by a cut DT, or a TP escalation that
+	 * landed first) would block service of the trailing DT
+	 * indefinitely and the auto-DQ-on-3-laps fallback would
+	 * never fire either.
 	 */
-	k = q->slots[0].kind;
-	if (k != PEN_DT && k != PEN_DTC &&
-	    k != PEN_SG10 && k != PEN_SG10C &&
-	    k != PEN_SG20 && k != PEN_SG20C &&
-	    k != PEN_SG30 && k != PEN_SG30C)
+	idx = -1;
+	for (i = 0; i < q->count; i++) {
+		uint8_t k = q->slots[i].kind;
+		if (k == PEN_DT || k == PEN_DTC ||
+		    k == PEN_SG10 || k == PEN_SG10C ||
+		    k == PEN_SG20 || k == PEN_SG20C ||
+		    k == PEN_SG30 || k == PEN_SG30C) {
+			idx = i;
+			break;
+		}
+	}
+	if (idx < 0)
 		return;
-	/* Remove the front entry and slide the rest down. */
-	for (i = 1; i < q->count; i++)
+	/* Remove that entry and slide the rest down. */
+	for (i = idx + 1; i < q->count; i++)
 		q->slots[i - 1] = q->slots[i];
 	q->count--;
 }
