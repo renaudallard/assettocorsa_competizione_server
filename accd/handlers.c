@@ -1707,13 +1707,17 @@ h_load_setup(struct Server *s, struct Conn *c,
 	/*
 	 * Trailing full leaderboard record for the target car — matches
 	 * the exe where FUN_1400328f0 appends a FUN_140034210 single-
-	 * car record at the tail of 0x56.  Always uses the live
-	 * CarEntry (name / model / ratings / etc), not the archived
-	 * race state — the record is primarily identity + totals.
+	 * car record at the tail of 0x56.  Exe passes a literal '\0'
+	 * (1400328f0.c:78) for the cvar8 byte regardless of the car's
+	 * formation-lap state, since 0x56 is a per-car garage reply
+	 * and the cvar8 byte gates HUD-active state — irrelevant to
+	 * the lap-history view.  Previously we passed
+	 * formation_lap_done, which flipped the byte mid-formation
+	 * and could change how the client rendered the trailing
+	 * record's session-active label.
 	 */
 	if (car != NULL)
-		(void)write_car_leaderboard_record(&out, car,
-		    car->race.formation_lap_done);
+		(void)write_car_leaderboard_record(&out, car, 0);
 	(void)bcast_send_one(c, out.data, out.wpos);
 	log_debug("0x56 reply: conn=%u car=%u sess_type=%u laps=%d "
 	    "(%zu bytes)", (unsigned)c->conn_id, (unsigned)car_id,
