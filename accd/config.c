@@ -439,22 +439,15 @@ config_load(struct Server *s, const char *cfg_dir)
 		    "configVersion", 0);
 		copy_str(s->meta_data, sizeof(s->meta_data),
 		    json_obj_get_str(event, "metaData"));
-		{
-			const struct json_node *fn, *gs, *ge;
-			fn = json_obj_get(event,
-			    "formationTriggerNormalizedRangeStart");
-			gs = json_obj_get(event,
-			    "greenFlagTriggerNormalizedRangeStart");
-			ge = json_obj_get(event,
-			    "greenFlagTriggerNormalizedRangeEnd");
-			if (fn != NULL && fn->kind == JSON_NUM)
-				s->formation_trigger_start =
-				    (float)fn->u.num;
-			if (gs != NULL && gs->kind == JSON_NUM)
-				s->green_trigger_start = (float)gs->u.num;
-			if (ge != NULL && ge->kind == JSON_NUM)
-				s->green_trigger_end = (float)ge->u.num;
-		}
+		s->formation_trigger_start = (float)json_obj_get_num(event,
+		    "formationTriggerNormalizedRangeStart",
+		    s->formation_trigger_start);
+		s->green_trigger_start = (float)json_obj_get_num(event,
+		    "greenFlagTriggerNormalizedRangeStart",
+		    s->green_trigger_start);
+		s->green_trigger_end = (float)json_obj_get_num(event,
+		    "greenFlagTriggerNormalizedRangeEnd",
+		    s->green_trigger_end);
 		/*
 		 * Fall back to ambient+8 only when the operator didn't set
 		 * trackTemp (or set it to 0).  Earlier code overwrote the
@@ -466,26 +459,18 @@ config_load(struct Server *s, const char *cfg_dir)
 			    s->session.ambient_temp + 8);
 
 		{
-			float clouds = (float)json_obj_get_int(event,
-			    "cloudLevel", 0) / 10.0f;
-			float rain = (float)json_obj_get_int(event,
-			    "rain", 0) / 10.0f;
+			/*
+			 * cloudLevel and rain in event.json are 0.0..1.0
+			 * floats; json_obj_get_num returns the JSON_NUM
+			 * value or the default if the key is absent or
+			 * not numeric.
+			 */
+			float clouds = (float)json_obj_get_num(event,
+			    "cloudLevel", 0.0);
+			float rain = (float)json_obj_get_num(event,
+			    "rain", 0.0);
 			int randomness = json_obj_get_int(event,
 			    "weatherRandomness", 0);
-
-			/* cloudLevel and rain in event.json are 0.0..1.0
-			 * floats but json_obj_get_int truncates; try the
-			 * raw node value. */
-			{
-				const struct json_node *cn = json_obj_get(
-				    event, "cloudLevel");
-				const struct json_node *rn = json_obj_get(
-				    event, "rain");
-				if (cn != NULL && cn->kind == JSON_NUM)
-					clouds = (float)cn->u.num;
-				if (rn != NULL && rn->kind == JSON_NUM)
-					rain = (float)rn->u.num;
-			}
 			{
 				uint32_t start_s =
 				    (uint32_t)s->sessions[0].hour_of_day
