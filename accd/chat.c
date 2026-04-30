@@ -472,8 +472,23 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			return 1;
 		}
 		if (strcmp(arg, s->admin_password) == 0) {
+			struct ByteBuf out;
 			c->is_admin = 1;
-			chat_broadcast(s,"You are now server admin", 4);
+			/*
+			 * Unicast the elevation reply only to the requesting
+			 * conn, matching the exe's FUN_140021680 admin path
+			 * (calls FUN_14004cc50 unicast).  chat_broadcast
+			 * here would announce "You are now server admin" to
+			 * every connected client, exposing the elevation.
+			 */
+			bb_init(&out);
+			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
+			    wr_str_a(&out, "Race Control") == 0 &&
+			    wr_str_a(&out, "You are now server admin") == 0 &&
+			    wr_i32(&out, 0) == 0 &&
+			    wr_u8(&out, 4) == 0)
+				(void)bcast_send_one(c, out.data, out.wpos);
+			bb_free(&out);
 			log_info("admin: conn=%u elevated to admin",
 			    (unsigned)c->conn_id);
 		} else {
