@@ -239,8 +239,8 @@ static int
 lobby_send_framed(struct LobbyClient *l, const void *body, size_t len)
 {
 	unsigned char hdr[2];
-	struct iovec iov[2];
-	ssize_t n;
+	const unsigned char *bptr = body;
+	size_t hdr_off = 0, body_off = 0;
 
 	if (len > 0xFFFF) {
 		log_warn("lobby: oversize msg %zu bytes, dropped", len);
@@ -248,14 +248,45 @@ lobby_send_framed(struct LobbyClient *l, const void *body, size_t len)
 	}
 	hdr[0] = (unsigned char)(len & 0xff);
 	hdr[1] = (unsigned char)((len >> 8) & 0xff);
-	iov[0].iov_base = hdr;
-	iov[0].iov_len = 2;
-	iov[1].iov_base = (void *)(uintptr_t)body;
-	iov[1].iov_len = len;
-	n = writev(l->fd, iov, 2);
-	if (n < 0) {
-		log_warn("lobby: writev: %s", strerror(errno));
-		return -1;
+
+	/*
+	 * Loop until the full hdr+body is written.  writev on a non-
+	 * blocking socket can return short under TCP backpressure;
+	 * the previous code took the partial write as success and
+	 * corrupted the kson framing, since the next message would
+	 * land mid-header from the receiver's perspective.
+	 */
+	while (hdr_off < 2 || body_off < len) {
+		struct iovec iov[2];
+		int n_iov = 0;
+		ssize_t n;
+
+		if (hdr_off < 2) {
+			iov[n_iov].iov_base = hdr + hdr_off;
+			iov[n_iov].iov_len = 2 - hdr_off;
+			n_iov++;
+		}
+		if (body_off < len) {
+			iov[n_iov].iov_base = (void *)(uintptr_t)
+			    (bptr + body_off);
+			iov[n_iov].iov_len = len - body_off;
+			n_iov++;
+		}
+		n = writev(l->fd, iov, n_iov);
+		if (n < 0) {
+			if (errno == EINTR)
+				continue;
+			log_warn("lobby: writev: %s", strerror(errno));
+			return -1;
+		}
+		if (hdr_off < 2) {
+			size_t take = (size_t)n < (2 - hdr_off)
+			    ? (size_t)n : (2 - hdr_off);
+			hdr_off += take;
+			n -= (ssize_t)take;
+		}
+		if (n > 0)
+			body_off += (size_t)n;
 	}
 	return 0;
 }
