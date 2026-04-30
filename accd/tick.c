@@ -515,6 +515,9 @@ broadcast_session_results(struct Server *s)
 {
 	int i, n;
 	uint8_t result_count;
+	struct ByteBuf bb;
+	int ok = 1;
+	int j, used = 0;
 
 	if (s->session_count == 0)
 		return;
@@ -522,83 +525,87 @@ broadcast_session_results(struct Server *s)
 	if (result_count > s->session_count)
 		result_count = s->session_count;
 
-	for (i = 0; i < ACC_MAX_CARS; i++) {
-		struct Conn *c = s->conns[i];
-		struct ByteBuf bb;
-		int ok = 1;
-		int j, used = 0;
+	for (j = 0; j < ACC_MAX_CARS; j++)
+		if (s->cars[j].used)
+			used++;
+	if (used == 0)
+		return;
 
-		if (c == NULL || c->state != CONN_AUTH)
-			continue;
-		for (j = 0; j < ACC_MAX_CARS; j++)
-			if (s->cars[j].used)
-				used++;
-		if (used == 0)
-			continue;
-		bb_init(&bb);
-		ok = ok && wr_u8(&bb, SRV_SESSION_RESULTS) == 0;
-		ok = ok && wr_u8(&bb, result_count) == 0;
-		/*
-		 * FUN_1400351f0 walks a per-session-results vector and
-		 * emits one (header + leaderboard) pair per completed
-		 * session, each describing THAT session's leading car.
-		 * We used to pick the first used car for every iteration,
-		 * so the end-of-session screen for sessions 1+ showed the
-		 * wrong driver and times.  Resolve the session leader from
-		 * the archive slot (or live state for the current
-		 * session).
-		 */
-		for (n = 0; n < result_count && ok; n++) {
-			int leader = -1;
-			const struct CarRaceState *src = NULL;
-			int cur = s->session.session_index;
+	/*
+	 * The body is identical for every recipient (the leader
+	 * resolution and write_leaderboard_section don't depend on
+	 * the destination conn).  Build it once and fan out, instead
+	 * of malloc/free per auth conn.
+	 */
+	bb_init(&bb);
+	ok = ok && wr_u8(&bb, SRV_SESSION_RESULTS) == 0;
+	ok = ok && wr_u8(&bb, result_count) == 0;
+	/*
+	 * FUN_1400351f0 walks a per-session-results vector and
+	 * emits one (header + leaderboard) pair per completed
+	 * session, each describing THAT session's leading car.
+	 * We used to pick the first used car for every iteration,
+	 * so the end-of-session screen for sessions 1+ showed the
+	 * wrong driver and times.  Resolve the session leader from
+	 * the archive slot (or live state for the current
+	 * session).
+	 */
+	for (n = 0; n < result_count && ok; n++) {
+		int leader = -1;
+		const struct CarRaceState *src = NULL;
+		int cur = s->session.session_index;
 
-			for (j = 0; j < ACC_MAX_CARS; j++) {
-				if (!s->cars[j].used)
-					continue;
-				if (n == cur) {
-					if (s->cars[j].race.position == 1) {
-						leader = j;
-						src = &s->cars[j].race;
-						break;
-					}
-				} else if (n < cur &&
-				    n < ACC_MAX_SESSIONS &&
-				    s->cars[j].race_archive[n] != NULL &&
-				    s->cars[j].race_archive[n]->position
-					== 1) {
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			if (!s->cars[j].used)
+				continue;
+			if (n == cur) {
+				if (s->cars[j].race.position == 1) {
 					leader = j;
-					src = s->cars[j].race_archive[n];
+					src = &s->cars[j].race;
 					break;
 				}
+			} else if (n < cur &&
+			    n < ACC_MAX_SESSIONS &&
+			    s->cars[j].race_archive[n] != NULL &&
+			    s->cars[j].race_archive[n]->position
+				== 1) {
+				leader = j;
+				src = s->cars[j].race_archive[n];
+				break;
 			}
-			if (leader < 0) {
-				/* Fallback: first used car, archived state
-				 * if available, else live. */
-				for (j = 0; j < ACC_MAX_CARS; j++)
-					if (s->cars[j].used) {
-						leader = j;
-						break;
-					}
-				if (leader < 0) {
-					ok = 0;
-					break;
-				}
-				if (n < cur && n < ACC_MAX_SESSIONS &&
-				    s->cars[leader].race_archive[n] != NULL)
-					src = s->cars[leader]
-					    .race_archive[n];
-				else
-					src = &s->cars[leader].race;
-			}
-			ok = ok && write_result_header(&bb,
-			    &s->cars[leader], src) == 0;
-			ok = ok && write_leaderboard_section(&bb, s) == 0;
 		}
-		if (ok)
-			(void)conn_send_framed(c, bb.data, bb.wpos);
-		bb_free(&bb);
+		if (leader < 0) {
+			/* Fallback: first used car, archived state
+			 * if available, else live. */
+			for (j = 0; j < ACC_MAX_CARS; j++)
+				if (s->cars[j].used) {
+					leader = j;
+					break;
+				}
+			if (leader < 0) {
+				ok = 0;
+				break;
+			}
+			if (n < cur && n < ACC_MAX_SESSIONS &&
+			    s->cars[leader].race_archive[n] != NULL)
+				src = s->cars[leader]
+				    .race_archive[n];
+			else
+				src = &s->cars[leader].race;
+		}
+		ok = ok && write_result_header(&bb,
+		    &s->cars[leader], src) == 0;
+		ok = ok && write_leaderboard_section(&bb, s) == 0;
 	}
+	if (ok) {
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct Conn *c = s->conns[i];
+			if (c == NULL || c->state != CONN_AUTH)
+				continue;
+			(void)conn_send_framed(c, bb.data, bb.wpos);
+		}
+	}
+	bb_free(&bb);
 	log_info("Send session results to %d clients (count=%u)",
 	    s->nconns, (unsigned)result_count);
 }
