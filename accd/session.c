@@ -67,13 +67,22 @@
 static int
 wrapped_range_contains(float pos, float start, float end)
 {
-	/* FUN_1401342d0: test whether pos is inside a [start, end]
-	 * segment on the 0..1 normalized track loop, handling the
-	 * start/finish line wrap (start > end means the range crosses
-	 * position 0). */
-	if (start <= end)
-		return pos >= start && pos <= end;
-	return pos >= start || pos <= end;
+	/*
+	 * FUN_1401342d0: test whether pos is inside a [start, end)
+	 * half-open segment on the 0..1 normalized track loop,
+	 * handling the start/finish line wrap (end <= start means
+	 * the range crosses position 0).  Exe rotates one bound by
+	 * +/-1.0 based on which side of 0.5 pos sits, then tests
+	 * (start <= pos) && (pos < end) — half-open at the upper
+	 * bound.  We had it inclusive on both ends.
+	 */
+	if (end <= start) {
+		if (pos < 0.5f)
+			start -= 1.0f;
+		else
+			end += 1.0f;
+	}
+	return start <= pos && pos < end;
 }
 
 static float
