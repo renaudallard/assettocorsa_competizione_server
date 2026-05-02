@@ -337,13 +337,11 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		/* +0x28 qualifyStandingType (0=best lap, 1=superpole). */
 		if (wr_u8(bb, s->qualify_standing_type) < 0) return -1;
 		/*
-		 * +0x2c superpoleMaxCar.  AC2 stores this as u32 at +0x154
-		 * (zero-extended from our u8) and an HUD widget appears to
-		 * format "OBLIGATOIRE %d/%d" with this field as the
-		 * numerator and mandatoryPitstopCount as the denominator —
-		 * a 0xff "unset sentinel" guess produced "255/0" in race
-		 * sessions where mandatoryPitstopCount=0.  Emit 0 instead;
-		 * the widget collapses to "0/0" which the client hides.
+		 * +0x2c superpoleMaxCar.  Misano reference pcap shows the
+		 * exe emits 0xff (sentinel) when unset; we keep the v0.3.3
+		 * 0 emit pending separate review of whether to revert to
+		 * the exe baseline now that the RaceRules wire shape is
+		 * correct.
 		 */
 		if (wr_u8(bb, 0) < 0) return -1;
 		/* +0x30 pitWindowLengthSec — u16 on wire, 0xffff unset. */
@@ -365,14 +363,22 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		if (wr_u8(bb, s->pit_refuelling_required) < 0) return -1;
 		if (wr_u8(bb, s->pit_tyre_change_required) < 0) return -1;
 		if (wr_u8(bb, s->mandatory_swap_required) < 0) return -1;
+		/*
+		 * Two literal 0x01 bytes the exe FUN_14011d230 always
+		 * emits between mandatory_swap_required and tyreSetCount.
+		 * Verified byte-for-byte against the misano reference
+		 * pcap (frame 46872, RaceRules @ pos 1045-1046).
+		 */
+		if (wr_u8(bb, 1) < 0) return -1;
+		if (wr_u8(bb, 1) < 0) return -1;
 		/* Trailing tyreSetCount (u8). */
 		if (wr_u8(bb, s->tyre_set_count) < 0) return -1;
 	}
 
 	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */
-	if (wr_u8(bb, 0x01) < 0) return -1;
-	if (wr_u8(bb, 0x32) < 0) return -1;
 	if (wr_u8(bb, 0x03) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
 	if (wr_u8(bb, 0x00) < 0) return -1;
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
