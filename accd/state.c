@@ -180,8 +180,20 @@ server_init(struct Server *s)
 	s->tyre_set_count = 1;
 	snprintf(s->car_group, sizeof(s->car_group), "FreeForAll");
 	lobby_init(&s->lobby);
-	for (int i = 0; i < ACC_MAX_CARS; i++)
+	for (int i = 0; i < ACC_MAX_CARS; i++) {
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
+		car_runtime_reset_gate(&s->cars[i].rt);
+	}
+}
+
+void
+car_runtime_reset_gate(struct CarRuntime *rt)
+{
+	rt->has_data = 0;
+	rt->last_timestamp_ms = 0;
+	rt->client_timestamp_ms = 0;
+	rt->packet_seq = 0;
+	rt->last_src_conn_id = 0xffff;
 }
 
 void
@@ -361,6 +373,7 @@ conn_drop(struct Server *s, struct Conn *c)
 		 * the leaderboard session-best counters.
 		 */
 		s->cars[c->car_id].used = 0;
+		car_runtime_reset_gate(&s->cars[c->car_id].rt);
 		c->car_id = -1;
 		session_recompute_standings(s);
 		s->session.standings_seq++;

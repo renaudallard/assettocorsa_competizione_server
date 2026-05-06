@@ -261,6 +261,7 @@ session_reset(struct Server *s, uint8_t session_index)
 		r->position = (int16_t)(i + 1);
 		r->grid_position = -1;
 		r->on_track = saved_on_track;
+		car_runtime_reset_gate(&s->cars[i].rt);
 	}
 
 	/*

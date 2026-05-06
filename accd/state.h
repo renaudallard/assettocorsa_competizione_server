@@ -494,6 +494,13 @@ struct CarRuntime {
 						 * +1 byte on the exe's car
 						 * struct used by
 						 * FUN_14001a170. */
+	uint16_t	last_src_conn_id;	/* exe lastDrivingConnectionID
+						 * (+6 in CarRuntime).  Set on
+						 * every accepted car_update so
+						 * a packet from a different
+						 * conn (post-reconnect)
+						 * bypasses the timestamp gate.
+						 * 0xffff = unset. */
 };
 
 /*
@@ -869,6 +876,13 @@ void	conn_drop(struct Server *s, struct Conn *c);
 /* Find a connection by its (server-assigned) conn_id. */
 struct Conn *
 	server_find_conn(struct Server *s, uint16_t conn_id);
+
+/* Reset the car_update timestamp gate fields for a CarRuntime.  Called
+ * from server_init, session_reset and conn_drop so a fresh session, a
+ * reconnect or a slot-reuse driver starts clean — without this the
+ * stored last_timestamp_ms blocks every new packet until it climbs
+ * past the previous high-water mark. */
+void	car_runtime_reset_gate(struct CarRuntime *rt);
 
 /*
  * Allocate a free CarEntry slot and return its index, or -1 if

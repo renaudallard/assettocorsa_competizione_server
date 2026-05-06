@@ -1881,21 +1881,58 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	rt = &car->rt;
 
 	/*
-	 * Drop outdated packets: the server tracks a monotonically
-	 * increasing client timestamp and discards anything not
-	 * strictly newer than the last one seen.
+	 * Drop outdated packets, mirroring exe FUN_140042900:
+	 *
+	 *   if source_conn_id matches the last accepted one and the
+	 *   timestamp is not strictly newer, drop.
+	 *
+	 *   if source_conn_id changed (e.g. reconnect reusing the same
+	 *   car slot), accept and reset the gate.
+	 *
+	 * Extension over the exe: a backwards jump > 1 s on the same
+	 * conn is treated as a clock reset and accepted.  The exe drops
+	 * those, which leaves a single bad timestamp able to lock the
+	 * gate for the rest of the connection (reproduced 2026-05-06:
+	 * stored 1050127 vs incoming 819920 blocked every car_update
+	 * during a race PRE_SESSION, so the leader-pick gate never saw
+	 * the car move and green never fired).
 	 */
-	if (rt->has_data && client_ts_ms <= rt->last_timestamp_ms) {
-		log_info("Dropped outdated car_update paket for carId %d,"
-		    " clientTimestamp %u vs lastTimeStamp %u",
-		    c->car_id, (unsigned)client_ts_ms,
-		    (unsigned)rt->last_timestamp_ms);
-		return 0;
+#define CAR_UPDATE_TS_RESET_GAP_MS 1000u
+	if (rt->has_data) {
+		int conn_changed = (rt->last_src_conn_id != source_conn_id);
+		int reset_gap = (client_ts_ms < rt->last_timestamp_ms &&
+		    (rt->last_timestamp_ms - client_ts_ms) >
+		    CAR_UPDATE_TS_RESET_GAP_MS);
+
+		if (conn_changed) {
+			log_info("Changing lastDrivingConnectionID %u to %u "
+			    "(carId %d, ts %u -> %u)",
+			    (unsigned)rt->last_src_conn_id,
+			    (unsigned)source_conn_id, c->car_id,
+			    (unsigned)rt->last_timestamp_ms,
+			    (unsigned)client_ts_ms);
+		} else if (reset_gap) {
+			log_info("car %d: clientTimestamp jumped backwards "
+			    "%u -> %u (gap %u ms > %u ms threshold), "
+			    "accepting and resetting gate",
+			    c->car_id,
+			    (unsigned)rt->last_timestamp_ms,
+			    (unsigned)client_ts_ms,
+			    (unsigned)(rt->last_timestamp_ms - client_ts_ms),
+			    CAR_UPDATE_TS_RESET_GAP_MS);
+		} else if (client_ts_ms <= rt->last_timestamp_ms) {
+			log_info("Dropped outdated car_update paket for carId "
+			    "%d, clientTimestamp %u vs lastTimeStamp %u",
+			    c->car_id, (unsigned)client_ts_ms,
+			    (unsigned)rt->last_timestamp_ms);
+			return 0;
+		}
 	}
 
 	rt->packet_seq = seq;
 	rt->client_timestamp_ms = client_ts_ms;
 	rt->last_timestamp_ms = client_ts_ms;
+	rt->last_src_conn_id = source_conn_id;
 
 	/*
 	 * Refresh the extrapolation pivot used by write_session_mgr_state:
