@@ -547,7 +547,18 @@ int
 write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
 	int j, d, nc = 0;
-	uint8_t cvar8 = 0;
+	/*
+	 * Always set cvar8=1.  The byte gates whether AC2 reads the
+	 * per-car +0x204 missingMandatoryPitstop field from the wire;
+	 * if cvar8=0, AC2 leaves the field at its constructor default
+	 * 0xffffffff (rendered as 255 in the OBLIGATOIRE widget).
+	 * Kunos always emits cvar8=1 + inner byte=0 so the widget
+	 * sees 0/0 and stays hidden.  Earlier code raised cvar8 only
+	 * after formation_mid_passed flipped on the leader, leaving
+	 * the widget at "OBLIGATOIRE 255/0 INVALIDE EXIGENCES" all
+	 * the way through the formation lap.
+	 */
+	uint8_t cvar8 = 1;
 	int32_t sess_best_lap = INT32_MAX;
 	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
 
@@ -558,8 +569,8 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	 * where the driver disconnected mid-session keep their timing
 	 * so the fastest lap stays visible on the standings sidebar.
 	 * DQ'd cars are excluded so a protested time doesn't show as
-	 * the session best.  Entry count (nc) and cvar8 still consider
-	 * only currently-connected cars.
+	 * the session best.  Entry count (nc) considers only currently
+	 * connected cars.
 	 */
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		struct CarRaceState *r = &s->cars[j].race;
@@ -578,8 +589,6 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 		if (!s->cars[j].used)
 			continue;
 		nc++;
-		if (r->formation_mid_passed)
-			cvar8 = 1;
 	}
 
 	/*
@@ -708,7 +717,18 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	}
 
 	if (cvar8) {
-		if (wr_u8(bb, race->formation_mid_passed) < 0) return -1;
+		/*
+		 * AC2 stores this byte at LeaderboardLine +0x204 named
+		 * "missingMandatoryPitstop" (per JSON writer at
+		 * 1434ec4b0.c).  Emit 0 — the widget collapses to
+		 * "OBLIGATOIRE 0/0" and the client hides it when no
+		 * mandatory pits are configured.  We previously emitted
+		 * race->formation_mid_passed here, which was a leftover
+		 * from an earlier theory that this byte controlled a
+		 * formation-lap HUD element.  AC2's actual semantic is
+		 * the missing-pit count, not a formation flag.
+		 */
+		if (wr_u8(bb, 0) < 0) return -1;
 	}
 
 	if (wr_u8(bb, pq->count) < 0) return -1;
