@@ -365,71 +365,39 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		if (wr_u8(bb, s->pit_refuelling_required) < 0) return -1;
 		if (wr_u8(bb, s->pit_tyre_change_required) < 0) return -1;
 		if (wr_u8(bb, s->mandatory_swap_required) < 0) return -1;
-		/*
-		 * Two literal 0x01 bytes the exe FUN_14011d230 emits between
-		 * mandatory_swap_required and tyreSetCount.  AC2's reader
-		 * FUN_1434f4810 consumes them as discarded slots.  Without
-		 * these AC2 over-reads 2 bytes into WeatherStatus, mapping
-		 * wrong values into tyreSetCount and shifting every later
-		 * block by 2 bytes.
-		 */
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_u8(bb, 1) < 0) return -1;
 		/* Trailing tyreSetCount (u8). */
 		if (wr_u8(bb, s->tyre_set_count) < 0) return -1;
 	}
 
-	/*
-	 * WeatherStatus — 24 bytes, no header.  AC2 reader FUN_1434f6460
-	 * reads exactly 6 f32 in this wire order: ambient, windDir, road,
-	 * windSpeed, rain, cloud (struct offsets +0x28/+0x34/+0x2c/+0x30/
-	 * +0x38/+0x3c).  The previous 4-byte preamble 01 32 03 00 we
-	 * emitted does NOT exist in the AC2 reader; the trailer "worked"
-	 * pre-fix only because the misalignment from a 16-byte RaceRules
-	 * cancelled out partially.
-	 */
+	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */
+	if (wr_u8(bb, 0x01) < 0) return -1;
+	if (wr_u8(bb, 0x32) < 0) return -1;
+	if (wr_u8(bb, 0x03) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
 	if (wr_f32(bb, ambient) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, rain) < 0) return -1;
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
 
-	/*
-	 * WeatherData (inside EventEntity) — 52 bytes for empty forecast.
-	 * AC2 reader FUN_1434f64d0 reads 12 u32/f32 at struct offsets
-	 * +0x28..+0x58 (no +0x2c, that's server-internal), then u16
-	 * count1 + u16 count2 (both 0 for empty forecast arrays).  Layout
-	 * mirrors write_trailer_weather_data which is the same reader
-	 * applied to the welcome's top-level WeatherData object — both
-	 * are dispatched through the same FUN_1434f64d0 vtable slot.
-	 *
-	 * Prior 60-byte (15 f32) emit left an 8-byte tail that AC2's
-	 * SeasonEntity reader interpreted as the start of session_mgr_state,
-	 * over-reading until packet end.
-	 */
-	{
-		uint32_t is_dynamic = s->weather.randomness > 0 ? 1 : 0;
-		float wind_speed = s->weather.wind_speed;
-		float wind_dir = s->weather.wind_direction;
+	/* WeatherRules forecast table (15 f32 = 60 bytes). */
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, -1.0f) < 0) return -1;
+	if (wr_f32(bb, 5.0f) < 0) return -1;
+	if (wr_f32(bb, 15.0f) < 0) return -1;
+	if (wr_f32(bb, -1.0f) < 0) return -1;
+	for (i = 0; i < 3; i++)
+		if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
 
-		if (wr_u32(bb, is_dynamic) < 0) return -1;	/* +0x28 */
-		if (wr_f32(bb, ambient) < 0) return -1;		/* +0x30 */
-		if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x34 */
-		if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x38 */
-		if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x3c */
-		if (wr_f32(bb, wind_dir) < 0) return -1;	/* +0x40 */
-		if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x44 */
-		if (wr_u32(bb, 0) < 0) return -1;		/* +0x48 */
-		if (wr_u32(bb, 0) < 0) return -1;		/* +0x4c */
-		if (wr_f32(bb, s->weather.clouds) < 0) return -1;/* +0x50 */
-		if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x54 */
-		if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x58 */
-		if (wr_u16(bb, 0) < 0) return -1;	/* count1: empty list 1 */
-		if (wr_u16(bb, 0) < 0) return -1;	/* count2: empty list 2 */
-	}
-
-	(void)i;
 	return 0;
 }
 
