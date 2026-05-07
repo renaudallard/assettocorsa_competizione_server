@@ -1043,6 +1043,29 @@ tick_run(struct Server *s)
 			 */
 			session_recompute_standings(s);
 			/*
+			 * Race-only: convert every car's unserved DT/SG
+			 * to the equivalent post-race time penalty
+			 * (DT->30 s, SG10->40 s, SG20->50 s, SG30->60 s),
+			 * matching exe FUN_140127440 invoked from
+			 * FUN_14012b380's session-over branch.  Run before
+			 * broadcast_session_results / results_write so the
+			 * converted-TP entries appear in both the 0x3e
+			 * broadcast and the per-session results.json.
+			 * Only meaningful in races; qualy / practice don't
+			 * have lap-bound DT/SG penalties to convert.
+			 * Gated on !results_written so we run exactly once
+			 * even if PHASE_COMPLETED ticks repeat.
+			 */
+			if (!s->session.results_written &&
+			    s->session_count > 0 &&
+			    s->sessions[s->session.session_index]
+				.session_type == 10) {
+				int j;
+				for (j = 0; j < ACC_MAX_CARS; j++)
+					penalty_convert_race_end(
+					    &s->cars[j].race.pen);
+			}
+			/*
 			 * Update Trust rating based on race outcome.
 			 * Runs only once per session-complete (before
 			 * archive) so we don't inflate TR on repeated

@@ -117,7 +117,15 @@ enum session_phase {
 	PHASE_RESULTS     = 8,	/* terminal: weekend over */
 };
 
-/* Penalty kinds matching the chat command set. */
+/* Penalty kinds matching the chat command set.
+ *
+ * PEN_TP30, PEN_TP40, PEN_TP50, PEN_TP60 are not directly issuable
+ * by an admin command; they are materialised by penalty_convert_race_end()
+ * at session-over for unserved DT / SG10 / SG20 / SG30 entries
+ * respectively (handbook V.1.8.11, exe FUN_140127440).  They serialise
+ * to ServerMonitorPenaltyShortcut wire value 14 (PostRaceTime) just
+ * like PEN_TP5 / PEN_TP15.
+ */
 enum penalty_kind {
 	PEN_NONE = 0,
 	PEN_TP5, PEN_TP15,
@@ -125,7 +133,8 @@ enum penalty_kind {
 	PEN_SG10, PEN_SG10C,
 	PEN_SG20, PEN_SG20C,
 	PEN_SG30, PEN_SG30C,
-	PEN_DQ
+	PEN_DQ,
+	PEN_TP30, PEN_TP40, PEN_TP50, PEN_TP60	/* race-end conversions */
 };
 
 /*

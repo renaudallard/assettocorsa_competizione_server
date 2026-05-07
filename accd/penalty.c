@@ -383,12 +383,12 @@ penalty_total_ms(const struct PenaltyQueue *q)
 	for (i = 0; i < q->count; i++) {
 		const struct PenaltyEntry *p = &q->slots[i];
 		switch (p->kind) {
-		case PEN_TP5:
-			total += 5000;
-			break;
-		case PEN_TP15:
-			total += 15000;
-			break;
+		case PEN_TP5:		total += 5000;		break;
+		case PEN_TP15:		total += 15000;		break;
+		case PEN_TP30:		total += 30000;		break;
+		case PEN_TP40:		total += 40000;		break;
+		case PEN_TP50:		total += 50000;		break;
+		case PEN_TP60:		total += 60000;		break;
 		case PEN_DT:
 		case PEN_DTC:
 			if (!p->served && p->laps_remaining > 0)
@@ -416,6 +416,45 @@ penalty_total_ms(const struct PenaltyQueue *q)
 	return total;
 }
 
+/*
+ * Convert every car's unserved DT / SG entries to the corresponding
+ * post-race time penalty (DT -> 30 s, SG10 -> 40 s, SG20 -> 50 s,
+ * SG30 -> 60 s) per handbook V.1.8.11 / exe FUN_140127440.  Called
+ * from session.c at race-only session end; the converted entries
+ * are kept in the queue (so results.json shows the converted-TP
+ * kinds rather than the unserved DT/SG) but their `served` flag
+ * stays false because TP penalties are not "served" — they're
+ * applied as a final-time delta.  The same total ms still falls
+ * out of penalty_total_ms because both code paths hit the same
+ * 30/40/50/60-second buckets.
+ */
+void
+penalty_convert_race_end(struct PenaltyQueue *q)
+{
+	int i;
+	uint8_t new_kind;
+
+	if (q == NULL)
+		return;
+	for (i = 0; i < q->count; i++) {
+		struct PenaltyEntry *p = &q->slots[i];
+		if (p->served || p->laps_remaining <= 0)
+			continue;
+		switch (p->kind) {
+		case PEN_DT:	case PEN_DTC:	new_kind = PEN_TP30; break;
+		case PEN_SG10:	case PEN_SG10C:	new_kind = PEN_TP40; break;
+		case PEN_SG20:	case PEN_SG20C:	new_kind = PEN_TP50; break;
+		case PEN_SG30:	case PEN_SG30C:	new_kind = PEN_TP60; break;
+		default:
+			continue;
+		}
+		p->kind = new_kind;
+		p->collision = 0;
+		p->laps_remaining = 0;
+		/* reason stays as it was — race-control / cutting / etc. */
+	}
+}
+
 const char *
 penalty_name(uint8_t kind)
 {
@@ -423,6 +462,10 @@ penalty_name(uint8_t kind)
 	case PEN_NONE:		return "none";
 	case PEN_TP5:		return "5s time penalty";
 	case PEN_TP15:		return "15s time penalty";
+	case PEN_TP30:		return "30s time penalty";
+	case PEN_TP40:		return "40s time penalty";
+	case PEN_TP50:		return "50s time penalty";
+	case PEN_TP60:		return "60s time penalty";
 	case PEN_DT:		return "Drivethrough penalty";
 	case PEN_DTC:		return "Drivethrough penalty";
 	case PEN_SG10:		return "Stop and Go 10s penalty";
@@ -469,7 +512,9 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		break;
 	case REASON_RACE_CONTROL:
 		switch (kind) {
-		case PEN_TP5: case PEN_TP15:	return 14;
+		case PEN_TP5: case PEN_TP15:
+		case PEN_TP30: case PEN_TP40:
+		case PEN_TP50: case PEN_TP60:	return 14;
 		case PEN_DT: case PEN_DTC:	return 15;
 		case PEN_SG10: case PEN_SG10C:	return 16;
 		case PEN_SG20: case PEN_SG20C:	return 17;

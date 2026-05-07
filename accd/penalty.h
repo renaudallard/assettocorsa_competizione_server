@@ -135,6 +135,20 @@ const char *
 uint32_t
 	penalty_total_ms(const struct PenaltyQueue *q);
 
+/*
+ * Convert every unserved DT/SG entry to the corresponding TP record
+ * (DT -> TP30, SG10 -> TP40, SG20 -> TP50, SG30 -> TP60).  Mirrors
+ * exe FUN_140127440 which is invoked from FUN_14012b380's session-
+ * over branch (race only).  Call once at session end, before
+ * results.c emits the per-car JSON, so the per-car queue shows the
+ * converted-TP kinds rather than the unserved DT/SG kinds.
+ *
+ * The function is idempotent — calling it twice is safe (second
+ * call finds no DT/SG entries to convert).
+ */
+void
+	penalty_convert_race_end(struct PenaltyQueue *q);
+
 /* Build the chat string for a penalty issuance.  Suffix is chosen
  * from `reason` (e.g. " - cutting") unless `collision` is set, in
  * which case the collision suffix overrides. */
