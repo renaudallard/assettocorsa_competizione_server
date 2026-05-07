@@ -337,15 +337,19 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		/* +0x28 qualifyStandingType (0=best lap, 1=superpole). */
 		if (wr_u8(bb, s->qualify_standing_type) < 0) return -1;
 		/*
-		 * +0x2c superpoleMaxCar.  AC2 stores this as u32 at +0x154
-		 * (zero-extended from our u8) and an HUD widget appears to
-		 * format "OBLIGATOIRE %d/%d" with this field as the
-		 * numerator and mandatoryPitstopCount as the denominator —
-		 * a 0xff "unset sentinel" guess produced "255/0" in race
-		 * sessions where mandatoryPitstopCount=0.  Emit 0 instead;
-		 * the widget collapses to "0/0" which the client hides.
+		 * +0x2c superpoleMaxCar — emit 0xff sentinel for "no
+		 * superpole car limit", matching Kunos misano pcap (frame
+		 * 46872 of kunos_misano_2players_full_session.pcapng).
+		 * Pre-v0.3.3 we emitted 0xff; v0.3.3 (commit 59a9d15)
+		 * switched to 0 on the theory that AC2 was rendering the
+		 * "OBLIGATOIRE 255/0" widget with this field as numerator.
+		 * Empirical pcap walk shows Kunos itself emits 0xff, so
+		 * the widget's "255" must come from another (uninitialized)
+		 * client field, and emitting 0 here pushes AC2 into "0
+		 * cars allowed in superpole" — flagged INVALIDE on the
+		 * race-requirements widget.  Restore the sentinel.
 		 */
-		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, 0xff) < 0) return -1;
 		/* +0x30 pitWindowLengthSec — u16 on wire, 0xffff unset. */
 		if (wr_u16(bb, pit_window_wire) < 0) return -1;
 		/* +0x34 driverStintTimeSec from eventRules.driverStintTime,
