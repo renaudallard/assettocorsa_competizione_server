@@ -1100,6 +1100,274 @@ Key durations observed:
 
 ---
 
+### 5.8 Penalty system
+
+The penalty subsystem spans both directions of the sim protocol and an internal server-side state machine. This section documents every piece end to end.
+
+#### 5.8.1 Architecture overview
+
+```
+                  +--------------------------+
+                  |  AC2 client violation    |
+                  |  detector (cutting,      |
+                  |  pit-speeding, …)        |
+                  +-----------+--------------+
+                              |
+                  C->S 0x41 (DSQ category)
+                              |
+                              v
+              +---------------+---------------------+
+              |   accServer FUN_140125f50           |
+              |   (per-car PenaltySheet, kind 1..6) |
+              |   counter += value; @0x100 escalate |
+              |   ladder: DT -> SG10 -> SG20 ->     |
+              |   SG30 -> DQ                        |
+              +---------------+---------------------+
+                              |
+              +-------+-------+-------+----------------+
+              |       |       |       |                |
+        0x36 lb  0x2b chat  results.json  per-car HUD
+        wire     "5s pen.   schema       widgets
+        emit     for #N"    (V.1.8.11)   (orange-1
+                                          mandatory-pit
+                                          badge)
+
+         |
+         |  C->S 0x42 (penalty cleared on the client side)
+         |
+         v
+   accServer FUN_140126b50 -> mark sheet entry served,
+   append to inner Penalty record vector
+
+         |
+         |  Race end (FUN_14012b380 session-over branch)
+         v
+   accServer FUN_140127440 -> convert unserved DT/SG to
+   PostRaceTime (DT->30 s, SG10->40 s, SG20->50 s,
+   SG30->60 s) per handbook V.1.8.11
+```
+
+#### 5.8.2 Penalty kinds (server-side, 1..7)
+
+The accServer's `FUN_140125f50` indexes a per-car PenaltySheet by `exe_kind` 1..6, with kind 7 added by AC2's wire emit:
+
+| exe_kind | name | severity | trigger |
+|---|---|---|---|
+| 1 | DriveThrough | 1 | lap-bound DT (clear within 3 laps) |
+| 2 | StopAndGo_10 | 2 | 10-second stationary penalty in pit-box |
+| 3 | StopAndGo_20 | 3 | 20-second stationary penalty |
+| 4 | StopAndGo_30 | 4 | 30-second stationary penalty |
+| 5 | PostRaceTime | 5 | non-serveable; added to total at race end |
+| 6 | Disqualified | 6 | terminal; race result voided |
+| 7 | RemoveBestLaptime | — | clears the car's session best time (qualy / hot-lap mode) |
+
+**Severity ladder**: DT escalates to SG10 if not served by lap N+3, SG10→SG20→SG30→DQ on each subsequent escalation. The escalation step is `(force + 2) × 2` (so without `force`: DT→SG30, with `force=1`: DT→DQ via the SG30 step).
+
+The PostRaceTime kind has its own dedicated PenaltySheet at `Server+0x140f3` `+0x48..+0x50` (separate from the main DT/SG/DQ sheet at `+0x30..+0x38`). When TP `counter` reaches `0x100` it materialises a PostRaceTime Penalty record, then re-enters `FUN_140125f50` with `force=1, exe_kind=6` to also push a DQ — so accumulated TP can escalate to DQ.
+
+#### 5.8.3 Per-car PenaltySheet entry layout
+
+Stored in the timing module's master vector at `Server+0xa0848`. Stride 0x90 per entry:
+
+```
++0x28  u32   carId               (key)
++0x58  u8    category            (8 = race-control admin, 6 = stint, 0xc/0xd = stint-limit, …)
++0x59  u8    severity            (1=DT, 2=SG10, 3=SG20, 4=SG30, 5=TP, 6=DQ)
++0x5c  u32   reason              (one of REASON_*)
++0x60  u64   issued_ts_ms
++0x68  u64   served_ts_ms        (0 = not served yet)
++0x70  i32   counter             (accumulates; escalates at 0x100)
++0x78  ptr   inner_penalty_begin (vector of ksRacing::Penalty, 0x48 B per record)
++0x80  ptr   inner_penalty_end
++0x88  ptr   inner_penalty_cap
+```
+
+Each inner `ksRacing::Penalty` record is 0x48 B and carries a copy of `(category, severity, reason, issued_ts, value)` for emission via the `0x36` per-car penalty queue.
+
+#### 5.8.4 DSQ category enum (C->S 0x41 first byte)
+
+Authoritative integer values, recovered from AC2 client's `FUN_1434f2fb0` (the cat-byte-to-display-string translator). Source path on the client is `FUN_140e59bf0` -> `FUN_14352db40` (the 0x41 wire emit, the only writer in the binary):
+
+| cat | AC2 internal name | Trigger function |
+|---|---|---|
+| 0 | `Cutting` | `FUN_140e19000` (track-cut callback from `updateCarLocation`) |
+| 1 | `Collision` | (not yet pinned to a single trigger; observed on heavy hits) |
+| 2 | `IllegalOvertake` | (not pinned) |
+| 3 | `PitSpeeding` | `FUN_1410dba70:339` (`PitSpeedingDetector` log at line 320) |
+| 4 | `PitEntry` | (issued by the wrong-direction-on-pit-entry detector) |
+| 5 | `PitExit` | (issued by the pit-exit-line crossing detector) |
+| 6 | `IgnoredMandatoryPit` | end-of-race mandatory-pit miss (`FUN_1410c74b0:1509`) |
+| 7 | `UnsafeRejoin` | (not pinned) |
+| 8 | `Trolling` | `FUN_14101a5e0:72` (reads existing penalty record; emits when reason byte = 14) |
+| 9 | `ReverseInPitlane` | (not pinned) |
+| 10 | `WrongWay` | `FUN_1410202b0:145,150` (pit-entry check, both branches) and `FUN_1410c74b0:347,353` (over-time-in-pit check) |
+| 11 | (alias of 6 — `IgnoredMandatoryPit`) | (deduplication of cat 6) |
+| 12 | `ExceededDriverStintLimit` | `FUN_1410c74b0:1407` (negative-delta wrong-way) |
+| 13 | `DriverRanNoStint` | (not pinned) |
+| 0x10 / 0x11 | (out-of-enum) | `FUN_140e5ab60:131` (green-flag false-start detector) — server's default branch routes to `RACE_CONTROL` |
+
+> **Important: the accd reimplementation's category-to-reason mapping at `accd/handlers.c:944-963` (`client_category_to_reason`) is wrong for 13 of the 14 cases.** Only cat=0 is correctly mapped. The current handler routes `Collision` to `PIT_SPEEDING`, `PitSpeeding` to `IGNORED_DRIVER_STINT`, etc., so the server's PenaltyQueue records the wrong reason and the wire emit shows wrong penalty descriptions on the leaderboard / HUD. This is a known parity gap; will be fixed when the reason-enum is extended (cat=1 `Collision` and cat=2 `IllegalOvertake` have no current `enum penalty_reason` value).
+
+#### 5.8.5 Penalty reason enum (server internal)
+
+The server-side `enum penalty_reason` (in `accd/state.h`) maps each violation to a category that combines with `penalty_kind` to produce a 0..35 ServerMonitorPenaltyShortcut wire value (see §5.8.7).
+
+```
+REASON_NONE                         0
+REASON_CUTTING                      1
+REASON_PIT_SPEEDING                 2
+REASON_IGNORED_MANDATORY_PIT        3
+REASON_RACE_CONTROL                 4
+REASON_PIT_ENTRY                    5
+REASON_PIT_EXIT                     6
+REASON_WRONG_WAY                    7
+REASON_LIGHTS_OFF                   8
+REASON_IGNORED_DRIVER_STINT         9
+REASON_EXCEEDED_DRIVER_STINT_LIMIT 10
+REASON_DRIVER_RAN_NO_STINT         11
+REASON_DAMAGED_CAR                 12
+REASON_SPEEDING_ON_START           13
+REASON_WRONG_POSITION_ON_START     14
+```
+
+Two AC2 categories (cat=1 `Collision`, cat=2 `IllegalOvertake`) have no current `enum penalty_reason` mapping; the spec needs `REASON_COLLISION` and `REASON_ILLEGAL_OVERTAKE` to round-trip them.
+
+#### 5.8.6 Admin chat penalty commands
+
+All admin penalty commands are dispatched by exe `FUN_14001dae0` (called from `FUN_140021680`). All pass `category=0x08` (race-control), `reason=REASON_RACE_CONTROL`, into `FUN_140125f50`. accd implementation: `accd/chat.c` -> `chat_do_penalty()` -> `penalty_enqueue()`.
+
+| Command | exe_kind | value | force | collision | accd PEN_* | broadcast string |
+|---|---|---|---|---|---|---|
+| `/dq <n>` | 6 (DQ) | 3 | 1 | 0 | PEN_DQ | `"Car #%d was disqualified by Race Control"` |
+| `/dt <n>` | 1 (DT) | 3 | 0 | 0 | PEN_DT | `"Drivethrough penalty for car #%d"` |
+| `/dtc <n>` | 1 | 3 | 0 | 1 | PEN_DTC | `"Drivethrough penalty for car #%d - causing a collision"` |
+| `/sg10 <n>` | 2 (SG10) | 3 | 0 | 0 | PEN_SG10 | `"Stop and Go 10s penalty for car #%d"` |
+| `/sg10c <n>` | 2 | 3 | 0 | 1 | PEN_SG10C | `... - causing a collision` |
+| `/sg20 <n>` | 3 (SG20) | 3 | 0 | 0 | PEN_SG20 | `"Stop and Go 20s penalty for car #%d"` |
+| `/sg20c <n>` | 3 | 3 | 0 | 1 | PEN_SG20C | `... - causing a collision` |
+| `/sg30 <n>` | 4 (SG30) | 3 | 0 | 0 | PEN_SG30 | `"Stop and Go 30s penalty for car #%d"` |
+| `/sg30c <n>` | 4 | 3 | 0 | 1 | PEN_SG30C | `... - causing a collision` |
+| `/tp5 <n>` | 5 (TP) | 5 | 0 | 0 | PEN_TP5 | `"5s penalty for car #%d"` |
+| `/tp5c <n>` | 5 | 5 | 0 | 1 | PEN_TP5 | `... - causing a collision` |
+| `/tp15 <n>` | 5 | 0xf | 0 | 0 | PEN_TP15 | `"15s penalty for car #%d"` |
+| `/tp15c <n>` | 5 | 0xf | 0 | 1 | PEN_TP15 | `... - causing a collision` |
+| `/clear <n>` | (calls `FUN_140126b50`) | n/a | n/a | n/a | clears queue | `"Pending penalties for #%d cleared by Race Control"` |
+| `/cleartp <n>` | 5 | 0 | 1 | 0 | clears TP only | `"Pending post race time penalties for #%d cleared by Race Control"` |
+| `/clear_all` | (n/a) | n/a | n/a | n/a | every car | `"All pending penalties cleared by Race Control"` |
+
+All chats are emitted as `0x2b` broadcasts with sender = `"Race Control"` and `chat_type = 4` (system info — see §5.8.8). The collision suffix " - causing a collision" overrides any reason-derived suffix in `penalty_format_chat`.
+
+#### 5.8.7 ServerMonitorPenaltyShortcut wire mapping (0..35)
+
+Used in:
+- 0x36 leaderboard per-car penalty queue (`pq.count + count × i32 wire_value`)
+- ServerMonitor `0x07 LEADERBOARD_UPDATE` protobuf encoding
+- 0x36 active-penalty preamble (single u8 + u16 wire_value)
+
+The 36-value enum is sparse — values 6 and 12 (`RemoveBestLaptime_*`) are AC2-side autotelemetry territory and are not emitted by the server.
+
+| value | name | source `(PEN_*, REASON_*)` |
+|---|---|---|
+| 0 | `No_Penalty` | unknown / fallback |
+| 1 | `DriveThrough_Cutting` | `(PEN_DT/PEN_DTC, REASON_CUTTING)` |
+| 2 | `StopAndGo_10_Cutting` | `(PEN_SG10/PEN_SG10C, REASON_CUTTING)` |
+| 3 | `StopAndGo_20_Cutting` | `(PEN_SG20/PEN_SG20C, REASON_CUTTING)` |
+| 4 | `StopAndGo_30_Cutting` | `(PEN_SG30/PEN_SG30C, REASON_CUTTING)` |
+| 5 | `Disqualified_Cutting` | `(PEN_DQ, REASON_CUTTING)` |
+| 6 | `RemoveBestLaptime_Cutting` | not emitted by server |
+| 7 | `DriveThrough_PitSpeeding` | `(PEN_DT/DTC, REASON_PIT_SPEEDING)` |
+| 8 | `StopAndGo_10_PitSpeeding` | `(PEN_SG10/C, REASON_PIT_SPEEDING)` |
+| 9 | `StopAndGo_20_PitSpeeding` | `(PEN_SG20/C, REASON_PIT_SPEEDING)` |
+| 10 | `StopAndGo_30_PitSpeeding` | `(PEN_SG30/C, REASON_PIT_SPEEDING)` |
+| 11 | `Disqualified_PitSpeeding` | `(PEN_DQ, REASON_PIT_SPEEDING)` |
+| 12 | `RemoveBestLaptime_PitSpeeding` | not emitted by server |
+| 13 | `Disqualified_IgnoredMandatoryPit` | `(PEN_DQ, REASON_IGNORED_MANDATORY_PIT)` |
+| 14 | `PostRaceTime` | `(PEN_TP5/PEN_TP15, REASON_RACE_CONTROL)` — admin `/tp5` `/tp15` |
+| 15 | `DriveThrough_RaceControl` | admin `/dt` `/dtc` |
+| 16 | `StopAndGo_10_RaceControl` | admin `/sg10` `/sg10c` |
+| 17 | `StopAndGo_20_RaceControl` | admin `/sg20` `/sg20c` |
+| 18 | `StopAndGo_30_RaceControl` | admin `/sg30` `/sg30c` |
+| 19 | `Disqualified_RaceControl` | admin `/dq` |
+| 20 | `Disqualified_PitEntry` | `(PEN_DQ, REASON_PIT_ENTRY)` |
+| 21 | `Disqualified_PitExit` | `(PEN_DQ, REASON_PIT_EXIT)` |
+| 22 | `Disqualified_WrongWay` | `(PEN_DQ, REASON_WRONG_WAY)` |
+| 23 | `Disqualified_LightsOff` | `(PEN_DQ, REASON_LIGHTS_OFF)` |
+| 24 | `DriveThrough_IgnoredDriverStint` | `(PEN_DT/DTC, REASON_IGNORED_DRIVER_STINT)` |
+| 25 | `StopAndGo_30_IgnoredDriverStint` | `(PEN_SG30/C, REASON_IGNORED_DRIVER_STINT)` |
+| 26 | `Disqualified_IgnoredDriverStint` | `(PEN_DQ, REASON_IGNORED_DRIVER_STINT)` |
+| 27 | `Disqualified_ExceededDriverStintLimit` | `(PEN_DQ, REASON_EXCEEDED_DRIVER_STINT_LIMIT)` |
+| 28 | `Disqualified_DriverRanNoStint` | `(PEN_DQ, REASON_DRIVER_RAN_NO_STINT)` |
+| 29 | `Disqualified_DamagedCar` | `(PEN_DQ, REASON_DAMAGED_CAR)` |
+| 30 | `DriveThrough_SpeedingOnStart` | `(PEN_DT/DTC, REASON_SPEEDING_ON_START)` |
+| 31 | `StopAndGo_30_SpeedingOnStart` | `(PEN_SG30/C, REASON_SPEEDING_ON_START)` |
+| 32 | `Disqualified_SpeedingOnStart` | `(PEN_DQ, REASON_SPEEDING_ON_START)` |
+| 33 | `DriveThrough_WrongPositionOnStart` | `(PEN_DT/DTC, REASON_WRONG_POSITION_ON_START)` |
+| 34 | `StopAndGo_30_WrongPositionOnStart` | `(PEN_SG30/C, REASON_WRONG_POSITION_ON_START)` |
+| 35 | `Disqualified_WrongPositionOnStart` | `(PEN_DQ, REASON_WRONG_POSITION_ON_START)` |
+
+#### 5.8.8 0x2b chat broadcast wire format
+
+Used by every penalty announcement and by general chat / admin command replies:
+
+```
+u8     0x2b                 (SRV_CHAT_OR_STATE)
+str_a  sender               (Format-A wstring; "Race Control" for penalties)
+str_a  body                 (the human-readable message, e.g. "5s penalty for car #3")
+i32    0                    (reserved / always zero on the wire)
+u8     chat_type            (4 = system info, 5 = warning)
+```
+
+The accd codebase emits exactly two `chat_type` values:
+- **4 (system info)** — penalty notifications, BoP changes, `/wt` weather dump, `/start` advance, all admin-driven announcements
+- **5 (warning)** — kick / ban announcements ("You have been kicked from the server"), also used for server-emergency messages
+
+Other values (0..3, 6..N) are defined by the protocol but unused by the reimplementation.
+
+#### 5.8.9 Race-end conversion (FUN_140127440)
+
+At session end (race only), the exe walks every car's main PenaltySheet and converts unserved DT/SG entries to PostRaceTime per handbook V.1.8.11:
+
+| from severity | log string | seconds added |
+|---|---|---|
+| 1 (DT) | `"Converted pending DT penalty to 30s time penalty"` | 30 |
+| 2 (SG10) | `"Converted pending 10s S&G penalty to 40s time penalty"` | 40 |
+| 3 (SG20) | `"Converted pending 20s S&G penalty to 50s time penalty"` | 50 |
+| 4 (SG30) | `"Converted pending 30s S&G penalty to 60s time penalty"` | 60 |
+
+Triggered only from `FUN_14012b380` (the lap-close session-over branch and abnormal-end branch). Practice / qualifying do NOT invoke this conversion — those sessions don't have lap-bound penalty serving.
+
+> **accd parity gap**: `accd/penalty.c` `penalty_total_ms` returns the right total at session end (sum of TP + converted DT/SG) so `results.json` race times are correct. But the accd PenaltyQueue is **not rewritten** to materialise the converted TP entries — the queue still shows the original DT/SG kinds at session end. ServerMonitor wire emit (and any post-race per-car penalty list rendered in the HUD) will show a different list than Kunos's exe. Not yet fixed.
+
+#### 5.8.10 0x36 leaderboard penalty fields
+
+Each per-car record in a `0x36` broadcast carries:
+
+```
+... earlier fields (car_id, race_number, car_model, cup_category, …) ...
+u8   active_present            (1 if there's a non-served DT/SG/DQ; 0 otherwise)
+if active_present:
+    u16 active_wire_value      (one of the 0..35 ServerMonitorPenaltyShortcut codes)
+    f32 active_laps_remaining  (countdown for lap-bound DT/SG; 0 if not applicable)
+[ … cvar8-gated u8 missingMandatoryPitstop, see 0x36 row in 5.6.4a … ]
+u8   pq_count                  (total queue length)
+i32 [pq_count]                 (each entry's wire_value as a signed 32-bit integer)
+... later fields (sectors, lap history, …) ...
+```
+
+The "active" prefix carries the front-of-queue serve-able penalty (the one the orange-1 HUD widget renders); the `pq_count + i32[]` array carries the full queue for the post-race standings panel.
+
+#### 5.8.11 Cross-references
+
+- §5.6.1 row `0x41` — wire format for the C→S report
+- §5.6.1 row `0x42` — wire format for the C→S clear notification
+- §5.6.1 row `0x54` — `ACP_MANDATORY_PITSTOP_SERVED` (clears mandatory-pit-pending flag)
+- §5.6.4a row `0x2b` — outer chat broadcast envelope shared with general chat
+- §5.6.4a row `0x36` — leaderboard broadcast that carries the active + queue penalty fields
+- §8.1 — admin chat command surface (table here is canonical)
+- §12B.4 — ServerMonitor enums (the 0..35 enum referenced from there)
+
+---
+
 ## 6. Data model
 
 The broadcasting SDK's data model describes everything Kunos considers worth exposing to overlay tooling. The sim-side protocol must carry at least this information from server to client (because the game client populates its local broadcasting state from whatever it receives from the server).
