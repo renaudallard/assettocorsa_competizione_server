@@ -365,20 +365,6 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		if (wr_u8(bb, s->pit_refuelling_required) < 0) return -1;
 		if (wr_u8(bb, s->pit_tyre_change_required) < 0) return -1;
 		if (wr_u8(bb, s->mandatory_swap_required) < 0) return -1;
-		/*
-		 * Two literal 0x01 bytes the exe FUN_14011d230 always emits
-		 * between mandatory_swap_required and tyreSetCount.  AC2's
-		 * reader FUN_1434f4810 consumes them as discarded slots —
-		 * with the 16-byte block AC2 over-read into our weather
-		 * header, picking up our weather-header byte 2 (0x32) as
-		 * tyreSetCount and shifting WeatherStatus / WeatherData by
-		 * 2 bytes.  bf3b28b also changed the weather header to
-		 * 03 00 00 00 and that combined change crashed the real
-		 * client; here we restore the 18-byte RaceRules but keep
-		 * the working 01 32 03 00 weather header.
-		 */
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_u8(bb, 1) < 0) return -1;
 		/* Trailing tyreSetCount (u8). */
 		if (wr_u8(bb, s->tyre_set_count) < 0) return -1;
 	}
