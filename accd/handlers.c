@@ -932,32 +932,46 @@ out:
  * The client's DSQ_* enum (0x3c48440 onwards in AC2-Win64-Shipping.exe)
  * lists categories in this order:
  *   0 CUT                1 PITSPEED             2 MANDATORYPIT_IGNORED
- *   3 DRIVERSTINT_IGNORED 4 EXCEEDED_DRIVERSTINT 5 DAMAGES
- *   6 SPEEDING_ON_START  7 WRONG_POSITION_ON_START
- *   8 LIGHTSOFF          9 TROLL                10 PIT_ENTRY
- *   11 PIT_EXIT          12 WRONGWAY            13 UNKNOWN
- * We don't yet have a byte-exact RE confirmation of this ordering,
- * so unknown values fall through to REASON_RACE_CONTROL (which still
- * produces a valid "Disqualified by Race Control" wire message).
+ * Authoritative AC2 mapping (recovered from FUN_1434f2fb0, the
+ * cat-byte → display-string translator inside the AC2 client):
+ *   0  Cutting             1  Collision           2  IllegalOvertake
+ *   3  PitSpeeding         4  PitEntry            5  PitExit
+ *   6  IgnoredMandatoryPit 7  UnsafeRejoin        8  Trolling
+ *   9  ReverseInPitlane   10  WrongWay           11  IgnoredMandatoryPit (alias of 6)
+ *  12  ExceededDriverStintLimit                  13  DriverRanNoStint
+ *
+ * Five categories (1 Collision, 2 IllegalOvertake, 7 UnsafeRejoin,
+ * 8 Trolling, 9 ReverseInPitlane) have no equivalent in our
+ * penalty_reason enum AND no entry in the 0..35
+ * ServerMonitorPenaltyShortcut wire mapping, so they fall through to
+ * REASON_RACE_CONTROL which round-trips as one of the *_RaceControl
+ * variants (values 15..19) on the wire.
+ *
+ * Pre-2026-05-07 this map was wrong for 13 of the 14 categories
+ * (only cat=0 was correct).  The previous mapping was based on a
+ * mis-reading of the DSQ_* string table at .rdata 0x143c49640
+ * which is actually the widget-string keys for the SERVER-issued
+ * PenaltyShortcut wire codes 1..35 — not the cat enum the client
+ * uses in 0x41.
  */
 static uint8_t
 client_category_to_reason(uint8_t category)
 {
 	switch (category) {
 	case 0:		return REASON_CUTTING;
-	case 1:		return REASON_PIT_SPEEDING;
-	case 2:		return REASON_IGNORED_MANDATORY_PIT;
-	case 3:		return REASON_IGNORED_DRIVER_STINT;
-	case 4:		return REASON_EXCEEDED_DRIVER_STINT_LIMIT;
-	case 5:		return REASON_DAMAGED_CAR;
-	case 6:		return REASON_SPEEDING_ON_START;
-	case 7:		return REASON_WRONG_POSITION_ON_START;
-	case 8:		return REASON_LIGHTS_OFF;
-	case 10:	return REASON_PIT_ENTRY;
-	case 11:	return REASON_PIT_EXIT;
-	case 12:	return REASON_WRONG_WAY;
-	case 9:		/* DSQ_TROLL — no direct enum; fall through. */
-	case 13:	/* DSQ_UNKNOWN — ditto. */
+	case 3:		return REASON_PIT_SPEEDING;
+	case 4:		return REASON_PIT_ENTRY;
+	case 5:		return REASON_PIT_EXIT;
+	case 6:		return REASON_IGNORED_MANDATORY_PIT;
+	case 10:	return REASON_WRONG_WAY;
+	case 11:	return REASON_IGNORED_MANDATORY_PIT;	/* alias of 6 */
+	case 12:	return REASON_EXCEEDED_DRIVER_STINT_LIMIT;
+	case 13:	return REASON_DRIVER_RAN_NO_STINT;
+	case 1:		/* Collision — no enum; race-control fallback. */
+	case 2:		/* IllegalOvertake — no enum; race-control fallback. */
+	case 7:		/* UnsafeRejoin — no enum. */
+	case 8:		/* Trolling — no enum. */
+	case 9:		/* ReverseInPitlane — no enum. */
 	default:	return REASON_RACE_CONTROL;
 	}
 }
