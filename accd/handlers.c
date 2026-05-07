@@ -1018,8 +1018,27 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	    (unsigned)kind, (unsigned long long)timestamp, (int)value);
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	if (kind < EXE_DT || kind > EXE_DQ)
+	if (kind < EXE_DT || kind > EXE_RBL)
 		return 0;	/* out-of-enum: drop silently */
+	if (kind == EXE_RBL) {
+		/*
+		 * RemoveBestLaptime — qualifying / hot-lap mode only.  The
+		 * client reports a self-detected best-lap-invalidating
+		 * violation (typically a track cut on a hotlap).  Clear the
+		 * car's session best lap and best sectors, then return.
+		 * The DT/SG/DQ ladder is bypassed entirely.
+		 */
+		struct CarRaceState *race = &s->cars[c->car_id].race;
+		int d;
+
+		race->best_lap_ms = 0;
+		for (d = 0; d < 3; d++)
+			race->best_sectors_ms[d] = 0;
+		s->session.standings_seq++;
+		log_info("0x41 RemoveBestLaptime: car=%d best lap cleared",
+		    c->car_id);
+		return 0;
+	}
 	if (s->cars[c->car_id].race.disqualified)
 		return 0;
 	/*

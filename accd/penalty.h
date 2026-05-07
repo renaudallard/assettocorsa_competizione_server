@@ -43,9 +43,12 @@
 int	penalty_kind_from_string(const char *cmd);
 
 /*
- * Exe penalty kind values used by FUN_140125f50 (param_5), 1..6:
+ * Exe penalty kind values used by FUN_140125f50 (param_5), 1..7:
  * 1=DriveThrough, 2=StopAndGo10, 3=StopAndGo20, 4=StopAndGo30,
- * 5=PostRaceTime, 6=Disqualified.  Kind 0 = unused slot.
+ * 5=PostRaceTime, 6=Disqualified, 7=RemoveBestLaptime.  Kind 0 =
+ * unused slot.  Kind 7 is qualifying-/hot-lap-mode-only and clears
+ * the car's best lap time without engaging the DT/SG/DQ ladder; it
+ * isn't routed through the per-car PenaltySheet at all.
  */
 enum penalty_exe_kind {
 	EXE_NONE = 0,
@@ -54,7 +57,8 @@ enum penalty_exe_kind {
 	EXE_SG20 = 3,
 	EXE_SG30 = 4,
 	EXE_TP   = 5,
-	EXE_DQ   = 6
+	EXE_DQ   = 6,
+	EXE_RBL  = 7	/* RemoveBestLaptime — clears best_lap_ms */
 };
 
 /* Map our internal PEN_* enum to the exe penalty kind (1..6). */
