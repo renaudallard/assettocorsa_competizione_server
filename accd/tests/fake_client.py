@@ -404,8 +404,8 @@ def parse_event_entity(r):
     r.u8()
     anchor(r, "EventEntity post graphics")
     # (no CarSet — v0.2.46 layout)
-    # RaceRules: 16 bytes
-    for _ in range(16):
+    # RaceRules: 18 bytes (12 struct fields + 2 literal-1 + tyreSetCount)
+    for _ in range(18):
         r.u8()
     anchor(r, "EventEntity post race")
     # WeatherRules header: 4 u8 + 7 f32 = 32 bytes
