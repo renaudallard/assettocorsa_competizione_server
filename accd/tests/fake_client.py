@@ -404,20 +404,18 @@ def parse_event_entity(r):
     r.u8()
     anchor(r, "EventEntity post graphics")
     # (no CarSet — v0.2.46 layout)
-    # RaceRules: 18 bytes (12 fields + 2 literal-1 + tyreSetCount;
-    # AC2 reader FUN_1434f4810)
-    for _ in range(18):
+    # RaceRules: 16 bytes
+    for _ in range(16):
         r.u8()
     anchor(r, "EventEntity post race")
-    # WeatherStatus: 6 f32 = 24 bytes (AC2 reader FUN_1434f6460)
-    for _ in range(6):
+    # WeatherRules header: 4 u8 + 7 f32 = 32 bytes
+    for _ in range(4):
+        r.u8()
+    for _ in range(7):
         r.f32()
-    # WeatherData (inside EventEntity): 12 u32/f32 + u16 + u16 = 52 bytes
-    # (AC2 reader FUN_1434f64d0; same layout as top-level WeatherData)
-    for _ in range(12):
+    # WeatherRules forecast: 15 f32 = 60 bytes
+    for _ in range(15):
         r.f32()
-    r.u16()
-    r.u16()
     anchor(r, "EventEntity post weatherData")
 
 
@@ -507,10 +505,10 @@ def parse_weather_data(r):
 
 
 def parse_track_conditions_update(r):
-    """FUN_14352cb30: 7 × f32 + WeatherStatus sub-object (6 f32 via
-    vtable[0x28] of param_3+0x620 = ksRacing::WeatherStatus) + 1 f32.
-    14 f32 = 56 bytes total."""
-    for _ in range(14):
+    """FUN_14352cb30: 7 × f32 + vtable call (WeatherData-like object, we
+    approximate with our server's 17-f32 block) + 1 f32.  Our server
+    emits write_trailer_additional_state as 17 × f32 straight."""
+    for _ in range(17):
         r.f32()
 
 

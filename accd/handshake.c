@@ -365,58 +365,39 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		if (wr_u8(bb, s->pit_refuelling_required) < 0) return -1;
 		if (wr_u8(bb, s->pit_tyre_change_required) < 0) return -1;
 		if (wr_u8(bb, s->mandatory_swap_required) < 0) return -1;
-		/*
-		 * Two literal 0x01 bytes the exe FUN_14011d230 emits between
-		 * mandatory_swap_required and tyreSetCount; AC2 reader
-		 * FUN_1434f4810 consumes them as discarded slots.
-		 */
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_u8(bb, 1) < 0) return -1;
 		/* Trailing tyreSetCount (u8). */
 		if (wr_u8(bb, s->tyre_set_count) < 0) return -1;
 	}
 
-	/*
-	 * WeatherStatus — 24 bytes, no header.  AC2 reader FUN_1434f6460
-	 * reads exactly 6 f32 in wire order: ambient(+0x28), windDir(+0x34),
-	 * road(+0x2c), windSpeed(+0x30), rain(+0x38), cloud(+0x3c).
-	 */
+	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */
+	if (wr_u8(bb, 0x01) < 0) return -1;
+	if (wr_u8(bb, 0x32) < 0) return -1;
+	if (wr_u8(bb, 0x03) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
 	if (wr_f32(bb, ambient) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, rain) < 0) return -1;
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
 
-	/*
-	 * WeatherData (inside EventEntity) — 52 bytes for empty forecast.
-	 * AC2 reader FUN_1434f64d0: 12 u32/f32 at struct +0x28..+0x58 +
-	 * u16 count1 + u16 count2 (both 0 for empty forecast).  Same layout
-	 * as write_trailer_weather_data — both are read by the same vtable
-	 * slot of the same WeatherData class.
-	 */
-	{
-		uint32_t is_dynamic = s->weather.randomness > 0 ? 1 : 0;
-		float wind_speed = s->weather.wind_speed;
-		float wind_dir = s->weather.wind_direction;
+	/* WeatherRules forecast table (15 f32 = 60 bytes). */
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, -1.0f) < 0) return -1;
+	if (wr_f32(bb, 5.0f) < 0) return -1;
+	if (wr_f32(bb, 15.0f) < 0) return -1;
+	if (wr_f32(bb, -1.0f) < 0) return -1;
+	for (i = 0; i < 3; i++)
+		if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
 
-		if (wr_u32(bb, is_dynamic) < 0) return -1;	/* +0x28 */
-		if (wr_f32(bb, ambient) < 0) return -1;		/* +0x30 */
-		if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x34 */
-		if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x38 */
-		if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x3c */
-		if (wr_f32(bb, wind_dir) < 0) return -1;	/* +0x40 */
-		if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x44 */
-		if (wr_u32(bb, 0) < 0) return -1;		/* +0x48 */
-		if (wr_u32(bb, 0) < 0) return -1;		/* +0x4c */
-		if (wr_f32(bb, s->weather.clouds) < 0) return -1;/* +0x50 */
-		if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x54 */
-		if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x58 */
-		if (wr_u16(bb, 0) < 0) return -1;	/* count1: empty list 1 */
-		if (wr_u16(bb, 0) < 0) return -1;	/* count2: empty list 2 */
-	}
-
-	(void)i;
 	return 0;
 }
 
@@ -1018,17 +999,6 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 
-	/*
-	 * TrackConditions wire — 56 bytes, mirroring exe FUN_140033510:
-	 * 7 leading f32 (TrackConditions outer fields) + 6 f32 WeatherStatus
-	 * sub-object via vtable[0x20] + 1 trailing f32.  AC2 reader
-	 * FUN_14352cb30 reads these same 14 f32.
-	 *
-	 * Prior 17 f32 emit was 12 bytes too long: included `dry`, two
-	 * trailing zeros and the wrong WeatherStatus field order.  AC2 only
-	 * reads 6 f32 for the sub-object in wire order ambient/windDir/
-	 * road/windSpeed/rain/cloud per FUN_1434f6460.
-	 */
 	if (wr_f32(bb, 1.0f - clouds * 0.3f) < 0) return -1;
 	/* Green-flag grip baseline; constant DAT_14014bcd8 = 0.96. */
 	if (wr_f32(bb, 0.96f) < 0) return -1;
@@ -1038,17 +1008,18 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	if (wr_f32(bb, wet) < 0) return -1;
 	if (wr_f32(bb, wet) < 0) return -1;
 
-	/* WeatherStatus sub-object: 6 f32 in AC2 wire order. */
 	if (wr_f32(bb, ambient) < 0) return -1;
-	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
 	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
-	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
 	if (wr_f32(bb, clouds) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, dry) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
 
 	if (wr_f32(bb, (float)s->session.weekend_time_s) < 0)
 		return -1;
-	(void)dry;
 	return 0;
 }
 
