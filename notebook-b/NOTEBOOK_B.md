@@ -1704,7 +1704,7 @@ From `HB §V`. Admin elevation: chat `/admin <adminPassword>`. Elevated commands
 
 Non-admin chat command (for driver swap in driver-swap teams): `&swap <driverNum>`, usable during Practice/Qualifying while in the pitlane.
 
-Chat is a sim-protocol feature carried over TCP (ID TBD). Elevation is stateful on the server; `/admin <pw>` sets a flag on the client's connection. Entry-list drivers with `isServerAdmin: 1` are auto-elevated on join.
+Chat is a sim-protocol feature carried over TCP. Client → server messages use ID `0x2a` (`ACP_CHAT`); server → client messages (broadcasts and admin replies) use ID `0x2b` (`SRV_CHAT_OR_STATE`) — see §5.6.1 / §5.6.4a / §5.8.8 for the wire formats. Elevation is stateful on the server; `/admin <pw>` sets a flag on the client's connection. Entry-list drivers with `isServerAdmin: 1` are auto-elevated on join.
 
 ### 8.1 Additional admin chat commands not in HB
 

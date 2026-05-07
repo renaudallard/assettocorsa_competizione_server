@@ -929,9 +929,6 @@ out:
 
 /*
  * Map the client's 0x41 category byte to one of our REASON_* values.
- * The client's DSQ_* enum (0x3c48440 onwards in AC2-Win64-Shipping.exe)
- * lists categories in this order:
- *   0 CUT                1 PITSPEED             2 MANDATORYPIT_IGNORED
  * Authoritative AC2 mapping (recovered from FUN_1434f2fb0, the
  * cat-byte → display-string translator inside the AC2 client):
  *   0  Cutting             1  Collision           2  IllegalOvertake
