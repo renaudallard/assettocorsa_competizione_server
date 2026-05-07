@@ -292,11 +292,9 @@ def main():
     o = base(); v = r.u16(); label(o, 2, "  gi.u16", v)
     o = base(); v = r.u8(); label(o, 1, "  gi.u8[6]", v)
 
-    print("CarSet (2 B = 2 u8):")
-    o = base(); v = r.u8(); label(o, 1, "  cs.u8[0]", v)
-    o = base(); v = r.u8(); label(o, 1, "  cs.u8[1]", v)
+    # No CarSet on the wire (verified empirically against misano frame 46872).
 
-    print("RaceRules (18 B = 12 fields + 2 literal-1 + tyreSetCount):")
+    print("RaceRules (16 B = 12 fields + tyreSetCount; NO 2-byte literal-1 padding):")
     o = base(); v = r.u8();  label(o, 1, "  rr.qualifyStandingType", v)
     o = base(); v = r.u8();  label(o, 1, "  rr.superpoleMaxCar",     f"0x{v:02x}")
     o = base(); v = r.u16(); label(o, 2, "  rr.pitWindowLengthSec",  f"0x{v:04x}")
@@ -309,22 +307,17 @@ def main():
     o = base(); v = r.u8();  label(o, 1, "  rr.isMandatoryPitRefuel", v)
     o = base(); v = r.u8();  label(o, 1, "  rr.isMandatoryPitTyre", v)
     o = base(); v = r.u8();  label(o, 1, "  rr.isMandatoryPitSwap", v)
-    o = base(); v = r.u8();  label(o, 1, "  rr.literal_1[0]",        f"0x{v:02x}")
-    o = base(); v = r.u8();  label(o, 1, "  rr.literal_1[1]",        f"0x{v:02x}")
     o = base(); v = r.u8();  label(o, 1, "  rr.tyreSetCount",        v)
 
-    print("WeatherStatus (24 B = 6 f32 in wire order ambient/windDir/road/windSpeed/rain/cloud):")
-    for nm in ("ambient", "windDir", "road", "windSpeed", "rain", "cloud"):
-        o = base(); v = r.f32(); label(o, 4, f"  ws.{nm}", v)
+    print("WeatherRules header (32 B = 4 u8 + 7 f32; leading bytes 01 32 03 00):")
+    for k in range(4):
+        o = base(); v = r.u8(); label(o, 1, f"  wr.hdr[{k}]", f"0x{v:02x}")
+    for nm in ("ambient", "road", "f32_2", "f32_3", "rain", "f32_5", "f32_6"):
+        o = base(); v = r.f32(); label(o, 4, f"  wr.{nm}", v)
 
-    print("WeatherData (52 B = 12 u32 + u16 + u16):")
-    for k in range(12):
-        o = base(); v_u = struct.unpack_from("<I", r.buf, r.pos)[0]
-        v_f = struct.unpack_from("<f", r.buf, r.pos)[0]
-        r.pos += 4
-        label(o, 4, f"  wd.field[{k}]", f"u32=0x{v_u:08x} f32={v_f:g}")
-    o = base(); v = r.u16(); label(o, 2, "  wd.count1", v)
-    o = base(); v = r.u16(); label(o, 2, "  wd.count2", v)
+    print("WeatherRules forecast (60 B = 15 f32):")
+    for k in range(15):
+        o = base(); v = r.f32(); label(o, 4, f"  wr.fc[{k}]", v)
 
     print(f"\n=== session_mgr_state (starts at body offset {r.pos}) ===")
     sm_start = r.pos
@@ -415,28 +408,40 @@ def main():
     lb_len = r.pos - lb_start
     print(f"[Leaderboard total: {lb_len} B]")
 
+    # Top-level WeatherData layout in misano frame 46872 doesn't match the
+    # static-RE-derived FUN_1434f64d0 (12 u32 + 2 u16) signature.  The actual
+    # wire has 11 fixed u32/f32 + i16 nSine + nSine × u32 + i16 nCosine +
+    # nCosine × u32 (with Fourier coefficients populated for live weather).
+    # Parser walks 11 fixed; arrays are tentatively read on the assumption
+    # that the i16 right after fixed is a small count.  If it isn't, dump
+    # raw bytes and skip the rest of the block by inferring the size from
+    # the downstream-block alignment (TC starts immediately after TWD).
     print(f"\n=== Top-level WeatherData (starts at body offset {r.pos}) ===")
     twd_start = r.pos
-    for k in range(12):
+    DOWNSTREAM_FIXED = 68 + 70 + 2 + 19 + 37 + 3  # TC + track_records + dirt + MTR + RatingSeries + tail; needs the # of sessions in track_records though
+    expected_twd = (len(r.buf) - 199) - r.pos     # rough: trailer end - 199 B - cursor
+    print(f"  (estimated TWD size from end alignment: {expected_twd} B)")
+    print("11 fixed u32/f32 fields:")
+    for k in range(11):
         o = base(); v_u = struct.unpack_from("<I", r.buf, r.pos)[0]
         v_f = struct.unpack_from("<f", r.buf, r.pos)[0]
         r.pos += 4
         label(o, 4, f"twd.field[{k}]", f"u32=0x{v_u:08x} f32={v_f:g}")
-    o = base(); v = r.u16(); label(o, 2, "twd.count1", v)
-    o = base(); v = r.u16(); label(o, 2, "twd.count2", v)
+    o = base(); n_sine = r.i16(); label(o, 2, "twd.nSine", n_sine)
+    if 0 < n_sine < 64:
+        for k in range(n_sine):
+            o = base(); v = r.f32(); label(o, 4, f"twd.sine[{k}]", v)
+    o = base(); n_cos = r.i16(); label(o, 2, "twd.nCosine", n_cos)
+    if 0 < n_cos < 64:
+        for k in range(n_cos):
+            o = base(); v = r.f32(); label(o, 4, f"twd.cosine[{k}]", v)
     twd_len = r.pos - twd_start
     print(f"[Top-level WeatherData total: {twd_len} B]")
 
-    print(f"\n=== TrackConditions (starts at body offset {r.pos}) ===")
+    print(f"\n=== TrackConditions / additional_state (68 B = 17 f32, starts at body offset {r.pos}) ===")
     tc_start = r.pos
-    print("7 leading f32 (TrackConditions outer):")
-    for k in range(7):
+    for k in range(17):
         o = base(); v = r.f32(); label(o, 4, f"tc.f32[{k}]", v)
-    print("WeatherStatus sub-object (6 f32 in wire order ambient/windDir/road/windSpeed/rain/cloud):")
-    for nm in ("ambient", "windDir", "road", "windSpeed", "rain", "cloud"):
-        o = base(); v = r.f32(); label(o, 4, f"tc.ws.{nm}", v)
-    print("Trailing f32:")
-    o = base(); v = r.f32(); label(o, 4, "tc.weekend_time_s", v)
     tc_len = r.pos - tc_start
     print(f"[TrackConditions total: {tc_len} B]")
 
