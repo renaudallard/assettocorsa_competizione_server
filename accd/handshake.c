@@ -365,40 +365,22 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		if (wr_u8(bb, s->pit_refuelling_required) < 0) return -1;
 		if (wr_u8(bb, s->pit_tyre_change_required) < 0) return -1;
 		if (wr_u8(bb, s->mandatory_swap_required) < 0) return -1;
-		/*
-		 * Two literal 0x01 bytes the exe FUN_14011d230 always emits
-		 * between mandatory_swap_required and tyreSetCount.  AC2's
-		 * reader FUN_1434f4810 consumes them as discarded slots.
-		 * Without these the AC2 RaceRules over-read by 2 bytes into
-		 * the WeatherStatus block, mapping wrong values into
-		 * tyreSetCount and shifting WeatherStatus + WeatherData by
-		 * 2 bytes.  Two prior 18-byte attempts (bf3b28b, 374e762)
-		 * crashed because the WeatherStatus emit still had its
-		 * 4-byte header — once the entire RaceRules + WeatherStatus
-		 * section is aligned the readers land cleanly.
-		 */
-		if (wr_u8(bb, 1) < 0) return -1;
-		if (wr_u8(bb, 1) < 0) return -1;
 		/* Trailing tyreSetCount (u8). */
 		if (wr_u8(bb, s->tyre_set_count) < 0) return -1;
 	}
 
-	/*
-	 * WeatherStatus — 24 bytes, no header.  AC2 reader FUN_1434f6460
-	 * reads exactly 6 f32 in this wire order (struct offsets in
-	 * comment): ambient, windDir, road, windSpeed, rain, cloud.
-	 * The previous "WeatherRules header" (4 bytes) we used to emit
-	 * before the 7 floats does NOT exist in the AC2 reader; the
-	 * trailer worked only because a 2-byte misalignment from the
-	 * 16-byte RaceRules made the four header bytes get partially
-	 * eaten by RaceRules over-reads.
-	 */
-	if (wr_f32(bb, ambient) < 0) return -1;	/* +0x28 ambientTemperature */
-	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1; /* +0x34 */
-	if (wr_f32(bb, road) < 0) return -1;	/* +0x2c roadTemperature */
-	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;	/* +0x30 */
-	if (wr_f32(bb, rain) < 0) return -1;	/* +0x38 rainLevel */
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1;	/* +0x3c cloudLevel */
+	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */
+	if (wr_u8(bb, 0x01) < 0) return -1;
+	if (wr_u8(bb, 0x32) < 0) return -1;
+	if (wr_u8(bb, 0x03) < 0) return -1;
+	if (wr_u8(bb, 0x00) < 0) return -1;
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, road) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
 
 	/* WeatherRules forecast table (15 f32 = 60 bytes). */
 	if (wr_f32(bb, 0.0f) < 0) return -1;

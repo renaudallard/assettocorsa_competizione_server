@@ -404,15 +404,16 @@ def parse_event_entity(r):
     r.u8()
     anchor(r, "EventEntity post graphics")
     # (no CarSet — v0.2.46 layout)
-    # RaceRules: 18 bytes (12 struct fields + 2 literal-1 + tyreSetCount)
-    for _ in range(18):
+    # RaceRules: 16 bytes
+    for _ in range(16):
         r.u8()
     anchor(r, "EventEntity post race")
-    # WeatherStatus: 6 f32 = 24 bytes (no header — AC2 reader FUN_1434f6460)
-    for _ in range(6):
+    # WeatherRules header: 4 u8 + 7 f32 = 32 bytes
+    for _ in range(4):
+        r.u8()
+    for _ in range(7):
         r.f32()
-    # WeatherData: 15 f32 = 60 bytes (legacy emit; AC2 reads 12 u32 + u16 + u16
-    # = 52 B with empty forecast arrays, leaving 8 B that SeasonEntity skips)
+    # WeatherRules forecast: 15 f32 = 60 bytes
     for _ in range(15):
         r.f32()
     anchor(r, "EventEntity post weatherData")
