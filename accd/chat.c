@@ -516,6 +516,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		const char *arg = text + 5;
 		int target;
 		struct CarEntry *car;
+		uint8_t cur_type;
 
 		if (c->car_id < 0) {
 			log_info("swap: conn=%u has no car",
@@ -523,6 +524,29 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			return 1;
 		}
 		car = &s->cars[c->car_id];
+		/*
+		 * Match exe FUN_140027990:88-94 gating: only allow &swap
+		 * during Practice (session_type=0) or Qualifying (=4),
+		 * and only while the car is in the pit lane (race
+		 * sessions use the conventional pit-stop swap path
+		 * driven by 0x48 / mandatory pitstop, not the chat
+		 * command).  The exe's pit gate reads byte +0x153 of
+		 * the carEntry which corresponds to our `on_track`
+		 * field (= 2 when in pit lane).  We mirror with
+		 * race->in_pit which is the same physical state.
+		 */
+		cur_type = session_cur_type(s);
+		if (cur_type != 0 && cur_type != 4) {
+			log_info("swap: conn=%u rejected — session_type=%u "
+			    "(only P/Q allowed)",
+			    (unsigned)c->conn_id, (unsigned)cur_type);
+			return 1;
+		}
+		if (!car->race.in_pit) {
+			log_info("swap: conn=%u rejected — car not in pit lane",
+			    (unsigned)c->conn_id);
+			return 1;
+		}
 		if (chat_parse_int(arg, &target) < 0 ||
 		    target < 0 || target >= car->driver_count) {
 			log_info("swap: invalid target from conn=%u",
