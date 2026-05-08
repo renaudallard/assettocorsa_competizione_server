@@ -81,6 +81,11 @@ every wire message, string encoding, and state transition.
   car slot, so race state, grid position, and penalty queue survive
   a mid-race disconnect.  Works both while the old socket is still
   alive and after the inactive-peer sweep removes it.
+- **Unique race numbers** enforced on join: a connection requesting
+  a number already in use is bumped to `requested+1..+9`, then to
+  the smallest free 1..999, then to 999, mirroring the exe's
+  allocator in `FUN_140025690`.  Reconnects keep their original
+  number.
 - **Mid-race join controls** — `unsafeRejoin: 0` refuses fresh
   handshakes during an active race; `/lockprep` freezes the
   preparation phase.  Returning drivers always bypass both.

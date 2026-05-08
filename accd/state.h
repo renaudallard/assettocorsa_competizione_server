@@ -907,4 +907,16 @@ int	server_alloc_car(struct Server *s);
  */
 int	server_find_grid_slot(struct Server *s);
 
+/*
+ * Pick a unique race number for a joining car.  Mirrors the loop
+ * inside accServer.exe FUN_140025690: try requested, requested+1,
+ * ..., requested+9; if all collide, walk 1..999 picking the
+ * smallest free; if even that is full, return 999.  The "taken"
+ * set is every car slot except `my_slot` that holds a driver
+ * record (used == 1 or driver_count > 0), matching the exe's
+ * persistent saved-driver registry.
+ */
+int	server_alloc_race_number(struct Server *s, int my_slot,
+	    int requested);
+
 #endif /* ACCD_STATE_H */

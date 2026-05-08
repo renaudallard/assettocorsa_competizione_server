@@ -1574,6 +1574,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 	char *password = NULL;
 	enum reject_reason reason = REJECT_OK;
 	uint32_t reject_sub = 0, reject_a = 0, reject_b = 0;
+	int is_reconnect = 0;
 
 	rd_init(&r, body, len);
 
@@ -1927,6 +1928,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 			}
 			if (reconnect_slot >= 0) {
 				c->car_id = reconnect_slot;
+				is_reconnect = 1;
 				log_info("Recognized reconnect: carId %d "
 				    "raceNumber #%d",
 				    c->car_id,
@@ -2094,10 +2096,19 @@ post_slot_assignment:
 
 		/*
 		 * Only override car fields from the handshake if the
-		 * entry list did not pre-populate them.
+		 * entry list did not pre-populate them, and only on a
+		 * fresh slot.  A reconnect must keep the existing
+		 * car_entry's race_number / model / cup so the driver
+		 * doesn't reset their on-grid identity across the drop.
+		 *
+		 * Race-number uniqueness mirrors accServer.exe
+		 * FUN_140025690: try requested, requested+1, ..., +9,
+		 * then 1..999, else 999.  See server_alloc_race_number
+		 * in state.c.
 		 */
-		if (!s->force_entry_list) {
-			car->race_number = rnum;
+		if (!s->force_entry_list && !is_reconnect) {
+			car->race_number = server_alloc_race_number(s,
+			    c->car_id, (int)rnum);
 			car->car_model = cmodel;
 			car->cup_category = ccup;
 			if (team != NULL)

@@ -460,3 +460,64 @@ server_find_grid_slot(struct Server *s)
 	(void)used_count;
 	return -1;
 }
+
+int
+server_alloc_race_number(struct Server *s, int my_slot, int requested)
+{
+	int i, n, off;
+
+	/*
+	 * Try requested, requested+1, ..., requested+9.  The exe
+	 * skips uVar34 <= 0 in this offset loop (signed comparison),
+	 * so a request of 0 lands on offset 1 first, and a -1
+	 * request (no preference from the client) skips offsets 0
+	 * and 1 and tries 1 first.
+	 */
+	for (off = 0; off < 10; off++) {
+		int cand = requested + off;
+		int taken = 0;
+
+		if (cand <= 0)
+			continue;
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			const struct CarEntry *ec = &s->cars[i];
+
+			if (i == my_slot)
+				continue;
+			if (!ec->used && ec->driver_count == 0)
+				continue;
+			if (ec->race_number == cand) {
+				taken = 1;
+				break;
+			}
+		}
+		if (!taken)
+			return cand;
+	}
+
+	/* Fallback: smallest free in 1..999. */
+	for (n = 1; n < 1000; n++) {
+		int taken = 0;
+
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			const struct CarEntry *ec = &s->cars[i];
+
+			if (i == my_slot)
+				continue;
+			if (!ec->used && ec->driver_count == 0)
+				continue;
+			if (ec->race_number == n) {
+				taken = 1;
+				break;
+			}
+		}
+		if (!taken) {
+			log_info("Used fallback race number %d", n);
+			return n;
+		}
+	}
+
+	log_info("Server ran out of racing numbers to use, "
+	    "defaulting to 999");
+	return 999;
+}
