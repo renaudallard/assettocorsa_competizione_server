@@ -1004,11 +1004,11 @@ Transition table (curr_state, event → next_state, side-effect):
 | any | C→S `0x48` (rejected) | unchanged | `0x49` result=non-zero unicast |
 | any | session reset / event change | all slots cleared to 0 | `0x47` broadcast + `0x4b` welcome redelivery |
 
-**accd vs exe gating divergences** (parity gaps flagged for future work):
+**accd vs exe gating** (status as of v0.3.11):
 
-1. **`&swap` chat command**: accd's handler at `accd/chat.c:515-578` does NOT gate on session type or pit-occupancy.  The exe rejects `&swap` outside Practice/Qualifying sessions (`FUN_140027990:88-90`) AND unless the source car is in the pit lane (`FUN_140027990:92-94`, byte at carEntry+0x153 == 0x02).
-2. **`0x4a` sub-state 3 ownership check**: the exe at `FUN_1400142f0:1140-1173` only re-emits `0x47` if the requesting connection still owns the car.  accd unconditionally rebroadcasts (`accd/handlers.c:1466`).
-3. **`0x47` foreign-owned state filter**: exe enforces `state ∈ {2, 3, 4}` for foreign-owned cars (`FUN_140012c30:83`); accd accepts any state byte from any connection.
+1. **`&swap` chat command**: **fixed in v0.3.11 (commit `11ae08d`)** — accd's `chat.c` now gates on session type (only Practice / Qualifying allow `&swap`) and pit-occupancy (the source car must be in the pit lane), matching exe `FUN_140027990:88-94`.
+2. **`0x4a` sub-state 3 ownership check**: accd's `h_driver_swap_state_request` validates ownership at the entry-point via `check_car_owner` and runs the slot walk synchronously, so the exe's belt-and-suspenders post-walk re-check at `FUN_1400142f0:1140-1173` is redundant in our model. No code change required for parity.
+3. **`0x47` foreign-owned state filter**: **fixed in v0.3.11 (commit `e3219ef`)** — accd's `h_update_driver_swap_state` now splits owner vs foreign-conn paths.  Owner accepts any state byte; foreign-conn only accepts state values in `{2, 3, 4}` (CONNECTED / REQUESTED / CONFIRMED), matching the `(byte)(state − 2U) < 3` gate at exe `FUN_140012c30:83`.  Pre-fix accd rejected foreign-conn messages entirely, which broke the multi-driver team scenario where a non-driving teammate signals their own CONNECTED state for the shared car.
 
 (`0x48 ACP_EXECUTE_DRIVER_SWAP` pit-occupancy gate is correctly implemented in accd at `handlers.c:1363-1367`.)
 
