@@ -628,7 +628,7 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 					continue;
 				if (s->cars[j].race.position != pos)
 					continue;
-				if (write_car_leaderboard_record(bb,
+				if (write_car_leaderboard_record(bb, s,
 				    &s->cars[j], cvar8) < 0)
 					return -1;
 				emitted++;
@@ -641,7 +641,7 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 				continue;
 			if (p >= 1 && p <= ACC_MAX_CARS)
 				continue;
-			if (write_car_leaderboard_record(bb,
+			if (write_car_leaderboard_record(bb, s,
 			    &s->cars[j], cvar8) < 0)
 				return -1;
 			emitted++;
@@ -666,7 +666,7 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
  */
 int
 write_car_leaderboard_record(struct ByteBuf *bb,
-    const struct CarEntry *ec, uint8_t cvar8)
+    const struct Server *s, const struct CarEntry *ec, uint8_t cvar8)
 {
 	const struct CarRaceState *race = &ec->race;
 	const struct PenaltyQueue *pq = &race->pen;
@@ -720,15 +720,28 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		/*
 		 * AC2 stores this byte at LeaderboardLine +0x204 named
 		 * "missingMandatoryPitstop" (per JSON writer at
-		 * 1434ec4b0.c).  Emit 0 — the widget collapses to
-		 * "OBLIGATOIRE 0/0" and the client hides it when no
-		 * mandatory pits are configured.  We previously emitted
-		 * race->formation_mid_passed here, which was a leftover
-		 * from an earlier theory that this byte controlled a
-		 * formation-lap HUD element.  AC2's actual semantic is
-		 * the missing-pit count, not a formation flag.
+		 * 1434ec4b0.c).  Emit max(0, mandatory_pit_count -
+		 * mandatory_pit_served) per car — for sessions WITHOUT
+		 * mandatory pits this collapses to 0 (widget shows
+		 * "OBLIGATOIRE 0/0" and the client hides it); for
+		 * sessions WITH mandatory pits the widget shows the live
+		 * remaining count, decreasing each time the client sends
+		 * 0x54 ACP_MANDATORY_PITSTOP_SERVED (which increments
+		 * race->mandatory_pit_served).
+		 *
+		 * Pre-v0.3.7 this byte was race->formation_mid_passed —
+		 * a formation-lap progress flag, not a missing-pit count.
+		 * v0.3.7 hard-coded the byte to 0 to suppress the
+		 * "OBLIGATOIRE 255/0 INVALIDE" widget at race start (when
+		 * the AC2 client's +0x204 ctor default 0xff was rendering
+		 * as 255).  This now uses the live count for parity with
+		 * eventRules.json that requires mandatory pit stops.
 		 */
-		if (wr_u8(bb, 0) < 0) return -1;
+		uint8_t remaining = 0;
+		if (s->mandatory_pit_count > race->mandatory_pit_served)
+			remaining = (uint8_t)(s->mandatory_pit_count
+			    - race->mandatory_pit_served);
+		if (wr_u8(bb, remaining) < 0) return -1;
 	}
 
 	if (wr_u8(bb, pq->count) < 0) return -1;

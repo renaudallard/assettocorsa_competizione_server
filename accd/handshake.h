@@ -102,7 +102,8 @@ int	write_leaderboard_section(struct ByteBuf *bb, struct Server *s);
  * car's own formation_lap_done in single-car contexts.
  */
 int	write_car_leaderboard_record(struct ByteBuf *bb,
-		const struct CarEntry *ec, uint8_t cvar8);
+		const struct Server *s, const struct CarEntry *ec,
+		uint8_t cvar8);
 
 /*
  * Build the 0x4e SRV_RATING_SUMMARY body for every used car

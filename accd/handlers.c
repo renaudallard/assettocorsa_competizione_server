@@ -1768,7 +1768,7 @@ h_load_setup(struct Server *s, struct Conn *c,
 	 * record's session-active label.
 	 */
 	if (car != NULL)
-		(void)write_car_leaderboard_record(&out, car, 0);
+		(void)write_car_leaderboard_record(&out, s, car, 0);
 	(void)bcast_send_one(c, out.data, out.wpos);
 	log_debug("0x56 reply: conn=%u car=%u sess_type=%u laps=%d "
 	    "(%zu bytes)", (unsigned)c->conn_id, (unsigned)car_id,
