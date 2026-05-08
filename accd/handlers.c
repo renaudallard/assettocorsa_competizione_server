@@ -77,7 +77,37 @@ check_car_owner(struct Conn *c, uint16_t wire_car_id)
 	return ((uint16_t)(ACC_CAR_ID_BASE + c->car_id) == wire_car_id) ? 0 : -1;
 }
 
-/* ----- 0x19 ACP_LAP_COMPLETED -> mutate state, broadcast 0x1b --- */
+/* ----- 0x19 SA contact report -> broadcast 0x1b ----------------- */
+/*
+ * Despite the legacy ACP_LAP_COMPLETED name (kept in msg.h to avoid
+ * touching every call site), 0x19 is actually the safety-rating
+ * contact report, NOT a lap-completed event.  The real lap-completed
+ * event is 0x21 (handled by h_sector_split_single — the msg.h
+ * ACP_SECTOR_SPLIT_SINGLE name is also a misnomer).
+ *
+ * Body (10 B with msg id):
+ *   u8  0x19
+ *   u16 reporter_car_id      (the player's own car, source Car+0x958
+ *                             on AC2 client)
+ *   u16 target_car_id        (the other car involved, or 0xffff for a
+ *                             wall hit)
+ *   i32 timestamp            (raw client clock; exe normalises via
+ *                             FUN_140042030)
+ *   u8  quality              (signed: <0 -> -1.0f "invalid contact",
+ *                             non-negative -> byte/10.0f rating quality)
+ *
+ * AC2 client emit sites: 1410be570.c:40,109 (wall / car-to-car
+ * contact) and 140e3f9c0.c:960 (SA-contact handler with the
+ * "SA contact: %f obwp" log).  Server case 0x19 at exe
+ * 1400142f0.c:174-205 builds a queued-broadcast lambda.  The 0x1b
+ * wire builder at 1400179b0.c reads u16 carA + u16 carB + double +
+ * float quality, preserving order.
+ *
+ * Pre-2026-05-08 this handler treated the body as
+ * (cup_position, track_position, lap_time_ms, quality) and stored
+ * the contact i32 timestamp into race->current_lap_ms — a
+ * documented bookkeeping bug.  See notebook-b §5.6.1 0x19 row.
+ */
 
 int
 h_lap_completed(struct Server *s, struct Conn *c,
@@ -85,50 +115,47 @@ h_lap_completed(struct Server *s, struct Conn *c,
 {
 	struct Reader r;
 	uint8_t msg_id;
-	uint16_t pos_a, pos_b;
-	int32_t lap_time_ms;
+	uint16_t reporter_car_id, target_car_id;
+	int32_t timestamp;
 	uint8_t quality;
 	struct ByteBuf out;
-	struct CarRaceState *race;
 	int rc;
+
+	(void)s;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0)
 		return -1;
-	if (rd_u16(&r, &pos_a) < 0 ||
-	    rd_u16(&r, &pos_b) < 0 ||
-	    rd_i32(&r, &lap_time_ms) < 0 ||
+	if (rd_u16(&r, &reporter_car_id) < 0 ||
+	    rd_u16(&r, &target_car_id) < 0 ||
+	    rd_i32(&r, &timestamp) < 0 ||
 	    rd_u8(&r, &quality) < 0) {
-		log_warn("h_lap_completed: short body from conn=%u",
+		log_warn("h_sa_contact: short body from conn=%u",
 		    (unsigned)c->conn_id);
 		return 0;
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	/*
-	 * Match the exe's "Received lap with isSessionOver flag; will
-	 * ignore it" guard: once the session has passed OVERTIME the
-	 * leaderboard is frozen, and any late-arriving lap report
-	 * should not mutate state.  Still relay 0x1b so other clients
-	 * see the number for UI, but skip the internal bookkeeping —
-	 * the exe relays unconditionally (case 0x19 in 1400142f0.c
-	 * has no isSessionOver guard before its broadcast).
-	 */
-	race = &s->cars[c->car_id].race;
-	if (s->session.phase < PHASE_COMPLETED)
-		race->current_lap_ms = lap_time_ms;
-	else
-		log_info("lap state ignored: session over (car=%d)",
-		    c->car_id);
 
+	log_info("SA contact: conn=%u reporter=%u target=%u ts=%d qual=%u",
+	    (unsigned)c->conn_id, (unsigned)reporter_car_id,
+	    (unsigned)target_car_id, (int)timestamp, (unsigned)quality);
+
+	/*
+	 * Pure relay — no race state mutation.  The contact event is
+	 * informational for other clients (HUD overlay) and for the
+	 * server's safety-rating module (handled separately in
+	 * ratings.c if/when implemented).  Exe relays unconditionally
+	 * (no isSessionOver guard at case 0x19) and sends to ALL
+	 * including the sender.
+	 */
 	bb_init(&out);
 	if (wr_u8(&out, SRV_LAP_BROADCAST) < 0 ||
-	    wr_u16(&out, pos_a) < 0 ||
-	    wr_u16(&out, pos_b) < 0 ||
-	    wr_i32(&out, lap_time_ms) < 0 ||
+	    wr_u16(&out, reporter_car_id) < 0 ||
+	    wr_u16(&out, target_car_id) < 0 ||
+	    wr_i32(&out, timestamp) < 0 ||
 	    wr_u8(&out, quality) < 0)
 		goto out;
-	/* Exe sends to ALL including sender (confirmed by capture). */
 	rc = bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
 	(void)rc;
 out:
