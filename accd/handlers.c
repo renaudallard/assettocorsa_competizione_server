@@ -1127,8 +1127,6 @@ h_lap_tick(struct Server *s, struct Conn *c,
 	uint8_t msg_id;
 	uint64_t ts_raw;
 
-	(void)s;
-
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u64(&r, &ts_raw) < 0) {
@@ -1136,8 +1134,22 @@ h_lap_tick(struct Server *s, struct Conn *c,
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	log_info("lap tick: conn=%u ts=%llu",
-	    (unsigned)c->conn_id, (unsigned long long)ts_raw);
+	log_info("0x42 penalty cleared: conn=%u car=%d ts=%llu",
+	    (unsigned)c->conn_id, c->car_id,
+	    (unsigned long long)ts_raw);
+	/*
+	 * Mirror exe FUN_140126b50: when the client signals it has
+	 * cleared its pending DT/SG penalty (the client engine flips
+	 * the penalty-pending flag from active to cleared and emits
+	 * 0x42 with the supplied wallclock), mark the front pending
+	 * DT/SG entry as served on the server side too.  Other paths
+	 * (pit-exit dwell check, mandatory-pitstop-served, /clear
+	 * admin command) already serve penalties, so this is a
+	 * redundancy guard for the case where the client serves a
+	 * penalty without going through one of those paths.
+	 */
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS)
+		penalty_serve_front(s, c->car_id);
 	return 0;
 }
 
