@@ -982,30 +982,31 @@ write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
 	float wind_speed = s->weather.wind_speed;
 	float wind_dir = s->weather.wind_direction;
-	uint32_t is_dynamic = s->weather.randomness > 0 ? 1 : 0;
 
 	/*
-	 * 52-byte WeatherData block — 12 × u32/f32 + 2 × i16 empty
-	 * Fourier vectors.  This matches the v0.2.46 layout that the
-	 * real ACC client accepts; populating Fourier vectors (as in
-	 * v0.2.13) did not help a real-client test and the current
-	 * client seems happy with count=0 when the actual welcome
-	 * body size is otherwise correct.
+	 * 48-byte WeatherData block (no harmonics): 11 u32 + 2 i16.
+	 * Pcap-verified against misano live capture and a fresh wine
+	 * runtime trace of accServer.exe (2026-05-08): the welcome
+	 * trailer's TopLevel WeatherData starts from struct +0x30
+	 * (ambientTemperatureMean), NOT from +0x28 (isDynamic).  The
+	 * static FUN_14011e660 decomp shows 12 u32 writes but the
+	 * runtime exe emits only 11.  The actual writer omits
+	 * isDynamic.  See reference_welcome_trailer_blocks.md for
+	 * the side-by-side wire dump.
 	 */
-	if (wr_u32(bb, is_dynamic) < 0) return -1;	/* +0x28 */
-	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x30 ambientMean */
-	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x34 wind now */
-	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x38 windMean */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x3c windDev  */
-	if (wr_f32(bb, wind_dir) < 0) return -1;	/* +0x40 */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x44 chg  */
-	if (wr_u32(bb, 0) < 0) return -1;		/* +0x48 windHarmonic */
-	if (wr_u32(bb, 0) < 0) return -1;		/* +0x4c nHarmonics */
-	if (wr_f32(bb, s->weather.clouds) < 0) return -1; /* +0x50 */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x54 baseDev */
-	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x58 varDev */
-	if (wr_i16(bb, 0) < 0) return -1;		/* sineCoeffs: 0 */
-	if (wr_i16(bb, 0) < 0) return -1;		/* cosineCoeffs: 0 */
+	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x30 ambientTemperatureMean */
+	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x34 windSpeed */
+	if (wr_f32(bb, wind_speed) < 0) return -1;	/* +0x38 windSpeedMean */
+	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x3c windSpeedDeviation */
+	if (wr_f32(bb, wind_dir) < 0) return -1;	/* +0x40 windDirection */
+	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x44 windDirectionChange */
+	if (wr_u32(bb, 0) < 0) return -1;		/* +0x48 windHarmonic (mirrors nCosine) */
+	if (wr_u32(bb, 0) < 0) return -1;		/* +0x4c nHarmonics (mirrors nSine) */
+	if (wr_f32(bb, s->weather.clouds) < 0) return -1; /* +0x50 weatherBaseMean */
+	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x54 weatherBaseDeviation */
+	if (wr_f32(bb, 0.0f) < 0) return -1;		/* +0x58 variabilityDeviation */
+	if (wr_i16(bb, 0) < 0) return -1;		/* nSineCoefficients */
+	if (wr_i16(bb, 0) < 0) return -1;		/* nCosineCoefficients */
 	return 0;
 }
 

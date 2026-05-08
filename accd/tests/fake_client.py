@@ -492,9 +492,12 @@ def parse_leaderboard_record(r, cvar8):
 
 
 def parse_weather_data(r):
-    """WeatherData (FUN_14011e660) — 12 u32/f32 + i16 sine_n + N*f32 +
-    i16 cos_n + N*f32."""
-    for _ in range(12):
+    """Welcome-trailer TopLevel WeatherData wire shape: 11 u32/f32 +
+    i16 sine_n + N * f32 + i16 cos_n + M * f32.  The runtime exe omits
+    isDynamic at struct +0x28 and starts from ambientTemperatureMean
+    at +0x30.  Verified against the misano pcap and a live wine
+    runtime capture of accServer.exe."""
+    for _ in range(11):
         r.u32()
     ns = r.i16()
     for _ in range(ns):
