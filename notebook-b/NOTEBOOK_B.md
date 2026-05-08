@@ -830,7 +830,7 @@ The gauge-selector dispatcher at `1434bd310.c` / `1434bd640.c` switches on a 9-v
 | `0x3a` | 58 | `u16 car_id` + `u8 split_count` + `u32[count]` + `i32 clock` + `u16 car_field` | **Sector splits broadcast (game protocol)** — server-transformed relay of client `0x20` messages. Variable-length body (depends on split count). **Note**: a separate message with the same first byte `0x3a` exists on the lobby backend connection with a completely different fixed-15-byte body (`u8=0xc9 + u32 + u32 + u8=0x00 + u32`) — that's the lobby registration request. The two messages are distinguishable only by which TCP channel they flow on. |
 | `0x3b` | 59 | `u16 car_id` + `u32 split_time` + `u8` + `u32 lap_time` + `u16 flags` | **Single sector split broadcast** — server-transformed relay of client `0x21` messages. Fixed 14-byte body. |
 | `0x3c` | 60 | `u8 = 0x3c` + `u16 carId` + `u16 cuts` + `u32 ts` (9 bytes total) | **Out-of-track relay** — broadcast to every other client whenever the source client's `0x3d` (`ACP_OUT_OF_TRACK`) handler increments the cuts counter. The `cuts` u16 is the running track-cut count for the car; `ts` is the normalized session timestamp. |
-| `0x3e` | 62 | `u8 = 0x3e` + `u8 result_count` + `result_count ×` per-car result record | **Session results broadcast** — emitted from the main server tick tail when a session ends. Each per-car result record is built by `FUN_1400351f0` from a 336-byte (`0x150`) source struct and contains: <br><br> `u8 + u8 + u8 (val−1) + u32 + u16 + u32 + u32 + u8 + u8 + u32` (24-byte fixed header — position, cup position, driver flag, lap count, sector counts, final time, status flags) <br> followed by a complete per-car leaderboard record built by `FUN_140034a40` from offset +0x98 of the source struct (the same outer serializer used by `0x36`, so each result row has the full standings record with sector splits, driver list, ratings, etc.) <br><br> So each per-car row is approximately `24 + (variable leaderboard data ~80–200 bytes) = ~100–250 bytes`. After the broadcast the function checks the session type and waits `postQualySeconds` (qualy) or `postRaceSeconds` (race) before advancing to the next session. Server log: `"Send session results to %d clients (%d byte)"`. This is the **session result finalization** message clients use to populate the post-session standings screen. The wire data is the same as the JSON written to `results/YYMMDD_HHMMSS_*` files. |
+| `0x3e` | 62 | `u8 = 0x3e` + `u8 result_count` + `result_count ×` per-car result record | **Session results broadcast** — emitted from the main server tick tail when a session ends. Each per-car result record is built by `FUN_1400351f0` from a 336-byte (`0x150`) per-car race-result-record source struct (NOT the higher-level SessionRes summary class — different shape, both happen to be 0x150 B). The 23-byte fixed header is followed by a complete per-car leaderboard record built by `FUN_140034a40` from offset `+0x98` of the source struct (same outer serializer used by `0x36`, so each result row carries the full standings record with sector splits, driver list, ratings, etc.). <br><br> **Per-car header byte map** (23 B fixed, source struct offsets verified against `1400351f0.c` decomp lines 30-105 and accd `tick.c:474-512`): <br><br> `+0x00 u8 position` (source struct `+0x50`; final overall race position 1-based; matches `position` JSON key from `14010f660.c:33`) <br> `+0x01 u8 cupPosition` (source `+0x54`; class/cup standings 1-based) <br> `+0x02 u8 currentDriverIndex` (source `+0x58`, transformed `cVar3 - 1` at line 52 to convert 1-based stored to 0-based wire value; matches `currentDriverIndex` JSON key) <br> `+0x03 u32 lapCount` (source `+0x5c`; total laps completed; matches `lapCount` JSON key from Timing serializer at `140113800.c:90-91`) <br> `+0x07 u16 reserved_or_packed_split` (source `+0x60`; emit 0 — accd treats as unknown, AC2 tolerates 0) <br> `+0x09 u32 bestlap` (source `+0x64`; best lap time in ms, `LAP_TIME_INVALID` = `0x7fffffff` when none; matches `bestlap` JSON key) <br> `+0x0d u32 totalTime` (source `+0x68`; total race time in ms; matches `totalTime` JSON key from `140113800.c:87-88`) <br> `+0x11 u8 formationLapDone` (source `+0x6c`; bool — car has completed formation lap) <br> `+0x12 u8 isDisqualified` (source `+0x70`; DQ flag; the `+0x110` byte that flows through `1400f0b40.c:21` copy ctor lands here) <br> `+0x13 u32 penaltyTimeMs` (source `+0x74`; sum of pending time penalties — TP5/TP15/converted DT/SG; produced by `accd/penalty.c` `penalty_total_ms()`; visible in the `penalties` array of `results.json`) <br><br> Total header = `1+1+1+4+2+4+4+1+1+4 = 23 B` (an earlier revision of this spec said "24-byte fixed header" — that was off by one). Each per-car row is `23 + (variable leaderboard data ~80–200 bytes) = ~100–230 bytes`. After the broadcast the function checks the session type and waits `postQualySeconds` (qualy) or `postRaceSeconds` (race) before advancing to the next session. Server log: `"Send session results to %d clients (%d byte)"`. This is the **session result finalization** message clients use to populate the post-session standings screen. The wire data carries a SUBSET of the `results.json` schema (§9) — the per-car header above corresponds to the per-driver `leaderBoardLines[]` element keys, and the trailing leaderboard record carries `raceNumber`, `carModel`, `cupCategory`, `bestSplits[]`, `currentDriver` block, full lap history. |
 | `0x3f` | 63 | `u8 = 0x3f` + `u8 grid_count` + grid_count × `{u16 carId, u8 ?, u32 grid_position, u8 ?}` (5+9N bytes) | **Race start grid positions broadcast** — emitted from the main server tick tail when the session phase reaches state `'\x04'` (race countdown / pre-race). The function gathers the entry list grid positions via `FUN_140032400`, then writes one record per car. Each record is 8 bytes on the wire: `u16 carId` + `u8 flag_a` + `u32 grid_position` + `u8 flag_b`. Server logs `"Sending grid positions:"` followed by `"   Car %d Pos %d"` per record, and `"Send grid positions to %d clients (%d byte, %d grid results)"` after the broadcast. A reimplementation must emit this when transitioning into race countdown so the client can populate its starting-grid display. |
 | `0x40` | 64 | `u8 = 0x40` + serialized `WritableRaceStructure` / `RaceWeekendForecast` (variable-length, virtual serializer) | **Race weekend reset broadcast** — emitted by the "Resetting weekend to friday night" path that runs when admin uses `/restart` to restart the entire race weekend or when a new event is loaded. The function writes the `cfg/current/{configuration,event,settings,entrylist,eventRules}.txt` files, applies new weather rules (with retry-loop log `"Found weather obeying the rules in %d ms (%d tries, %d)"`), and pushes one `0x40` message to every connected client. The body after the id byte is built by a virtual serializer method (`vtable[0x20]`) — variable length depending on the WritableRaceStructure or RaceWeekendForecast snapshot being sent. |
 | `0x44` | 68 | (varies — see semantics column) | **Two distinct uses of this id byte**, disambiguated by transport: <br> **(a) Damage zones broadcast** — sim-protocol UDP relay. Wire: `u8 = 0x44` + `u16 carId` + `5 × u8 damage_intensity` (8 bytes total). Server-transformed relay of client `0x43`, with each damage value clamped to a maximum constant (`DAT_14014bd78` ≈ 255) before truncation to u8. Broadcast to every other connected client via the standard `broadcast_except_one` helper. Emit site: `accd/handlers.c:1119`. <br> **(b) Lobby registration request** — sent to Kunos's `kson` backend over the lobby TCP channel only when `registerToLobby: 1`. Wire shape and field map are documented in §11.5 (`0x44 Registration`). Irrelevant for private MP. Emit site: `accd/lobby.c:351` (constant `LOBBY_MSG_REGISTER`). <br> An earlier revision of this spec mentioned a third "smaller game-protocol variant" (c); no emit site for it exists in this codebase or in the AC2 client decomp from prior reverse-engineering passes — that entry was apocryphal and is dropped. |
@@ -923,9 +923,13 @@ Called when a new TCP client first connects. The body field order is:
 ```
 u16 client_version
 string_A password
-... (additional fields, partially decoded: at least 4 bytes, 2 uint16s, plus
-     a full embedded CarInfo sub-structure with 32 fields and an embedded
-     DriverInfo with name / category / Steam id)
+... (the rest of the body is the client's CarInfo + DriverInfo blob —
+     the same structure that gets re-emitted inside the welcome trailer's
+     per-car SpawnDef at §5.6.4c lines 604-625, which IS fully byte-mapped.
+     accd preserves these bytes verbatim into c->hs_echo at handshake.c:1639-1655
+     and re-emits them in the welcome rather than re-parsing them, so the
+     server only needs the prefix fields above and treats the trailing
+     CarInfo+DriverInfo as opaque bytes for echo back to clients.)
 ```
 
 - **`client_version`** must exactly equal `0x100` (256) for ACC 1.10.2. Any other value causes rejection with the log string `"rejecting new connection with wrong client version %d (server runs %d)"`. **This version byte changes between ACC releases and is the primary build-gating mechanism.**
@@ -2047,26 +2051,31 @@ kson_str  driver_steam_id
 
 Sent on every successfully completed lap so the lobby can keep "best lap so far" diagnostics for hotlap-style listings.
 
-#### 0xd1 Drivers list update
+#### 0xd1 DriversUpdate (server → lobby)
+
+Built by `FUN_1400473f0` at `notebook-a/decomp/full/1400473f0.c:49` (called from the lobby dispatcher case `0xf1` at `140044c10.c:283-285` and also unconditionally on registration accept at `140044c10:270`).  Wire format verified by direct decompilation:
 
 ```
-u8   0xd1
-[preamble]
-u8   driver_count
-per-driver {
-    u16     car_id
-    kson_str  steam_id
-    kson_str  short_name
-    kson_str  first_name
-    kson_str  last_name
-    u8      driver_category
-    u8      cup_category
-    u16     nationality
-    i16     rating ×100
+u8   0xd1                  (msg id; written by FUN_1400448c0(.., 0xd1) preamble builder)
+[11-byte preamble]         (kson framing — same as every other server→lobby outbound)
+u8   driver_count          (cars where FUN_1400418e0 returns true; 0 if no drivers)
+per-driver × driver_count {
+    u32     car_id            (from car+0xa00a0)
+    kson_string driver_name   (from car+0xa01b0 via FUN_14004d240)
+    u8      current_driver_idx (from connectedCar+0x148 — active driver slot)
 }
 ```
 
-Sent when the connected-drivers roster changes (join, leave, swap completed).
+Idle server (no drivers): `count = 0` → 12-byte body (1 + 11 preamble + 1 count).
+
+Triggered on:
+1. **Lobby `0xf1` poll** — empty body from lobby; server replies with current drivers (state-gated 5 or 6).
+2. **Registration accept** — server pushes the initial drivers list immediately after `0xef` code 0.
+3. **Internal driver-roster change** — also called from join/leave/swap paths at registration completion.
+
+Logs `"Updated lobby with %d drivers"` after enqueueing into the writev ring buffer at `param_1+0x88`.
+
+> **Note**: this layout is **simpler** than the speculative version that previously appeared in earlier revisions of this spec (which listed 4 kson_strings + driver_category + cup_category + nationality + rating per driver).  The actual exe wire format is just `u32 car_id + kson_string driver_name + u8 current_driver_idx`.  The richer fields the lobby browser displays (rating, category, cup, nationality) come from the per-car spawn record retained from earlier `0x44` registrations, not from each `0xd1` refresh.
 
 #### 0xd2 Wrecker report
 
@@ -2110,7 +2119,7 @@ Total wire size: 14 B. Constant-byte heartbeats get the server delisted from the
 | Cmd | Name | Description |
 |-----|------|-------------|
 | `0xef` | Accept/Reject | Byte 1: 0=accepted, 1-6=rejection reason |
-| `0xf1` | Unknown | Delegates to `FUN_1400473f0` |
+| `0xf1` | DriversRefresh | **Empty body** (zero payload after the kson framing header).  Lobby polls the dedicated server saying "send me your current drivers list now".  Triggers the server-side outbound emit at `FUN_1400473f0`, which builds and sends a `0xd1 DriversUpdate` reply (see §11.5.10).  State-gated to lobby state 5 (`REGISTERING`) or 6 (`REGISTERED`); ignored in any other state.  Same `FUN_1400473f0` is also called unconditionally on registration accept (`FUN_140044c10:270`).  accd implements this at `lobby.c:857-862` (dispatcher) → `lobby.c:462` (`lobby_send_drivers_update`).  The original spec wording "Delegates to `FUN_1400473f0`" was misleading — that function is the OUTBOUND `0xd1` sender, not a `0xf1` parser. |
 | `0xf3` | CP data push | Competition Points data.  Reads two strings then a `ServerEventConfig`.  Logs `"Receiving CP data for %s @ %s"` |
 | `0xf4` | State push A | Reads two strings, builds a `0x2b` message to clients via `FUN_1400251b0` |
 | `0xf5` | State push B | Reads two strings, builds a `0x2b` variant via `FUN_140025470` |
