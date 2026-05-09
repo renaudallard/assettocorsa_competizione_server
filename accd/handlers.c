@@ -1136,8 +1136,6 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		return 0;
 	{
 		uint8_t reason = client_category_to_reason(category);
-		uint8_t pen_kind;
-		char chat[128];
 		int32_t val = value > 0 ? value : 3;
 
 		log_info("client-reported penalty: car=%d kind=%u "
@@ -1146,10 +1144,15 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		    (unsigned)reason);
 		(void)penalty_enqueue(s, c->car_id, kind, category, val, 1,
 		    0, reason);
-		pen_kind = penalty_pen_kind_of(kind, 0, val);
-		penalty_format_chat(chat, sizeof(chat), pen_kind, reason, 0,
-		    s->cars[c->car_id].race_number);
-		chat_broadcast(s, chat, 4);
+		/*
+		 * No chat broadcast here — matches kunos.  Per
+		 * accServer.exe FUN_1400142f0:751, the 0x41 dispatcher only
+		 * calls FUN_140125f50 (penalty enqueue) and never emits
+		 * 0x2b chat.  The chat path (FUN_14001dae0) is for
+		 * admin commands only.  The AC2 client handles the player's
+		 * own banner via its local detection chain (FUN_140e59bf0
+		 * → FUN_140e643d0 → widget delegate).
+		 */
 	}
 	return 0;
 }
