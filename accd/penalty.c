@@ -495,13 +495,38 @@ penalty_name(uint8_t kind)
 
 /*
  * Map internal (kind, reason) to the 0..35 ServerMonitorPenaltyShortcut
- * wire value documented in notebook-b §12B.4.  Default for unknown
- * combos is 0 (No_Penalty) — better to emit "no penalty" than a
- * wrong semantic.
+ * wire value, byte-for-byte identical to kunos accServer.exe
+ * FUN_1400f03b0 (the (kind, cat) → wire dispatcher).  Default for
+ * unknown combos is 0 (No_Penalty).
+ *
+ * Notes on wire codes that are unrenderable on the AC2 client widget:
+ *   - 27 (%Disqualified_ExceededDriverStintLimit) has '%' prefix that
+ *     the AC2 config loader at FUN_1412a2d50:235 does NOT strip; the
+ *     localized key lookup fails at the widget.
+ *   - 33..35 (!DriveThrough/SG30/DQ_WrongPositionOnStart) have '!'
+ *     prefix that FUN_1412a2d50:426-429 strips and DELETES the entry
+ *     from the runtime penalty-shortcut hash map.
+ * kunos emits these codes verbatim despite the client not rendering
+ * the widget for them — accd matches that behaviour to keep the wire
+ * byte-identical.  The chat banner via 0x2b reaches the player and
+ * other-client leaderboard rendering does fail in the same way as
+ * kunos for these specific combos.
  */
 uint16_t
 penalty_wire_value(uint8_t kind, uint8_t reason)
 {
+	/*
+	 * kunos kind=5 (PostRaceTime) is universal: it produces wire 14
+	 * regardless of cat.  Our PEN_TP* family (TP5/TP15/TP30/TP40/
+	 * TP50/TP60) all map to the same exe kind=5, so emit wire 14
+	 * up-front before the per-reason switch.
+	 */
+	switch (kind) {
+	case PEN_TP5: case PEN_TP15:
+	case PEN_TP30: case PEN_TP40:
+	case PEN_TP50: case PEN_TP60:	return 14;
+	}
+
 	switch (reason) {
 	case REASON_CUTTING:
 		switch (kind) {
@@ -510,6 +535,7 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		case PEN_SG20: case PEN_SG20C:	return 3;
 		case PEN_SG30: case PEN_SG30C:	return 4;
 		case PEN_DQ:			return 5;
+		/* RemoveBestLaptime → 6 (kind=7 in exe; not yet emitted). */
 		}
 		break;
 	case REASON_PIT_SPEEDING:
@@ -519,6 +545,7 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		case PEN_SG20: case PEN_SG20C:	return 9;
 		case PEN_SG30: case PEN_SG30C:	return 10;
 		case PEN_DQ:			return 11;
+		/* RemoveBestLaptime → 12 (not yet emitted). */
 		}
 		break;
 	case REASON_IGNORED_MANDATORY_PIT:
@@ -526,9 +553,6 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		break;
 	case REASON_RACE_CONTROL:
 		switch (kind) {
-		case PEN_TP5: case PEN_TP15:
-		case PEN_TP30: case PEN_TP40:
-		case PEN_TP50: case PEN_TP60:	return 14;
 		case PEN_DT: case PEN_DTC:	return 15;
 		case PEN_SG10: case PEN_SG10C:	return 16;
 		case PEN_SG20: case PEN_SG20C:	return 17;
@@ -549,15 +573,13 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		break;
 	case REASON_EXCEEDED_DRIVER_STINT_LIMIT:
 		/*
-		 * Wire 27 ('%Disqualified_ExceededDriverStintLimit') has the
-		 * '%' prefix in the AC2 client's penalty-shortcut rdata
-		 * table; the loader at FUN_1412a2d50:235 doesn't recognise
-		 * '%' as a special prefix (bitfield 0x80003601 has no bit
-		 * for 0x25), so the key gets stored verbatim and downstream
-		 * localization lookups fail.  Substitute the IgnoredDriverStint
-		 * DQ wire (26) which renders cleanly.
+		 * Per kunos FUN_1400f03b0 case 4 ('\r' = 13): wire 27 is
+		 * emitted ONLY for kind=SG30, NOT for DQ.  Despite wire 27's
+		 * label being "Disqualified_ExceededDriverStintLimit", the
+		 * exe assigns it to the StopAndGo_30 column.  We mirror the
+		 * exe verbatim.
 		 */
-		if (kind == PEN_DQ) return 26;
+		if (kind == PEN_SG30 || kind == PEN_SG30C) return 27;
 		break;
 	case REASON_DRIVER_RAN_NO_STINT:
 		if (kind == PEN_DQ) return 28;
@@ -573,21 +595,10 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		}
 		break;
 	case REASON_WRONG_POSITION_ON_START:
-		/*
-		 * Wires 33..35 ('!DriveThrough_WrongPositionOnStart' etc.)
-		 * have the '!' prefix; the AC2 client loader at
-		 * FUN_1412a2d50:426-429 strips the prefix and calls
-		 * FUN_1411fea20 to DELETE the entry from the runtime
-		 * penalty-shortcut hash map.  Wire codes 33..35 are
-		 * therefore impossible to render on the client.  Fall
-		 * through to the SpeedingOnStart wire codes (30..32) which
-		 * carry the same DT/SG30/DQ severities and a renderable
-		 * label.
-		 */
 		switch (kind) {
-		case PEN_DT: case PEN_DTC:	return 30;
-		case PEN_SG30: case PEN_SG30C:	return 31;
-		case PEN_DQ:			return 32;
+		case PEN_DT: case PEN_DTC:	return 33;
+		case PEN_SG30: case PEN_SG30C:	return 34;
+		case PEN_DQ:			return 35;
 		}
 		break;
 	}
