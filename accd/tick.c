@@ -905,19 +905,20 @@ tick_run(struct Server *s)
 
 	/*
 	 * Leaderboard rebroadcast.  useAsyncLeaderboard (settings.json,
-	 * default 0 = sync) broadcasts on every standings change AND on
-	 * the 75 s cadence, so the HUD timing tower updates immediately
-	 * when positions shift.  Async mode (=1) coalesces fan-out to
-	 * the cadence tick only, trading update latency for CPU under
-	 * heavy lap-completion traffic.
+	 * default 0 = sync) fires on every standings_seq change with no
+	 * cadence gate, mirroring exe FUN_14002f710 which broadcasts 0x36
+	 * whenever the dirty flag is set.  A 583 s 2-bot pcap of
+	 * accServer.exe confirmed it never fires on a periodic timer:
+	 * 0x36 reached each client only at car-join, session-transition,
+	 * and peer-leave.  Async mode (=1) coalesces changes to the
+	 * CADENCE_LEADERBOARD tick, trading staleness for fan-out CPU.
 	 */
 	{
 		int changed = s->session.standings_seq !=
 		    *last_standings_seq;
 		int cadence = now_ms - last_leaderboard_ms >=
 		    CADENCE_LEADERBOARD_MS;
-		int fire = cadence ||
-		    (changed && !s->use_async_leaderboard);
+		int fire = changed && (!s->use_async_leaderboard || cadence);
 
 		if (fire) {
 			*last_standings_seq = s->session.standings_seq;
