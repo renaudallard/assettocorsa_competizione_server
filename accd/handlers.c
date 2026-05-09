@@ -989,7 +989,15 @@ client_category_to_reason(uint8_t category)
 	case 6:		return REASON_IGNORED_MANDATORY_PIT;
 	case 10:	return REASON_WRONG_WAY;
 	case 11:	return REASON_IGNORED_MANDATORY_PIT;	/* alias of 6 */
-	case 12:	return REASON_EXCEEDED_DRIVER_STINT_LIMIT;
+	/*
+	 * cat=12 is AC2's ExceededDriverStintLimit.  Its dedicated wire
+	 * code (27) has the '%' prefix in the rdata penalty-shortcut
+	 * table, which is unrenderable in the AC2 client (the config
+	 * loader at FUN_1412a2d50 doesn't strip '%' and the localization
+	 * lookup fails).  Map to IgnoredDriverStint instead — same
+	 * stint-related semantic, with renderable wire codes (24..26).
+	 */
+	case 12:	return REASON_IGNORED_DRIVER_STINT;
 	case 13:	return REASON_DRIVER_RAN_NO_STINT;
 	/*
 	 * Cats 16/17 come from the AC2 client's green-flag state checker
