@@ -398,24 +398,54 @@ struct SessionState {
  *   ambient, road, clouds, wind_dir, rain, wind_speed,
  *   dry_line_wetness, ...
  */
+/*
+ * Fourier weather model state, mirroring the WeatherData object the
+ * exe's FUN_140116c50 builds and FUN_140116830 evolves each tick.
+ * The wire layout (welcome trailer's Top-level WeatherData and 0x40
+ * weekend reset) reads these fields directly.  See
+ * reference_weather_algorithm.md for the full per-field mapping.
+ */
+#define ACCD_WX_MAX_SINE	16
+#define ACCD_WX_MAX_COSINE	4
+
 struct WeatherStatus {
-	float		wind_speed;	/* m/s or normalized */
-	float		wind_direction;	/* degrees, unclamped */
-	float		clouds;		/* 0..1 */
-	float		current_rain;	/* 0..1 */
-	float		target_rain;	/* 0..1 */
-	float		track_wetness;	/* 0..1 */
-	float		dry_line_wetness;
+	/* Live values updated by weather_step from the Fourier model. */
+	float		wind_speed;		/* current m/s */
+	float		wind_direction;		/* current degrees, unclamped */
+	float		clouds;			/* current 0..1 */
+	float		current_rain;		/* current 0..1 */
+	float		target_rain;		/* current 0..1 (= current_rain in this model) */
+	float		track_wetness;		/* current 0..1 */
+	float		dry_line_wetness;	/* exe WS+0x40, range ~ -1.2..0.8 */
 	float		puddles;
+	float		ambient_current;	/* current ambient °C */
+	float		road_current;		/* current road °C */
 	uint64_t	last_step_ms;
-	/*
-	 * Configured baselines from event.json.  weather_step drifts
-	 * around these (bounded) instead of running its own free-form
-	 * sine.  randomness=0 holds them constant; 1+ allows drift.
-	 */
+
+	/* Configured baselines from event.json. */
 	float		base_clouds;
 	float		base_rain;
 	uint8_t		randomness;
+
+	/* Fourier model state, matches WeatherData struct +0x28..+0x88. */
+	uint8_t		is_dynamic;		/* +0x28/+0x90 (u32, but stored u8 here) */
+	float		ambient_mean;		/* +0x30 */
+	float		wind_speed_base;	/* +0x34 */
+	float		wind_speed_mean;	/* +0x38 (informational) */
+	float		wind_speed_dev;		/* +0x3c clamp >= 0.01 */
+	float		wind_direction_base;	/* +0x40 */
+	float		wind_direction_change;	/* +0x44 */
+	int32_t		wind_harmonic;		/* +0x48 1-based index of dominant |coef| */
+	int32_t		n_harmonics;		/* +0x4c sine-coefficient count */
+	float		weather_base_mean;	/* +0x50 */
+	float		weather_base_dev;	/* +0x54 */
+	float		variability_dev;	/* +0x58 clamp >= 0.01 */
+	float		sine_coeffs[ACCD_WX_MAX_SINE];	/* +0x60 vec body */
+	uint8_t		n_sine;			/* sine_coeffs count */
+	float		cosine_coeffs[ACCD_WX_MAX_COSINE];	/* +0x78 vec body */
+	uint8_t		n_cosine;		/* cosine_coeffs count */
+
+	uint32_t	start_time_s;		/* origin for dt = weekend_time - start */
 };
 
 /*
