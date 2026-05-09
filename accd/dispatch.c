@@ -269,7 +269,6 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		struct Reader kr;
 		uint16_t ka_conn_id = 0;
 		struct Conn *kc;
-		uint32_t srv_ms;
 
 		if (len >= 7) {
 			/* Lobby-probe echo — must reply regardless of
@@ -291,34 +290,16 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		if (kc == NULL)
 			return;
 
-		/* Learn / update the UDP peer address. */
-		kc->peer = *peer;
-
-		srv_ms = (uint32_t)mono_ms();
-
 		/*
-		 * Per FUN_140029b20 + FUN_1400336d0 in accServer.exe and
-		 * verified against the kunos_wine_full_race.pcap, the 0x14
-		 * body carries three u16 ping values after srv_ms:
-		 *   u16  this_conn_rtt_ms    (recipient's own avg RTT)
-		 *   u16  server_avg_ping_ms  (mean RTT across active conns)
-		 *   u16  server_max_ping_ms  (max RTT across active conns)
-		 *   u8 × 4  cpu/qos pcts
-		 * The client's HUD reads these to render the ping badge —
-		 * a hardcoded 0 here makes the in-game ping display read 0.
+		 * Learn / update the UDP peer address.  Do NOT emit a 0x14
+		 * here: per FUN_140041e80 in accServer.exe, 0x14 has a
+		 * single emit path gated on a 1000 ms cadence per conn -
+		 * matched by tick.c's broadcast_keepalive(SRV_KEEPALIVE_14).
+		 * Replying to every 0x13 doubled the rate to 2 Hz/conn,
+		 * confirmed by a 2-bot pcap diff against the exe (kunos
+		 * 1.0 Hz/conn vs accd 2.0 Hz/conn).
 		 */
-		uint16_t avg_ping, max_ping;
-		uint16_t conn_rtt;
-		unsigned char pkt[15];
-
-		compute_server_pings(s, &avg_ping, &max_ping);
-		conn_rtt = kc->avg_rtt_ms > 65535
-		    ? 65535 : (uint16_t)kc->avg_rtt_ms;
-		build_keepalive_pkt(pkt, SRV_KEEPALIVE_14, srv_ms,
-		    conn_rtt, avg_ping, max_ping);
-		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
-		    (const struct sockaddr *)peer,
-		    (socklen_t)sizeof(*peer));
+		kc->peer = *peer;
 		return;
 	}
 
