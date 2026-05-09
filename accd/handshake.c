@@ -986,14 +986,13 @@ write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 	int i;
 
 	/*
-	 * Top-level WeatherData wire: 11 u32 + i16 nSine + N×u32 +
-	 * i16 nCosine + M×u32.  Pcap-verified against misano + live
-	 * wine runtime; see reference_welcome_trailer_blocks.md and
-	 * reference_weather_algorithm.md for the field map and the
-	 * Fourier model.  Starts at struct +0x30, skipping isDynamic
-	 * at +0x28 (the runtime exe omits it; static FUN_14011e660
-	 * shows 12 u32 but the welcome path emits only 11).
+	 * Top-level WeatherData wire: 12 u32 + i16 nSine + N x u32 +
+	 * i16 nCosine + M x u32.  Pcap-verified across both misano
+	 * welcome frames (frame 7 + frame 142, identical Fourier
+	 * state, both 76 B with 5 sine + 1 cosine coefficients).
+	 * Matches FUN_14011e660 static decomp byte-for-byte.
 	 */
+	if (wr_u32(bb, w->is_dynamic ? 1u : 0u) < 0) return -1;	/* +0x28 isDynamic */
 	if (wr_f32(bb, ambient) < 0) return -1;		/* +0x30 ambientTemperatureMean */
 	if (wr_f32(bb, w->wind_speed_base) < 0) return -1;	/* +0x34 windSpeed */
 	if (wr_f32(bb, w->wind_speed_mean) < 0) return -1;	/* +0x38 windSpeedMean */
