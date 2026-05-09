@@ -981,6 +981,39 @@ out:
 static uint8_t
 client_category_to_reason(uint8_t category)
 {
+	/*
+	 * Truth table extracted from the kunos accServer.exe wire-code
+	 * dispatcher FUN_1400f03b0 (438 B switch on (kind, cat) → wire
+	 * 1..35), validated against the rdata penalty-shortcut keys at
+	 * `notebook-a/raw/accserver-strings-all.txt` lines 18796-18831.
+	 *
+	 * Important quirk: AC2's cat→label table (FUN_1434f2fb0 in the
+	 * client, FUN_140117330 in the server) and the wire-code
+	 * dispatcher use *different* semantics for cats 11/12/13.  The
+	 * label table calls cat=11 IgnoredMandatoryPit, cat=12
+	 * ExceededDriverStintLimit, cat=13 DriverRanNoStint; the wire
+	 * dispatcher emits wire 24..26 (IgnoredDriverStint) for cat=11,
+	 * wire 28 (DriverRanNoStint) for cat=12, and wire 27
+	 * (%ExceededDriverStintLimit) for cat=13+SG30.  We follow the
+	 * wire dispatcher because the wire is what the AC2 widget reads.
+	 *
+	 * Cats 14, 15 are NEW (not in the cat→label tables but present
+	 * in the wire dispatcher): 14=DamagedCar, 15=LightsOff.
+	 *
+	 * Cats 16, 17 come from the AC2 client's green-flag state
+	 * checker (FUN_140e5ab60): 16=SpeedingOnStart (speed-driven),
+	 * 17=WrongPositionOnStart (damage-driven escalation).
+	 *
+	 * Cats 1, 2, 7, 8, 9 have NO wire path in FUN_1400f03b0 — the
+	 * kunos exe never emits a wire code for these.  Best fallback:
+	 * REASON_RACE_CONTROL (wire 15-19) for those (and other unknowns).
+	 *
+	 * Note: penalty.c:penalty_wire_value substitutes wire 27 (% prefix,
+	 * unrenderable) with 26, and wires 33-35 (! prefix, deleted from
+	 * the AC2 client lookup map) with 30-32 — so REASON_EXCEEDED_*
+	 * and REASON_WRONG_POSITION_ON_START are kept here for
+	 * server-side semantic clarity but emit renderable wire codes.
+	 */
 	switch (category) {
 	case 0:		return REASON_CUTTING;
 	case 3:		return REASON_PIT_SPEEDING;
@@ -988,36 +1021,18 @@ client_category_to_reason(uint8_t category)
 	case 5:		return REASON_PIT_EXIT;
 	case 6:		return REASON_IGNORED_MANDATORY_PIT;
 	case 10:	return REASON_WRONG_WAY;
-	case 11:	return REASON_IGNORED_MANDATORY_PIT;	/* alias of 6 */
-	/*
-	 * cat=12 is AC2's ExceededDriverStintLimit.  Its dedicated wire
-	 * code (27) has the '%' prefix in the rdata penalty-shortcut
-	 * table, which is unrenderable in the AC2 client (the config
-	 * loader at FUN_1412a2d50 doesn't strip '%' and the localization
-	 * lookup fails).  Map to IgnoredDriverStint instead — same
-	 * stint-related semantic, with renderable wire codes (24..26).
-	 */
-	case 12:	return REASON_IGNORED_DRIVER_STINT;
-	case 13:	return REASON_DRIVER_RAN_NO_STINT;
-	/*
-	 * Cats 16/17 come from the AC2 client's green-flag state checker
-	 * (FUN_140e5ab60).  16 = speed-based escalation, 17 = damage-based
-	 * escalation; both fire at race start when the per-car severity
-	 * scores cross thresholds.  Map both to SpeedingOnStart so the
-	 * DT/SG widget gets wire codes 30..32 which render normally;
-	 * the WrongPositionOnStart group (33..35) is `!`-prefixed in the
-	 * rdata penalty-shortcut table and the AC2 widget renderer
-	 * appears to skip those, leaving the player with only the chat
-	 * banner.
-	 */
-	case 16:	/* SpeedingOnStart (speed_sev >= damage_sev) */
-	case 17:	/* damage-escalated start state */
-		return REASON_SPEEDING_ON_START;
-	case 1:		/* Collision — no enum; race-control fallback. */
-	case 2:		/* IllegalOvertake — no enum; race-control fallback. */
-	case 7:		/* UnsafeRejoin — no enum. */
-	case 8:		/* Trolling — no enum. */
-	case 9:		/* ReverseInPitlane — no enum. */
+	case 11:	return REASON_IGNORED_DRIVER_STINT;
+	case 12:	return REASON_DRIVER_RAN_NO_STINT;
+	case 13:	return REASON_EXCEEDED_DRIVER_STINT_LIMIT;
+	case 14:	return REASON_DAMAGED_CAR;
+	case 15:	return REASON_LIGHTS_OFF;
+	case 16:	return REASON_SPEEDING_ON_START;
+	case 17:	return REASON_WRONG_POSITION_ON_START;
+	case 1:		/* Collision — no kunos wire path */
+	case 2:		/* IllegalOvertake — no kunos wire path */
+	case 7:		/* UnsafeRejoin — no kunos wire path */
+	case 8:		/* Trolling — no kunos wire path; default to RaceControl */
+	case 9:		/* ReverseInPitlane — no kunos wire path */
 	default:	return REASON_RACE_CONTROL;
 	}
 }
