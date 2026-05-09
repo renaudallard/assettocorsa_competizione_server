@@ -2305,28 +2305,25 @@ reply:
 				(void)bcast_send_one(c, wb.data, wb.wpos);
 			bb_free(&wb);
 
-			/* 0x4e rating summary. */
 			/*
-			 * 0x4e per-entry layout (kunos_wine_full_race 86-byte
-			 * capture, one car, re-verified 2026-04-16):
-			 *   u16 car_id
-			 *   u8  0
-			 *   u16 safety_rating     (×100, 0 if unset)
-			 *   u16 trackmedal_rating (×100, 0 if unset)
-			 *   i16 -1  (sentinel)
-			 *   i16 -1  (sentinel)
-			 *   str_a steam_id
-			 * Previous spec had an extra u32 extra_rating before
-			 * the steam_id — the capture does not contain it.
+			 * No 0x4e rating summary here.  The welcome trailer's
+			 * RatingSeries block already carries every active
+			 * driver's rating to the joiner; the standalone 0x4e
+			 * message is only used for periodic refresh, gated on
+			 * the 81000 ms cadence in FUN_14002f710.  A 2-bot pcap
+			 * of accServer.exe under wine showed exactly one 0x4e
+			 * frame per stream (the first periodic tick), with no
+			 * handshake-time emit.
+			 *
+			 * Mark ratings dirty so the next tick.c periodic gate
+			 * (CADENCE_RATINGS_MS) fires once the new joiner's
+			 * record exists in the rating table.
 			 */
-			bb_init(&wb);
-			if (build_rating_summary(&wb, s) == 0)
-				(void)bcast_all(s, wb.data, wb.wpos, BCAST_EXCEPT_NONE);
-			bb_free(&wb);
+			s->ratings_dirty = 1;
 		}
 
 		log_debug("welcome sequence sent: 0x2e+0x4f bcast + "
-		    "0x28+0x36+0x37+0x4e to conn=%u",
+		    "0x28+0x36+0x37 to conn=%u",
 		    (unsigned)c->conn_id);
 	}
 	return 0;
