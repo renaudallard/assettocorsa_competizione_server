@@ -730,6 +730,7 @@ tick_run(struct Server *s)
 	static uint64_t last_keepalive_ms = 0;
 	static uint64_t last_leaderboard_ms = 0;
 	static uint64_t last_weather_ms = 0;
+	static uint64_t last_state28_ms = 0;
 	/*
 	 * Tick-rate probe.  Every 60 s of wall-clock, log the observed
 	 * tick rate so we can confirm the main-loop busy-wait is
@@ -928,23 +929,22 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * 0x28 session state broadcast — event-driven, mirroring exe
-	 * FUN_14002f710 line 716-749.  The exe checks each tick whether
-	 * the current phase byte or any of the 7 phase descriptors
-	 * (valid + deadline) differs from a snapshot stored on the
-	 * server, and emits 0x28 to every auth conn the moment any byte
-	 * changes.  After the emit, FUN_14002f710:799-800 refreshes the
-	 * snapshot.  The earlier 1 Hz scheduled emit was a misreading of
-	 * the pcap (the recurring frames were 0x14 keepalives, not
-	 * 0x28).  Sending on a cadence delays phase transitions on the
-	 * client by up to one period, since the deadline that ts[2]
-	 * stamping records is only visible to the client when the next
-	 * 0x28 arrives — visible to drivers as the formation-end zone
-	 * landing late and snapping instead of counting down.
+	 * 0x28 session state broadcast.  Two triggers:
+	 *
+	 *   1. Phase or descriptor change (event-driven), so phase
+	 *      transitions reach the client with ~3 ms latency.
+	 *   2. 1 Hz cadence — even with frozen ts[] deadlines, the body
+	 *      carries per-conn projected client timestamps that advance
+	 *      with server time.  Without the cadence, the client's
+	 *      countdown widgets stop refreshing during steady-state
+	 *      session play.  Verified against a 583 s 2-bot kunos pcap
+	 *      where 0x28 fired 599 times (1.03 Hz / conn) with body
+	 *      bytes changing every emit.
 	 */
 	{
 		uint8_t cur_phase = s->session.phase;
 		int changed = !s->session.last_emit_valid;
+		int cadence_28 = now_ms - last_state28_ms >= 1000;
 		int k;
 
 		if (!changed && cur_phase != s->session.last_emit_phase)
@@ -953,7 +953,7 @@ tick_run(struct Server *s)
 			if (s->session.ts[k] != s->session.last_emit_ts[k])
 				changed = 1;
 
-		if (changed) {
+		if (changed || cadence_28) {
 			if (s->nconns > 0) {
 				struct ByteBuf bb;
 				int i;
@@ -1010,6 +1010,7 @@ tick_run(struct Server *s)
 				s->session.last_emit_ts[k] =
 				    s->session.ts[k];
 			s->session.last_emit_valid = 1;
+			last_state28_ms = now_ms;
 		}
 	}
 
