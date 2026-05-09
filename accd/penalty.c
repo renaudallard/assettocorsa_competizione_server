@@ -140,6 +140,15 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	if (exe_kind == EXE_DQ)
 		s->cars[car_id].race.disqualified = 1;
 	e->issued_ms = mono_ms();
+	/*
+	 * Bump standings_seq so tick_run's leaderboard broadcaster fires
+	 * within one tick.  Without this, the new penalty rides the 75 s
+	 * useAsyncLeaderboard cadence; the chat text reaches the client
+	 * but the per-car penalty fields in 0x36 (the source the AC2
+	 * client's penalty HUD state machine reads) aren't updated until
+	 * the next periodic emit, so DT/SG never visibly counts down.
+	 */
+	s->session.standings_seq++;
 }
 
 /*
@@ -349,6 +358,11 @@ penalty_serve_front(struct Server *s, int car_id)
 	 */
 	q->slots[idx].served = 1;
 	q->slots[idx].laps_remaining = 0;
+	/*
+	 * Bump standings_seq so the next 0x36 advertises the served
+	 * flag, allowing the AC2 client to clear the DT/SG HUD prompt.
+	 */
+	s->session.standings_seq++;
 }
 
 void
