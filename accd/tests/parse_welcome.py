@@ -346,7 +346,7 @@ def main():
     o = base(); n = r.u8();  label(o, 1, "lb.sect_count", n)
     for k in range(n):
         o = base(); v = r.u32(); label(o, 4, f"lb.sect[{k}]", v)
-    o = base(); v = r.u8();  label(o, 1, "lb.cvar8", v)
+    o = base(); cvar8 = r.u8(); label(o, 1, "lb.cvar8", cvar8)
     o = base(); nc = r.u16(); label(o, 2, "lb.entry_count", nc)
     for c in range(nc):
         print(f"  -- LeaderboardEntry[{c}] --")
@@ -360,20 +360,18 @@ def main():
         if has_pen:
             o = base(); v = r.u16(); label(o, 2, f"    entry.pen_kind", v)
             o = base(); v = r.f32(); label(o, 4, f"    entry.pen_remaining", v)
-        if v:
-            pass
-        # cvar8-gated u8: missingMandatoryPitstop / formation_mid_passed
-        o = base(); v = r.u8(); label(o, 1, f"    entry.cvar8_byte (+0x204)", v)
+        if cvar8:
+            o = base(); v = r.u8(); label(o, 1, f"    entry.cvar8_byte (+0x204)", v)
         o = base(); pq_count = r.u8(); label(o, 1, f"    entry.pq_count", pq_count)
         for p in range(pq_count):
             o = base(); v = r.u32(); label(o, 4, f"    entry.pq[{p}]", v)
         o = base(); ndrv = r.u8(); label(o, 1, f"    entry.driver_count", ndrv)
         for d in range(ndrv):
             print(f"    --- entry.driver[{d}] ---")
-            o = base(); v = r.ksstr(); label(o, len(v) + 2, "      steam_id", repr(v))
-            o = base(); v = r.ksstr(); label(o, len(v) + 2, "      short_name", repr(v))
-            o = base(); v = r.ksstr(); label(o, len(v) + 2, "      first_name", repr(v))
-            o = base(); v = r.ksstr(); label(o, len(v) + 2, "      last_name", repr(v))
+            o = base(); v = r.fmt_a(); label(o, 1 + len(v) * 4, "      steam_id", repr(v))
+            o = base(); v = r.fmt_a(); label(o, 1 + len(v) * 4, "      short_name", repr(v))
+            o = base(); v = r.fmt_a(); label(o, 1 + len(v) * 4, "      first_name", repr(v))
+            o = base(); v = r.fmt_a(); label(o, 1 + len(v) * 4, "      last_name", repr(v))
             o = base(); v = r.u8();    label(o, 1, "      driver_category", v)
             o = base(); v = r.u16();   label(o, 2, "      nationality", v)
         # 6 fields after driver list: u16, u32, u32, u16, u32, u8
@@ -408,21 +406,18 @@ def main():
     lb_len = r.pos - lb_start
     print(f"[Leaderboard total: {lb_len} B]")
 
-    # Top-level WeatherData layout in misano frame 46872 doesn't match the
-    # static-RE-derived FUN_1434f64d0 (12 u32 + 2 u16) signature.  The actual
-    # wire has 11 fixed u32/f32 + i16 nSine + nSine × u32 + i16 nCosine +
-    # nCosine × u32 (with Fourier coefficients populated for live weather).
-    # Parser walks 11 fixed; arrays are tentatively read on the assumption
-    # that the i16 right after fixed is a small count.  If it isn't, dump
-    # raw bytes and skip the rest of the block by inferring the size from
-    # the downstream-block alignment (TC starts immediately after TWD).
+    # Top-level WeatherData wire: 12 fixed u32/f32 + i16 nSine + nSine x f32
+    # + i16 nCosine + nCosine x f32 (Fourier coefficients).  Matches
+    # FUN_14011e660 static decomp (12 u32 from struct +0x28..+0x58, with
+    # +0x2c skipped) byte-for-byte; pcap-verified across both misano
+    # welcome frames.
     print(f"\n=== Top-level WeatherData (starts at body offset {r.pos}) ===")
     twd_start = r.pos
     DOWNSTREAM_FIXED = 68 + 70 + 2 + 19 + 37 + 3  # TC + track_records + dirt + MTR + RatingSeries + tail; needs the # of sessions in track_records though
     expected_twd = (len(r.buf) - 199) - r.pos     # rough: trailer end - 199 B - cursor
     print(f"  (estimated TWD size from end alignment: {expected_twd} B)")
-    print("11 fixed u32/f32 fields:")
-    for k in range(11):
+    print("12 fixed u32/f32 fields:")
+    for k in range(12):
         o = base(); v_u = struct.unpack_from("<I", r.buf, r.pos)[0]
         v_f = struct.unpack_from("<f", r.buf, r.pos)[0]
         r.pos += 4
