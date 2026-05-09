@@ -548,7 +548,16 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		}
 		break;
 	case REASON_EXCEEDED_DRIVER_STINT_LIMIT:
-		if (kind == PEN_DQ) return 27;
+		/*
+		 * Wire 27 ('%Disqualified_ExceededDriverStintLimit') has the
+		 * '%' prefix in the AC2 client's penalty-shortcut rdata
+		 * table; the loader at FUN_1412a2d50:235 doesn't recognise
+		 * '%' as a special prefix (bitfield 0x80003601 has no bit
+		 * for 0x25), so the key gets stored verbatim and downstream
+		 * localization lookups fail.  Substitute the IgnoredDriverStint
+		 * DQ wire (26) which renders cleanly.
+		 */
+		if (kind == PEN_DQ) return 26;
 		break;
 	case REASON_DRIVER_RAN_NO_STINT:
 		if (kind == PEN_DQ) return 28;
@@ -564,10 +573,21 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		}
 		break;
 	case REASON_WRONG_POSITION_ON_START:
+		/*
+		 * Wires 33..35 ('!DriveThrough_WrongPositionOnStart' etc.)
+		 * have the '!' prefix; the AC2 client loader at
+		 * FUN_1412a2d50:426-429 strips the prefix and calls
+		 * FUN_1411fea20 to DELETE the entry from the runtime
+		 * penalty-shortcut hash map.  Wire codes 33..35 are
+		 * therefore impossible to render on the client.  Fall
+		 * through to the SpeedingOnStart wire codes (30..32) which
+		 * carry the same DT/SG30/DQ severities and a renderable
+		 * label.
+		 */
 		switch (kind) {
-		case PEN_DT: case PEN_DTC:	return 33;
-		case PEN_SG30: case PEN_SG30C:	return 34;
-		case PEN_DQ:			return 35;
+		case PEN_DT: case PEN_DTC:	return 30;
+		case PEN_SG30: case PEN_SG30C:	return 31;
+		case PEN_DQ:			return 32;
 		}
 		break;
 	}
