@@ -991,6 +991,20 @@ client_category_to_reason(uint8_t category)
 	case 11:	return REASON_IGNORED_MANDATORY_PIT;	/* alias of 6 */
 	case 12:	return REASON_EXCEEDED_DRIVER_STINT_LIMIT;
 	case 13:	return REASON_DRIVER_RAN_NO_STINT;
+	/*
+	 * Cats 16/17 come from the AC2 client's green-flag state checker
+	 * (FUN_140e5ab60).  16 = speed-based escalation, 17 = damage-based
+	 * escalation; both fire at race start when the per-car severity
+	 * scores cross thresholds.  Map both to SpeedingOnStart so the
+	 * DT/SG widget gets wire codes 30..32 which render normally;
+	 * the WrongPositionOnStart group (33..35) is `!`-prefixed in the
+	 * rdata penalty-shortcut table and the AC2 widget renderer
+	 * appears to skip those, leaving the player with only the chat
+	 * banner.
+	 */
+	case 16:	/* SpeedingOnStart (speed_sev >= damage_sev) */
+	case 17:	/* damage-escalated start state */
+		return REASON_SPEEDING_ON_START;
 	case 1:		/* Collision — no enum; race-control fallback. */
 	case 2:		/* IllegalOvertake — no enum; race-control fallback. */
 	case 7:		/* UnsafeRejoin — no enum. */
