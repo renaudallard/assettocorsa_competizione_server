@@ -683,7 +683,30 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 * Porsche 991 GT3 R — the "always Porsche in garage" regression.
 	 */
 	if (wr_u8(bb, ec->car_model) < 0) return -1;
-	if (wr_u8(bb, ec->cup_category) < 0) return -1;
+	{
+		/*
+		 * Kunos derives cup_category from the driver's category
+		 * (conn+0xa017c) at handshake time, not from the wire
+		 * carInfo cup byte:
+		 *   driver_category 0 (Bronze)   -> cup 2 (Am)
+		 *   driver_category 1 (Silver)   -> cup 3 (ProAm)
+		 *   driver_category 2 (Gold)     -> cup 0 (Pro)
+		 *   driver_category 3 (Platinum) -> cup 0 (Pro)
+		 *   else                         -> cup 4
+		 * Verified at FUN_140025690:496-505 in accServer.exe.
+		 * The ec->cup_category field is left set by handshake
+		 * parsing but the wire-emit value is the derived form.
+		 */
+		uint8_t dc = ec->drivers[ec->current_driver_index].driver_category;
+		uint8_t cup;
+		switch (dc) {
+		case 0:	cup = 2; break;
+		case 1:	cup = 3; break;
+		case 2: case 3:	cup = 0; break;
+		default:	cup = 4; break;
+		}
+		if (wr_u8(bb, cup) < 0) return -1;
+	}
 	if (wr_u16(bb, 0) < 0) return -1;
 
 	{
