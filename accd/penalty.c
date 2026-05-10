@@ -194,6 +194,21 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		return 0;
 	}
 
+	/*
+	 * Kunos's FUN_140125f50:140-144 rewrites a non-forced DQ for
+	 * IgnoredMandatoryPit (cat=6) into a 130-second TP penalty,
+	 * with the stored category overridden to 8 (Trolling).  The
+	 * wire emit ends up as wire 14 (TP universal) with value 0x82.
+	 * Mirror that here so the post-enqueue 0x36 tail matches kunos
+	 * byte-for-byte.
+	 */
+	if (exe_kind == EXE_DQ && !force &&
+	    reason == REASON_IGNORED_MANDATORY_PIT) {
+		exe_kind = EXE_TP;
+		value = 130;
+		category = 8;
+	}
+
 	/* Immediate-effect special case: DQ. */
 	if (exe_kind == EXE_DQ) {
 		penalty_materialize(s, car_id, EXE_DQ, collision,

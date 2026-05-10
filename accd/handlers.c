@@ -1159,12 +1159,20 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		uint8_t reason = client_category_to_reason(category);
 		int32_t val = value > 0 ? value : 3;
 
+		/*
+		 * force = 1 only when cat == 0 (Cutting), per kunos's
+		 * dispatcher (FUN_1400142f0 case 0x41): cVar10 = (server-
+		 * flag && cat == 0) ? 1 : 0.  For non-cutting categories
+		 * force=0, which is what gates the cat=6 (Ignored
+		 * MandatoryPit) DQ-to-TP130 conversion in penalty_enqueue.
+		 */
+		int force = (category == 0) ? 1 : 0;
 		log_info("client-reported penalty: car=%d kind=%u "
 		    "category=%u -> reason=%u",
 		    c->car_id, (unsigned)kind, (unsigned)category,
 		    (unsigned)reason);
-		(void)penalty_enqueue(s, c->car_id, kind, category, val, 1,
-		    0, reason);
+		(void)penalty_enqueue(s, c->car_id, kind, category, val,
+		    force, 0, reason);
 		/*
 		 * No chat broadcast here, matches kunos.  Per
 		 * accServer.exe FUN_1400142f0:751, the 0x41 dispatcher only
