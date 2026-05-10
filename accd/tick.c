@@ -79,6 +79,7 @@
 #define CADENCE_KEEPALIVE_MS		1000	/* 0x14 ~1 Hz */
 #define CADENCE_WEATHER_MS		5000	/* 0x37 every 5 s */
 #define CADENCE_LEADERBOARD_MS		75000	/* 0x36 async-coalesce */
+#define MIN_LEADERBOARD_GAP_MS		2000	/* 0x36 sync rate-limit */
 #define CADENCE_RATINGS_MS		81000	/* 0x4e debounce (.rdata) */
 
 /*
@@ -906,20 +907,21 @@ tick_run(struct Server *s)
 
 	/*
 	 * Leaderboard rebroadcast.  useAsyncLeaderboard (settings.json,
-	 * default 0 = sync) fires on every standings_seq change with no
-	 * cadence gate, mirroring exe FUN_14002f710 which broadcasts 0x36
-	 * whenever the dirty flag is set.  A 583 s 2-bot pcap of
-	 * accServer.exe confirmed it never fires on a periodic timer:
-	 * 0x36 reached each client only at car-join, session-transition,
-	 * and peer-leave.  Async mode (=1) coalesces changes to the
-	 * CADENCE_LEADERBOARD tick, trading staleness for fan-out CPU.
+	 * default 0 = sync) fires on standings_seq change subject to a
+	 * 2 s minimum gap.  Without the gap, accd over-emitted 3-4×
+	 * compared to kunos in penalty-heavy scenarios (4-bot test,
+	 * 2026-05-10): 53 broadcasts vs kunos's 14.  Kunos coalesces
+	 * close penalty events into a single broadcast — the gap
+	 * reproduces the same coalescing.  Async mode (=1) keeps the
+	 * older 75 s coarse cadence for ops who want minimum fan-out.
 	 */
 	{
 		int changed = s->session.standings_seq !=
 		    *last_standings_seq;
 		int cadence = now_ms - last_leaderboard_ms >=
-		    CADENCE_LEADERBOARD_MS;
-		int fire = changed && (!s->use_async_leaderboard || cadence);
+		    (s->use_async_leaderboard ? CADENCE_LEADERBOARD_MS
+		                              : MIN_LEADERBOARD_GAP_MS);
+		int fire = changed && cadence;
 
 		if (fire) {
 			*last_standings_seq = s->session.standings_seq;
