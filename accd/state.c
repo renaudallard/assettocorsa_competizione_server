@@ -258,50 +258,16 @@ conn_drop(struct Server *s, struct Conn *c)
 		return;
 
 	/*
-	 * If the connection was authenticated, send a 0x4e rating
-	 * summary to the disconnecting client, then emit a 0x24
-	 * disconnect notify to every remaining connected client.
+	 * If the connection was authenticated, broadcast 0x24 to
+	 * every remaining connected client.  Kunos pcap (2026-05-09)
+	 * does NOT emit a per-disconnect 0x4e to the leaving peer;
+	 * the standalone 0x4e is only the periodic refresh gated by
+	 * CADENCE_RATINGS_MS in tick_run.
 	 */
 	if (c->state == CONN_AUTH && c->car_id >= 0 &&
 	    c->car_id < ACC_MAX_CARS) {
 		struct ByteBuf bb;
-		struct DriverInfo *drv;
-
-		/*
-		 * 0x4e rating summary to the disconnecting client.
-		 * See handshake.c welcome path for the per-entry
-		 * field layout (must match byte-for-byte).
-		 */
-		drv = &s->cars[c->car_id].drivers[0];
-		{
-			uint16_t sa = 5000, tr = 5000;
-			ratings_get(s, drv->steam_id, &sa, &tr);
-			bb_init(&bb);
-			/*
-			 * Per-entry wire shape verified against AC2 reader
-			 * 143526030.c:786-832 (case 0x4e): u16 car_id, u8 0,
-			 * u16 sa, u16 tr, u32 (discarded by AC2),
-			 * kson_string steam_id.  The discard u32 is
-			 * consumed verbatim by the two i16(-1) below
-			 * (bit pattern 0xFFFFFFFF), so AC2 sees the
-			 * canonical 11-byte pre-string layout.  Earlier
-			 * code added a separate u32 0xFFFFFFFF after the
-			 * sentinels which made AC2 parse our u32 as the
-			 * str_a length-prefix and over-read 1020 bytes
-			 * past the steam_id.
-			 */
-			if (wr_u8(&bb, SRV_RATING_SUMMARY) == 0 &&
-			    wr_u8(&bb, 1) == 0 &&
-			    wr_u16(&bb, s->cars[c->car_id].car_id) == 0 &&
-			    wr_u8(&bb, 0) == 0 &&
-			    wr_u16(&bb, sa) == 0 &&
-			    wr_u16(&bb, tr) == 0 &&
-			    wr_i16(&bb, -1) == 0 &&
-			    wr_i16(&bb, -1) == 0 &&
-			    wr_str_a(&bb, drv->steam_id) == 0)
-				(void)conn_send_framed(c, bb.data, bb.wpos);
-			bb_free(&bb);
-		}
+		struct DriverInfo *drv = &s->cars[c->car_id].drivers[0];
 
 		/* 0x24 disconnect notify to all other clients. */
 		bb_init(&bb);
