@@ -126,17 +126,15 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	e->reason = reason;
 	e->collision = collision ? 1 : 0;
 	e->served = 0;
-	switch (exe_kind) {
-	case EXE_DT:
-	case EXE_SG10:
-	case EXE_SG20:
-	case EXE_SG30:
-		e->laps_remaining = 3;	/* serve within 3 laps */
-		break;
-	default:
-		e->laps_remaining = 0;
-		break;
-	}
+	/*
+	 * laps_remaining holds the caller-supplied value verbatim.
+	 * For DT/SG it's the lap countdown; for TP it's the time
+	 * penalty in seconds; in either case kunos's pcap (2026-05-10
+	 * matrix test) shows the original 0x41 value byte ride through
+	 * the per-car tail byte 1 of the 0x36 leaderboard.  Earlier
+	 * code clamped DT/SG to 3 and TP to 0, dropping the input.
+	 */
+	e->laps_remaining = value;
 	if (exe_kind == EXE_DQ)
 		s->cars[car_id].race.disqualified = 1;
 	e->issued_ms = mono_ms();
