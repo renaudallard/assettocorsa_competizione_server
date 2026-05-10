@@ -2235,18 +2235,16 @@ reply:
 	    (unsigned)c->conn_id, s->udp_port);
 
 	/*
-	 * Recompute standings now that the new car has been added
-	 * so the server-tick loop notices the standings_seq bump
-	 * on its next pass and broadcasts a fresh 0x36 leaderboard
-	 * to every connected client.  Without this, existing peers
-	 * never learn that the new player's car joined the session
-	 * and their "N/N" UI stays stuck at 1/1.
+	 * Recompute standings now that the new car has been added.
+	 * The welcome path below sends an explicit 0x36 to the joiner;
+	 * we don't want a duplicate event-driven emit on the next tick,
+	 * so anchor last_standings_seq to the current standings_seq
+	 * value AFTER recompute.  Kunos pcap (2026-05-09) shows kunos
+	 * emits exactly one 0x36 to a connecting peer; subsequent emits
+	 * are event-driven (e.g., 0x41 enqueue).
 	 */
 	session_recompute_standings(s);
-	/* Force a leaderboard rebroadcast even if positions didn't
-	 * change — the car count changed which is enough for clients
-	 * to update their N/N display. */
-	s->session.standings_seq++;
+	s->session.last_standings_seq = s->session.standings_seq;
 
 	/*
 	 * After a successful accept, fan out 0x2e new-client-
