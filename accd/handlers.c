@@ -1121,8 +1121,12 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		s->session.standings_seq = prev_seq + 1;
 		return 0;
 	}
-	if (s->cars[c->car_id].race.disqualified)
-		return 0;
+	/*
+	 * Note: we used to early-exit here on `disqualified`, but kunos
+	 * (FUN_140125f50) keeps processing 0x41 reports after a DQ —
+	 * the per-car tail bytes update with each new penalty even on a
+	 * disqualified slot.  Drop the gate for byte parity with kunos.
+	 */
 	/*
 	 * Only accept client penalty self-reports during the live race
 	 * (PHASE_SESSION / OVERTIME).  The ACC client fires a 0x41 right
