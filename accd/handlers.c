@@ -308,32 +308,37 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 					race->best_sectors_ms[si] = st;
 			}
 		}
-		race->current_lap_ms = 0;
-		race->out_of_track_latched = 0;
-		race->cuts_this_lap = 0;
-		race->last_cut_ms = 0;
-		race->sector_ms[0] = 0;
-		race->sector_ms[1] = 0;
-		race->sector_ms[2] = 0;
-		/*
-		 * Broadcast the cut-counter reset.  h_out_of_track sends a
-		 * fresh 0x3c on every cut with the running count; without a
-		 * matching zero-broadcast at the lap boundary the last count
-		 * stays visible on every client's HUD into the next lap,
-		 * producing an orange "N" badge that looks like a penalty
-		 * even though no penalty exists.  Send to ALL including the
-		 * sender so the driver's own HUD row clears as well.
-		 */
 		{
-			struct ByteBuf reset;
-			bb_init(&reset);
-			if (wr_u8(&reset, SRV_OUT_OF_TRACK_RELAY) == 0 &&
-			    wr_u16(&reset, s->cars[c->car_id].car_id) == 0 &&
-			    wr_u16(&reset, 0) == 0 &&
-			    wr_u32(&reset, 0) == 0)
-				(void)bcast_all(s, reset.data, reset.wpos,
-				    BCAST_EXCEPT_NONE);
-			bb_free(&reset);
+			uint8_t had_cuts = race->cuts_this_lap;
+
+			race->current_lap_ms = 0;
+			race->out_of_track_latched = 0;
+			race->cuts_this_lap = 0;
+			race->last_cut_ms = 0;
+			race->sector_ms[0] = 0;
+			race->sector_ms[1] = 0;
+			race->sector_ms[2] = 0;
+			/*
+			 * Broadcast the cut-counter reset only when the
+			 * previous lap actually had cuts to clear.  Kunos
+			 * pcap (2026-05-09) shows zero 0x3c emits on
+			 * lap-boundaries for clean laps, so emitting
+			 * unconditionally was a divergence; the AC2 client
+			 * clears its own HUD per-lap when no cut count was
+			 * advertised this lap.
+			 */
+			if (had_cuts > 0) {
+				struct ByteBuf reset;
+				bb_init(&reset);
+				if (wr_u8(&reset, SRV_OUT_OF_TRACK_RELAY) == 0 &&
+				    wr_u16(&reset,
+					s->cars[c->car_id].car_id) == 0 &&
+				    wr_u16(&reset, 0) == 0 &&
+				    wr_u32(&reset, 0) == 0)
+					(void)bcast_all(s, reset.data,
+					    reset.wpos, BCAST_EXCEPT_NONE);
+				bb_free(&reset);
+			}
 		}
 		/*
 		 * Feed the local rating EWMA: clean lap +5 SA, cut -25,
@@ -490,18 +495,23 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 * orange "N" cut badge stuck into the next lap.
 		 */
 		{
-			struct ByteBuf reset;
+			uint8_t had_cuts = race->cuts_this_lap;
+
 			race->cuts_this_lap = 0;
 			race->last_cut_ms = 0;
 			race->out_of_track_latched = 0;
-			bb_init(&reset);
-			if (wr_u8(&reset, SRV_OUT_OF_TRACK_RELAY) == 0 &&
-			    wr_u16(&reset, s->cars[c->car_id].car_id) == 0 &&
-			    wr_u16(&reset, 0) == 0 &&
-			    wr_u32(&reset, 0) == 0)
-				(void)bcast_all(s, reset.data, reset.wpos,
-				    BCAST_EXCEPT_NONE);
-			bb_free(&reset);
+			if (had_cuts > 0) {
+				struct ByteBuf reset;
+				bb_init(&reset);
+				if (wr_u8(&reset, SRV_OUT_OF_TRACK_RELAY) == 0 &&
+				    wr_u16(&reset,
+					s->cars[c->car_id].car_id) == 0 &&
+				    wr_u16(&reset, 0) == 0 &&
+				    wr_u32(&reset, 0) == 0)
+					(void)bcast_all(s, reset.data,
+					    reset.wpos, BCAST_EXCEPT_NONE);
+				bb_free(&reset);
+			}
 		}
 	}
 	log_info("sector split single: car=%d split=%d lap=%d "
