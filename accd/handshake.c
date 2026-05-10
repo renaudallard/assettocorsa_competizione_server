@@ -2326,11 +2326,14 @@ reply:
 				bb_free(&lb);
 			}
 
-			/* 0x37 weather status. */
-			bb_init(&wb);
-			if (weather_build_broadcast(s, &wb) == 0)
-				(void)bcast_send_one(c, wb.data, wb.wpos);
-			bb_free(&wb);
+			/*
+			 * No standalone 0x37 weather here.  The welcome
+			 * trailer's TopLevel WeatherData + TrackConditions
+			 * blocks already carry the joiner's weather state.
+			 * Kunos pcap (2026-05-10 2-bot test) shows kunos
+			 * emits its first 0x37 only on the 5 s cadence; a
+			 * welcome-time 0x37 was a redundant extra frame.
+			 */
 
 			/*
 			 * No 0x4e rating summary here.  The welcome trailer's
