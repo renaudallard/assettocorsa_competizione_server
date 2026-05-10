@@ -920,10 +920,18 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 * matching kunos for the common single-penalty case.
 	 */
 	{
+		/*
+		 * Kunos's FUN_140125f50 stores at most one active-penalty
+		 * entry per car (the list at param_1+0x30 is overwritten
+		 * on each report — line 152 of the decomp), so the per-
+		 * car tail bytes always reflect the LATEST penalty.  Our
+		 * pq is a multi-slot queue, so emulate "latest" by
+		 * scanning from the tail.
+		 */
 		uint8_t b0 = 0, b1 = 0;
 		int pi;
 
-		for (pi = 0; pi < pq->count; pi++) {
+		for (pi = pq->count - 1; pi >= 0; pi--) {
 			if (pq->slots[pi].served)
 				continue;
 			b0 = (uint8_t)penalty_wire_value(
