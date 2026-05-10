@@ -182,8 +182,16 @@ server_init(struct Server *s)
 	lobby_init(&s->lobby);
 	for (int i = 0; i < ACC_MAX_CARS; i++) {
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
+		s->cars[i].last_elo = 0xff;	/* unrated sentinel */
 		car_runtime_reset_gate(&s->cars[i].rt);
 	}
+	/*
+	 * Anchor the 0x4e debounce to server start so the periodic
+	 * gate measures elapsed-since-startup rather than absolute
+	 * monotonic ms (which would fire on the first tick because
+	 * mono_ms - 0 >= 81000 is trivially true at boot).
+	 */
+	s->ratings_last_emit_ms = mono_ms();
 }
 
 void
@@ -409,6 +417,7 @@ server_alloc_car(struct Server *s)
 		if (!s->cars[i].used) {
 			s->cars[i].used = 1;
 			s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
+			s->cars[i].last_elo = 0xff;
 			return i;
 		}
 	}
