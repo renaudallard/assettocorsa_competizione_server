@@ -2325,15 +2325,27 @@ reply:
 			 * prefixes 0x36 onto the same FUN_140034a40
 			 * assist_rules+leaderboard block emitted inside
 			 * the welcome trailer.
+			 *
+			 * Send the buffer to the joiner, then fan it out
+			 * to every other connected peer so they learn that
+			 * the new car appeared.  Kunos pcap (2026-05-10
+			 * 2-bot test) shows the real server emits exactly
+			 * this pattern: one 0x36 to the new joiner + one
+			 * 0x36 to each existing peer with the updated car
+			 * list.
 			 */
 			{
 				struct ByteBuf lb;
 
 				bb_init(&lb);
 				if (wr_u8(&lb, SRV_LEADERBOARD_BCAST) == 0 &&
-				    write_leaderboard_section(&lb, s) == 0)
+				    write_leaderboard_section(&lb, s) == 0) {
 					(void)bcast_send_one(c, lb.data,
 					    lb.wpos);
+					if (s->nconns > 1)
+						(void)bcast_all(s, lb.data,
+						    lb.wpos, c->conn_id);
+				}
 				bb_free(&lb);
 			}
 
