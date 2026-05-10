@@ -839,26 +839,15 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				l1_n = si + 1;
 
 		/*
-		 * l2 carries the full per-car lap history ring buffer.
-		 * Invalid laps store their real ms too so the 0x56
-		 * garage-lookup reply (which shares the same ring
-		 * buffer) surfaces every completion, not just clean
-		 * ones.  The Last-Lap HUD timer is driven by the
-		 * +0x1b0 slot above, not by this list.
-		 *
-		 * Empty case: emit u8(0) and no entries, matching the
-		 * exe (FUN_140034210:316-325 derives count from the raw
-		 * std::vector<uint32_t> pointers, which is 0 for a car
-		 * that hasn't completed a lap yet).  Pre-v0.2.99 we
-		 * emitted three LAP_TIME_INVALID sentinels here, which
-		 * (a) painted three blank/dashed rows on the HUD before
-		 * any lap was driven and (b) forced wide_flag=1 even
-		 * pre-race, switching the sector list to u32 encoding
-		 * while the exe stayed in u16.
+		 * l2 carries the per-car lap history.  Pcap diff against
+		 * kunos accServer (2026-05-09) shows kunos always emits
+		 * 3 entries even when the car has driven 0 laps; the
+		 * std::vector is pre-allocated with 3 INT32_MAX sentinels
+		 * at car ctor time, and the real laps fill in later.
+		 * Padding to 3 means the AC2 client's lapHistoryStored
+		 * slot count stays stable across the record's lifecycle.
 		 */
-		if (race->lap_history_count == 0) {
-			l2_n = 0;
-		} else {
+		{
 			int nh = race->lap_history_count < ACC_LAP_HISTORY
 			    ? race->lap_history_count : ACC_LAP_HISTORY;
 			int start = race->lap_history_count
@@ -866,11 +855,13 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			    : race->lap_history_count % ACC_LAP_HISTORY;
 			int k;
 
-			l2_n = nh;
+			l2_n = nh < 3 ? 3 : nh;
 			for (k = 0; k < nh; k++) {
 				int idx = (start + k) % ACC_LAP_HISTORY;
 				l2_buf[k] = race->lap_history_ms[idx];
 			}
+			for (; k < l2_n; k++)
+				l2_buf[k] = LAP_TIME_INVALID;
 		}
 
 		/*
