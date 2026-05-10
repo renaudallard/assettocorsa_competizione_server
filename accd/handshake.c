@@ -907,16 +907,33 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	}
 
 	/*
-	 * Final two bytes: FUN_140034210 writes car+0x200 then
-	 * car+0x201.  car+0x200 is the session-final latch (set only
-	 * once a car has crossed the finish line in a completed
-	 * session); car+0x201's semantic is unknown but also quiescent
-	 * during normal play.  formation_lap_done (car+0x204) was
-	 * already emitted in the cvar8-gated block above — don't
-	 * repeat it here.
+	 * Final two bytes: FUN_140034210 reads car+0x200 then car+0x201.
+	 * Pcap diff against kunos accServer (2026-05-09) showed these go
+	 * from 00 00 (no active penalty) to (wire_code, value) once a
+	 * client 0x41 lands in the queue.  Kunos populates them at
+	 * session boundary via FUN_140128a80 then FUN_14012ab30/aca0
+	 * then FUN_1400f03b0 (the (kind,cat) wire-code dispatcher); the
+	 * dispatcher's u16 output carries the wire code in byte 0 and
+	 * the per-penalty u8 (severity / laps) in byte 1.
+	 *
+	 * For accd we collapse this to "head unserved penalty" data,
+	 * matching kunos for the common single-penalty case.
 	 */
-	if (wr_u8(bb, 0) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
+	{
+		uint8_t b0 = 0, b1 = 0;
+		int pi;
+
+		for (pi = 0; pi < pq->count; pi++) {
+			if (pq->slots[pi].served)
+				continue;
+			b0 = (uint8_t)penalty_wire_value(
+			    pq->slots[pi].kind, pq->slots[pi].reason);
+			b1 = (uint8_t)pq->slots[pi].laps_remaining;
+			break;
+		}
+		if (wr_u8(bb, b0) < 0) return -1;
+		if (wr_u8(bb, b1) < 0) return -1;
+	}
 	return 0;
 }
 
