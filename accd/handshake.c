@@ -690,15 +690,15 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 
 	{
 		/*
-		 * Find the first unserved entry to populate the active-
-		 * penalty prefix.  Now that penalty_serve_front leaves
-		 * served entries in the queue (so results.json can report
-		 * them), slots[0] may be a served record while a later
-		 * slot still holds the live penalty.
+		 * Find the first unserved + non-pending entry to populate
+		 * the active-penalty prefix.  Pending entries are client-
+		 * reported via 0x41 and feed the per-car tail bytes only,
+		 * not the active_pen prefix (kunos's car+0xc8/+0xcc are
+		 * populated by a different path).
 		 */
 		int active = -1;
 		for (pi = 0; pi < pq->count; pi++) {
-			if (!pq->slots[pi].served) {
+			if (!pq->slots[pi].served && !pq->slots[pi].pending) {
 				active = pi;
 				break;
 			}
@@ -744,11 +744,22 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		if (wr_u8(bb, remaining) < 0) return -1;
 	}
 
-	if (wr_u8(bb, pq->count) < 0) return -1;
-	for (pi = 0; pi < pq->count; pi++)
-		if (wr_i32(bb, (int32_t)penalty_wire_value(
-		    pq->slots[pi].kind,
-		    pq->slots[pi].reason)) < 0) return -1;
+	{
+		/* pq array excludes pending (client-0x41) entries, they
+		 * feed only the per-car tail bytes, not the queue list. */
+		uint8_t pq_emit = 0;
+		for (pi = 0; pi < pq->count; pi++)
+			if (!pq->slots[pi].pending)
+				pq_emit++;
+		if (wr_u8(bb, pq_emit) < 0) return -1;
+		for (pi = 0; pi < pq->count; pi++) {
+			if (pq->slots[pi].pending)
+				continue;
+			if (wr_i32(bb, (int32_t)penalty_wire_value(
+			    pq->slots[pi].kind,
+			    pq->slots[pi].reason)) < 0) return -1;
+		}
+	}
 
 	{
 		uint8_t dcount = ec->driver_count;

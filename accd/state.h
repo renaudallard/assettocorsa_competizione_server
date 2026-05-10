@@ -167,6 +167,7 @@ struct PenaltyEntry {
 	uint8_t		reason;		/* enum penalty_reason */
 	int32_t		laps_remaining;	/* drive-through countdown */
 	uint64_t	issued_ms;
+	uint8_t		pending;	/* 1 = client-reported, awaits server validation */
 };
 
 struct PenaltyQueue {

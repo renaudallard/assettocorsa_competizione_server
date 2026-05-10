@@ -1155,14 +1155,27 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		(void)penalty_enqueue(s, c->car_id, kind, category, val, 1,
 		    0, reason);
 		/*
-		 * No chat broadcast here — matches kunos.  Per
+		 * No chat broadcast here, matches kunos.  Per
 		 * accServer.exe FUN_1400142f0:751, the 0x41 dispatcher only
 		 * calls FUN_140125f50 (penalty enqueue) and never emits
-		 * 0x2b chat.  The chat path (FUN_14001dae0) is for
-		 * admin commands only.  The AC2 client handles the player's
-		 * own banner via its local detection chain (FUN_140e59bf0
-		 * → FUN_140e643d0 → widget delegate).
+		 * 0x2b chat.  The chat path (FUN_14001dae0) is for admin
+		 * commands only.  The AC2 client handles the player's own
+		 * banner via its local detection chain (FUN_140e59bf0 then
+		 * FUN_140e643d0 then the widget delegate).
+		 *
+		 * Mark the freshly-enqueued entry as pending so the 0x36
+		 * builder emits it only via the per-car tail bytes (matching
+		 * kunos's FUN_14012ab30 path) and NOT via the active_pen
+		 * prefix.  Kunos's active_pen reads from car+0xc8/+0xcc
+		 * which only get populated when the AC2 client crosses the
+		 * detection threshold and the server confirms; a 0x41 report
+		 * alone doesn't trigger that.
 		 */
+		{
+			struct PenaltyQueue *pq = &s->cars[c->car_id].race.pen;
+			if (pq->count > 0)
+				pq->slots[pq->count - 1].pending = 1;
+		}
 	}
 	return 0;
 }
