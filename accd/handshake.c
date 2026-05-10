@@ -548,17 +548,15 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
 	int j, d, nc = 0;
 	/*
-	 * Always set cvar8=1.  The byte gates whether AC2 reads the
-	 * per-car +0x204 missingMandatoryPitstop field from the wire;
-	 * if cvar8=0, AC2 leaves the field at its constructor default
-	 * 0xffffffff (rendered as 255 in the OBLIGATOIRE widget).
-	 * Kunos always emits cvar8=1 + inner byte=0 so the widget
-	 * sees 0/0 and stays hidden.  Earlier code raised cvar8 only
-	 * after formation_mid_passed flipped on the leader, leaving
-	 * the widget at "OBLIGATOIRE 255/0 INVALIDE EXIGENCES" all
-	 * the way through the formation lap.
+	 * cvar8 gates whether AC2 reads the per-car +0x204
+	 * missingMandatoryPitstop field from the wire.  Kunos pcap
+	 * (2026-05-09) shows cvar8=0 in Practice with no mandatory pit;
+	 * the AC2 client's OBLIGATOIRE widget only renders when the
+	 * event has a mandatory-pit requirement, so leaving the wire
+	 * field implicit (cvar8=0) keeps the widget hidden in non-pit
+	 * sessions while remaining byte-exact to kunos.
 	 */
-	uint8_t cvar8 = 1;
+	uint8_t cvar8 = (s->mandatory_pit_count > 0) ? 1 : 0;
 	int32_t sess_best_lap = INT32_MAX;
 	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
 
