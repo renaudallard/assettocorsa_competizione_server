@@ -98,6 +98,7 @@ penalty_pen_kind_of(uint8_t exe_kind, int collision, int32_t value)
 	case EXE_SG30:	return collision ? PEN_SG30C : PEN_SG30;
 	case EXE_TP:	return value >= 15 ? PEN_TP15 : PEN_TP5;
 	case EXE_DQ:	return PEN_DQ;
+	case EXE_RBL:	return PEN_RBL;
 	default:	return PEN_NONE;
 	}
 }
@@ -180,11 +181,18 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
 		return -1;
-	if (exe_kind == EXE_NONE || exe_kind > EXE_DQ)
+	if (exe_kind == EXE_NONE || exe_kind > EXE_RBL)
 		return -1;
 
 	race = &s->cars[car_id].race;
 	now_ms = mono_ms();
+
+	/* Immediate-effect special case: RBL (RemoveBestLaptime). */
+	if (exe_kind == EXE_RBL) {
+		penalty_materialize(s, car_id, EXE_RBL, collision,
+		    value, reason);
+		return 0;
+	}
 
 	/* Immediate-effect special case: DQ. */
 	if (exe_kind == EXE_DQ) {
@@ -533,7 +541,7 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		case PEN_SG20: case PEN_SG20C:	return 3;
 		case PEN_SG30: case PEN_SG30C:	return 4;
 		case PEN_DQ:			return 5;
-		/* RemoveBestLaptime → 6 (kind=7 in exe; not yet emitted). */
+		case PEN_RBL:			return 6;
 		}
 		break;
 	case REASON_PIT_SPEEDING:
@@ -543,7 +551,7 @@ penalty_wire_value(uint8_t kind, uint8_t reason)
 		case PEN_SG20: case PEN_SG20C:	return 9;
 		case PEN_SG30: case PEN_SG30C:	return 10;
 		case PEN_DQ:			return 11;
-		/* RemoveBestLaptime → 12 (not yet emitted). */
+		case PEN_RBL:			return 12;
 		}
 		break;
 	case REASON_IGNORED_MANDATORY_PIT:

@@ -1093,21 +1093,32 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		return 0;	/* out-of-enum: drop silently */
 	if (kind == EXE_RBL) {
 		/*
-		 * RemoveBestLaptime — qualifying / hot-lap mode only.  The
-		 * client reports a self-detected best-lap-invalidating
-		 * violation (typically a track cut on a hotlap).  Clear the
-		 * car's session best lap and best sectors, then return.
-		 * The DT/SG/DQ ladder is bypassed entirely.
+		 * RemoveBestLaptime, qualifying / hot-lap mode.  Clear
+		 * the car's best lap + best sectors AND enqueue an RBL
+		 * entry so the per-car tail of the next 0x36 carries the
+		 * appropriate wire code (6 for cutting, 12 for pit-speed,
+		 * etc.) per kunos's FUN_1400f03b0 dispatcher.  Mark the
+		 * entry pending so it stays out of the active_pen prefix
+		 * (matches the 0x41 client-report path for other kinds).
 		 */
 		struct CarRaceState *race = &s->cars[c->car_id].race;
 		int d;
+		uint8_t reason = client_category_to_reason(category);
+		uint32_t prev_seq = s->session.standings_seq;
 
 		race->best_lap_ms = 0;
 		for (d = 0; d < 3; d++)
 			race->best_sectors_ms[d] = 0;
-		s->session.standings_seq++;
 		log_info("0x41 RemoveBestLaptime: car=%d best lap cleared",
 		    c->car_id);
+		(void)penalty_enqueue(s, c->car_id, EXE_RBL, category,
+		    value, 0, 0, reason);
+		{
+			struct PenaltyQueue *pq = &s->cars[c->car_id].race.pen;
+			if (pq->count > 0)
+				pq->slots[pq->count - 1].pending = 1;
+		}
+		s->session.standings_seq = prev_seq + 1;
 		return 0;
 	}
 	if (s->cars[c->car_id].race.disqualified)

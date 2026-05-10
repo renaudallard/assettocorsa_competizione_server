@@ -128,6 +128,7 @@ enum session_phase {
  */
 enum penalty_kind {
 	PEN_NONE = 0,
+	PEN_RBL,	/* RemoveBestLaptime (kunos kind=7) */
 	PEN_TP5, PEN_TP15,
 	PEN_DT, PEN_DTC,
 	PEN_SG10, PEN_SG10C,
