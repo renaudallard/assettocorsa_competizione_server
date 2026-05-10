@@ -119,8 +119,20 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
 		return;
 	q = &s->cars[car_id].race.pen;
-	if (q->count >= ACC_MAX_PENALTIES)
-		return;
+	if (q->count >= ACC_MAX_PENALTIES) {
+		/*
+		 * Ring-buffer eviction: drop slot 0 (oldest) so the
+		 * newest entry always lands at slots[count-1] and the
+		 * per-car tail bytes track the most recent penalty.
+		 * Kunos's FUN_140125f50:152 keeps a single-entry-per-car
+		 * list at param_1+0x30; we approximate by keeping a
+		 * sliding window of the latest ACC_MAX_PENALTIES.
+		 */
+		int j;
+		for (j = 0; j < ACC_MAX_PENALTIES - 1; j++)
+			q->slots[j] = q->slots[j + 1];
+		q->count = ACC_MAX_PENALTIES - 1;
+	}
 
 	e = &q->slots[q->count++];
 	e->kind = pen_kind;
