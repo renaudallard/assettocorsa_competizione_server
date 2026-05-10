@@ -2255,38 +2255,15 @@ reply:
 	 * the same.
 	 */
 	{
-		struct ByteBuf notify;
-		uint64_t timestamp_ms;
-		timestamp_ms = mono_ms();
-
 		/*
-		 * Notify already-connected clients that a new car
-		 * joined.  Wire is 0x2e u8 + u16 carId + u64
-		 * system_data (11 bytes), same layout as the regular
-		 * ACP_CAR_SYSTEM_UPDATE relay — see NOTEBOOK_B §5.6.4a.
-		 * The new car's system_data is 0 until the joining
-		 * client sends its first 0x2e; send that 0 rather than
-		 * substituting the server wall-clock as we used to.
+		 * Kunos pcap diff (2026-05-10 2-bot test) shows the real
+		 * server does NOT emit a 0x2e/0x4f broadcast about the new
+		 * joiner to existing peers.  The 0x2e fan-out catches the
+		 * joiner up on already-connected cars (handled in the
+		 * write_existing_car_systems_to() path above); existing
+		 * peers learn about the new car via 0x36 alone.
 		 */
-		bb_init(&notify);
-		if (wr_u8(&notify, SRV_CAR_SYSTEM_RELAY) == 0 &&
-		    wr_u16(&notify, s->cars[c->car_id].car_id) == 0 &&
-		    wr_u64(&notify,
-			s->cars[c->car_id].last_sys_data) == 0)
-			(void)bcast_all(s, notify.data, notify.wpos,
-			    c->conn_id);
-		bb_free(&notify);
-
-		/* Paired 0x4f sub-opcode 1: u8 msg_id + u16 carId +
-		 * u8 sub=1 + u64 timestamp (12 bytes). */
-		bb_init(&notify);
-		if (wr_u8(&notify, SRV_DRIVER_STINT_RELAY) == 0 &&
-		    wr_u16(&notify, s->cars[c->car_id].car_id) == 0 &&
-		    wr_u8(&notify, 1) == 0 &&
-		    wr_u64(&notify, timestamp_ms) == 0)
-			(void)bcast_all(s, notify.data, notify.wpos,
-			    c->conn_id);
-		bb_free(&notify);
+		(void)c;
 
 		/*
 		 * Post-accept welcome sequence matching the real
