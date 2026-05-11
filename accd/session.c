@@ -660,6 +660,19 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 		ss->ts[4] = ss->ts[3] + dur_ms;
 		ss->ts[5] = ss->ts[4] +
 		    (uint64_t)s->session_overtime_s * 1000ull;
+		/*
+		 * Aftercare end: ts[6] must be a real time so
+		 * compute_phase can transition PHASE_COMPLETED ->
+		 * PHASE_ADVANCE and the session manager can wrap to
+		 * the next weekend.  Without this ts[6] stays at the
+		 * UINT64_MAX initial set by session_start (race branch),
+		 * and a race that reaches PHASE_COMPLETED hangs there
+		 * forever — session_advance never fires, the leaderboard
+		 * never resets to session 0, and tail-cadence parity with
+		 * kunos is broken.
+		 */
+		ss->ts[6] = ss->ts[5] +
+		    (uint64_t)s->post_race_s * 1000ull;
 		log_info("green flag (%s): leader norm_pos=%.3f trigger=%.3f "
 		    "active_dur=%llums fire_in=%llums",
 		    silent ? "silent" : "verbose",
