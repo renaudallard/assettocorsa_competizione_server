@@ -85,6 +85,25 @@ int	write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
 		uint16_t session_overtime_s);
 
 /*
+ * 23-byte session result header emitted inside 0x3e
+ * SRV_SESSION_RESULTS.  Pcap-verified against kunos race-end emit;
+ * differs from write_session_tail at byte +0x30 (dayOfWeekend-1 vs
+ * timeMultiplier-1) and the u16 session-type code (P=3, Q=4, R=5
+ * AC2-internal enum, NOT def->session_type 0/4/10).
+ */
+int	write_session_result_header(struct ByteBuf *bb,
+		const struct SessionDef *def, uint16_t session_overtime_s);
+
+/*
+ * 0x36 leaderboard section parameterised by session type.  Default
+ * caller write_leaderboard_section reads the CURRENT session type;
+ * 0x3e race-end emit needs per-entry cvar8 / pq_emit policy, so it
+ * passes the type of each completed session in the result list.
+ */
+int	write_session_leaderboard_section(struct ByteBuf *bb,
+		struct Server *s, uint8_t session_type);
+
+/*
  * Emit the assist_rules + leaderboard section from FUN_140034a40
  * in accServer.exe.  Used by the welcome trailer (0x0b body) and
  * by the standalone 0x36 leaderboard broadcast (prefixed with

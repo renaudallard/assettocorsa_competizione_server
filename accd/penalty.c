@@ -472,6 +472,22 @@ penalty_total_ms(const struct PenaltyQueue *q)
 		return 0;
 	for (i = 0; i < q->count; i++) {
 		const struct PenaltyEntry *p = &q->slots[i];
+		/*
+		 * race_end_tp is set by penalty_convert_race_end when an
+		 * unserved DT/SG would have escalated to a post-race TP.
+		 * Honor that here so total_ms reflects the converted
+		 * amount even though p->kind keeps the original wire code
+		 * (kunos's pq_emit shows DT/SG verbatim after race-end).
+		 */
+		if (p->race_end_tp != 0) {
+			switch (p->race_end_tp) {
+			case PEN_TP30: total += 30000; break;
+			case PEN_TP40: total += 40000; break;
+			case PEN_TP50: total += 50000; break;
+			case PEN_TP60: total += 60000; break;
+			}
+			continue;
+		}
 		switch (p->kind) {
 		case PEN_TP5:		total += 5000;		break;
 		case PEN_TP15:		total += 15000;		break;
@@ -538,19 +554,22 @@ penalty_convert_race_end(struct PenaltyQueue *q)
 		default:
 			continue;
 		}
-		p->kind = new_kind;
+		/*
+		 * DO NOT rewrite p->kind.  Kunos's pcap (1-min race
+		 * scenario, run_race_end.sh) shows the original DT/SG
+		 * wire code STAYS in pq_emit + per-session result emit
+		 * even after race-end conversion.  Only penalty_total_ms
+		 * uses the converted target (kind 1->TP30 = 30 s, etc.)
+		 * to compute the post-race time delta.
+		 *
+		 * The per-car tail (handshake.c) hides the entry once
+		 * race_end_tp is set so AC2's active_pen widget doesn't
+		 * show a phantom DT after the race ends.
+		 */
+		p->race_end_tp = new_kind;
 		p->collision = 0;
 		p->laps_remaining = 0;
-		/*
-		 * Don't set p->served — kunos keeps converted entries in
-		 * pq_emit (228 B post-conversion frame includes the
-		 * converted TP30 wire) but does NOT update car+0xc8/+0xcc
-		 * so the per-car tail stays at 00 00.  We mirror by
-		 * skipping PEN_TP30..PEN_TP60 in the tail-byte scan
-		 * (handshake.c) rather than via the served flag, which
-		 * would also exclude them from pq_emit.
-		 */
-		/* reason stays as it was — race-control / cutting / etc. */
+		/* kind, reason stay as-is — race-control / cutting / etc. */
 	}
 }
 

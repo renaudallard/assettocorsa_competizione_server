@@ -457,61 +457,12 @@ done:
  *   u8 result_count
  *   result_count × (23-byte result_header + per-car leaderboard_section)
  *
- * The 23-byte result_header is emitted from a per-car results struct
- * at stride 0x150 in FUN_1400351f0.  Our struct CarRaceState carries
- * enough to populate all fields except the +0x60 u16 (unknown
- * semantic, always 0 in welcome scenarios); the +0x74 u32 time
- * penalty is computed via penalty_total_ms().
- *
- * We used to emit write_session_tail (23 bytes) here — same byte
- * count matched the 81-min capture sizes (235/468/706 for 1/2/3
- * completed sessions) but the field semantics were session metadata,
- * not per-car race results, so any client rendering position / lap
- * count / best lap from these bytes saw garbage.
- *
- * result_count is session_index+1 when called at end-of-session,
- * matching the observed cumulative behavior.
+ * Per-session result header is now write_session_result_header in
+ * handshake.c — kunos's 0x3e header carries session metadata (hour,
+ * day-of-weekend, durations) not per-car results.  Our old port of
+ * FUN_1400351f0 emitted per-car bytes that the AC2 result widget
+ * never used.
  */
-static int
-write_result_header(struct ByteBuf *bb, const struct CarEntry *car,
-    const struct CarRaceState *r)
-{
-	uint8_t position = r->position > 0 && r->position < 0xff
-	    ? (uint8_t)r->position : 0;
-	/*
-	 * FUN_1400351f0 writes `cVar3 + -1` where cVar3 is the byte at
-	 * entry+0x58.  The exe stores that byte 1-based (driver #1,
-	 * #2, ...) so the minus-one transforms it to the 0-based wire
-	 * index the client expects.  Our current_driver_index is
-	 * already 0-based, so emit it directly — subtracting here
-	 * wrapped to 0xff for the first driver and broke the result
-	 * screen.
-	 */
-	uint8_t drv_idx = car->current_driver_index;
-	uint32_t penalty_ms = penalty_total_ms(&r->pen);
-	/*
-	 * +0x74 penalty_ms = sum of time penalties the client should
-	 * add to race_time_ms for final standings.  See
-	 * penalty_total_ms() in penalty.c for the kind-to-seconds
-	 * conversion (admin TP5/TP15 are unconditional; unserved
-	 * DT/SG at race end convert to 30/40/50/60 s per handbook
-	 * V.1.8.11 / FUN_140127440 decomp).
-	 */
-
-	if (wr_u8(bb, position) < 0) return -1;		/* +0x50 */
-	if (wr_u8(bb, position) < 0) return -1;		/* +0x54 cup_pos */
-	if (wr_u8(bb, drv_idx) < 0) return -1;		/* +0x58 0-based drv */
-	if (wr_u32(bb, (uint32_t)r->lap_count) < 0) return -1;	/* +0x5c */
-	if (wr_u16(bb, 0) < 0) return -1;		/* +0x60 unknown */
-	if (wr_u32(bb, r->best_lap_ms > 0
-	    ? (uint32_t)r->best_lap_ms : LAP_TIME_INVALID) < 0) return -1;	/* +0x64 */
-	if (wr_u32(bb, r->race_time_ms > 0
-	    ? (uint32_t)r->race_time_ms : 0) < 0) return -1;	/* +0x68 */
-	if (wr_u8(bb, r->formation_lap_done) < 0) return -1;	/* +0x6c */
-	if (wr_u8(bb, r->disqualified) < 0) return -1;	/* +0x70 */
-	if (wr_u32(bb, penalty_ms) < 0) return -1;	/* +0x74 penalty ms */
-	return 0;
-}
 
 static void
 broadcast_session_results(struct Server *s)
@@ -596,9 +547,32 @@ broadcast_session_results(struct Server *s)
 			else
 				src = &s->cars[leader].race;
 		}
-		ok = ok && write_result_header(&bb,
-		    &s->cars[leader], src) == 0;
-		ok = ok && write_leaderboard_section(&bb, s) == 0;
+		/*
+		 * Per-session result header — session metadata, NOT
+		 * per-car data.  Pcap-verified (2026-05-11 race-end
+		 * test): kunos's 23 B header carries hour_of_day,
+		 * dayOfWeekend-1, session-type AC2 enum, durations.
+		 * Our previous write_result_header (port of
+		 * FUN_1400351f0 from accServer.exe) emitted per-car
+		 * data that AC2's result widget never used.
+		 */
+		{
+			const struct SessionDef *sd =
+			    (n < ACC_MAX_SESSIONS && n < s->session_count)
+			    ? &s->sessions[n] : &s->sessions[0];
+			ok = ok && write_session_result_header(&bb,
+			    sd, s->session_overtime_s) == 0;
+			/*
+			 * Per-session leaderboard — pass the entry's
+			 * session_type so cvar8 + pq_emit policy matches
+			 * kunos (in a race-end results frame, the practice
+			 * entry emits cvar8=0 even though the current
+			 * server phase is the race that just completed).
+			 */
+			ok = ok && write_session_leaderboard_section(&bb, s,
+			    sd->session_type) == 0;
+		}
+		(void)leader; (void)src;
 	}
 	if (ok) {
 		for (i = 0; i < ACC_MAX_CARS; i++) {

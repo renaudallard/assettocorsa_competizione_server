@@ -446,6 +446,57 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
 	return 0;
 }
 
+/*
+ * Session-results header emitted inside 0x3e (SRV_SESSION_RESULTS).
+ * Pcap-verified against kunos race-end emit (2026-05-11):
+ *
+ *   u8  hour_of_day        (e.g. P=14, R=16 from event.json)
+ *   u8  0                  (always)
+ *   u8  dayOfWeekend - 1   (P=0, Q=1, R=2 in the typical schedule)
+ *   f32 1.0                (constant, likely a grip/time-multiplier)
+ *   u16 session_type code  (P=3, Q=4, R=5 — internal AC2 enum,
+ *                           DIFFERENT from def->session_type)
+ *   u32 duration_seconds   (duration_min * 60)
+ *   u32 overtime_seconds   (sessionOverTimeSeconds)
+ *   u8  0                  (always)
+ *   u8  def->session_type  (P=0, Q=4, R=10 — JSON-spec enum)
+ *   f32 1.0                (constant)
+ *
+ * This is the same 23-byte slot AC2 reads via FUN_14352c640.  Unlike
+ * the welcome-trailer tail (write_track_records / write_session_tail)
+ * which writes timeMultiplier-1 at the +0x30 byte, the race-end emit
+ * carries dayOfWeekend-1 there; AC2 keeps a separate enum-code field
+ * for sessions in the result widget.
+ */
+int
+write_session_result_header(struct ByteBuf *bb,
+    const struct SessionDef *def, uint16_t session_overtime_s)
+{
+	uint16_t type_code;
+	uint32_t duration_s = (uint32_t)def->duration_min * 60u;
+	uint8_t dow_minus_one = def->day_of_weekend > 0
+	    ? (uint8_t)(def->day_of_weekend - 1) : 0;
+
+	switch (def->session_type) {
+	case 0:		type_code = 3;	break;	/* P */
+	case 4:		type_code = 4;	break;	/* Q */
+	case 10:	type_code = 5;	break;	/* R */
+	default:	type_code = 3;	break;	/* default to P */
+	}
+	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, dow_minus_one) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+	if (wr_u16(bb, type_code) < 0) return -1;
+	if (wr_u32(bb, duration_s) < 0) return -1;
+	if (wr_u32(bb, session_overtime_s > 0 ? session_overtime_s : 120) < 0)
+		return -1;
+	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, def->session_type) < 0) return -1;
+	if (wr_f32(bb, 1.0f) < 0) return -1;
+	return 0;
+}
+
 int
 write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
     uint32_t conn_client_ts, uint32_t conn_rtt)
@@ -546,6 +597,15 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 int
 write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
+	uint8_t cur_type = s->session_count > 0
+	    ? s->sessions[s->session.session_index].session_type : 0;
+	return write_session_leaderboard_section(bb, s, cur_type);
+}
+
+int
+write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
+    uint8_t session_type)
+{
 	int j, d, nc = 0;
 	/*
 	 * cvar8 gates whether AC2 reads the per-car +0x204
@@ -553,10 +613,14 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	 * (2026-05-09 Practice scenario): cvar8=0 with no mandatory pit.
 	 * Kunos pcap (2026-05-11 1-min Race scenario): cvar8=1 always in
 	 * race regardless of mandatory_pit_count.  So the rule is "1 if
-	 * mandatory_pit configured OR current session is Race".
+	 * mandatory_pit configured OR session being reported is Race".
+	 *
+	 * The 0x3e race-end emit invokes us once per completed session
+	 * with that session's own type so practice entries inside a
+	 * race-end results frame get cvar8=0 and race entries get
+	 * cvar8=1, matching kunos.
 	 */
-	int in_race = s->session_count > 0 &&
-	    s->sessions[s->session.session_index].session_type == 10;
+	int in_race = (session_type == 10);
 	uint8_t cvar8 = (s->mandatory_pit_count > 0 || in_race) ? 1 : 0;
 	int32_t sess_best_lap = INT32_MAX;
 	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
@@ -669,8 +733,14 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 {
 	const struct CarRaceState *race = &ec->race;
 	const struct PenaltyQueue *pq = &race->pen;
-	int in_race = s->session_count > 0 &&
-	    s->sessions[s->session.session_index].session_type == 10;
+	/*
+	 * Derive in_race from cvar8 — the leaderboard caller passed it
+	 * down with the per-session decision (race-bit = 1 for race
+	 * entries, 0 for P/Q entries even within a 0x3e race-end frame).
+	 * mandatory_pit also drives cvar8=1 but doesn't change pq_emit
+	 * surfacing behaviour; treat cvar8=1 as in_race here.
+	 */
+	int in_race = cvar8 != 0;
 	int pi, d;
 
 	if (wr_u16(bb, ec->car_id) < 0) return -1;
@@ -728,6 +798,8 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				continue;
 			if (pq->slots[pi].admin)
 				continue;
+			if (pq->slots[pi].race_end_tp != 0)
+				continue;	/* race-end converted */
 			active = pi;
 			break;
 		}
@@ -986,19 +1058,17 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		}
 		if (b0 == 0) {
 			for (pi = pq->count - 1; pi >= 0; pi--) {
-				uint8_t k = pq->slots[pi].kind;
 				if (pq->slots[pi].served)
 					continue;
 				/*
-				 * Skip race-end-converted entries (PEN_TP30..
-				 * PEN_TP60).  Kunos's per-car tail bytes
-				 * (car+0xc8/+0xcc) are NOT touched by
-				 * FUN_140127440 — the converted entry stays
-				 * in the pq_emit list but the tail keeps
-				 * showing 00 00 post-conversion.
+				 * Race-end-converted entries STAY visible in
+				 * the per-car tail of 0x3e session results
+				 * (kunos pcap shows the original DT wire +
+				 * value 3 in the post-conversion 0x3e tail).
+				 * The post-wrap 0x36 we see "empty" comes
+				 * from session_reset wiping the queue, not
+				 * from this scan filtering.
 				 */
-				if (k >= PEN_TP30 && k <= PEN_TP60)
-					continue;
 				b0 = (uint8_t)penalty_wire_value(
 				    pq->slots[pi].kind,
 				    pq->slots[pi].reason);

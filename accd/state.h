@@ -170,6 +170,7 @@ struct PenaltyEntry {
 	uint64_t	issued_ms;
 	uint8_t		pending;	/* 1 = client-reported, awaits server validation */
 	uint8_t		admin;		/* 1 = admin chat-issued, hidden from 0x36 wire */
+	uint8_t		race_end_tp;	/* race-end DT/SG->TP30..TP60 conversion target */
 };
 
 struct PenaltyQueue {
