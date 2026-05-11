@@ -1192,13 +1192,30 @@ session_advance(struct Server *s)
 	}
 
 	if (next >= s->session_count) {
+		int ci;
+		uint8_t empty_results[2] = { SRV_SESSION_RESULTS, 0 };
+
 		/*
 		 * Weekend complete: loop back to session 0 silently.
 		 * Kunos does NOT emit 0x40 on the automatic wrap (81-min
 		 * replay saw 8 × 0x3e session-results and 0 × 0x40).
 		 * 0x40 is reserved for the admin /resetWeekend command,
 		 * not the natural end-of-sessions rollover.
+		 *
+		 * Emit a trailing empty 0x3e (count=0) to clear the
+		 * client-side session-results widget before the wrap.
+		 * Kunos's race-end pcap shows this 2-byte frame ~15 s
+		 * after the main results (aftercare ts[5]->ts[6]); it
+		 * signals "previous-weekend results no longer valid"
+		 * so the widget collapses cleanly across the wrap.
 		 */
+		for (ci = 0; ci < ACC_MAX_CARS; ci++) {
+			struct Conn *c = s->conns[ci];
+			if (c == NULL || c->state != CONN_AUTH)
+				continue;
+			(void)conn_send_framed(c, empty_results,
+			    sizeof(empty_results));
+		}
 		log_info("session: weekend complete, resetting to "
 		    "session 0");
 		session_reset(s, 0);
