@@ -370,7 +370,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
  * write_leaderboard_section helper from handshake.c instead of
  * hand-rolling a simplified record.
  */
-static void
+void
 broadcast_leaderboard(struct Server *s)
 {
 	struct ByteBuf bb;
@@ -729,7 +729,7 @@ tick_run(struct Server *s)
 	 * tick-modulo behavior that always fires at tick 0).
 	 */
 	static uint64_t last_keepalive_ms = 0;
-	static uint64_t last_leaderboard_ms = 0;
+	uint64_t *last_leaderboard_ms = &s->session.last_leaderboard_ms;
 	static uint64_t last_weather_ms = 0;
 	static uint64_t last_state28_ms = 0;
 	/*
@@ -918,7 +918,7 @@ tick_run(struct Server *s)
 	{
 		int changed = s->session.standings_seq !=
 		    *last_standings_seq;
-		int cadence = now_ms - last_leaderboard_ms >=
+		int cadence = now_ms - *last_leaderboard_ms >=
 		    (s->use_async_leaderboard ? CADENCE_LEADERBOARD_MS
 		                              : MIN_LEADERBOARD_GAP_MS);
 		int fire = changed && cadence;
@@ -926,7 +926,7 @@ tick_run(struct Server *s)
 		if (fire) {
 			*last_standings_seq = s->session.standings_seq;
 			broadcast_leaderboard(s);
-			last_leaderboard_ms = now_ms;
+			*last_leaderboard_ms = now_ms;
 		}
 	}
 

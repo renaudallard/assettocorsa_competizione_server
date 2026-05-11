@@ -43,6 +43,7 @@
 #include "prim.h"
 #include "session.h"
 #include "state.h"
+#include "tick.h"
 
 /*
  * Per-track formation / green trigger ranges, transcribed from exe
@@ -355,6 +356,19 @@ conn_drop(struct Server *s, struct Conn *c)
 		c->car_id = -1;
 		session_recompute_standings(s);
 		s->session.standings_seq++;
+		/*
+		 * Bypass the tick-loop 2 s rate-limit: kunos emits 0x36 on
+		 * every peer-leave so back-to-back disconnects produce a
+		 * cascade of decreasing-car-count frames.  accd's rate-limit
+		 * was added to coalesce penalty bursts (where bumps land
+		 * within the same tick window); a disconnect is a discrete
+		 * event each client needs to see promptly.  Sync the tick
+		 * gate's standings/timestamp counters so the next tick
+		 * doesn't immediately re-emit on its own schedule.
+		 */
+		broadcast_leaderboard(s);
+		s->session.last_standings_seq = s->session.standings_seq;
+		s->session.last_leaderboard_ms = mono_ms();
 	}
 	free(c);
 	{

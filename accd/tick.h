@@ -42,6 +42,13 @@
 void	tick_run(struct Server *s);
 
 /*
+ * Emit 0x36 ACP_LEADERBOARD_BCAST to every connected client.  Called
+ * from tick_run on standings_seq change (rate-limited) and from
+ * state.c conn_drop to mirror kunos's per-peer-leave cascade.
+ */
+void	broadcast_leaderboard(struct Server *s);
+
+/*
  * Build a 63-byte per-car body used by 0x39 relay.
  * clock_adj = sender_pong_ts - peer_pong_ts for per-peer
  * timestamp adjustment.

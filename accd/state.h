@@ -333,6 +333,7 @@ struct SessionState {
 	uint8_t		track_temp;
 	uint32_t	standings_seq;	/* bumps on leaderboard change */
 	uint32_t	last_standings_seq;	/* tick.c: detect changes */
+	uint64_t	last_leaderboard_ms;	/* tick.c: 2 s rate-limit */
 	uint8_t		last_phase;		/* tick.c: detect transitions */
 	int		results_written;	/* one-shot guard */
 	int		grid_announced;		/* one-shot guard */
