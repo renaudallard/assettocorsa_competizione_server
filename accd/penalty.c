@@ -436,6 +436,21 @@ penalty_clear(struct Server *s, int car_id)
 	q = &s->cars[car_id].race.pen;
 	q->count = 0;
 	memset(q->slots, 0, sizeof(q->slots));
+	/*
+	 * Reset the per-cat ladder so a subsequent client 0x41 for any
+	 * cat lands on the fresh branch (and emits the report's wire in
+	 * the tail) rather than being treated as an escalation step.
+	 */
+	memset(s->cars[car_id].race.pen_cat_severity, 0,
+	    sizeof(s->cars[car_id].race.pen_cat_severity));
+	/*
+	 * Bump standings_seq so the next 0x36 emit advertises the empty
+	 * tail.  Kunos pcap (run_admin_clear.sh) shows a 207 B 0x36 with
+	 * tail 00 00 after the /clear chat command — without this bump
+	 * accd stays at the prior tail until another event triggers an
+	 * emit.
+	 */
+	s->session.standings_seq++;
 }
 
 void
