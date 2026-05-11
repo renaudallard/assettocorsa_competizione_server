@@ -1093,10 +1093,17 @@ write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 /*
  * trailer_additional_state (FUN_1400330e0) — 68 bytes total
  * (17 f32).  Identical wire layout to the periodic 0x37 weather
- * broadcast — see weather_build_broadcast and the v1.10.2 capture
- * comment there.  The cockpit/HUD reads the welcome's value, the
- * external view picks up live 0x37, so keeping these in lockstep
- * matters or the two views show different weather.
+ * broadcast — same parser, FUN_14352cb30 in the AC2 client, called
+ * from both the welcome-trailer reader (FUN_14352a150, log string
+ * "ACP_SERVER_RESPONSE.post readTrackConditionsUpdate") and the
+ * 0x37 case in the main TCP dispatcher (FUN_143526030).  The two
+ * call sites target DIFFERENT slots in the AC2 World object:
+ * welcome populates the SessionEntity list at world+0x568 (per-
+ * session forecast vector, 1728 B / entry), while live 0x37 writes
+ * the current state at world+0x2a8/+0x2c8/+0x318.  The HUD reads
+ * live state, not the welcome value — but keeping the welcome's
+ * fields self-consistent matters for the forecast widgets that
+ * walk the SessionEntity vector.
  */
 static int
 write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
