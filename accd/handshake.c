@@ -550,13 +550,14 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	/*
 	 * cvar8 gates whether AC2 reads the per-car +0x204
 	 * missingMandatoryPitstop field from the wire.  Kunos pcap
-	 * (2026-05-09) shows cvar8=0 in Practice with no mandatory pit;
-	 * the AC2 client's OBLIGATOIRE widget only renders when the
-	 * event has a mandatory-pit requirement, so leaving the wire
-	 * field implicit (cvar8=0) keeps the widget hidden in non-pit
-	 * sessions while remaining byte-exact to kunos.
+	 * (2026-05-09 Practice scenario): cvar8=0 with no mandatory pit.
+	 * Kunos pcap (2026-05-11 1-min Race scenario): cvar8=1 always in
+	 * race regardless of mandatory_pit_count.  So the rule is "1 if
+	 * mandatory_pit configured OR current session is Race".
 	 */
-	uint8_t cvar8 = (s->mandatory_pit_count > 0) ? 1 : 0;
+	int in_race = s->session_count > 0 &&
+	    s->sessions[s->session.session_index].session_type == 10;
+	uint8_t cvar8 = (s->mandatory_pit_count > 0 || in_race) ? 1 : 0;
 	int32_t sess_best_lap = INT32_MAX;
 	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
 
@@ -668,6 +669,8 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 {
 	const struct CarRaceState *race = &ec->race;
 	const struct PenaltyQueue *pq = &race->pen;
+	int in_race = s->session_count > 0 &&
+	    s->sessions[s->session.session_index].session_type == 10;
 	int pi, d;
 
 	if (wr_u16(bb, ec->car_id) < 0) return -1;
@@ -766,15 +769,32 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	}
 
 	{
-		/* pq array excludes pending (client-0x41) entries, they
-		 * feed only the per-car tail bytes, not the queue list. */
+		/*
+		 * pq array: in Practice / Qualifying, exclude pending
+		 * (client-0x41) entries — they feed only the per-car tail
+		 * bytes, matching kunos's 4-bot Practice pcap where
+		 * pq_emit stays 0 throughout the 52-penalty burst.
+		 *
+		 * In Race, surface every non-served entry in pq_emit
+		 * regardless of pending — kunos's 1-min Race pcap shows
+		 * pq_emit=1 mid-race once a 0x41 lands in PHASE_SESSION.
+		 * The active_pen prefix still respects `pending` so the
+		 * client-reported entry doesn't get treated as server-
+		 * confirmed.
+		 */
 		uint8_t pq_emit = 0;
-		for (pi = 0; pi < pq->count; pi++)
-			if (!pq->slots[pi].pending)
-				pq_emit++;
+		for (pi = 0; pi < pq->count; pi++) {
+			if (pq->slots[pi].served)
+				continue;
+			if (pq->slots[pi].pending && !in_race)
+				continue;
+			pq_emit++;
+		}
 		if (wr_u8(bb, pq_emit) < 0) return -1;
 		for (pi = 0; pi < pq->count; pi++) {
-			if (pq->slots[pi].pending)
+			if (pq->slots[pi].served)
+				continue;
+			if (pq->slots[pi].pending && !in_race)
 				continue;
 			if (wr_i32(bb, (int32_t)penalty_wire_value(
 			    pq->slots[pi].kind,
@@ -958,7 +978,18 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		}
 		if (b0 == 0) {
 			for (pi = pq->count - 1; pi >= 0; pi--) {
+				uint8_t k = pq->slots[pi].kind;
 				if (pq->slots[pi].served)
+					continue;
+				/*
+				 * Skip race-end-converted entries (PEN_TP30..
+				 * PEN_TP60).  Kunos's per-car tail bytes
+				 * (car+0xc8/+0xcc) are NOT touched by
+				 * FUN_140127440 — the converted entry stays
+				 * in the pq_emit list but the tail keeps
+				 * showing 00 00 post-conversion.
+				 */
+				if (k >= PEN_TP30 && k <= PEN_TP60)
 					continue;
 				b0 = (uint8_t)penalty_wire_value(
 				    pq->slots[pi].kind,

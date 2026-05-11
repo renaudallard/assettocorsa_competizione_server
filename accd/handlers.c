@@ -1183,22 +1183,17 @@ h_report_penalty(struct Server *s, struct Conn *c,
 			    val, force, 0, reason);
 			/*
 			 * Mark every slot freshly enqueued by this call as
-			 * pending so the 0x36 builder emits them only via
-			 * the per-car tail bytes (matching kunos's
-			 * FUN_14012ab30 path) and NOT via the active_pen
-			 * prefix.  Kunos's active_pen reads from
-			 * car+0xc8/+0xcc which only get populated when the
-			 * AC2 client crosses the detection threshold and
-			 * the server confirms; a 0x41 report alone doesn't
-			 * trigger that — including the intermediate
-			 * materialises the per-category ladder fires (DT
-			 * then DQ when force=1) when the same cat is
-			 * reported twice.
+			 * pending so the 0x36 builder hides them from
+			 * active_pen (kunos's car+0xc8/+0xcc are populated
+			 * by a separate "server confirms" path that a 0x41
+			 * alone doesn't trigger).  Whether the slot also
+			 * appears in pq_emit is decided at emit time based
+			 * on session type — see write_leaderboard_section.
 			 *
 			 * Ring eviction (penalty_materialize) may have
-			 * shifted slots back so pre can be >= count.  Iterate
-			 * from min(pre, count-N) inclusive to count exclusive;
-			 * for our typical 8-slot queue this stays correct.
+			 * shifted slots back so pre can be >= count.  Clamp
+			 * to the new range; for our typical 8-slot queue
+			 * this stays correct.
 			 */
 			if (pre > pq->count)
 				pre = pq->count - 1;

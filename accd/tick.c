@@ -1068,6 +1068,15 @@ tick_run(struct Server *s)
 				for (j = 0; j < ACC_MAX_CARS; j++)
 					penalty_convert_race_end(
 					    &s->cars[j].race.pen);
+				/*
+				 * No standings_seq bump here — kunos doesn't
+				 * emit a 0x36 in PHASE_COMPLETED.  The next
+				 * 0x36 fires after session_advance wraps the
+				 * weekend back to session 0 (P), with an empty
+				 * queue and cvar8=0; the converted entries
+				 * are consumed by broadcast_session_results
+				 * (0x3e) and results.json instead.
+				 */
 			}
 			/*
 			 * Update Trust rating based on race outcome.

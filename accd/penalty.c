@@ -517,6 +517,15 @@ penalty_convert_race_end(struct PenaltyQueue *q)
 		p->kind = new_kind;
 		p->collision = 0;
 		p->laps_remaining = 0;
+		/*
+		 * Don't set p->served — kunos keeps converted entries in
+		 * pq_emit (228 B post-conversion frame includes the
+		 * converted TP30 wire) but does NOT update car+0xc8/+0xcc
+		 * so the per-car tail stays at 00 00.  We mirror by
+		 * skipping PEN_TP30..PEN_TP60 in the tail-byte scan
+		 * (handshake.c) rather than via the served flag, which
+		 * would also exclude them from pq_emit.
+		 */
 		/* reason stays as it was — race-control / cutting / etc. */
 	}
 }
