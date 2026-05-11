@@ -568,7 +568,15 @@ penalty_convert_race_end(struct PenaltyQueue *q)
 		 */
 		p->race_end_tp = new_kind;
 		p->collision = 0;
-		p->laps_remaining = 0;
+		/*
+		 * Preserve laps_remaining — kunos's 0x3e per-car tail
+		 * reads the original DT/SG value (e.g. 3 for a 3-cut
+		 * report) even after race-end conversion.  Clearing it
+		 * to 0 here would zero the b1 byte at the section end
+		 * (pcap diff 2026-05-11 race-end test).  penalty_total_ms
+		 * uses race_end_tp not laps_remaining so the converted
+		 * 30s/40s/50s/60s buckets are unaffected.
+		 */
 		/* kind, reason stay as-is — race-control / cutting / etc. */
 	}
 }
