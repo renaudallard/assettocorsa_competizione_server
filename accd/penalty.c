@@ -135,40 +135,38 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 		q->count = ACC_MAX_PENALTIES - 1;
 	}
 
-	e = &q->slots[q->count++];
-	e->kind = pen_kind;
-	e->reason = reason;
-	e->collision = collision ? 1 : 0;
-	e->served = 0;
-	/*
-	 * laps_remaining holds the caller-supplied value verbatim.
-	 * For DT/SG it's the lap countdown; for TP it's the time
-	 * penalty in seconds; in either case kunos's pcap (2026-05-10
-	 * matrix test) shows the original 0x41 value byte ride through
-	 * the per-car tail byte 1 of the 0x36 leaderboard.  Earlier
-	 * code clamped DT/SG to 3 and TP to 0, dropping the input.
-	 */
-	e->laps_remaining = value;
-	if (exe_kind == EXE_DQ) {
-		s->cars[car_id].race.disqualified = 1;
+	{
+		int was_empty = q->count == 0;
+
+		e = &q->slots[q->count++];
+		e->kind = pen_kind;
+		e->reason = reason;
+		e->collision = collision ? 1 : 0;
+		e->served = 0;
 		/*
-		 * Re-sort: cmp_cars puts disqualified cars last, so the
-		 * next 0x36 has the DQ'd car at the back of the per-car
-		 * list (matching kunos's 4-bot fingerprint where bot1
-		 * with DQ sits at slot 4 after bots 2/3/4).
+		 * laps_remaining holds the caller-supplied value verbatim.
+		 * For DT/SG it's the lap countdown; for TP it's the time
+		 * penalty in seconds; in either case kunos's pcap shows the
+		 * original 0x41 value byte ride through the per-car tail
+		 * byte 1 of the 0x36 leaderboard.
 		 */
-		session_recompute_standings(s);
+		e->laps_remaining = value;
+		if (exe_kind == EXE_DQ) {
+			s->cars[car_id].race.disqualified = 1;
+			session_recompute_standings(s);
+		}
+		e->issued_ms = mono_ms();
+		/*
+		 * Bump standings_seq only on events that kunos broadcasts a
+		 * fresh 0x36 for: the very first penalty into a car's queue,
+		 * or any DQ.  Intermediate non-DQ updates leave the tail
+		 * stale but don't trigger a broadcast, matching kunos's
+		 * 4-bot pcap (2026-05-11) where ~14 emits cover 52 reports
+		 * because non-DQ ladder steps don't fan out.
+		 */
+		if (was_empty || exe_kind == EXE_DQ)
+			s->session.standings_seq++;
 	}
-	e->issued_ms = mono_ms();
-	/*
-	 * Bump standings_seq so tick_run's leaderboard broadcaster fires
-	 * within one tick.  Without this, the new penalty rides the 75 s
-	 * useAsyncLeaderboard cadence; the chat text reaches the client
-	 * but the per-car penalty fields in 0x36 (the source the AC2
-	 * client's penalty HUD state machine reads) aren't updated until
-	 * the next periodic emit, so DT/SG never visibly counts down.
-	 */
-	s->session.standings_seq++;
 }
 
 /*
