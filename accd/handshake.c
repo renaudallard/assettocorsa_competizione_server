@@ -921,12 +921,16 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 */
 	{
 		/*
-		 * Kunos's FUN_140125f50 stores at most one active-penalty
-		 * entry per car (the list at param_1+0x30 is overwritten
-		 * on each report — line 152 of the decomp), so the per-
-		 * car tail bytes always reflect the LATEST penalty.  Our
-		 * pq is a multi-slot queue, so emulate "latest" by
-		 * scanning from the tail.
+		 * Kunos's tail tracks DQ-priority: once a car has any DQ
+		 * report, only DQ events update the tail (non-DQ reports
+		 * leave the tail unchanged at the prior DQ).  Before the
+		 * first DQ, the tail follows the latest report.  4-bot
+		 * pcap diff (2026-05-11) confirmed: bot1's tail evolves
+		 * wire 1 → 5 → 11 → 19 → ... on each new (cat) DQ, never
+		 * touched by intermediate DT/SG/TP/RBL reports.
+		 *
+		 * Implementation: scan from back twice — first for a DQ
+		 * entry, fall back to the latest non-DQ if none found.
 		 */
 		uint8_t b0 = 0, b1 = 0;
 		int pi;
@@ -934,10 +938,23 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		for (pi = pq->count - 1; pi >= 0; pi--) {
 			if (pq->slots[pi].served)
 				continue;
+			if (pq->slots[pi].kind != PEN_DQ)
+				continue;
 			b0 = (uint8_t)penalty_wire_value(
 			    pq->slots[pi].kind, pq->slots[pi].reason);
-			b1 = (uint8_t)pq->slots[pi].laps_remaining;
+			b1 = 0;   /* kunos clamps the value byte to 0 for DQ */
 			break;
+		}
+		if (b0 == 0) {
+			for (pi = pq->count - 1; pi >= 0; pi--) {
+				if (pq->slots[pi].served)
+					continue;
+				b0 = (uint8_t)penalty_wire_value(
+				    pq->slots[pi].kind,
+				    pq->slots[pi].reason);
+				b1 = (uint8_t)pq->slots[pi].laps_remaining;
+				break;
+			}
 		}
 		if (wr_u8(bb, b0) < 0) return -1;
 		if (wr_u8(bb, b1) < 0) return -1;
