@@ -942,7 +942,18 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				continue;
 			b0 = (uint8_t)penalty_wire_value(
 			    pq->slots[pi].kind, pq->slots[pi].reason);
-			b1 = 0;   /* kunos clamps the value byte to 0 for DQ */
+			/*
+			 * Value clamp: kunos's "list at param_1+0x30" stores
+			 * the original 0x41 value only when the entry is fresh
+			 * (no prior entry to overwrite).  Once an entry exists
+			 * and a DQ overwrites it, the value byte resets to 0.
+			 * Approximate: clamp to 0 only when this DQ isn't
+			 * alone in the queue.
+			 */
+			if (pq->count == 1)
+				b1 = (uint8_t)pq->slots[pi].laps_remaining;
+			else
+				b1 = 0;
 			break;
 		}
 		if (b0 == 0) {
