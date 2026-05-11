@@ -1174,29 +1174,38 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		    "category=%u -> reason=%u",
 		    c->car_id, (unsigned)kind, (unsigned)category,
 		    (unsigned)reason);
-		(void)penalty_enqueue(s, c->car_id, kind, category, val,
-		    force, 0, reason);
-		/*
-		 * No chat broadcast here, matches kunos.  Per
-		 * accServer.exe FUN_1400142f0:751, the 0x41 dispatcher only
-		 * calls FUN_140125f50 (penalty enqueue) and never emits
-		 * 0x2b chat.  The chat path (FUN_14001dae0) is for admin
-		 * commands only.  The AC2 client handles the player's own
-		 * banner via its local detection chain (FUN_140e59bf0 then
-		 * FUN_140e643d0 then the widget delegate).
-		 *
-		 * Mark the freshly-enqueued entry as pending so the 0x36
-		 * builder emits it only via the per-car tail bytes (matching
-		 * kunos's FUN_14012ab30 path) and NOT via the active_pen
-		 * prefix.  Kunos's active_pen reads from car+0xc8/+0xcc
-		 * which only get populated when the AC2 client crosses the
-		 * detection threshold and the server confirms; a 0x41 report
-		 * alone doesn't trigger that.
-		 */
 		{
 			struct PenaltyQueue *pq = &s->cars[c->car_id].race.pen;
-			if (pq->count > 0)
-				pq->slots[pq->count - 1].pending = 1;
+			int pre = pq->count;
+			int pi;
+
+			(void)penalty_enqueue(s, c->car_id, kind, category,
+			    val, force, 0, reason);
+			/*
+			 * Mark every slot freshly enqueued by this call as
+			 * pending so the 0x36 builder emits them only via
+			 * the per-car tail bytes (matching kunos's
+			 * FUN_14012ab30 path) and NOT via the active_pen
+			 * prefix.  Kunos's active_pen reads from
+			 * car+0xc8/+0xcc which only get populated when the
+			 * AC2 client crosses the detection threshold and
+			 * the server confirms; a 0x41 report alone doesn't
+			 * trigger that — including the intermediate
+			 * materialises the per-category ladder fires (DT
+			 * then DQ when force=1) when the same cat is
+			 * reported twice.
+			 *
+			 * Ring eviction (penalty_materialize) may have
+			 * shifted slots back so pre can be >= count.  Iterate
+			 * from min(pre, count-N) inclusive to count exclusive;
+			 * for our typical 8-slot queue this stays correct.
+			 */
+			if (pre > pq->count)
+				pre = pq->count - 1;
+			if (pre < 0)
+				pre = 0;
+			for (pi = pre; pi < pq->count; pi++)
+				pq->slots[pi].pending = 1;
 		}
 	}
 	return 0;

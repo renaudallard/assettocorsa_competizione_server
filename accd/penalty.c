@@ -197,7 +197,6 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 	struct CarRaceState *race;
 	struct PenaltySheetState *st;
 	uint64_t now_ms;
-	int iter;
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
 		return -1;
@@ -231,8 +230,23 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 
 	/* Immediate-effect special case: DQ. */
 	if (exe_kind == EXE_DQ) {
+		/*
+		 * If this category already reached DQ via the per-cat
+		 * ladder (e.g. cat=0 r2 escalated from DT to DQ), kunos
+		 * treats a subsequent DQ-direct (kind=6) report as
+		 * terminal — no new Penalty pushed, no broadcast.  Pcap
+		 * (2026-05-11 4-bot run): kunos's r6 = cat=0 kind=6 lands
+		 * after r2 already ran the cat=0 ladder to DQ and produces
+		 * NO 0x36 emit; the next mid-session emit is r15 = cat=3
+		 * kind=6 which is the first cat=3 DQ event.
+		 */
+		if (category < sizeof(race->pen_cat_severity) &&
+		    race->pen_cat_severity[category] == EXE_DQ)
+			return 0;
 		penalty_materialize(s, car_id, EXE_DQ, collision,
 		    value, reason);
+		if (category < sizeof(race->pen_cat_severity))
+			race->pen_cat_severity[category] = EXE_DQ;
 		st = &race->pen_state[EXE_DQ];
 		st->severity = EXE_DQ;
 		st->category = category;
@@ -265,85 +279,82 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 	}
 
 	/*
-	 * DT/SG ladder — bounded loop mimics exe's `goto LAB_140125fb0`
-	 * pattern, cap iterations so a pathological severity loop can't
-	 * hang the server.  At most one materialize per ladder call at
-	 * the next fresh kind — matches exe FUN_140125f50, which runs the
-	 * fresh-branch write as a plain register (no materialize) and only
-	 * fires FUN_140126b50 on the non-fresh "step" path.  Our admin UX
-	 * deviation materializes on the FIRST-EVER call (from_step==0) so
-	 * that /dt adds a visible Penalty immediately; every subsequent
-	 * ladder step lands on a register-only fresh sheet.
+	 * DT/SG ladder — kunos's FUN_140125f50 keeps a per-car sheet
+	 * keyed by category.  A second report for the same category
+	 * steps the ladder regardless of the incoming kind.  Each step
+	 * materialises the current severity + advances:
+	 *   force=0:  DT -> SG30 (terminal)
+	 *   force=1:  DT -> DQ
+	 * SG30 -> DQ only when force=1.  DQ is terminal.  We mirror
+	 * this with a per-category byte (pen_cat_severity[category])
+	 * so different-kind reports for the same cat collapse onto
+	 * one ladder, matching the pcap-observed kunos tail of 05 00
+	 * after four sequential cat=0 reports.
 	 */
-	int from_step = 0;
-	for (iter = 0; iter < 8; iter++) {
-		st = &race->pen_state[exe_kind];
+	{
+		uint8_t old_sev;
+		uint8_t new_sev;
+		uint8_t bVar6;
 
-		if (st->severity == 0) {
+		if (category >= sizeof(race->pen_cat_severity))
+			category = 0;	/* defensive: clamp out-of-enum */
+
+		old_sev = race->pen_cat_severity[category];
+		bVar6 = (uint8_t)((force + 2) * 2);
+		/* bVar6 = 4 (SG30) if force=0, 6 (DQ) if force=1. */
+
+		if (old_sev == 0) {
 			/*
-			 * Fresh.  Register severity + associated metadata
-			 * so the next miss finds us in the non-fresh path.
-			 * Materialize only when this is a direct caller entry
-			 * (admin /dt etc.); skip the materialize when we
-			 * arrived here from a ladder step — the step itself
-			 * already emitted the visible Penalty for the previous
-			 * kind.
+			 * Fresh category: keep the existing per-exe_kind
+			 * sheet (used by other code paths, e.g. admin /sg
+			 * counter) AND record the cat ladder state.
 			 */
+			st = &race->pen_state[exe_kind];
 			st->severity = exe_kind;
 			st->category = category;
 			st->issued_ms = now_ms;
 			st->reason = reason;
 			st->counter = value;
-			if (!from_step)
-				penalty_materialize(s, car_id, exe_kind,
-				    collision, value, reason);
+			race->pen_cat_severity[category] = exe_kind;
+			penalty_materialize(s, car_id, exe_kind, collision,
+			    value, reason);
 			return 0;
 		}
+
+		/* Non-fresh: materialise the current cat severity first. */
+		penalty_materialize(s, car_id, old_sev, collision, value,
+		    reason);
+
+		switch (old_sev) {
+		case EXE_DT:
+			new_sev = (exe_kind > EXE_DT) ? bVar6 : EXE_SG30;
+			break;
+		case EXE_SG10:
+		case EXE_SG20:
+			new_sev = bVar6;
+			break;
+		case EXE_SG30:
+			if (force == 0)
+				return 0;	/* terminal */
+			new_sev = EXE_DQ;
+			break;
+		default:
+			return 0;		/* DQ reached, terminal */
+		}
+
+		race->pen_cat_severity[category] = new_sev;
 
 		/*
-		 * Non-fresh: materialize current severity and step the
-		 * ladder.  Unlike TP there's no counter accumulation
-		 * gate for the DT/SG path — each repeat call escalates.
+		 * When the step lands on DQ, fire the materialise so the
+		 * per-car tail picks up the DQ wire code on the next 0x36
+		 * emit (kunos's pcap shows the same — repeated cat=0
+		 * reports terminate at DQ within two iterations).
 		 */
-		penalty_materialize(s, car_id, st->severity, collision,
-		    value, reason);
-		st->issued_ms = now_ms;
-		from_step = 1;
-
-		{
-			uint8_t bVar2 = st->severity;
-			uint8_t bVar6 = (uint8_t)((force + 2) * 2);
-			/* bVar6 = 4 (SG30) if force=0, 6 (DQ) if force=1 */
-
-			if (bVar2 == EXE_DT) {
-				if (exe_kind > EXE_DT) {
-					exe_kind = bVar6;
-					value = 0;
-					continue;
-				}
-				exe_kind = EXE_SG30;
-				value = 3;
-				continue;
-			}
-			if (bVar2 == EXE_SG10 || bVar2 == EXE_SG20) {
-				exe_kind = bVar6;
-				value = 3;
-				continue;
-			}
-			if (bVar2 == EXE_SG30) {
-				if (force == 0)
-					return 0;
-				exe_kind = EXE_DQ;
-				value = 3;
-				continue;
-			}
-			/* severity 5 or 6 reached: terminal */
-			return 0;
-		}
+		if (new_sev == EXE_DQ)
+			penalty_materialize(s, car_id, EXE_DQ, collision,
+			    value, reason);
 	}
-	log_warn("penalty_enqueue: escalation loop overflow car=%d",
-	    car_id);
-	return -1;
+	return 0;
 }
 
 int

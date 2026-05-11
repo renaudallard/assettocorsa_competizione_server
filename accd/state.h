@@ -299,6 +299,17 @@ struct CarRaceState {
 	struct PenaltyQueue	pen;
 	struct PenaltySheetState	pen_state[7];	/* exe kind 1..6 */
 	/*
+	 * Per-category ladder state for the DT/SG escalation chain.
+	 * Indexed by 0x41 category 0..17.  Each entry holds the last
+	 * stored severity (EXE_DT..EXE_DQ) for that category, so a
+	 * subsequent report on the SAME category steps the ladder
+	 * instead of starting fresh (kunos's FUN_140125f50 keeps a
+	 * per-car sheet keyed by cat; the ladder step within one cat
+	 * is DT -> SG30 (force=0) or DT -> DQ (force=1)).  Initialized
+	 * to 0 by session_start.
+	 */
+	uint8_t		pen_cat_severity[18];
+	/*
 	 * Driver-stint tracking for FUN_14012ae10-style enforcement.
 	 * stint_start_ms = monotonic ms when the current driver most
 	 * recently entered the track (0 = not accumulating).  On any
