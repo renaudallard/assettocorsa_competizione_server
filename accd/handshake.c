@@ -599,12 +599,14 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
 	uint8_t cur_type = s->session_count > 0
 	    ? s->sessions[s->session.session_index].session_type : 0;
-	return write_session_leaderboard_section(bb, s, cur_type);
+	/* Default emit (0x36 / welcome trailer) — never an archived
+	 * session.  is_archived=0. */
+	return write_session_leaderboard_section(bb, s, cur_type, 0);
 }
 
 int
 write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
-    uint8_t session_type)
+    uint8_t session_type, int is_archived)
 {
 	int j, d, nc = 0;
 	/*
@@ -692,7 +694,7 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 				if (s->cars[j].race.position != pos)
 					continue;
 				if (write_car_leaderboard_record(bb, s,
-				    &s->cars[j], cvar8) < 0)
+				    &s->cars[j], cvar8, is_archived) < 0)
 					return -1;
 				emitted++;
 			}
@@ -705,14 +707,22 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 			if (p >= 1 && p <= ACC_MAX_CARS)
 				continue;
 			if (write_car_leaderboard_record(bb, s,
-			    &s->cars[j], cvar8) < 0)
+			    &s->cars[j], cvar8, is_archived) < 0)
 				return -1;
 			emitted++;
 		}
 	}
 
-	/* assist_rules tail. */
-	if (wr_u8(bb, 0) < 0) return -1;
+	/*
+	 * Section tail (FUN_140034a40 reads param_2+0x48 then +0x78):
+	 * pcap diff 2026-05-11 (race-end test) shows the first byte is
+	 * the cvar8 marker — 1 in any frame where the session is a race
+	 * (or mandatory_pit is configured), 0 otherwise.  The second byte
+	 * stays 0 across every capture we have so far (P-only, R race-end,
+	 * 4-bot Practice).  The exe seems to use this byte to signal the
+	 * "race-context active" flag to the AC2 leaderboard widget.
+	 */
+	if (wr_u8(bb, cvar8) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	return 0;
 }
@@ -729,7 +739,8 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
  */
 int
 write_car_leaderboard_record(struct ByteBuf *bb,
-    const struct Server *s, const struct CarEntry *ec, uint8_t cvar8)
+    const struct Server *s, const struct CarEntry *ec, uint8_t cvar8,
+    int is_archived)
 {
 	const struct CarRaceState *race = &ec->race;
 	const struct PenaltyQueue *pq = &race->pen;
@@ -859,26 +870,66 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		 * confirmed.
 		 */
 		uint8_t pq_emit = 0;
+		int emitted_slots = 0;
 		for (pi = 0; pi < pq->count; pi++) {
 			if (pq->slots[pi].served)
 				continue;
-			if (pq->slots[pi].pending && !in_race)
-				continue;
 			if (pq->slots[pi].admin)
+				continue;
+			/*
+			 * Hide pending entries outside a race emit (Kunos's
+			 * Practice / Qualifying pq_emit stays 0 across a
+			 * pending-only burst), AND in any archived-session
+			 * emit (e.g. P section of a race-end 0x3e where the
+			 * pending DT was reported in R, not P).
+			 */
+			if (pq->slots[pi].pending &&
+			    (!in_race || is_archived))
 				continue;
 			pq_emit++;
 		}
+		/*
+		 * Race-mode sentinel: kunos emits pq_emit count >= 1 in
+		 * any race-session leaderboard record, even before the
+		 * first penalty.  When the queue is empty (or fully
+		 * served/admin-only), the +0x208 array still carries one
+		 * zero entry.  Pcap-verified: 0x36[1] in race-end test
+		 * is 228 B with count=1 wire=0; matching practice 0x36
+		 * is 4 B shorter (no sentinel).
+		 */
+		if (pq_emit == 0 && in_race)
+			pq_emit = 1;
 		if (wr_u8(bb, pq_emit) < 0) return -1;
 		for (pi = 0; pi < pq->count; pi++) {
+			int32_t wire;
 			if (pq->slots[pi].served)
-				continue;
-			if (pq->slots[pi].pending && !in_race)
 				continue;
 			if (pq->slots[pi].admin)
 				continue;
-			if (wr_i32(bb, (int32_t)penalty_wire_value(
-			    pq->slots[pi].kind,
-			    pq->slots[pi].reason)) < 0) return -1;
+			if (pq->slots[pi].pending &&
+			    (!in_race || is_archived))
+				continue;
+			/*
+			 * Pcap-verified (run_race_end.sh, 2026-05-11):
+			 * kunos's pq slot emits wire=0 for any entry that
+			 * is either pending (client-0x41 not yet server-
+			 * confirmed) or race-end-converted (DT/SG that
+			 * FUN_140127440 has moved to the post-race time
+			 * penalty list).  The original DT wire still shows
+			 * up in the per-car tail (b0, b1) below — only the
+			 * i32 array slot is zeroed.
+			 */
+			wire = (pq->slots[pi].pending ||
+			    pq->slots[pi].race_end_tp != 0) ? 0 :
+			    (int32_t)penalty_wire_value(
+				pq->slots[pi].kind,
+				pq->slots[pi].reason);
+			if (wr_i32(bb, wire) < 0) return -1;
+			emitted_slots++;
+		}
+		if (emitted_slots == 0 && in_race) {
+			/* Empty-queue sentinel — see comment above. */
+			if (wr_i32(bb, 0) < 0) return -1;
 		}
 	}
 
@@ -1040,6 +1091,15 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				continue;
 			if (pq->slots[pi].kind != PEN_DQ)
 				continue;
+			/*
+			 * DQ entries are always visible in the tail, even
+			 * when our model has them marked pending=1 (e.g. a
+			 * server-side DQ from TP-accumulation overflow or
+			 * ladder force=1 that h_report_penalty's loop has
+			 * lumped under pending alongside the client-reported
+			 * entries).  The pending filter only applies to the
+			 * non-DQ scan below.
+			 */
 			b0 = (uint8_t)penalty_wire_value(
 			    pq->slots[pi].kind, pq->slots[pi].reason);
 			/*
@@ -1061,14 +1121,21 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				if (pq->slots[pi].served)
 					continue;
 				/*
+				 * Archived-session emit only: hide pending
+				 * (client-0x41) entries.  In the current
+				 * session the tail follows the latest report
+				 * (cat17 test in P: pending DT shows wire 33),
+				 * but an older session's archived state must
+				 * not surface a penalty that didn't exist
+				 * yet (race-end 0x3e[1] P section).
+				 *
 				 * Race-end-converted entries STAY visible in
-				 * the per-car tail of 0x3e session results
-				 * (kunos pcap shows the original DT wire +
-				 * value 3 in the post-conversion 0x3e tail).
-				 * The post-wrap 0x36 we see "empty" comes
-				 * from session_reset wiping the queue, not
-				 * from this scan filtering.
+				 * the current-session tail of 0x3e results —
+				 * kunos pcap shows the original DT wire +
+				 * value 3 in the post-conversion 0x3e tail.
 				 */
+				if (pq->slots[pi].pending && is_archived)
+					continue;
 				b0 = (uint8_t)penalty_wire_value(
 				    pq->slots[pi].kind,
 				    pq->slots[pi].reason);

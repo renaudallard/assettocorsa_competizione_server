@@ -570,7 +570,8 @@ broadcast_session_results(struct Server *s)
 			 * server phase is the race that just completed).
 			 */
 			ok = ok && write_session_leaderboard_section(&bb, s,
-			    sd->session_type) == 0;
+			    sd->session_type,
+			    n != s->session.session_index) == 0;
 		}
 		(void)leader; (void)src;
 	}

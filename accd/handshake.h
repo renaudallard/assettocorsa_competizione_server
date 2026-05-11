@@ -101,7 +101,7 @@ int	write_session_result_header(struct ByteBuf *bb,
  * passes the type of each completed session in the result list.
  */
 int	write_session_leaderboard_section(struct ByteBuf *bb,
-		struct Server *s, uint8_t session_type);
+		struct Server *s, uint8_t session_type, int is_archived);
 
 /*
  * Emit the assist_rules + leaderboard section from FUN_140034a40
@@ -122,7 +122,7 @@ int	write_leaderboard_section(struct ByteBuf *bb, struct Server *s);
  */
 int	write_car_leaderboard_record(struct ByteBuf *bb,
 		const struct Server *s, const struct CarEntry *ec,
-		uint8_t cvar8);
+		uint8_t cvar8, int is_archived);
 
 /*
  * Build the 0x4e SRV_RATING_SUMMARY body for every used car
