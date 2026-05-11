@@ -40,6 +40,7 @@
 
 #include "log.h"
 #include "penalty.h"
+#include "session.h"
 #include "state.h"
 
 int
@@ -148,8 +149,16 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	 * code clamped DT/SG to 3 and TP to 0, dropping the input.
 	 */
 	e->laps_remaining = value;
-	if (exe_kind == EXE_DQ)
+	if (exe_kind == EXE_DQ) {
 		s->cars[car_id].race.disqualified = 1;
+		/*
+		 * Re-sort: cmp_cars puts disqualified cars last, so the
+		 * next 0x36 has the DQ'd car at the back of the per-car
+		 * list (matching kunos's 4-bot fingerprint where bot1
+		 * with DQ sits at slot 4 after bots 2/3/4).
+		 */
+		session_recompute_standings(s);
+	}
 	e->issued_ms = mono_ms();
 	/*
 	 * Bump standings_seq so tick_run's leaderboard broadcaster fires
