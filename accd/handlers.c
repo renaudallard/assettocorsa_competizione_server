@@ -545,27 +545,55 @@ h_chat(struct Server *s, struct Conn *c,
 {
 	struct Reader r;
 	uint8_t msg_id;
-	char *sender = NULL, *text = NULL;
+	char *text = NULL;
+	const char *sender;
 	int handled;
 	struct ByteBuf out;
 
+	/*
+	 * AC2 client outbound 0x2a wire (FUN_14352d760 + FUN_143461160 +
+	 * trailing i32 from param_1+0x650):
+	 *   u8  0x2a
+	 *   str_a text         (single string; max 35 codepoints per
+	 *                       kunos's FUN_1400142f0 case 0x2a)
+	 *   i32 client_ts_ms   (server-side ignored by kunos)
+	 *
+	 * Sender is server-side: the per-car driver name resolved from
+	 * the connection's car_id, not the wire.  Previously this handler
+	 * read two str_a as (sender, text) which doesn't match the
+	 * client's actual emit — every chat command except echo broke
+	 * for real AC2 clients.
+	 */
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0)
 		return -1;
-	if (rd_str_a(&r, &sender) < 0 ||
-	    rd_str_a(&r, &text) < 0) {
+	if (rd_str_a(&r, &text) < 0) {
 		log_warn("h_chat: short body from conn=%u",
 		    (unsigned)c->conn_id);
-		free(sender);
 		free(text);
 		return 0;
 	}
-	log_info("CHAT %s: %s", sender, text);
+	/* The trailing i32 timestamp is read for completeness but
+	 * doesn't gate anything — kunos doesn't consume it either. */
+	{
+		int32_t client_ts_ms;
+		(void)rd_i32(&r, &client_ts_ms);
+		(void)client_ts_ms;
+	}
 	/*
-	 * Sanitize against printf format specifiers: the binary
-	 * refuses messages containing "%%".  We don't use printf
-	 * on the text but the client might.
+	 * Sender: driver display name from the car_entry.  Falls back
+	 * to "BOT_N" / numeric id if the car has no driver string.
 	 */
+	sender = "<anon>";
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
+	    s->cars[c->car_id].used) {
+		const struct DriverInfo *dd =
+		    &s->cars[c->car_id].drivers[
+		    s->cars[c->car_id].current_driver_index];
+		if (dd->short_name[0] != '\0')
+			sender = dd->short_name;
+	}
+	log_info("CHAT %s: %s", sender, text);
 	if (text != NULL && strstr(text, "%%") != NULL) {
 		log_warn("h_chat: dropping message with format "
 		    "specifier from conn=%u", (unsigned)c->conn_id);
@@ -573,12 +601,6 @@ h_chat(struct Server *s, struct Conn *c,
 	}
 	handled = chat_process(s, c, text);
 	if (handled == 0) {
-		/*
-		 * Regular chat: broadcast a 0x2b to every other
-		 * client.  Body: sender name + text + i32 chat
-		 * type sub id + u8 = chat type 4 (system info)
-		 * per §5.6.4a.
-		 */
 		bb_init(&out);
 		if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 		    wr_str_a(&out, sender) == 0 &&
@@ -590,7 +612,6 @@ h_chat(struct Server *s, struct Conn *c,
 		bb_free(&out);
 	}
 out:
-	free(sender);
 	free(text);
 	return 0;
 }
