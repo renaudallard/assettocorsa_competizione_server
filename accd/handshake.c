@@ -722,10 +722,14 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		 */
 		int active = -1;
 		for (pi = 0; pi < pq->count; pi++) {
-			if (!pq->slots[pi].served && !pq->slots[pi].pending) {
-				active = pi;
-				break;
-			}
+			if (pq->slots[pi].served)
+				continue;
+			if (pq->slots[pi].pending)
+				continue;
+			if (pq->slots[pi].admin)
+				continue;
+			active = pi;
+			break;
 		}
 		if (active >= 0) {
 			float remaining =
@@ -788,6 +792,8 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				continue;
 			if (pq->slots[pi].pending && !in_race)
 				continue;
+			if (pq->slots[pi].admin)
+				continue;
 			pq_emit++;
 		}
 		if (wr_u8(bb, pq_emit) < 0) return -1;
@@ -795,6 +801,8 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			if (pq->slots[pi].served)
 				continue;
 			if (pq->slots[pi].pending && !in_race)
+				continue;
+			if (pq->slots[pi].admin)
 				continue;
 			if (wr_i32(bb, (int32_t)penalty_wire_value(
 			    pq->slots[pi].kind,

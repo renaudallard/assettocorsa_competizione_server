@@ -169,6 +169,7 @@ struct PenaltyEntry {
 	int32_t		laps_remaining;	/* drive-through countdown */
 	uint64_t	issued_ms;
 	uint8_t		pending;	/* 1 = client-reported, awaits server validation */
+	uint8_t		admin;		/* 1 = admin chat-issued, hidden from 0x36 wire */
 };
 
 struct PenaltyQueue {

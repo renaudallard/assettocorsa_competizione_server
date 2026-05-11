@@ -212,6 +212,9 @@ chat_do_penalty(struct Server *s, const char *cmd, const char *args,
 	{
 		uint8_t exe = penalty_exe_kind_of((uint8_t)kind);
 		int32_t val = 3;	/* admin /dt, /sg* default */
+		struct PenaltyQueue *pq = &s->cars[car_id].race.pen;
+		int pre = pq->count;
+		int pi;
 		if (kind == PEN_TP5)
 			val = 5;
 		else if (kind == PEN_TP15)
@@ -219,6 +222,22 @@ chat_do_penalty(struct Server *s, const char *cmd, const char *args,
 		if (penalty_enqueue(s, car_id, exe, 8, val, 0,
 		    collision, REASON_RACE_CONTROL) < 0)
 			return;
+		/*
+		 * Admin chat-issued penalties are tracked server-side for
+		 * race-end conversion + per-session results but kunos does
+		 * NOT surface them in the 0x36 active_pen prefix or
+		 * pq_emit list (pcap of admin /dt/sg/tp scenarios shows
+		 * the per-car record stays at active_pen=0 / pq_emit=0
+		 * even though the broadcast chat reports the penalty).
+		 * Mark every slot freshly enqueued by this call as `admin`
+		 * so write_car_leaderboard_record can skip them.
+		 */
+		if (pre > pq->count)
+			pre = pq->count - 1;
+		if (pre < 0)
+			pre = 0;
+		for (pi = pre; pi < pq->count; pi++)
+			pq->slots[pi].admin = 1;
 	}
 	penalty_format_chat(chat, sizeof(chat),
 	    (uint8_t)kind, REASON_RACE_CONTROL, collision, car_num);
@@ -744,8 +763,25 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		if (chat_parse_int(text + 3, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);
 			if (car_id >= 0) {
+				struct PenaltyQueue *pq =
+				    &s->cars[car_id].race.pen;
+				int pre = pq->count;
+				int pi;
 				penalty_enqueue(s, car_id, EXE_DQ, 19, 3,
 				    1, 0, REASON_RACE_CONTROL);
+				/*
+				 * Mark the freshly enqueued DQ slot(s) as
+				 * admin so 0x36's active_pen / pq_emit skip
+				 * them — kunos doesn't surface admin-issued
+				 * DQ in the per-car prefix.  See
+				 * chat_do_penalty for the same pattern.
+				 */
+				if (pre > pq->count)
+					pre = pq->count - 1;
+				if (pre < 0)
+					pre = 0;
+				for (pi = pre; pi < pq->count; pi++)
+					pq->slots[pi].admin = 1;
 				char chat[128];
 				snprintf(chat, sizeof(chat),
 				    "Car #%d was disqualified by Race Control",
