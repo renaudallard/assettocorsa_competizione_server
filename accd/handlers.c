@@ -1093,18 +1093,18 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		return 0;	/* out-of-enum: drop silently */
 	if (kind == EXE_RBL) {
 		/*
-		 * RemoveBestLaptime, qualifying / hot-lap mode.  Clear
-		 * the car's best lap + best sectors AND enqueue an RBL
-		 * entry so the per-car tail of the next 0x36 carries the
-		 * appropriate wire code (6 for cutting, 12 for pit-speed,
-		 * etc.) per kunos's FUN_1400f03b0 dispatcher.  Mark the
-		 * entry pending so it stays out of the active_pen prefix
-		 * (matches the 0x41 client-report path for other kinds).
+		 * RemoveBestLaptime, qualifying / hot-lap mode.  Clear the
+		 * car's best lap + best sectors AND enqueue an RBL entry so
+		 * the per-car tail of the next 0x36 carries the appropriate
+		 * wire code (6 for cutting, 12 for pit-speed, etc.) per
+		 * kunos's FUN_1400f03b0 dispatcher.  Mark the entry pending
+		 * so it stays out of the active_pen prefix (matches the 0x41
+		 * client-report path for other kinds).  No standings_seq
+		 * bump — RBL is non-DQ and kunos doesn't broadcast on it.
 		 */
 		struct CarRaceState *race = &s->cars[c->car_id].race;
 		int d;
 		uint8_t reason = client_category_to_reason(category);
-		uint32_t prev_seq = s->session.standings_seq;
 
 		race->best_lap_ms = 0;
 		for (d = 0; d < 3; d++)
@@ -1118,7 +1118,6 @@ h_report_penalty(struct Server *s, struct Conn *c,
 			if (pq->count > 0)
 				pq->slots[pq->count - 1].pending = 1;
 		}
-		s->session.standings_seq = prev_seq + 1;
 		return 0;
 	}
 	/*

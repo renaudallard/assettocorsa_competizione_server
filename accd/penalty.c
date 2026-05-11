@@ -144,11 +144,11 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 		e->collision = collision ? 1 : 0;
 		e->served = 0;
 		/*
-		 * laps_remaining holds the caller-supplied value verbatim.
-		 * For DT/SG it's the lap countdown; for TP it's the time
-		 * penalty in seconds; in either case kunos's pcap shows the
-		 * original 0x41 value byte ride through the per-car tail
-		 * byte 1 of the 0x36 leaderboard.
+		 * laps_remaining: caller-supplied value verbatim.  For DT/SG
+		 * it's the lap countdown; for TP it's the time penalty in
+		 * seconds; in either case kunos's pcap shows the original
+		 * 0x41 value byte ride through the per-car tail byte 1 of
+		 * the 0x36 leaderboard.
 		 */
 		e->laps_remaining = value;
 		if (exe_kind == EXE_DQ) {
@@ -157,12 +157,13 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 		}
 		e->issued_ms = mono_ms();
 		/*
-		 * Bump standings_seq only on events that kunos broadcasts a
-		 * fresh 0x36 for: the very first penalty into a car's queue,
+		 * Bump standings_seq on the first penalty into a car's queue
 		 * or any DQ.  Intermediate non-DQ updates leave the tail
-		 * stale but don't trigger a broadcast, matching kunos's
-		 * 4-bot pcap (2026-05-11) where ~14 emits cover 52 reports
-		 * because non-DQ ladder steps don't fan out.
+		 * stale.  The first-entry bump is what guarantees the
+		 * single-penalty matrix test sees an emit with the penalty
+		 * wire code in the per-car tail; without it the only
+		 * post-handshake 0x36 would be the conn_drop carve-out
+		 * which fans to zero conns when the lone bot leaves.
 		 */
 		if (was_empty || exe_kind == EXE_DQ)
 			s->session.standings_seq++;
