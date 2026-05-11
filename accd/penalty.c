@@ -271,7 +271,16 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		if (st->counter >= 0x100) {
 			log_info("car %d total TP exceeded 256s -> DQ",
 			    car_id);
-			penalty_materialize(s, car_id, EXE_DQ, 0, 0, reason);
+			/*
+			 * Kunos overrides the reason to RACE_CONTROL when
+			 * TP accumulation crosses the 256 s threshold.
+			 * Pcap (2026-05-11 TP-accum scenario): kunos's
+			 * tail wire is 19 = REASON_RACE_CONTROL + PEN_DQ,
+			 * not 5 = REASON_CUTTING + PEN_DQ even when the
+			 * triggering reports were Cutting.
+			 */
+			penalty_materialize(s, car_id, EXE_DQ, 0, 0,
+			    REASON_RACE_CONTROL);
 			race->pen_state[EXE_DQ].severity = EXE_DQ;
 			race->pen_state[EXE_DQ].issued_ms = now_ms;
 		}
