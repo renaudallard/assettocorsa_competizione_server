@@ -163,8 +163,30 @@ handle_tcp_accept(struct Server *s)
 	}
 	c = conn_new(s, cfd, &from);
 	if (c == NULL) {
-		log_warn("server full: dropping %s:%u",
-		    inet_ntoa(from.sin_addr), ntohs(from.sin_port));
+		/*
+		 * Server full.  Mirror kunos's wire behaviour: send a
+		 * 0x0c REJECT_FULL with (sub=0, a=current_count, b=max)
+		 * so the client renders the "server full" dialog instead
+		 * of "connection lost".  Body 14 B + 2 B length prefix.
+		 */
+		unsigned char reject[16];
+		size_t i;
+		uint32_t cur = (uint32_t)s->nconns;
+		uint32_t cap = (uint32_t)s->max_connections;
+		reject[0] = 14;
+		reject[1] = 0;
+		reject[2] = SRV_STATE_RECORD_0C;
+		reject[3] = REJECT_FULL;
+		reject[4] = reject[5] = reject[6] = reject[7] = 0;	/* sub */
+		for (i = 0; i < 4; i++)
+			reject[8 + i] = (unsigned char)(cur >> (i * 8));
+		for (i = 0; i < 4; i++)
+			reject[12 + i] = (unsigned char)(cap >> (i * 8));
+		(void)send(cfd, reject, sizeof(reject), MSG_NOSIGNAL);
+		log_warn("server full: dropping %s:%u (sent REJECT_FULL "
+		    "current=%u max=%u)",
+		    inet_ntoa(from.sin_addr), ntohs(from.sin_port),
+		    (unsigned)cur, (unsigned)cap);
 		close(cfd);
 		return;
 	}

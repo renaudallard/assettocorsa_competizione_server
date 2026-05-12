@@ -11,11 +11,8 @@
 #   8  REJECT_VERSION_HI  -- client_version >  0xff           (--client-version)
 #   6  REJECT_PASSWORD    -- server requires pwd, bot sends wrong
 #                                                             (cfg_reject_password)
-#   9  REJECT_FULL        -- maxConnections=1, second bot joins.
-#                            Deferred: kunos and accd cfgs use
-#                            different TCP/UDP ports (19298 vs 9302)
-#                            so a shared configuration.json overlay
-#                            can't be scp'd to both sides as-is.
+#   9  REJECT_FULL        -- maxConnections=1, second bot joins
+#                            (cfg_reject_full/{local,remote}/)
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
@@ -25,7 +22,11 @@ WINE_CFG=wine-test/cfg
 swap_local_cfg() {
     overlay_dir=$1
     [ -z "$overlay_dir" ] && return 0
-    for f in "$overlay_dir"/*.json; do
+    # Use the per-side `local/` subdir if it exists (different listen
+    # ports), else fall back to the shared overlay at the top level.
+    src=$overlay_dir
+    [ -d "$overlay_dir/local" ] && src=$overlay_dir/local
+    for f in "$src"/*.json; do
         [ -f "$f" ] || continue
         base=$(basename "$f")
         cp "cfg/$base" "cfg/$base.bak" 2>/dev/null || true
@@ -43,7 +44,11 @@ restore_local_cfg() {
 swap_wine_cfg() {
     overlay_dir=$1
     [ -z "$overlay_dir" ] && return 0
-    for f in "$overlay_dir"/*.json; do
+    # Use the per-side `remote/` subdir if it exists (wine kunos ports
+    # 19298/19299 instead of 9302/9303), else share the top-level.
+    src=$overlay_dir
+    [ -d "$overlay_dir/remote" ] && src=$overlay_dir/remote
+    for f in "$src"/*.json; do
         [ -f "$f" ] || continue
         base=$(basename "$f")
         ssh accd@172.20.0.66 "cd $WINE_CFG && cp '$base' '$base.bak' 2>/dev/null || true"
@@ -122,3 +127,7 @@ probe ver_lo 7 "" "--race 911 --grid 1 --name BotReject --client-version 0x0001 
 probe ver_hi 8 "" "--race 911 --grid 1 --name BotReject --client-version 0xffff --expect-reject"
 # 6: PASSWORD (cfg_reject_password sets password=secret; bot sends wrong)
 probe password 6 cfg_reject_password "--race 911 --grid 1 --name BotReject --password wrong --expect-reject"
+# 9: FULL (cfg_reject_full/{local,remote}/ sets maxConnections=1)
+probe full 9 cfg_reject_full \
+    "--race 911 --grid 1 --name BotSeat1" \
+    "--race 922 --grid 2 --name BotSeat2 --expect-reject"

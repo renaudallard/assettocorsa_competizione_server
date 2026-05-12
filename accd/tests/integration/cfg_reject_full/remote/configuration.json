@@ -1,0 +1,8 @@
+{
+    "udpPort": 19299,
+    "tcpPort": 19298,
+    "maxConnections": 1,
+    "registerToLobby": 0,
+    "lanDiscoveryEnabled": 0,
+    "configVersion": 1
+}
