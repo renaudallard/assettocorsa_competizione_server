@@ -26,7 +26,7 @@ swap_local_cfg() {
     # ports), else fall back to the shared overlay at the top level.
     src=$overlay_dir
     [ -d "$overlay_dir/local" ] && src=$overlay_dir/local
-    for f in "$src"/*.json; do
+    for f in "$src"/*; do
         [ -f "$f" ] || continue
         base=$(basename "$f")
         cp "cfg/$base" "cfg/$base.bak" 2>/dev/null || true
@@ -35,10 +35,23 @@ swap_local_cfg() {
 }
 
 restore_local_cfg() {
-    for f in cfg/*.json.bak; do
-        [ -f "$f" ] || continue
-        mv "$f" "${f%.bak}"
-    done
+    overlay_dir=$1
+    src=$overlay_dir
+    [ -n "$overlay_dir" ] && [ -d "$overlay_dir/local" ] && src=$overlay_dir/local
+    # Files copied in that had a pre-existing original get restored
+    # from .bak.  Files that didnt exist before (no .bak) are
+    # removed so the next test sees a clean cfg dir.
+    if [ -n "$overlay_dir" ]; then
+        for f in "$src"/*; do
+            [ -f "$f" ] || continue
+            base=$(basename "$f")
+            if [ -f "cfg/$base.bak" ]; then
+                mv "cfg/$base.bak" "cfg/$base"
+            else
+                rm -f "cfg/$base"
+            fi
+        done
+    fi
 }
 
 swap_wine_cfg() {
@@ -64,70 +77,98 @@ probe() {
     label=$1
     expected_reason=$2
     overlay_dir=$3
-    shift 3
+    cross_check=$4
+    shift 4
     TEST_DURATION=5
 
     swap_local_cfg "$overlay_dir"
-    swap_wine_cfg "$overlay_dir"
+    if [ "$cross_check" = "yes" ]; then
+        swap_wine_cfg "$overlay_dir"
+    fi
 
-    echo "==> [$label expected_reason=$expected_reason]"
-    # Build a single shell-quoted string for the remote ssh invocation
-    # so multi-bot variants preserve their per-bot arg boundaries.
-    remote=""
-    for a in "$@"; do
-        remote="$remote \"$a\""
-    done
-    ssh accd@172.20.0.66 "sudo -n rm -f /tmp/kunos_run.pcap; cd ~/wine-test && \
-        TEST_DURATION=$TEST_DURATION ./kunos_run_v2.sh $remote >/dev/null 2>&1"
-    scp -q accd@172.20.0.66:~/wine-test/kunos.pcap "kunos_reject_${label}.pcap"
+    echo "==> [$label expected_reason=$expected_reason cross=$cross_check]"
+    if [ "$cross_check" = "yes" ]; then
+        remote=""
+        for a in "$@"; do
+            remote="$remote \"$a\""
+        done
+        ssh accd@172.20.0.66 "sudo -n rm -f /tmp/kunos_run.pcap; cd ~/wine-test && \
+            TEST_DURATION=$TEST_DURATION ./kunos_run_v2.sh $remote >/dev/null 2>&1"
+        scp -q accd@172.20.0.66:~/wine-test/kunos.pcap "kunos_reject_${label}.pcap"
+    fi
 
     sudo -n rm -f /tmp/penalty_diff_accd.pcap accd.pcap
     TEST_DURATION=$TEST_DURATION ./run_test_v2.sh "$@" >/dev/null 2>&1
     mv accd.pcap "accd_reject_${label}.pcap"
 
-    restore_local_cfg
-    restore_wine_cfg
+    restore_local_cfg "$overlay_dir"
+    if [ "$cross_check" = "yes" ]; then
+        restore_wine_cfg
+    fi
 
-    rm -f "accd_reject_${label}.legacy.pcap" "kunos_reject_${label}.legacy.pcap"
+    rm -f "accd_reject_${label}.legacy.pcap"
     editcap -F pcap "accd_reject_${label}.pcap" "accd_reject_${label}.legacy.pcap"
-    editcap -F pcap "kunos_reject_${label}.pcap" "kunos_reject_${label}.legacy.pcap"
+    if [ "$cross_check" = "yes" ]; then
+        rm -f "kunos_reject_${label}.legacy.pcap"
+        editcap -F pcap "kunos_reject_${label}.pcap" "kunos_reject_${label}.legacy.pcap"
+    fi
 
-    python3 -c "
-import sys
+    cross_check="$cross_check" expected_reason="$expected_reason" \
+    label="$label" python3 -c "
+import os, sys
 sys.path.insert(0, '.')
 from diff_pcap import reassemble_server_tx, walk_acc_frames
 
-_, ab, _ = reassemble_server_tx('accd_reject_${label}.legacy.pcap', 9302)
-_, kb, _ = reassemble_server_tx('kunos_reject_${label}.legacy.pcap', 19298)
-af = [b for o,l,b in walk_acc_frames(ab) if b[0]==0x0c]
-kf = [b for o,l,b in walk_acc_frames(kb) if b[0]==0x0c]
+label = os.environ['label']
+expected_reason = int(os.environ['expected_reason'])
+cross = os.environ['cross_check'] == 'yes'
 
+_, ab, _ = reassemble_server_tx(f'accd_reject_{label}.legacy.pcap', 9302)
+af = [b for o,l,b in walk_acc_frames(ab) if b[0]==0x0c]
 print(f'  accd 0x0c frames: {len(af)}; lens {[len(b) for b in af]}')
-print(f'  kunos 0x0c frames: {len(kf)}; lens {[len(b) for b in kf]}')
-if not af or not kf:
-    print('  FAIL NO_FRAMES')
+
+if not af:
+    print('  FAIL: accd emitted no 0x0c')
     sys.exit(1)
-a, k = af[0], kf[0]
-print(f'  accd[0]:  {a.hex()}')
-print(f'  kunos[0]: {k.hex()}')
-if a == k and a[1] == $expected_reason:
-    print('  RESULT: IDENTICAL (reject byte-exact)')
-elif a == k:
-    print(f'  RESULT: IDENTICAL bytes but reason {a[1]} != expected $expected_reason')
-else:
-    diffs = sum(1 for j in range(min(len(a),len(k))) if a[j]!=k[j])
-    print(f'  RESULT: DIFFER ({diffs} byte diff, a={len(a)} k={len(k)})')
+a = af[0]
+print(f'  accd[0]: {a.hex()}')
+if a[1] != expected_reason:
+    print(f'  FAIL accd reason={a[1]} != expected {expected_reason}')
     sys.exit(2)
+
+if cross:
+    _, kb, _ = reassemble_server_tx(f'kunos_reject_{label}.legacy.pcap', 19298)
+    kf = [b for o,l,b in walk_acc_frames(kb) if b[0]==0x0c]
+    print(f'  kunos 0x0c frames: {len(kf)}; lens {[len(b) for b in kf]}')
+    if not kf:
+        print('  FAIL: kunos emitted no 0x0c')
+        sys.exit(1)
+    k = kf[0]
+    print(f'  kunos[0]: {k.hex()}')
+    if a == k:
+        print('  RESULT: IDENTICAL (reject byte-exact)')
+    else:
+        diffs = sum(1 for j in range(min(len(a),len(k))) if a[j]!=k[j])
+        print(f'  RESULT: DIFFER ({diffs} byte diff, a={len(a)} k={len(k)})')
+        sys.exit(2)
+else:
+    print(f'  RESULT: VALID accd-only (kunos cross-check skipped)')
 "
 }
 
 # 7: VERSION_LO
-probe ver_lo 7 "" "--race 911 --grid 1 --name BotReject --client-version 0x0001 --expect-reject"
+probe ver_lo 7 "" yes "--race 911 --grid 1 --name BotReject --client-version 0x0001 --expect-reject"
 # 8: VERSION_HI
-probe ver_hi 8 "" "--race 911 --grid 1 --name BotReject --client-version 0xffff --expect-reject"
+probe ver_hi 8 "" yes "--race 911 --grid 1 --name BotReject --client-version 0xffff --expect-reject"
 # 6: PASSWORD (cfg_reject_password sets password=secret; bot sends wrong)
-probe password 6 cfg_reject_password "--race 911 --grid 1 --name BotReject --password wrong --expect-reject"
+probe password 6 cfg_reject_password yes \
+    "--race 911 --grid 1 --name BotReject --password wrong --expect-reject"
 # 9: FULL (cfg_reject_full/{local,remote}/ sets maxConnections=1)
-probe full 9 cfg_reject_full \
+probe full 9 cfg_reject_full yes \
     "--race 911 --grid 1 --name BotSeat1" \
     "--race 922 --grid 2 --name BotSeat2 --expect-reject"
+# 5: BANNED (cfg_reject_banned/local/banlist.txt pre-populates the
+# bot's steam_id in accd's persistent ban list).  No kunos cross-check
+# because kunos has no banlist file (bans are runtime-only via /ban).
+probe banned 5 cfg_reject_banned no \
+    "--race 911 --grid 1 --name BotReject --expect-reject"
