@@ -13,6 +13,33 @@ cd "$HERE"
 ACCD=/home/r/code/assettocorsa/accd/accd
 PCAP=/tmp/accd_lobby.pcap
 
+# Trap-based cleanup: if an interrupt fires while accd is up with
+# settings.json swapped in, restore the original from .bak and stop
+# the running accd + dumpcap.  The script-only manipulation means we
+# only need the local-side restore (no wine cfg here).
+ACCD_PID=""
+DPID=""
+cleanup_on_exit() {
+    rc=$?
+    [ -n "$ACCD_PID" ] && kill -TERM "$ACCD_PID" 2>/dev/null || true
+    [ -n "$DPID" ] && sudo -n pkill -INT -f "dumpcap.*$PCAP" 2>/dev/null || true
+    for f in cfg/settings.json.bak cfg/configuration.json.bak; do
+        [ -f "$f" ] || continue
+        echo "==> trap cleanup: restoring $(basename "${f%.bak}")" >&2
+        mv "$f" "${f%.bak}" || true
+    done
+    exit $rc
+}
+trap cleanup_on_exit INT TERM HUP EXIT
+
+# Defensive startup recovery: roll back any leftover *.bak from
+# a prior crashed run.
+for f in cfg/*.bak; do
+    [ -f "$f" ] || continue
+    echo "==> startup recovery: $(basename "${f%.bak}") <- $(basename "$f")"
+    mv "$f" "${f%.bak}"
+done
+
 # Pick the egress interface for the lobby host so we capture the
 # UDP packets accd sends out.
 IFACE=$(ip -o route get 131.153.158.178 2>/dev/null | sed -n 's/.* dev \([^ ]*\) .*/\1/p')

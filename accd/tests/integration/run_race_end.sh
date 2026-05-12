@@ -14,6 +14,35 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 
+# Trap-based cleanup so an interrupted run (Ctrl-C, bot timeout)
+# never leaves the cfg overlays in place.  Restores from .bak on
+# both accd cfg/ and wine ~/wine-test/cfg/ for every file that was
+# swapped during this script.
+cleanup_on_exit() {
+    rc=$?
+    for f in cfg/event.json.bak cfg/configuration.json.bak; do
+        [ -f "$f" ] || continue
+        echo "==> trap cleanup: restoring $(basename "${f%.bak}")" >&2
+        mv "$f" "${f%.bak}" || true
+    done
+    ssh accd@172.20.0.66 "cd wine-test/cfg && for f in *.bak; do \
+        [ -f \"\$f\" ] && mv \"\$f\" \"\${f%.bak}\"; done" 2>/dev/null || true
+    exit $rc
+}
+trap cleanup_on_exit INT TERM HUP EXIT
+
+# Defensive startup recovery: if a previous crashed run left
+# cfg/*.bak files, the live cfg holds the test overlay -- roll any
+# .bak back so we start from the canonical original.
+for f in cfg/*.bak; do
+    [ -f "$f" ] || continue
+    echo "==> startup recovery: $(basename "${f%.bak}") <- $(basename "$f")"
+    mv "$f" "${f%.bak}"
+done
+ssh accd@172.20.0.66 "cd wine-test/cfg && for f in *.bak; do \
+    [ -f \"\$f\" ] && echo \"==> wine startup recovery: \${f%.bak} <- \$f\" >&2 && \
+    mv \"\$f\" \"\${f%.bak}\"; done" >&2 || true
+
 # Cfg = 1 min P + 1 min R, pre 5 s, overtime 10 s.  Time map:
 #   server_t  0  = boot, bot connects ~0.1 s later
 #   server_t ~3  = FORMATION -> PHASE_SESSION (P active)
