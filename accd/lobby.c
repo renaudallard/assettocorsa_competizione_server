@@ -27,40 +27,46 @@
  * lobby.c -- Kunos kson lobby client.
  *
  * Wire format reverse-engineered from accServer.exe v1.10.2,
- * captured 2026-04-15.  Endpoint 131.153.158.178:909, framed as
- * u16 LE length + body.  See lobby.h.
+ * captured 2026-04-15 and re-validated against v0.3.37 + kunos pcap
+ * 2026-05-12.  Endpoint 131.153.158.178:909, framed as u16 LE length
+ * + body (except the 256-byte init blob which is unframed).
  *
- * After TCP connect, the Kunos server sends a 256-byte session-init
- * blob that contains mostly uninitialized stack memory under Wine
- * (visible 64-bit pointers).  The lobby accepts whatever; we send
- * 256 zero bytes.  Then the registration message (id 0x44):
+ * After TCP connect, kunos writes a 256-byte session-init blob:
+ *   bytes [0..1]   = local_port LE
+ *   byte  [2]      = local_port % 77
+ *   byte  [3]      = local_port % 21
+ *   bytes [4..255] = uninitialised stack (kunos leaks 78 B of 64-bit
+ *                    pointers under Wine; the lobby ignores them)
+ * We send zeros for [4..255] which the lobby accepts cleanly.
  *
- *   u32 ts_low + u16 0 + u32 6 + u8 0 + u8 0x44 + u8 1 + u8 0x2b
+ * Registration body (preamble type=0xc8, msg id 0x44):
+ *   u8  0x44          msg id (REGISTER)
+ *   u8  0x01          server-kind = dedicated
+ *   u8  0x2b          protocol minor
  *   u32 tcp_port
  *   u32 udp_port
- *   u16 + N raw chars: serverName
- *   u8  + N raw chars: trackName
- *   u32 maxConnections
- *   ff fa 01 00 00 01 00 00          <-- magic, semantics unknown
- *   u8  session_count + u8 0
+ *   u16 + N bytes     serverName  (kson_string: u16 byte-length + UTF-8)
+ *   u8  + N bytes     trackName   (u8 byte-length + UTF-8)
+ *   u32 maxCarSlots   (rated capacity, NOT maxConnections)
+ *   ff fa 01 00 00 01 00 00          <-- capability flags, verbatim
+ *   u8  weatherRandomness
+ *   u8  session_count
  *   per session (10 bytes):
  *      u8 type, u8 day_of_weekend, u8 hour, u8 duration_min,
- *      u8 0, u16 pre_race_wait_s, u16 overtime_s, u16 0x0100
- *   00 00 40 00 4b                   <-- magic trailer, unknown
- *   u8 64 + 64-byte alphanumeric token A (server fingerprint)
- *   u16 10 + 10-byte alphanumeric token B
+ *      u8 0, u16 pre_race_wait_s, u16 overtime_s, u8 1
+ *   u16 0             token pad
+ *   u16 64 + 64 alnum  token_a (server fingerprint, random per launch)
+ *   u16 10 + 10 alnum  token_b
  *
- * Periodic keepalive (every 30 s): u16 length 14 + 14-byte body
- * starting with the timestamp + session_id preamble + msg id 0x0d.
- * Server replies with `01 00 fd` (3 bytes).  Driver-count update:
- * u16 length 12 + 12-byte body, msg id 0x00.
+ * Periodic keepalive (every 30 s): u16 length 14 + 11 B preamble +
+ * u8 load + u8 0 + u8 seq.  Server replies with `01 00 fd` (3 bytes).
+ * Drivers update (on driver-count change): preamble(0xd1) + u8 count
+ * + count * { u32 car_id, kson_string name, u8 current_driver_idx }.
  *
- * UNKNOWNS still:
- *   - The two magic byte runs (`ff fa 01 00 00 01 00 00` and
- *     `00 00 40 00 4b`) — semantics unclear, we copy verbatim.
- *   - The two token strings — Kunos generates them at startup
- *     (likely random), we do the same.
- *   - The 256-byte init blob — we send zeros and the lobby accepts.
+ * Source bytes for `ff fa 01 00 00 01 00 00` and the magic per-session
+ * trailing 0x01 are still opaque — kunos hard-codes them in the
+ * builder.  Tokens token_a/token_b are random alnum strings generated
+ * at server boot (kunos uses time-seeded rand; we use arc4random).
  */
 
 #define _POSIX_C_SOURCE 200809L
