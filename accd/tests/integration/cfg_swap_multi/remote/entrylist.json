@@ -1,0 +1,19 @@
+{
+    "entries": [
+        {
+            "drivers": [
+                { "firstName": "First", "lastName": "Drv",
+                  "shortName": "FST", "playerID": "S76561199000000911" },
+                { "firstName": "Second", "lastName": "Drv",
+                  "shortName": "SCD", "playerID": "S76561199000000922" }
+            ],
+            "raceNumber": 911,
+            "forcedCarModel": -1,
+            "overrideDriverInfo": 1,
+            "isServerAdmin": 0,
+            "defaultGridPosition": -1
+        }
+    ],
+    "forceEntryList": 1,
+    "configVersion": 1
+}
