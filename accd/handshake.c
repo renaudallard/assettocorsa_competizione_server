@@ -2074,7 +2074,17 @@ handshake_handle(struct Server *s, struct Conn *c,
 				log_info("rejecting %s: SA %u < required %u",
 				    steam_buf, (unsigned)(sa / 100),
 				    (unsigned)s->safety_rating_required);
+				/*
+				 * Kunos wire: u8 0x0c + u8 10 + u32 sub=1
+				 * (safety) + u32 a=0 + u32 b=required.  Kunos
+				 * always sends a=0 in the rating slot; the
+				 * AC2 client looks the actual rating up from
+				 * its own profile, not from this packet.
+				 */
 				reason = REJECT_CP_RATING;
+				reject_sub = 1;
+				reject_a = 0;
+				reject_b = s->safety_rating_required;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;
@@ -2085,6 +2095,9 @@ handshake_handle(struct Server *s, struct Conn *c,
 				    steam_buf, (unsigned)(tr / 100),
 				    (unsigned)s->racecraft_rating_required);
 				reason = REJECT_CP_RATING;
+				reject_sub = 2;
+				reject_a = 0;
+				reject_b = s->racecraft_rating_required;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;

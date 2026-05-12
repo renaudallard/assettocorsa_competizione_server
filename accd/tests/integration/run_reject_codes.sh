@@ -172,3 +172,7 @@ probe full 9 cfg_reject_full yes \
 # because kunos has no banlist file (bans are runtime-only via /ban).
 probe banned 5 cfg_reject_banned no \
     "--race 911 --grid 1 --name BotReject --expect-reject"
+# 10: CP_RATING (cfg_reject_cp_rating sets safetyRatingRequirement=50;
+# bot's default SA rating is 0, so SA/100=0 < 50 -> REJECT_CP_RATING)
+probe cp_rating 10 cfg_reject_cp_rating yes \
+    "--race 911 --grid 1 --name BotReject --expect-reject"
