@@ -309,6 +309,8 @@ main(int argc, char **argv)
 	snprintf(srv.cfg_dir, sizeof(srv.cfg_dir), "%s", cfg_dir);
 	bans_init(&srv.bans);
 	bans_load(&srv.bans, cfg_dir);
+	bans_init(&srv.kicks);
+	kicks_load(&srv.kicks, cfg_dir);
 	ratings_load(&srv);
 
 	log_info("accd %s starting (pid %d)",

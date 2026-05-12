@@ -130,6 +130,36 @@ bans_add(struct BanList *bl, const char *steam_id)
 	return 0;
 }
 
+void
+kicks_load(struct BanList *bl, const char *cfg_dir)
+{
+	char path[512];
+	FILE *f;
+	char line[64];
+
+	snprintf(path, sizeof(path), "%s/kicklist.txt", cfg_dir);
+	f = fopen(path, "r");
+	if (f == NULL)
+		return;	/* kicklist.txt is optional; silent on ENOENT */
+	while (fgets(line, sizeof(line), f) != NULL) {
+		size_t len;
+
+		while (line[0] == ' ' || line[0] == '\t')
+			memmove(line, line + 1, strlen(line));
+		if (line[0] == '#' || line[0] == '\n' || line[0] == '\0')
+			continue;
+		len = strlen(line);
+		while (len > 0 && (line[len - 1] == '\n' ||
+		    line[len - 1] == '\r' || line[len - 1] == ' '))
+			line[--len] = '\0';
+		if (len == 0)
+			continue;
+		(void)bans_add(bl, line);
+	}
+	fclose(f);
+	log_info("kicks: loaded %d entries from %s", bl->count, path);
+}
+
 int
 bans_remove(struct BanList *bl, const char *steam_id)
 {

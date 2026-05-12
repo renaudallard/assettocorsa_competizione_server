@@ -49,4 +49,13 @@ int	bans_contains(const struct BanList *bl, const char *steam_id);
 int	bans_add(struct BanList *bl, const char *steam_id);
 int	bans_remove(struct BanList *bl, const char *steam_id);
 
+/*
+ * Kicks share the bans_contains/add/remove primitives but live in a
+ * separate ephemeral list cleared on weekend wrap.  Distinct loader
+ * so a pre-populated cfg/kicklist.txt seeds the in-memory list at
+ * startup (used by run_reject_codes.sh to test REJECT_KICKED without
+ * a runtime /kick chat dance).
+ */
+void	kicks_load(struct BanList *bl, const char *cfg_dir);
+
 #endif /* ACCD_BANS_H */

@@ -180,6 +180,12 @@ probe password 6 cfg_reject_password yes \
 probe full 9 cfg_reject_full yes \
     "--race 911 --grid 1 --name BotSeat1" \
     "--race 922 --grid 2 --name BotSeat2 --expect-reject"
+# 4: KICKED (cfg_reject_kicked/local/kicklist.txt pre-populates the
+# bots steam_id in accds ephemeral kick list).  No kunos cross-check
+# because kunos has no kick-list file either (kicks are runtime-only
+# via /kick chat and clear on weekend wrap).
+probe kicked 4 cfg_reject_kicked no \
+    "--race 911 --grid 1 --name BotReject --expect-reject"
 # 5: BANNED (cfg_reject_banned/local/banlist.txt pre-populates the
 # bot's steam_id in accd's persistent ban list).  No kunos cross-check
 # because kunos has no banlist file (bans are runtime-only via /ban).

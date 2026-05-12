@@ -873,6 +873,7 @@ struct Server {
 	struct WeatherStatus	weather;
 	struct AssistRules	assist;
 	struct BanList		bans;
+	struct BanList		kicks;	/* ephemeral; cleared on weekend wrap */
 	uint8_t			bop_version;
 	uint16_t		pre_race_waiting_s; /* preRaceWaitingTimeSeconds */
 	uint16_t		session_overtime_s; /* sessionOverTimeSeconds */

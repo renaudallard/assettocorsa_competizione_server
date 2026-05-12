@@ -51,6 +51,7 @@
 uint32_t arc4random_uniform(uint32_t);
 #endif
 
+#include "bans.h"
 #include "bcast.h"
 #include "handshake.h"
 #include "log.h"
@@ -1224,6 +1225,12 @@ session_advance(struct Server *s)
 		}
 		log_info("session: weekend complete, resetting to "
 		    "session 0");
+		/*
+		 * Kicks are ephemeral and tied to the in-progress weekend;
+		 * a fresh weekend gets a fresh kick list (kunos clears them
+		 * on wrap too).  Bans persist across the wrap.
+		 */
+		bans_init(&s->kicks);
 		session_reset(s, 0);
 		/*
 		 * Transient all-INV 0x28 between reset and start.  Matches

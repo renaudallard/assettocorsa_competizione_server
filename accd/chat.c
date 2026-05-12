@@ -296,12 +296,14 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 		bb_free(&out);
 	}
 	target->state = CONN_DISCONNECT;
-	if (permanent && car_id >= 0 && car_id < ACC_MAX_CARS) {
+	if (car_id >= 0 && car_id < ACC_MAX_CARS) {
 		/*
-		 * Ban the driver currently behind the wheel, not slot 0.
-		 * In a multi-driver entrylist entry the active stint may
-		 * be drivers[1] / drivers[2]; banning drivers[0] punishes
-		 * the wrong steam_id.
+		 * Pick the active driver's steam_id (not slot 0).  In a
+		 * multi-driver entrylist entry the current stint may be
+		 * drivers[1] / drivers[2]; targeting drivers[0] punishes
+		 * the wrong account.  /ban writes to the persistent list
+		 * + disk; /kick writes to the ephemeral kicks list
+		 * cleared on weekend wrap.
 		 */
 		struct CarEntry *car = &s->cars[car_id];
 		uint8_t di = car->current_driver_index;
@@ -312,9 +314,14 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 			di = 0;
 		sid = car->drivers[di].steam_id;
 
-		if (bans_add(&s->bans, sid) == 0) {
-			bans_save(&s->bans, s->cfg_dir);
-			log_debug("admin: banned steam_id %s", sid);
+		if (permanent) {
+			if (bans_add(&s->bans, sid) == 0) {
+				bans_save(&s->bans, s->cfg_dir);
+				log_debug("admin: banned steam_id %s", sid);
+			}
+		} else {
+			if (bans_add(&s->kicks, sid) == 0)
+				log_debug("admin: kicked steam_id %s", sid);
 		}
 	}
 	if (reply != NULL)

@@ -2042,6 +2042,14 @@ handshake_handle(struct Server *s, struct Conn *c,
 			free(steam); free(team);
 			goto reply;
 		}
+		/* Kick check (ephemeral, cleared on weekend wrap). */
+		if (bans_contains(&s->kicks, steam_buf)) {
+			log_debug("rejecting kicked steam_id %s", steam_buf);
+			reason = REJECT_KICKED;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
+		}
 
 		/*
 		 * Rating thresholds (handbook III.2.2).  Drivers below
