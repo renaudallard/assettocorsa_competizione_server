@@ -424,9 +424,6 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		    invalid ? " (INVALID)" : "");
 
 		session_recompute_standings(s);
-		/* Force leaderboard rebroadcast even if positions
-		 * didn't change (lap count/time updated). */
-		s->session.standings_seq++;
 
 		if (s->session.phase == PHASE_OVERTIME) {
 			session_overtime_car_finished(s);
@@ -1120,8 +1117,9 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		 * wire code (6 for cutting, 12 for pit-speed, etc.) per
 		 * kunos's FUN_1400f03b0 dispatcher.  Mark the entry pending
 		 * so it stays out of the active_pen prefix (matches the 0x41
-		 * client-report path for other kinds).  No standings_seq
-		 * bump — RBL is non-DQ and kunos doesn't broadcast on it.
+		 * client-report path for other kinds).  RBL is non-DQ and
+		 * kunos doesn't broadcast on it; the deep-compare in
+		 * broadcast_leaderboard_if_changed skips it the same way.
 		 */
 		struct CarRaceState *race = &s->cars[c->car_id].race;
 		int d;

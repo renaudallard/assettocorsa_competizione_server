@@ -2455,15 +2455,12 @@ reply:
 
 	/*
 	 * Recompute standings now that the new car has been added.
-	 * The welcome path below sends an explicit 0x36 to the joiner;
-	 * we don't want a duplicate event-driven emit on the next tick,
-	 * so anchor last_standings_seq to the current standings_seq
-	 * value AFTER recompute.  Kunos pcap (2026-05-09) shows kunos
-	 * emits exactly one 0x36 to a connecting peer; subsequent emits
-	 * are event-driven (e.g., 0x41 enqueue).
+	 * The welcome path below embeds the leaderboard section in the
+	 * 0x0b reply; the tick-loop deep-compare in broadcast_leader-
+	 * board_if_changed will fan a follow-up 0x36 to every conn on
+	 * the next tick since the new car shifts the cached payload.
 	 */
 	session_recompute_standings(s);
-	s->session.last_standings_seq = s->session.standings_seq;
 
 	/*
 	 * After a successful accept, fan out 0x2e new-client-

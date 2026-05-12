@@ -135,39 +135,24 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 		q->count = ACC_MAX_PENALTIES - 1;
 	}
 
-	{
-		int was_empty = q->count == 0;
-
-		e = &q->slots[q->count++];
-		e->kind = pen_kind;
-		e->reason = reason;
-		e->collision = collision ? 1 : 0;
-		e->served = 0;
-		/*
-		 * laps_remaining: caller-supplied value verbatim.  For DT/SG
-		 * it's the lap countdown; for TP it's the time penalty in
-		 * seconds; in either case kunos's pcap shows the original
-		 * 0x41 value byte ride through the per-car tail byte 1 of
-		 * the 0x36 leaderboard.
-		 */
-		e->laps_remaining = value;
-		if (exe_kind == EXE_DQ) {
-			s->cars[car_id].race.disqualified = 1;
-			session_recompute_standings(s);
-		}
-		e->issued_ms = mono_ms();
-		/*
-		 * Bump standings_seq on the first penalty into a car's queue
-		 * or any DQ.  Intermediate non-DQ updates leave the tail
-		 * stale.  The first-entry bump is what guarantees the
-		 * single-penalty matrix test sees an emit with the penalty
-		 * wire code in the per-car tail; without it the only
-		 * post-handshake 0x36 would be the conn_drop carve-out
-		 * which fans to zero conns when the lone bot leaves.
-		 */
-		if (was_empty || exe_kind == EXE_DQ)
-			s->session.standings_seq++;
+	e = &q->slots[q->count++];
+	e->kind = pen_kind;
+	e->reason = reason;
+	e->collision = collision ? 1 : 0;
+	e->served = 0;
+	/*
+	 * laps_remaining: caller-supplied value verbatim.  For DT/SG
+	 * it's the lap countdown; for TP it's the time penalty in
+	 * seconds; in either case kunos's pcap shows the original
+	 * 0x41 value byte ride through the per-car tail byte 1 of
+	 * the 0x36 leaderboard.
+	 */
+	e->laps_remaining = value;
+	if (exe_kind == EXE_DQ) {
+		s->cars[car_id].race.disqualified = 1;
+		session_recompute_standings(s);
 	}
+	e->issued_ms = mono_ms();
 }
 
 /*
@@ -330,10 +315,11 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			return 0;
 		}
 
-		/* Non-fresh: materialise the current cat severity first. */
-		penalty_materialize(s, car_id, old_sev, collision, value,
-		    reason);
-
+		/*
+		 * Non-fresh: compute the ladder step target.  Mirrors
+		 * kunos's FUN_140125f50:159-189 with bVar6 = (force+2)*2,
+		 * giving 4 (SG30) when force=0, 6 (DQ) when force=1.
+		 */
 		switch (old_sev) {
 		case EXE_DT:
 			new_sev = (exe_kind > EXE_DT) ? bVar6 : EXE_SG30;
@@ -351,17 +337,37 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			return 0;		/* DQ reached, terminal */
 		}
 
+		/*
+		 * Replace the existing cat entry in place so the post-step
+		 * wire reaches the next broadcast.  Mirrors kunos's
+		 * remove+recreate at FUN_140125f50:161 (FUN_140126b50
+		 * removes) which then loops back to LAB_140125fb0 and
+		 * creates a new entry with kind=bVar6 value=0.
+		 */
+		{
+			uint8_t old_pen = penalty_pen_kind_of(old_sev,
+			    collision, value);
+			uint8_t new_pen = penalty_pen_kind_of(new_sev, 0, 0);
+			struct PenaltyQueue *q = &race->pen;
+			int i;
+			for (i = q->count - 1; i >= 0; i--) {
+				if (!q->slots[i].served &&
+				    q->slots[i].kind == old_pen &&
+				    q->slots[i].reason == reason) {
+					q->slots[i].kind = new_pen;
+					q->slots[i].laps_remaining = 0;
+					q->slots[i].issued_ms = now_ms;
+					break;
+				}
+			}
+		}
+
 		race->pen_cat_severity[category] = new_sev;
 
-		/*
-		 * When the step lands on DQ, fire the materialise so the
-		 * per-car tail picks up the DQ wire code on the next 0x36
-		 * emit (kunos's pcap shows the same — repeated cat=0
-		 * reports terminate at DQ within two iterations).
-		 */
-		if (new_sev == EXE_DQ)
-			penalty_materialize(s, car_id, EXE_DQ, collision,
-			    value, reason);
+		if (new_sev == EXE_DQ) {
+			s->cars[car_id].race.disqualified = 1;
+			session_recompute_standings(s);
+		}
 	}
 	return 0;
 }
@@ -419,11 +425,6 @@ penalty_serve_front(struct Server *s, int car_id)
 	 */
 	q->slots[idx].served = 1;
 	q->slots[idx].laps_remaining = 0;
-	/*
-	 * Bump standings_seq so the next 0x36 advertises the served
-	 * flag, allowing the AC2 client to clear the DT/SG HUD prompt.
-	 */
-	s->session.standings_seq++;
 }
 
 void
@@ -443,14 +444,6 @@ penalty_clear(struct Server *s, int car_id)
 	 */
 	memset(s->cars[car_id].race.pen_cat_severity, 0,
 	    sizeof(s->cars[car_id].race.pen_cat_severity));
-	/*
-	 * Bump standings_seq so the next 0x36 emit advertises the empty
-	 * tail.  Kunos pcap (run_admin_clear.sh) shows a 207 B 0x36 with
-	 * tail 00 00 after the /clear chat command — without this bump
-	 * accd stays at the prior tail until another event triggers an
-	 * emit.
-	 */
-	s->session.standings_seq++;
 }
 
 void

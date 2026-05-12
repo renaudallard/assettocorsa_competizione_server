@@ -69,8 +69,9 @@ void	session_advance(struct Server *s);
 
 /*
  * Recompute standings for every used car based on the current
- * session phase (race vs P/Q ordering).  Bumps standings_seq
- * if anything changed.
+ * session phase (race vs P/Q ordering).  Writes the new ordering
+ * to car.race.position; the leaderboard broadcast picks the change
+ * up via deep-compare on the next tick.
  */
 void	session_recompute_standings(struct Server *s);
 

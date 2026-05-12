@@ -226,15 +226,26 @@ session_reset(struct Server *s, uint8_t session_index)
 	{
 		uint8_t at = s->session.ambient_temp;
 		uint8_t tt = s->session.track_temp;
+		uint8_t *lb = s->session.leaderboard_cache;
+		size_t lb_cap = s->session.leaderboard_cache_cap;
 
 		memset(&s->session, 0, sizeof(s->session));
 		s->session.ambient_temp = at;
 		s->session.track_temp = tt;
+		/*
+		 * Preserve the leaderboard cache allocation across the
+		 * session reset; the next emit's deep-compare must see
+		 * an empty cache_len so it fires the first 0x36 of the
+		 * new session even when the payload bytes happen to
+		 * match the prior session's last frame.
+		 */
+		s->session.leaderboard_cache = lb;
+		s->session.leaderboard_cache_cap = lb_cap;
+		s->session.leaderboard_cache_len = 0;
 	}
 	s->session.session_index = session_index;
 	s->session.phase = PHASE_WAITING;
 	s->session.phase_started_ms = mono_ms();
-	s->session.standings_seq = 1;
 	s->session.ts_valid = 0;
 	s->session.weekend_time_s =
 	    (uint32_t)s->sessions[session_index].hour_of_day * 3600u;
@@ -766,7 +777,7 @@ void
 session_recompute_standings(struct Server *s)
 {
 	int order[ACC_MAX_CARS];
-	int n = 0, i, j, changed = 0;
+	int n = 0, i, j;
 
 	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
 		if (s->cars[i].used)
@@ -785,13 +796,8 @@ session_recompute_standings(struct Server *s)
 	for (i = 0; i < n; i++) {
 		int idx = order[i];
 
-		if (s->cars[idx].race.position != (int16_t)(i + 1)) {
-			s->cars[idx].race.position = (int16_t)(i + 1);
-			changed = 1;
-		}
+		s->cars[idx].race.position = (int16_t)(i + 1);
 	}
-	if (changed)
-		s->session.standings_seq++;
 }
 
 const char *

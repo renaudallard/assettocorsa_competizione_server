@@ -218,6 +218,10 @@ server_free(struct Server *s)
 		fclose((FILE *)s->latency_dump_fp);
 		s->latency_dump_fp = NULL;
 	}
+	free(s->session.leaderboard_cache);
+	s->session.leaderboard_cache = NULL;
+	s->session.leaderboard_cache_cap = 0;
+	s->session.leaderboard_cache_len = 0;
 }
 
 struct Conn *
@@ -355,19 +359,15 @@ conn_drop(struct Server *s, struct Conn *c)
 		car_runtime_reset_gate(&s->cars[c->car_id].rt);
 		c->car_id = -1;
 		session_recompute_standings(s);
-		s->session.standings_seq++;
 		/*
-		 * Bypass the tick-loop 2 s rate-limit: kunos emits 0x36 on
-		 * every peer-leave so back-to-back disconnects produce a
-		 * cascade of decreasing-car-count frames.  accd's rate-limit
-		 * was added to coalesce penalty bursts (where bumps land
-		 * within the same tick window); a disconnect is a discrete
-		 * event each client needs to see promptly.  Sync the tick
-		 * gate's standings/timestamp counters so the next tick
-		 * doesn't immediately re-emit on its own schedule.
+		 * Kunos emits 0x36 on every peer-leave so back-to-back
+		 * disconnects produce a cascade of decreasing-car-count
+		 * frames.  broadcast_leaderboard_if_changed picks the
+		 * removed row up via deep-compare and fans the smaller
+		 * payload out immediately; the tick-loop check on the
+		 * next iteration sees no change and won't duplicate.
 		 */
 		broadcast_leaderboard(s);
-		s->session.last_standings_seq = s->session.standings_seq;
 		s->session.last_leaderboard_ms = mono_ms();
 	}
 	free(c);

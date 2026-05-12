@@ -42,11 +42,20 @@
 void	tick_run(struct Server *s);
 
 /*
- * Emit 0x36 ACP_LEADERBOARD_BCAST to every connected client.  Called
- * from tick_run on standings_seq change (rate-limited) and from
- * state.c conn_drop to mirror kunos's per-peer-leave cascade.
+ * Emit 0x36 ACP_LEADERBOARD_BCAST to every connected client.  Thin
+ * wrapper over broadcast_leaderboard_if_changed; the cache compare
+ * happens inside so back-to-back callers don't fan out duplicate
+ * payloads to peers that already received the latest state.
  */
 void	broadcast_leaderboard(struct Server *s);
+
+/*
+ * Build the leaderboard payload and broadcast only if its bytes
+ * differ from the cached last-emit.  Mirrors kunos's
+ * FUN_14002f710 deep-compare emit trigger.  Returns 1 on emit, 0
+ * when the cache already matched.
+ */
+int	broadcast_leaderboard_if_changed(struct Server *s);
 
 /*
  * Build a 63-byte per-car body used by 0x39 relay.

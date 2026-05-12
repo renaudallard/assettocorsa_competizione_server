@@ -38,6 +38,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <arpa/inet.h>
@@ -79,7 +80,6 @@
 #define CADENCE_KEEPALIVE_MS		1000	/* 0x14 ~1 Hz */
 #define CADENCE_WEATHER_MS		5000	/* 0x37 every 5 s */
 #define CADENCE_LEADERBOARD_MS		75000	/* 0x36 async-coalesce */
-#define MIN_LEADERBOARD_GAP_MS		2000	/* 0x36 sync rate-limit */
 #define CADENCE_RATINGS_MS		81000	/* 0x4e debounce (.rdata) */
 
 /*
@@ -373,17 +373,55 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 void
 broadcast_leaderboard(struct Server *s)
 {
+	(void)broadcast_leaderboard_if_changed(s);
+}
+
+/*
+ * Build the leaderboard payload, compare to the per-session cache,
+ * and broadcast only when the bytes differ.  Mirrors kunos's
+ * FUN_14002f710:863 which deep-compares cached vs current state
+ * (FUN_140115f60) and emits 0x36 whenever the dirty result is true.
+ * Returns 1 when an emit fired, 0 when the cache was already current.
+ */
+int
+broadcast_leaderboard_if_changed(struct Server *s)
+{
 	struct ByteBuf bb;
+	int emitted = 0;
 
 	bb_init(&bb);
 	if (wr_u8(&bb, SRV_LEADERBOARD_BCAST) < 0)
 		goto done;
 	if (write_leaderboard_section(&bb, s) < 0)
 		goto done;
+
+	if (bb.wpos == s->session.leaderboard_cache_len &&
+	    s->session.leaderboard_cache &&
+	    memcmp(bb.data, s->session.leaderboard_cache, bb.wpos) == 0)
+		goto done;
+
+	if (bb.wpos > s->session.leaderboard_cache_cap) {
+		size_t cap = s->session.leaderboard_cache_cap;
+		uint8_t *nb;
+
+		cap = cap ? cap : 1024;
+		while (cap < bb.wpos)
+			cap *= 2;
+		nb = realloc(s->session.leaderboard_cache, cap);
+		if (!nb)
+			goto done;
+		s->session.leaderboard_cache = nb;
+		s->session.leaderboard_cache_cap = cap;
+	}
+	memcpy(s->session.leaderboard_cache, bb.data, bb.wpos);
+	s->session.leaderboard_cache_len = bb.wpos;
+
 	(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
 	log_info("Updated leaderboard for %d clients", s->nconns);
+	emitted = 1;
 done:
 	bb_free(&bb);
+	return emitted;
 }
 
 /*
@@ -696,7 +734,6 @@ broadcast_stats_udp(struct Server *s)
 void
 tick_run(struct Server *s)
 {
-	uint32_t *last_standings_seq = &s->session.last_standings_seq;
 	uint8_t *last_phase = &s->session.last_phase;
 	/*
 	 * Wall-clock cadence state.  Initialized to 0 so every gate
@@ -881,28 +918,17 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * Leaderboard rebroadcast.  useAsyncLeaderboard (settings.json,
-	 * default 0 = sync) fires on standings_seq change subject to a
-	 * 2 s minimum gap.  Without the gap, accd over-emitted 3-4×
-	 * compared to kunos in penalty-heavy scenarios (4-bot test,
-	 * 2026-05-10): 53 broadcasts vs kunos's 14.  Kunos coalesces
-	 * close penalty events into a single broadcast — the gap
-	 * reproduces the same coalescing.  Async mode (=1) keeps the
-	 * older 75 s coarse cadence for ops who want minimum fan-out.
+	 * Leaderboard rebroadcast.  Sync mode (useAsyncLeaderboard=0,
+	 * default) calls broadcast_leaderboard_if_changed every tick;
+	 * the cache compare inside it mirrors kunos's FUN_14002f710
+	 * deep-compare, so a broadcast only fires when the payload
+	 * bytes actually changed.  Async mode (=1) gates the check
+	 * to a 75 s coarse cadence for ops who want minimum fan-out.
 	 */
-	{
-		int changed = s->session.standings_seq !=
-		    *last_standings_seq;
-		int cadence = now_ms - *last_leaderboard_ms >=
-		    (s->use_async_leaderboard ? CADENCE_LEADERBOARD_MS
-		                              : MIN_LEADERBOARD_GAP_MS);
-		int fire = changed && cadence;
-
-		if (fire) {
-			*last_standings_seq = s->session.standings_seq;
-			broadcast_leaderboard(s);
+	if (!s->use_async_leaderboard ||
+	    now_ms - *last_leaderboard_ms >= CADENCE_LEADERBOARD_MS) {
+		if (broadcast_leaderboard_if_changed(s))
 			*last_leaderboard_ms = now_ms;
-		}
 	}
 
 	/*
@@ -1044,13 +1070,14 @@ tick_run(struct Server *s)
 					penalty_convert_race_end(
 					    &s->cars[j].race.pen);
 				/*
-				 * No standings_seq bump here — kunos doesn't
-				 * emit a 0x36 in PHASE_COMPLETED.  The next
-				 * 0x36 fires after session_advance wraps the
-				 * weekend back to session 0 (P), with an empty
-				 * queue and cvar8=0; the converted entries
-				 * are consumed by broadcast_session_results
-				 * (0x3e) and results.json instead.
+				 * The converted entries are consumed by
+				 * broadcast_session_results (0x3e) and
+				 * results.json; no 0x36 emit is needed in
+				 * PHASE_COMPLETED — kunos doesn't emit one.
+				 * The next 0x36 fires after session_advance
+				 * wraps the weekend back to session 0 (P)
+				 * when the deep-compare in the next tick
+				 * sees the queue cleared and cvar8 reset.
 				 */
 			}
 			/*
