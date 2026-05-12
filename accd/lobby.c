@@ -756,6 +756,7 @@ lobby_send_keepalive(struct LobbyClient *l, const struct Server *s)
 	bb_free(&bb);
 	if (rc == 0) {
 		l->last_keepalive_ms = mono_ms();
+		l->keepalive_ack_pending = 1;
 		log_info("lobby: Sent keepalive (load=%u seq=%u)",
 		    (unsigned)load, (unsigned)seq);
 	}
@@ -775,6 +776,8 @@ lobby_disconnect(struct LobbyClient *l, const char *reason)
 	free(l->rx_buf);
 	l->rx_buf = NULL;
 	l->rx_len = l->rx_cap = 0;
+	l->keepalive_ack_pending = 0;
+	l->last_keepalive_ms = 0;
 	if (l->state == LOBBY_PERMANENTLY_DISABLED)
 		return;	/* sticky terminal state */
 	l->consecutive_fails++;
@@ -982,8 +985,11 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		(void)lobby_send_config_response(l, s);
 		break;
 	case 0xfd:
-		/* keepalive ack — clears ack-pending flag (our impl
-		 * doesn't track pending explicitly, so nothing to do). */
+		/* Keepalive ack — clears the pending flag.  Kunos's
+		 * FUN_140048660 case 6 disconnects with "connection to
+		 * lobby timed out" if ack_pending stays set for >30 s
+		 * after a keepalive send. */
+		l->keepalive_ack_pending = 0;
 		break;
 	default:
 		log_debug("lobby: unhandled cmd 0x%02x (%zu B)",
@@ -1165,8 +1171,18 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 			(void)lobby_send_session_update(l, s);
 			l->session_dirty = 0;
 		}
-		if (now - l->last_keepalive_ms >= LOBBY_KEEPALIVE_MS)
+		/* Mirror kunos's keepalive cycle (FUN_140048660 case 6):
+		 *   - Send 0xf2 every 30 s if no ack is pending.
+		 *   - If ack stays pending for >30 s after send, the
+		 *     lobby has gone silent — drop and reconnect. */
+		if (l->keepalive_ack_pending) {
+			if (now - l->last_keepalive_ms > LOBBY_KEEPALIVE_MS) {
+				lobby_disconnect(l, "keepalive ack timeout");
+				return;
+			}
+		} else if (now - l->last_keepalive_ms >= LOBBY_KEEPALIVE_MS) {
 			(void)lobby_send_keepalive(l, s);
+		}
 		break;
 	default:
 		break;
