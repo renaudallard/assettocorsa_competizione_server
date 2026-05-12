@@ -104,10 +104,12 @@ uint32_t arc4random_uniform(uint32_t);
 #endif
 #include <time.h>
 
+#include "bcast.h"
 #include "chat.h"
 #include "io.h"
 #include "log.h"
 #include "lobby.h"
+#include "msg.h"
 #include "penalty.h"
 #include "prim.h"
 #include "session.h"
@@ -901,16 +903,15 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		 * Lobby-initiated remote ban.  kson sends two kson_strings
 		 * (s1 = target steam_id, s2 = reason) + i32 + u8.  Per
 		 * FUN_1400251b0 the exe looks up the car whose driver's
-		 * steam_id matches s1, broadcasts a 0x2b chat to that
-		 * connection, and invokes FUN_140125f50 with exe_kind=6
-		 * (DQ) — i.e. Race-Control-level disqualification.
-		 * Ignoring this leaves the server's view out of sync
-		 * with kson when a player is globally banned.
+		 * steam_id matches s1, sends a 0x2b chat to ONLY that
+		 * connection (sender "Server", type=3), and invokes
+		 * FUN_140125f50 with exe_kind=8 (DQ) bucket=6 (RaceControl).
+		 * If no match — no chat is sent (kunos drops it silently).
 		 */
 		char s1[256], s2[256];
 		size_t p = 1;
-		char chat[640];
 		int j, target = -1;
+		struct Conn *target_conn = NULL;
 
 		if (lobby_read_kson_string(body, len, &p, s1, sizeof(s1)) < 0
 		    || lobby_read_kson_string(body, len, &p, s2, sizeof(s2))
@@ -933,35 +934,52 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			if (target >= 0)
 				break;
 		}
-		if (target >= 0) {
-			log_info("lobby: 0xf4 remote DQ for car %d (%s): %s",
-			    target, s1, s2);
-			(void)penalty_enqueue(s, target, EXE_DQ, 19, 3, 1, 0,
-			    REASON_RACE_CONTROL);
-			snprintf(chat, sizeof(chat),
-			    "Car #%d was disqualified by Race Control: %s",
-			    s->cars[target].race_number, s2);
-		} else {
+		if (target < 0) {
 			log_info("lobby: 0xf4 remote DQ, no car matched "
 			    "steam_id=%s: %s", s1, s2);
-			snprintf(chat, sizeof(chat),
-			    "[kson] %s was kicked: %s", s1, s2);
+			break;
 		}
-		chat_broadcast(s, chat, 5);
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			if (s->conns[j] != NULL && s->conns[j]->car_id ==
+			    target) {
+				target_conn = s->conns[j];
+				break;
+			}
+		}
+		log_info("lobby: 0xf4 remote DQ for car %d (%s): %s",
+		    target, s1, s2);
+		(void)penalty_enqueue(s, target, EXE_DQ, 19, 3, 1, 0,
+		    REASON_RACE_CONTROL);
+		if (target_conn != NULL) {
+			struct ByteBuf out;
+			bb_init(&out);
+			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
+			    wr_str_a(&out, "Server") == 0 &&
+			    wr_str_a(&out, s2) == 0 &&
+			    wr_i32(&out, 0) == 0 &&
+			    wr_u8(&out, 3) == 0)
+				(void)bcast_send_one(target_conn, out.data,
+				    out.wpos);
+			bb_free(&out);
+		}
 		break;
 	}
 	case 0xf5: {
 		/*
 		 * Lobby-wide broadcast announcement.  kson sends two
-		 * kson_strings + i32 + u8 in the body; the exe (per
-		 * FUN_140025470) builds a 0x2b chat with both strings
-		 * and relays to every connected client.  Used for
-		 * Kunos-backend-initiated messages (maintenance
-		 * notices, rule reminders, etc.).
+		 * kson_strings + i32 + u8.  Per FUN_140025470:
+		 *   - s1 acts as a target selector (steam_id).  If non-
+		 *     empty, the exe sends 0x2b to ONLY the matching
+		 *     connection; if empty, it broadcasts.
+		 *   - sender is "Server", chat-type is 3.
+		 *   - the body text is s2 only.
+		 * Used for Kunos-backend-initiated messages.
 		 */
 		char s1[256], s2[256];
-		size_t p = 1;	/* skip the 0xf5 command byte */
-		char chat[520];
+		size_t p = 1;
+		struct Conn *target_conn = NULL;
+		struct ByteBuf out;
+		int j;
 
 		if (lobby_read_kson_string(body, len, &p, s1, sizeof(s1)) < 0
 		    || lobby_read_kson_string(body, len, &p, s2, sizeof(s2))
@@ -969,14 +987,50 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			log_warn("lobby: 0xf5 body parse failed (%zu B)", len);
 			break;
 		}
-		if (s1[0] && s2[0])
-			snprintf(chat, sizeof(chat), "[kson] %s: %s", s1, s2);
-		else if (s1[0])
-			snprintf(chat, sizeof(chat), "[kson] %s", s1);
-		else
-			snprintf(chat, sizeof(chat), "[kson] %s", s2);
-		log_info("lobby: 0xf5 broadcast \"%s\"", chat);
-		chat_broadcast(s, chat, 5);
+		if (s1[0]) {
+			for (j = 0; j < ACC_MAX_CARS; j++) {
+				struct Conn *cc = s->conns[j];
+				int d;
+				if (cc == NULL || cc->car_id < 0 ||
+				    cc->car_id >= ACC_MAX_CARS)
+					continue;
+				for (d = 0; d < s->cars[cc->car_id].
+				    driver_count && d <
+				    ACC_MAX_DRIVERS_PER_CAR; d++) {
+					if (strcmp(s->cars[cc->car_id].
+					    drivers[d].steam_id, s1) == 0) {
+						target_conn = cc;
+						break;
+					}
+				}
+				if (target_conn != NULL)
+					break;
+			}
+			if (target_conn == NULL) {
+				log_info("lobby: 0xf5 selector \"%s\" matched "
+				    "no connection — message dropped", s1);
+				break;
+			}
+		}
+		bb_init(&out);
+		if (wr_u8(&out, SRV_CHAT_OR_STATE) != 0 ||
+		    wr_str_a(&out, "Server") != 0 ||
+		    wr_str_a(&out, s2) != 0 ||
+		    wr_i32(&out, 0) != 0 ||
+		    wr_u8(&out, 3) != 0) {
+			bb_free(&out);
+			break;
+		}
+		if (target_conn != NULL) {
+			log_info("lobby: 0xf5 unicast to \"%s\": \"%s\"",
+			    s1, s2);
+			(void)bcast_send_one(target_conn, out.data, out.wpos);
+		} else {
+			log_info("lobby: 0xf5 broadcast \"%s\"", s2);
+			(void)bcast_all(s, out.data, out.wpos,
+			    BCAST_EXCEPT_NONE);
+		}
+		bb_free(&out);
 		break;
 	}
 	case 0xf6:
