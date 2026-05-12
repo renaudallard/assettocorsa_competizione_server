@@ -2305,7 +2305,19 @@ handshake_handle(struct Server *s, struct Conn *c,
 			if (slot < 0) {
 				log_info("rejecting %s: not in entry list",
 				    steam_buf);
-				reason = REJECT_BAD_CAR;
+				/*
+				 * Kunos's exe emits REJECT_FULL (=9) for
+				 * "steam_id not in forceEntryList".  Pcap
+				 * (run_reject_codes.sh bad_car path with a
+				 * 1-entry list whose steam_id != bot's)
+				 * confirmed 0c 09 ...  REJECT_BAD_CAR (=11)
+				 * is reserved for the "wrong carModel" path
+				 * (second kunos rdata string "Player has
+				 * entry list item with forced car model X,
+				 * but chose Y and is rejected"), not "not in
+				 * list".
+				 */
+				reason = REJECT_FULL;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;

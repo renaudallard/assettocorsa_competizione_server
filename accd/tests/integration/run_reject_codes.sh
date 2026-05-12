@@ -70,7 +70,20 @@ swap_wine_cfg() {
 }
 
 restore_wine_cfg() {
-    ssh accd@172.20.0.66 "cd $WINE_CFG && for f in *.json.bak; do [ -f \"\$f\" ] && mv \"\$f\" \"\${f%.bak}\" || true; done"
+    overlay_dir=$1
+    src=$overlay_dir
+    [ -n "$overlay_dir" ] && [ -d "$overlay_dir/remote" ] && src=$overlay_dir/remote
+    [ -z "$overlay_dir" ] && return 0
+    # Tell the remote which files to inspect; restore from .bak if
+    # one was created, else delete the staged file.
+    bases=""
+    for f in "$src"/*; do
+        [ -f "$f" ] || continue
+        bases="$bases $(basename "$f")"
+    done
+    ssh accd@172.20.0.66 "cd $WINE_CFG && for b in $bases; do \
+        if [ -f \"\$b.bak\" ]; then mv \"\$b.bak\" \"\$b\"; \
+        else rm -f \"\$b\"; fi; done"
 }
 
 probe() {
@@ -103,7 +116,7 @@ probe() {
 
     restore_local_cfg "$overlay_dir"
     if [ "$cross_check" = "yes" ]; then
-        restore_wine_cfg
+        restore_wine_cfg "$overlay_dir"
     fi
 
     rm -f "accd_reject_${label}.legacy.pcap"
@@ -172,7 +185,12 @@ probe full 9 cfg_reject_full yes \
 # because kunos has no banlist file (bans are runtime-only via /ban).
 probe banned 5 cfg_reject_banned no \
     "--race 911 --grid 1 --name BotReject --expect-reject"
-# 10: CP_RATING (cfg_reject_cp_rating sets safetyRatingRequirement=50;
-# bot's default SA rating is 0, so SA/100=0 < 50 -> REJECT_CP_RATING)
+# 10: CP_RATING (cfg_reject_cp_rating sets safetyRatingRequirement=70;
+# bots default SA rating is 0 on kunos / NEUTRAL on accd, both < 70)
 probe cp_rating 10 cfg_reject_cp_rating yes \
+    "--race 911 --grid 1 --name BotReject --expect-reject"
+# 11b: not-in-entry-list (cfg_reject_bad_car has forceEntryList=1 with
+# a single entry whose steam_id != the bots).  Kunos emits FULL here,
+# not BAD_CAR; BAD_CAR is reserved for the "wrong carModel" path.
+probe not_in_list 9 cfg_reject_bad_car yes \
     "--race 911 --grid 1 --name BotReject --expect-reject"

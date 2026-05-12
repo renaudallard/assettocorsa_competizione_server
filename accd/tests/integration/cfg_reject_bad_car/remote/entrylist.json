@@ -1,0 +1,17 @@
+{
+    "entries": [
+        {
+            "drivers": [
+                { "firstName": "Some", "lastName": "Stranger",
+                  "shortName": "STR", "playerID": "S76561199000000999" }
+            ],
+            "raceNumber": 999,
+            "forcedCarModel": -1,
+            "overrideDriverInfo": 0,
+            "isServerAdmin": 0,
+            "defaultGridPosition": -1
+        }
+    ],
+    "forceEntryList": 1,
+    "configVersion": 1
+}
