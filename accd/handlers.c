@@ -818,52 +818,14 @@ h_car_location_update(struct Server *s, struct Conn *c,
 			race->pit_crossing_latched = 0;
 
 		/*
-		 * Pit-lane exit: if the front penalty is a DT/SG,
-		 * validate the dwell time and mark it served.  DT is
-		 * a drive-through and any exit consumes it; SG10/SG20/
-		 * SG30 require at least 10/20/30 seconds in the box.
-		 * We approximate "stopped time in box" with "total
-		 * time in-pit since entry", which is a lower bound for
-		 * SG compliance: a driver who only served enough
-		 * to move through doesn't get the SG cleared.
+		 * Pit-lane exit: no server-side dwell verification.  Kunos
+		 * has no equivalent — the AC2 client engine validates the
+		 * dwell time itself and emits 0x42 when it decides the
+		 * DT/SG was served, which the server then propagates via
+		 * FUN_140126b50 (h_penalty_cleared on our side).  We
+		 * mirror that.
 		 */
-		if (was_in_pit && !race->in_pit && race->pen.count > 0) {
-			int pi = penalty_first_unserved_dtsg(&race->pen);
-			uint8_t k = pi >= 0
-			    ? race->pen.slots[pi].kind : 0;
-			uint32_t required_s = 0;
-
-			if (k == PEN_SG10 || k == PEN_SG10C)
-				required_s = 10;
-			else if (k == PEN_SG20 || k == PEN_SG20C)
-				required_s = 20;
-			else if (k == PEN_SG30 || k == PEN_SG30C)
-				required_s = 30;
-
-			if (pi >= 0) {
-				uint64_t now_ms = mono_ms();
-				uint64_t dwell_ms = race->pit_entry_ms > 0
-				    ? now_ms - race->pit_entry_ms : 0;
-				uint32_t dwell_s = (uint32_t)(dwell_ms / 1000);
-
-				if (required_s == 0 || dwell_s >= required_s) {
-					log_info("Car %d served %s on pit "
-					    "exit (dwell=%us, required=%us)",
-					    c->car_id, penalty_name(k),
-					    (unsigned)dwell_s,
-					    (unsigned)required_s);
-					penalty_serve_front(s, c->car_id);
-				} else {
-					log_info("Car %d pit exit without "
-					    "sufficient stop time for %s "
-					    "(dwell=%us, required=%us) — "
-					    "penalty unchanged",
-					    c->car_id, penalty_name(k),
-					    (unsigned)dwell_s,
-					    (unsigned)required_s);
-				}
-			}
-		}
+		(void)was_in_pit;
 	}
 
 	bb_init(&out);
@@ -1734,7 +1696,14 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 
 		if (race->mandatory_pit_served < 255)
 			race->mandatory_pit_served++;
-		penalty_serve_front(s, c->car_id);
+		/*
+		 * Kunos's 0x54 handler (FUN_1400142f0:1265) decrements a
+		 * "mandatory pits remaining" counter via FUN_14012aff0
+		 * and does NOT touch the DT/SG queue.  A pending DT/SG
+		 * is served only when the client engine emits 0x42 after
+		 * its own dwell-time check.  Mirror that here: don't
+		 * coalesce DT/SG service into the mandatory-pit completion.
+		 */
 		/*
 		 * Mandatory driver-swap check: if eventRules demands a
 		 * swap during the mandatory pit (isMandatoryPitstopSwap
