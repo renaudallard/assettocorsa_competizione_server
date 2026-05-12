@@ -419,11 +419,23 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	}
 
 	/*
-	 * Token block: 2 magic zero bytes then u16-length-prefixed
-	 * token_a (64 alphanumerics — server fingerprint, regenerated
-	 * per launch) and u16-length-prefixed token_b (10 alphanumerics).
+	 * After the session loop the exe emits:
+	 *   u8 live_current_sessionType  (sessionMgr+0x268 low byte)
+	 *   u8-pfx str  alternate-identifier (SC+0xd0, empty in stock
+	 *               kunos — 1 byte of 0x00)
+	 * then the two tokens.  accd previously emitted a u16(0) pad
+	 * here, which produces identical wire bytes ONLY when the
+	 * live session is Practice (sessionType=0) and the field is
+	 * empty.  For any other session_index the high byte differs.
 	 */
-	if (wr_u16(&bb, 0) < 0) goto err;
+	{
+		uint8_t live_type = 0;
+		if (s->session.session_index < s->session_count)
+			live_type = s->sessions[s->session.session_index]
+			    .session_type;
+		if (wr_u8(&bb, live_type) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;
+	}
 	if (wr_u16(&bb, 64) < 0) goto err;
 	if (bb_append(&bb, l->token_a, 64) < 0) goto err;
 	if (wr_u16(&bb, 10) < 0) goto err;
