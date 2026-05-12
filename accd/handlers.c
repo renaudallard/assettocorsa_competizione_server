@@ -1618,12 +1618,19 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	}
 
 	/*
-	 * Relay 0x4f to all other clients.  Two variants (see
-	 * NOTEBOOK_B §5.6.4a 0x4f entry):
-	 *   sub=0: 4 bytes — u8 id + u16 car_id + u8(0)
-	 *   sub=1: 12 bytes — u8 id + u16 car_id + u8(1) + u64 ts
-	 * We had been packing u32(0) + f32(0.0) into the u64 slot,
-	 * mirroring the wire size but not the field layout.
+	 * Relay 0x4f to all other clients.  Two variants:
+	 *   sub=0: 4 bytes  -- u8 id + u16 car_id + u8(0)
+	 *   sub=1: 12 bytes -- u8 id + u16 car_id + u8(1) + 8 B ts
+	 *
+	 * For sub=1 kunos's FUN_140042030 transforms the client ts
+	 * through per-conn doubles at conn+0x340/+0x310 into a session-
+	 * relative double and emits the IEEE-754 bytes verbatim.  We
+	 * don't have a matching session-relative double in accd's conn
+	 * struct (clock_offset_ms is boot-relative; using it as the
+	 * offset produces a giant magnitude unlike kunos's output).
+	 * Forward the raw u64 client_ts instead: the wire-byte pattern
+	 * differs from kunos but at least preserves a meaningful value
+	 * when a receiver reads it as either u64 or double.
 	 */
 	{
 		struct ByteBuf out;
