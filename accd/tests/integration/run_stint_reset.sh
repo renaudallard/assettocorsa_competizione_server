@@ -52,22 +52,33 @@ print(f'  accd[0]:  {a.hex()}')
 print(f'  kunos[0]: {k.hex()}')
 
 # force=0 emits a 4-B body and is fully byte-exact.  force=1 emits a
-# 12-B body whose last 8 bytes are the wall-clock ts; kunos transforms
-# it through FUN_140042030 (per-conn clock offset to double precision)
-# while accd forwards the raw u64.  Compare the structural prefix
-# (msg_id + car_id + force) and report the ts bytes separately.
+# 12-B body whose last 8 bytes are the IEEE-754 transformed ts; both
+# servers now mirror kunos's FUN_140042030 path (client_ts +
+# session-relative clock offset).  Bit-exact match isn't reachable
+# because the per-conn offset depends on pong-arrival timing which
+# differs between accd's loopback and kunos's wine path; assert the
+# trailing 8 bytes parse as a finite double within +/- 60 s of zero
+# (session-relative magnitudes).
+import struct
 HEAD = 4
-if a[:HEAD] == k[:HEAD]:
-    if len(a) == 4 and len(k) == 4:
-        print('  RESULT: IDENTICAL (4-B voluntary-reset relay byte-exact)')
-    elif len(a) == 12 and len(k) == 12:
-        print('  RESULT: PARTIAL — 4-B prefix IDENT, ts diff '
-              '(kunos transforms via FUN_140042030; accd forwards raw)')
+if a[:HEAD] != k[:HEAD]:
+    print(f'  RESULT: DIFFER ({sum(1 for j in range(HEAD) if a[j]!=k[j])} byte diff in prefix)')
+    sys.exit(2)
+if len(a) == 4 and len(k) == 4:
+    print('  RESULT: IDENTICAL (4-B voluntary-reset relay byte-exact)')
+elif len(a) == 12 and len(k) == 12:
+    a_d = struct.unpack('<d', a[4:12])[0]
+    k_d = struct.unpack('<d', k[4:12])[0]
+    print(f'  ts doubles: accd={a_d} kunos={k_d}')
+    if abs(a_d) < 60000 and abs(k_d) < 60000:
+        print('  RESULT: PARTIAL — 4-B prefix IDENT, both ts doubles '
+              'in session-relative range (bit-exact match needs '
+              'identical pong-arrival timing)')
     else:
-        print(f'  RESULT: unexpected lengths a={len(a)} k={len(k)}')
+        print('  RESULT: DIFFER — ts double out of session range')
         sys.exit(2)
 else:
-    print(f'  RESULT: DIFFER ({sum(1 for j in range(HEAD) if a[j]!=k[j])} byte diff in prefix)')
+    print(f'  RESULT: unexpected lengths a={len(a)} k={len(k)}')
     sys.exit(2)
 "
 }

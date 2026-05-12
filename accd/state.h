@@ -641,6 +641,19 @@ struct Conn {
 						 * pin the session-start gate */
 	uint32_t	avg_rtt_ms;		/* exponential avg round-trip (from 0x16 pong) */
 	int32_t		clock_offset_ms;	/* server_now - (rtt/2 + client_ts) */
+	int64_t		session_clock_offset_ms;	/* session-relative clock
+							 * offset: session_now -
+							 * rtt/2 - pong_client_ts.
+							 * Updated on best-RTT
+							 * pong (matches kunos
+							 * FUN_1400420e0:23-37).
+							 * Used by 0x4f force=1
+							 * relay to mirror kunos's
+							 * FUN_140042030 transform
+							 * into a session-relative
+							 * IEEE-754 double. */
+	uint32_t	best_rtt_ms;		/* lowest pong RTT seen so far */
+	uint8_t		session_clock_seen;	/* 1 after first pong */
 	uint32_t	last_pong_client_ts;	/* client_ts from most recent 0x16 pong;
 						 * used only by the first-pong re-
 						 * emit detection (latches non-zero

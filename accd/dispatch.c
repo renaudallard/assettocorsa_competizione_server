@@ -362,6 +362,25 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		    (pc->avg_rtt_ms / 2 + pong_client_ts));
 		pc->last_udp_client_ts = pong_client_ts;
 		pc->last_udp_server_ms = now_ms;
+		/*
+		 * Session-relative clock offset for the 0x4f force=1
+		 * relay's IEEE-754 ts.  Anchor to the session-start
+		 * mono_ms so the value stays bounded regardless of host
+		 * uptime, matching kunos's FUN_140042030 output range.
+		 * Latch on the FIRST pong, then refresh only when a
+		 * lower RTT (sharper estimate) arrives — same gate as
+		 * kunos's FUN_1400420e0:23.
+		 */
+		if (!pc->session_clock_seen || rtt < pc->best_rtt_ms) {
+			uint64_t session_now =
+			    mono_ms() - s->session.phase_started_ms;
+			pc->session_clock_offset_ms =
+			    (int64_t)session_now -
+			    (int64_t)(rtt / 2) -
+			    (int64_t)pong_client_ts;
+			pc->best_rtt_ms = rtt;
+			pc->session_clock_seen = 1;
+		}
 
 		/*
 		 * On the FIRST pong, send a fresh 0x28 with the

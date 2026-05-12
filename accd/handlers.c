@@ -1623,14 +1623,13 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	 *   sub=1: 12 bytes -- u8 id + u16 car_id + u8(1) + 8 B ts
 	 *
 	 * For sub=1 kunos's FUN_140042030 transforms the client ts
-	 * through per-conn doubles at conn+0x340/+0x310 into a session-
-	 * relative double and emits the IEEE-754 bytes verbatim.  We
-	 * don't have a matching session-relative double in accd's conn
-	 * struct (clock_offset_ms is boot-relative; using it as the
-	 * offset produces a giant magnitude unlike kunos's output).
-	 * Forward the raw u64 client_ts instead: the wire-byte pattern
-	 * differs from kunos but at least preserves a meaningful value
-	 * when a receiver reads it as either u64 or double.
+	 * through per-conn session-relative doubles at conn+0x340 /
+	 * +0x310 into a session-relative IEEE-754 double and emits
+	 * the bytes verbatim.  Mirror that here via
+	 * `c->session_clock_offset_ms` (updated on best-RTT pong)
+	 * plus the client's ts so the value stays bounded by
+	 * session_now magnitudes and the receiver sees a sensible
+	 * double when interpreting the trailing 8 bytes.
 	 */
 	{
 		struct ByteBuf out;
@@ -1639,8 +1638,15 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 		if (wr_u8(&out, SRV_DRIVER_STINT_RELAY) == 0 &&
 		    wr_u16(&out, s->cars[c->car_id].car_id) == 0 &&
 		    wr_u8(&out, force) == 0) {
-			if (force)
-				(void)wr_u64(&out, ts_raw);
+			if (force) {
+				double ts_d =
+				    (double)(int64_t)ts_raw +
+				    (double)c->session_clock_offset_ms;
+				uint8_t bytes[8];
+				memcpy(bytes, &ts_d, sizeof(bytes));
+				(void)bb_append(&out, bytes,
+				    sizeof(bytes));
+			}
 			(void)bcast_all(s, out.data, out.wpos,
 			    c->conn_id);
 		}
