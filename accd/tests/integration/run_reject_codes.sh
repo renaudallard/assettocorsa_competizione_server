@@ -19,6 +19,38 @@ cd "$HERE"
 
 WINE_CFG=wine-test/cfg
 
+# Track the active overlay so the trap can roll it back if the script
+# is interrupted (Ctrl-C, OOM, bot timeout).  Earlier sweeps left
+# maxConnections=1 stuck on both accd and wine because the inline
+# restore only ran on normal probe completion.
+ACTIVE_OVERLAY=""
+cleanup_on_exit() {
+    rc=$?
+    if [ -n "$ACTIVE_OVERLAY" ]; then
+        echo "==> trap cleanup: restoring $ACTIVE_OVERLAY" >&2
+        restore_local_cfg "$ACTIVE_OVERLAY" || true
+        restore_wine_cfg "$ACTIVE_OVERLAY" || true
+        ACTIVE_OVERLAY=""
+    fi
+    exit $rc
+}
+trap cleanup_on_exit INT TERM HUP EXIT
+
+# Defensive startup recovery: a previous crashed run may have left
+# stale cfg/*.bak files (the originals frozen mid-test); the current
+# cfg in that case is the test overlay, not the truth.  Roll any
+# .bak back over its cfg counterpart so we start from the canonical
+# original.  Idempotent if no .bak exists.
+for f in cfg/*.bak; do
+    [ -f "$f" ] || continue
+    echo "==> startup recovery: cfg/$(basename "${f%.bak}") <- $(basename "$f")"
+    mv "$f" "${f%.bak}"
+done
+# Same on the wine side.
+ssh accd@172.20.0.66 "cd $WINE_CFG && for f in *.bak; do \
+    [ -f \"\$f\" ] && echo \"==> wine startup recovery: \${f%.bak} <- \$f\" >&2 && \
+    mv \"\$f\" \"\${f%.bak}\"; done" >&2 || true
+
 swap_local_cfg() {
     overlay_dir=$1
     [ -z "$overlay_dir" ] && return 0
@@ -94,6 +126,7 @@ probe() {
     shift 4
     TEST_DURATION=5
 
+    ACTIVE_OVERLAY=$overlay_dir
     swap_local_cfg "$overlay_dir"
     if [ "$cross_check" = "yes" ]; then
         swap_wine_cfg "$overlay_dir"
@@ -118,6 +151,7 @@ probe() {
     if [ "$cross_check" = "yes" ]; then
         restore_wine_cfg "$overlay_dir"
     fi
+    ACTIVE_OVERLAY=""
 
     rm -f "accd_reject_${label}.legacy.pcap"
     editcap -F pcap "accd_reject_${label}.pcap" "accd_reject_${label}.legacy.pcap"
