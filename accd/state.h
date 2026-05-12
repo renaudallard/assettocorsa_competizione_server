@@ -566,6 +566,11 @@ struct CarEntry {
 	uint16_t	car_id;			/* assigned by server */
 	int32_t		race_number;
 	uint8_t		car_model;		/* see HB §IX.3 */
+	uint8_t		forced_car_model;	/* entrylist forcedCarModel;
+						 * 0xff = any.  Used by
+						 * handshake to reject when
+						 * the joiners wire cmodel
+						 * != this value. */
 	uint8_t		cup_category;
 	uint16_t	nationality;
 	char		team_name[ACC_MAX_NAME_LEN];

@@ -1,0 +1,17 @@
+{
+    "entries": [
+        {
+            "drivers": [
+                { "firstName": "Bot", "lastName": "Driver",
+                  "shortName": "BOT", "playerID": "S76561199000000911" }
+            ],
+            "raceNumber": 911,
+            "forcedCarModel": 7,
+            "overrideDriverInfo": 0,
+            "isServerAdmin": 0,
+            "defaultGridPosition": -1
+        }
+    ],
+    "forceEntryList": 1,
+    "configVersion": 1
+}

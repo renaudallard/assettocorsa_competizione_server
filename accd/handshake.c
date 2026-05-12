@@ -2213,6 +2213,33 @@ handshake_handle(struct Server *s, struct Conn *c,
 				}
 			}
 			if (reconnect_slot >= 0) {
+				/*
+				 * forceEntryList carModel gate: if the entry
+				 * pins a specific carModel, the joiners wire
+				 * cmodel must match.  Apply here BEFORE the
+				 * reconnect goto so the slot reservation
+				 * doesnt silently accept a wrong car.  Kunos
+				 * wire (pcap-verified): a=current, b=required.
+				 */
+				if (s->force_entry_list &&
+				    s->cars[reconnect_slot].forced_car_model
+				    != 0xff &&
+				    s->cars[reconnect_slot].forced_car_model
+				    != cmodel) {
+					log_info("rejecting %s: wrong "
+					    "carModel %u (entry expects %u)",
+					    steam_buf, (unsigned)cmodel,
+					    (unsigned)s->cars[reconnect_slot]
+					        .forced_car_model);
+					reason = REJECT_BAD_CAR;
+					reject_sub = 0;
+					reject_a = cmodel;
+					reject_b = s->cars[reconnect_slot]
+					    .forced_car_model;
+					free(first); free(last); free(sname);
+					free(steam); free(team);
+					goto reply;
+				}
 				c->car_id = reconnect_slot;
 				is_reconnect = 1;
 				log_info("Recognized reconnect: carId %d "
@@ -2334,6 +2361,28 @@ handshake_handle(struct Server *s, struct Conn *c,
 				log_info("rejecting %s: entry slot %d "
 				    "already in use", steam_buf, slot);
 				reason = REJECT_FULL;
+				free(first); free(last); free(sname);
+				free(steam); free(team);
+				goto reply;
+			}
+			/*
+			 * Forced-car-model check: entrylist may pin a specific
+			 * carModel for this entry.  Wire cmodel must match.
+			 * Kunos emits REJECT_BAD_CAR (=11) with sub=0 +
+			 * a=current (wire) + b=required (forced) per the
+			 * rdata "Player has entry list item with forced car
+			 * model %d, but chose %d and is rejected".
+			 */
+			if (s->cars[slot].forced_car_model != 0xff &&
+			    s->cars[slot].forced_car_model != cmodel) {
+				log_info("rejecting %s: wrong carModel "
+				    "%u (entry expects %u)",
+				    steam_buf, (unsigned)cmodel,
+				    (unsigned)s->cars[slot].forced_car_model);
+				reason = REJECT_BAD_CAR;
+				reject_sub = 0;
+				reject_a = cmodel;
+				reject_b = s->cars[slot].forced_car_model;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;

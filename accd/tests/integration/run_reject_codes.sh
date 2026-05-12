@@ -200,6 +200,11 @@ probe cp_rating 10 cfg_reject_cp_rating yes \
 # not BAD_CAR; BAD_CAR is reserved for the "wrong carModel" path.
 probe not_in_list 9 cfg_reject_bad_car yes \
     "--race 911 --grid 1 --name BotReject --expect-reject"
+# 11: BAD_CAR (cfg_reject_bad_car_model entrylist has the bots
+# steam_id but forcedCarModel=7; bot sends cmodel=35 -> REJECT_BAD_CAR
+# with sub=0 + a=forced + b=wire).
+probe bad_car_model 11 cfg_reject_bad_car_model yes \
+    "--race 911 --grid 1 --name BotReject --expect-reject"
 # 12: BAD_SESSION (cfg_reject_bad_session sets isPrepPhaseLocked=1).
 # Bot1 connects first to advance phase from WAITING into FORMATION,
 # bot2 attempts to join while in locked prep -> REJECT_BAD_SESSION.

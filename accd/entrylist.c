@@ -204,6 +204,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		    (int)i);
 		car->car_model = (uint8_t)json_obj_get_int(e,
 		    "forcedCarModel", -1);
+		car->forced_car_model = car->car_model;
 		if (car->car_model == 0xff)
 			car->car_model = 0;
 		car->cup_category = (uint8_t)json_obj_get_int(e,
