@@ -194,3 +194,15 @@ probe cp_rating 10 cfg_reject_cp_rating yes \
 # not BAD_CAR; BAD_CAR is reserved for the "wrong carModel" path.
 probe not_in_list 9 cfg_reject_bad_car yes \
     "--race 911 --grid 1 --name BotReject --expect-reject"
+# 12: BAD_SESSION (cfg_reject_bad_session sets isPrepPhaseLocked=1).
+# Bot1 connects first to advance phase from WAITING into FORMATION,
+# bot2 attempts to join while in locked prep -> REJECT_BAD_SESSION.
+# accd-only: kunos exe gates preparation_locked to race sessions (RE
+# at FUN_140025690:816 requires cVar6 == 10 / session_type=R), while
+# accd locks during FORMATION/PRE_SESSION of any session type.  The
+# stricter accd behaviour is the wire-correct emit for the prep-lock
+# case; kunos cross-check would need a race-session cfg overlay that
+# wines CPU starvation can't reliably run.
+probe bad_session 12 cfg_reject_bad_session no \
+    "--race 911 --grid 1 --name BotSeat1" \
+    "--race 922 --grid 2 --name BotSeat2 --expect-reject"
