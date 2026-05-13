@@ -758,6 +758,68 @@ jobs:
           path: accd-*-alpine-*.tar.gz
           if-no-files-found: error
 
+  build-static-linux:
+    name: Build Static Linux Binary (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    needs:
+      - detect-versions
+    # Same docker-run-Alpine pattern as build-apk-alpine: keeps the JS
+    # actions on the Ubuntu host (so arm64 works) while linking against
+    # musl + libbsd-static for a self-contained binary that runs on any
+    # Linux distro regardless of libc.  glibc + -static silently breaks
+    # at runtime on getaddrinfo / NSS plugins; musl static is clean.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Build static binary inside Alpine
+        run: |
+          set -euo pipefail
+          docker run --rm -v "${PWD}:/work" -w /work \
+            "alpine:${{ needs.detect-versions.outputs.alpine_latest }}" \
+            sh -c '
+              set -eu
+              apk add --no-cache build-base libbsd-dev libbsd-static libmd-static
+              cd accd
+              # Override ACCD_LDFLAGS to drop the default -pie and add
+              # -static-pie; user LDFLAGS would be appended *after* the
+              # built-in -pie so we replace the whole string to avoid the
+              # -pie / -static-pie redundancy on the link command.
+              make ACCD_LDFLAGS="-static-pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
+              file accd
+              # Verify the binary is actually static.  musl ldd prints
+              # "not a dynamic executable" for fully static binaries and
+              # exits non-zero, so guard the call.
+              if ldd accd 2>&1 | grep -q "not a dynamic"; then
+                echo "OK: statically linked"
+              else
+                echo "ERROR: binary is not static:" >&2
+                ldd accd >&2 || true
+                exit 1
+              fi
+              ver=$(cat ../VERSION | tr -d "[:space:]")
+              arch=$(uname -m)
+              staging="accd-${ver}-linux-static-${arch}"
+              mkdir -p "${staging}/bin"
+              cp accd "${staging}/bin/"
+              cp ../LICENSE ../README.md "${staging}/"
+              tar czf "../${staging}.tar.gz" "${staging}"
+            '
+
+      - name: Upload static Linux binary
+        uses: actions/upload-artifact@v7
+        with:
+          name: static-linux-${{ matrix.arch }}
+          path: accd-*-linux-static-*.tar.gz
+          if-no-files-found: error
+
   build-freebsd:
     name: Build FreeBSD package (${{ needs.detect-versions.outputs.freebsd_version }})
     runs-on: ubuntu-latest
@@ -810,6 +872,7 @@ jobs:
       - build-rpm-fedora
       - build-rpm-rocky
       - build-apk-alpine
+      - build-static-linux
       - build-freebsd
     steps:
       - name: Download all artifacts
