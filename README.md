@@ -463,10 +463,12 @@ Quick headless run:
 
 Production: grab a prebuilt artifact from the
 [latest release](https://github.com/renaudallard/assettocorsa_competizione_server/releases/latest)
-— `.deb` (Ubuntu / Debian), `.rpm` (Fedora / Rocky), or the static-musl
+— `.deb` (Ubuntu / Debian), `.rpm` (Fedora / Rocky), the static-musl
 `accd-<ver>-linux-static-<arch>.tar.gz` that runs on any Linux distro
-regardless of installed libc.  Every Linux artifact is shipped for both
-`amd64` (`x86_64`) and `arm64` (`aarch64`); FreeBSD is amd64-only.
+regardless of installed libc, or the macOS universal
+`accd-<ver>-macos-universal.tar.gz` (an `accd.app` bundle that runs on
+both Intel and Apple Silicon).  Every Linux artifact is shipped for
+both `amd64` (`x86_64`) and `arm64` (`aarch64`); FreeBSD is amd64-only.
 Install the package and use the shipped systemd unit (runs as an
 unprivileged dynamic user, sandboxed):
 
@@ -611,9 +613,10 @@ interoperability of an independently created program.
 libc, iconv, and libm (`libbsd-dev` on Linux for `arc4random_uniform`).
 Releases ship `.deb` (Ubuntu / Debian), `.rpm` (Fedora / Rocky), an
 Alpine `.tar.gz`, a static-musl Linux `.tar.gz` that runs on any
-distro, and a FreeBSD `.tar.gz` — amd64 and arm64 for every Linux
-target, amd64 only for FreeBSD.  All artifacts carry a published
-`SHA256SUMS` for integrity verification.
+distro, a macOS universal `.tar.gz` (Intel + Apple Silicon `accd.app`),
+and a FreeBSD `.tar.gz` — amd64 and arm64 for every Linux target,
+universal for macOS, amd64 only for FreeBSD.  All artifacts carry a
+published `SHA256SUMS` for integrity verification.
 
 ---
 
