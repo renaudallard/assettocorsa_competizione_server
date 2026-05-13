@@ -2326,11 +2326,24 @@ handshake_handle(struct Server *s, struct Conn *c,
 		if (s->force_entry_list) {
 			int slot = -1, i;
 
+			/*
+			 * Match steam_id across every slot's drivers[].
+			 * Two-pass: first try to find a matching slot
+			 * that's also unused (this is the post-team-entry-
+			 * expansion case, where a multi-driver entry has
+			 * duplicated drivers[] into N slots and one of
+			 * them is free for the connecting teammate).
+			 * Falls back to any matching slot so the existing
+			 * REJECT_FULL path fires for the "all members of
+			 * the team already connected" case.
+			 */
 			for (i = 0; i < ACC_MAX_CARS &&
 			    i < s->max_connections; i++) {
 				struct CarEntry *ec = &s->cars[i];
 				int dj;
 
+				if (ec->used)
+					continue;
 				for (dj = 0; dj < ec->driver_count; dj++) {
 					if (strcmp(ec->drivers[dj].steam_id,
 					    steam_buf) == 0) {
@@ -2340,6 +2353,25 @@ handshake_handle(struct Server *s, struct Conn *c,
 				}
 				if (slot >= 0)
 					break;
+			}
+			if (slot < 0) {
+				for (i = 0; i < ACC_MAX_CARS &&
+				    i < s->max_connections; i++) {
+					struct CarEntry *ec = &s->cars[i];
+					int dj;
+
+					for (dj = 0; dj < ec->driver_count;
+					    dj++) {
+						if (strcmp(ec->drivers[dj]
+						    .steam_id, steam_buf)
+						    == 0) {
+							slot = i;
+							break;
+						}
+					}
+					if (slot >= 0)
+						break;
+				}
 			}
 			if (slot < 0) {
 				log_info("rejecting %s: not in entry list",
