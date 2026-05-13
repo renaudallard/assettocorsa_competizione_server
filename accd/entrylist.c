@@ -266,7 +266,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 	 */
 	if (s->force_entry_list) {
 		int next_free = loaded;
-		for (i = 0; i < loaded; i++) {
+		for (i = 0; i < (size_t)loaded; i++) {
 			struct CarEntry *anchor = &s->cars[i];
 			int dn = anchor->driver_count;
 			int companion;
@@ -274,7 +274,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 			if (dn <= 1)
 				continue;
 			if (next_free + (dn - 1) > ACC_MAX_CARS) {
-				log_warn("entrylist: team entry %d needs "
+				log_warn("entrylist: team entry %zu needs "
 				    "%d slots but %d remaining; "
 				    "truncating team", i, dn,
 				    ACC_MAX_CARS - next_free);
@@ -283,9 +283,23 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 					break;
 			}
 			anchor->team_entry_id = (int8_t)i;
+			/*
+			 * Initial swap_state[] for the anchor: all team
+			 * drivers at state 2 (CONNECTED / IN_TEAM).
+			 * Pcap (run_swap_multi.sh, 2026-05-13) shows
+			 * kunos's first 0x47 for the anchor car carries
+			 * [2, 2] for a 2-driver team.  Companions
+			 * (below) get [2, 1, 1, ...] — driver 0 at
+			 * state 2 plus driver 1+ at state 1 (REGISTERED
+			 * but-not-in-this-seat).
+			 */
+			for (int d = 0; d < anchor->driver_count &&
+			    d < ACC_MAX_DRIVERS_PER_CAR; d++)
+				anchor->swap_state[d] = 2;
 			for (companion = 1; companion < dn; companion++) {
 				int cslot = next_free++;
 				struct CarEntry *c = &s->cars[cslot];
+				int d;
 
 				/* car_id is server-assigned per slot index;
 				 * keep it (server_init set it). */
@@ -309,8 +323,19 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 				memcpy(c->drivers, anchor->drivers,
 				    sizeof(c->drivers));
 				c->team_entry_id = (int8_t)i;
+				/*
+				 * Companion's initial swap_state:
+				 *   driver 0 = 2 (the team's primary slot)
+				 *   driver 1+ = 1 (registered)
+				 * Matches kunos's [2, 1] for the companion
+				 * car in the run_swap_multi pcap.
+				 */
+				c->swap_state[0] = 2;
+				for (d = 1; d < c->driver_count &&
+				    d < ACC_MAX_DRIVERS_PER_CAR; d++)
+					c->swap_state[d] = 1;
 			}
-			log_info("entrylist: team entry %d (race %d) "
+			log_info("entrylist: team entry %zu (race %d) "
 			    "expanded to %d slots", i,
 			    (int)anchor->race_number, dn);
 		}
