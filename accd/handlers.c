@@ -1319,7 +1319,23 @@ h_update_driver_swap_state(struct Server *s, struct Conn *c,
 	    (unsigned)car_id, is_owner ? "owner" : "foreign",
 	    (unsigned)car->swap_state[0], (unsigned)car->swap_state[1],
 	    (unsigned)car->swap_state[2], (unsigned)car->swap_state[3]);
-	broadcast_swap_state(s, car);
+	/*
+	 * Team-entry group propagation: when the updated car is a
+	 * member of a multi-car team group (team_entry_id >= 0),
+	 * kunos emits one 0x47 per car_id in the group — each car
+	 * carries its own swap_state[] header.  Mirror that fan-out.
+	 * Standalone cars (team_entry_id == -1) emit the single
+	 * legacy broadcast.
+	 */
+	if (car->team_entry_id >= 0) {
+		int j;
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			if (s->cars[j].team_entry_id == car->team_entry_id)
+				broadcast_swap_state(s, &s->cars[j]);
+		}
+	} else {
+		broadcast_swap_state(s, car);
+	}
 	return 0;
 }
 

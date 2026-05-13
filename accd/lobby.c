@@ -1031,20 +1031,41 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			log_warn("lobby: 0xf4 body parse failed (%zu B)", len);
 			break;
 		}
+		/*
+		 * Two-pass match.  Pass 1: a slot whose drivers[0] (the
+		 * connecting driver, written by handshake) has this
+		 * steam_id — under multi-car team expansion this is the
+		 * specific car the targeted driver is sitting in.
+		 * Pass 2 (fallback): any drivers[] index, matching the
+		 * single-driver legacy path and keeping behaviour
+		 * unchanged for non-team entries.
+		 */
 		for (j = 0; j < ACC_MAX_CARS; j++) {
-			int d;
 			if (!s->cars[j].used)
 				continue;
-			for (d = 0; d < s->cars[j].driver_count &&
-			    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
-				if (strcmp(s->cars[j].drivers[d].steam_id,
-				    s1) == 0) {
-					target = j;
-					break;
-				}
-			}
-			if (target >= 0)
+			if (s->cars[j].driver_count == 0)
+				continue;
+			if (strcmp(s->cars[j].drivers[0].steam_id, s1) == 0) {
+				target = j;
 				break;
+			}
+		}
+		if (target < 0) {
+			for (j = 0; j < ACC_MAX_CARS; j++) {
+				int d;
+				if (!s->cars[j].used)
+					continue;
+				for (d = 0; d < s->cars[j].driver_count &&
+				    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
+					if (strcmp(s->cars[j].drivers[d]
+					    .steam_id, s1) == 0) {
+						target = j;
+						break;
+					}
+				}
+				if (target >= 0)
+					break;
+			}
 		}
 		if (target < 0) {
 			log_info("lobby: 0xf4 remote DQ, no car matched "
