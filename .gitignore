@@ -28,3 +28,8 @@ build/
 .vscode/
 .idea/
 accd/cfg/
+
+# Test cfg: track the static config files, ignore mutable / generated
+accd/tests/integration/cfg/ratings.json
+accd/tests/integration/cfg/current/
+accd/tests/integration/cfg/*.bak
