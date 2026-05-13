@@ -362,13 +362,15 @@ conn_drop(struct Server *s, struct Conn *c)
 		/*
 		 * Kunos emits 0x36 on every peer-leave so back-to-back
 		 * disconnects produce a cascade of decreasing-car-count
-		 * frames.  broadcast_leaderboard_if_changed picks the
-		 * removed row up via deep-compare and fans the smaller
-		 * payload out immediately; the tick-loop check on the
-		 * next iteration sees no change and won't duplicate.
+		 * frames.  The standings recompute above mutated the
+		 * leaderboard payload; flag it dirty so the next tick
+		 * drains the pending bit and fans the smaller payload
+		 * out.  Within-one-tick latency is acceptable: the
+		 * outgoing 0x24 disconnect notify already preceded this
+		 * point, and consecutive disconnects coalesce into a
+		 * single 0x36 if they land in the same tick window.
 		 */
-		broadcast_leaderboard(s);
-		s->session.last_leaderboard_ms = mono_ms();
+		leaderboard_request_emit(s);
 	}
 	free(c);
 	{

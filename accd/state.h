@@ -355,6 +355,13 @@ struct SessionState {
 	size_t		leaderboard_cache_len;
 	size_t		leaderboard_cache_cap;
 	uint64_t	last_leaderboard_ms;	/* async-mode coarse cadence */
+	uint8_t		leaderboard_pending;	/* event flag; tick loop
+						 * drains.  Set by callers
+						 * after state mutations
+						 * that kunos emits 0x36
+						 * for (handshake, penalty,
+						 * phase boundary, peer
+						 * leave). */
 	uint8_t		last_phase;		/* tick.c: detect transitions */
 	int		results_written;	/* one-shot guard */
 	int		grid_announced;		/* one-shot guard */

@@ -61,6 +61,7 @@ uint32_t arc4random_uniform(uint32_t);
 #include "results.h"
 #include "session.h"
 #include "state.h"
+#include "tick.h"
 
 /*
  * Formation / green-flag position gate range.  The exe reads three
@@ -859,6 +860,26 @@ enter_phase(struct Server *s, uint8_t new_phase)
 	s->session.phase = new_phase;
 	s->session.phase_started_ms = mono_ms();
 	lobby_notify_session_changed(&s->lobby);
+	/*
+	 * Kunos emits 0x36 on phase boundaries that change the
+	 * leaderboard record's cvar8 / phase-driven tail bytes (Q->R
+	 * grid seeding, race COMPLETED tail, weekend ADVANCE).  Flag
+	 * the leaderboard dirty for these transitions; the next tick
+	 * drains the pending bit and runs the gated broadcast.  Phases
+	 * that don't change leaderboard bytes (WAITING, FORMATION,
+	 * OVERTIME mid-stretch) skip the trigger to avoid spurious
+	 * emits.
+	 */
+	switch (new_phase) {
+	case PHASE_PRE_SESSION:
+	case PHASE_SESSION:
+	case PHASE_COMPLETED:
+	case PHASE_ADVANCE:
+		leaderboard_request_emit(s);
+		break;
+	default:
+		break;
+	}
 }
 
 void
@@ -1233,6 +1254,16 @@ session_advance(struct Server *s)
 		bans_init(&s->kicks);
 		session_reset(s, 0);
 		/*
+		 * Force-emit 0x36 after the wrap-to-session-0 reset.
+		 * session_reset zeroes leaderboard_cache_len so the next
+		 * gated emit would fire on the first byte difference, but
+		 * kunos's pcap shows a 0x36 even when the fresh standings
+		 * coincidentally match the prior frame (e.g. a 1-bot
+		 * weekend wraps with identical row shape).  Force-emit
+		 * here is belt-and-suspenders.
+		 */
+		(void)broadcast_leaderboard_force(s);
+		/*
 		 * Transient all-INV 0x28 between reset and start.  Matches
 		 * the ~150 ms gap observed in Kunos's reference race-start
 		 * capture; signals the session-index change to the client
@@ -1245,6 +1276,14 @@ session_advance(struct Server *s)
 		return;
 	}
 	session_reset(s, next);
+	/*
+	 * Same belt-and-suspenders force-emit on the within-weekend
+	 * session boundary (P->Q->R).  session_reset zeroed the cache;
+	 * the new session's leaderboard may have identical byte shape
+	 * (single bot, same race_number, same drivers[]) but kunos
+	 * still emits.
+	 */
+	(void)broadcast_leaderboard_force(s);
 	broadcast_session_mgr_state_all(s);
 	if (s->nconns > 0)
 		session_start(s);

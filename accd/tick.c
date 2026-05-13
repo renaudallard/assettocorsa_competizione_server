@@ -377,6 +377,46 @@ broadcast_leaderboard(struct Server *s)
 }
 
 /*
+ * Mark the leaderboard dirty so the tick loop drains the pending
+ * flag and runs broadcast_leaderboard_if_changed.  Called from state
+ * mutations kunos emits 0x36 for.  Lap-complete and sector-split
+ * handlers deliberately do NOT call this (kunos doesn't emit on
+ * those events per the 2026-05-09 2-bot pcap).
+ */
+void
+leaderboard_request_emit(struct Server *s)
+{
+	s->session.leaderboard_pending = 1;
+}
+
+/*
+ * Internal helper: update the per-session leaderboard cache from a
+ * freshly-emitted payload.  Grows the buffer 2x as needed.  Returns
+ * 0 on success, -1 if the realloc failed (cache may be stale; the
+ * next memcmp will simply mismatch and re-emit).
+ */
+static int
+leaderboard_update_cache(struct Server *s, const uint8_t *data, size_t n)
+{
+	if (n > s->session.leaderboard_cache_cap) {
+		size_t cap = s->session.leaderboard_cache_cap;
+		uint8_t *nb;
+
+		cap = cap ? cap : 1024;
+		while (cap < n)
+			cap *= 2;
+		nb = realloc(s->session.leaderboard_cache, cap);
+		if (!nb)
+			return -1;
+		s->session.leaderboard_cache = nb;
+		s->session.leaderboard_cache_cap = cap;
+	}
+	memcpy(s->session.leaderboard_cache, data, n);
+	s->session.leaderboard_cache_len = n;
+	return 0;
+}
+
+/*
  * Build the leaderboard payload, compare to the per-session cache,
  * and broadcast only when the bytes differ.  Mirrors kunos's
  * FUN_14002f710:863 which deep-compares cached vs current state
@@ -400,24 +440,38 @@ broadcast_leaderboard_if_changed(struct Server *s)
 	    memcmp(bb.data, s->session.leaderboard_cache, bb.wpos) == 0)
 		goto done;
 
-	if (bb.wpos > s->session.leaderboard_cache_cap) {
-		size_t cap = s->session.leaderboard_cache_cap;
-		uint8_t *nb;
-
-		cap = cap ? cap : 1024;
-		while (cap < bb.wpos)
-			cap *= 2;
-		nb = realloc(s->session.leaderboard_cache, cap);
-		if (!nb)
-			goto done;
-		s->session.leaderboard_cache = nb;
-		s->session.leaderboard_cache_cap = cap;
-	}
-	memcpy(s->session.leaderboard_cache, bb.data, bb.wpos);
-	s->session.leaderboard_cache_len = bb.wpos;
+	(void)leaderboard_update_cache(s, bb.data, bb.wpos);
 
 	(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
 	log_info("Updated leaderboard for %d clients", s->nconns);
+	emitted = 1;
+done:
+	bb_free(&bb);
+	return emitted;
+}
+
+/*
+ * Build the leaderboard payload and broadcast unconditionally,
+ * bypassing the deep-compare gate.  Used at the kunos-documented
+ * mandatory-emit moments — handshake fan-out, phase-boundary force,
+ * weekend wrap — where kunos's pcap shows a 0x36 even when the bytes
+ * coincidentally match the prior frame.  Also updates the cache so
+ * the next deep-compare gate has the latest bytes.
+ */
+int
+broadcast_leaderboard_force(struct Server *s)
+{
+	struct ByteBuf bb;
+	int emitted = 0;
+
+	bb_init(&bb);
+	if (wr_u8(&bb, SRV_LEADERBOARD_BCAST) < 0)
+		goto done;
+	if (write_leaderboard_section(&bb, s) < 0)
+		goto done;
+
+	(void)leaderboard_update_cache(s, bb.data, bb.wpos);
+	(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
 	emitted = 1;
 done:
 	bb_free(&bb);
@@ -924,14 +978,26 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * Leaderboard rebroadcast.  Sync mode (useAsyncLeaderboard=0,
-	 * default) calls broadcast_leaderboard_if_changed every tick;
-	 * the cache compare inside it mirrors kunos's FUN_14002f710
-	 * deep-compare, so a broadcast only fires when the payload
-	 * bytes actually changed.  Async mode (=1) gates the check
-	 * to a 75 s coarse cadence for ops who want minimum fan-out.
+	 * Leaderboard rebroadcast — event-driven.  The previous model
+	 * called broadcast_leaderboard_if_changed every tick and relied
+	 * on the cache compare inside to suppress no-op fan-outs; this
+	 * over-emitted on lap_count++ from formation crossings and on
+	 * sector-fill mid-lap, neither of which kunos emits 0x36 for.
+	 *
+	 * Now: state mutations that kunos pcap-emits for call
+	 * leaderboard_request_emit() (handshake fan-out, conn_drop,
+	 * penalty materialise, phase boundary, weekend wrap).  The
+	 * tick loop drains the pending flag and runs the gated
+	 * broadcast.  The 75 s async-mode heartbeat stays as a
+	 * defense-in-depth probe for any missed trigger site — only
+	 * fires when use_async_leaderboard=1 (opt-in).
 	 */
-	if (!s->use_async_leaderboard ||
+	if (s->session.leaderboard_pending) {
+		s->session.leaderboard_pending = 0;
+		if (broadcast_leaderboard_if_changed(s))
+			*last_leaderboard_ms = now_ms;
+	}
+	if (s->use_async_leaderboard &&
 	    now_ms - *last_leaderboard_ms >= CADENCE_LEADERBOARD_MS) {
 		if (broadcast_leaderboard_if_changed(s))
 			*last_leaderboard_ms = now_ms;

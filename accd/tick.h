@@ -58,6 +58,26 @@ void	broadcast_leaderboard(struct Server *s);
 int	broadcast_leaderboard_if_changed(struct Server *s);
 
 /*
+ * Mark the leaderboard dirty so the next tick drains the pending
+ * flag and runs broadcast_leaderboard_if_changed.  Called from state
+ * mutations kunos emits 0x36 for (penalty enqueue, peer leave,
+ * session phase change).  Lap completes and sector splits MUST NOT
+ * call this — kunos doesn't emit on those.  Cheap (one byte flip).
+ */
+void	leaderboard_request_emit(struct Server *s);
+
+/*
+ * Build the leaderboard payload and broadcast unconditionally,
+ * bypassing the deep-compare gate.  Used at kunos-documented
+ * mandatory-emit moments (post-handshake fan-out, weekend wrap,
+ * phase-boundary force) where kunos's pcap shows a 0x36 even when
+ * the bytes happen to be identical to the prior emit.  Cache is
+ * updated after the fan-out so the next gated check has the latest
+ * bytes.  Returns 1 on emit (always), 0 on build failure.
+ */
+int	broadcast_leaderboard_force(struct Server *s);
+
+/*
  * Build a 63-byte per-car body used by 0x39 relay.
  * clock_adj = sender_pong_ts - peer_pong_ts for per-peer
  * timestamp adjustment.

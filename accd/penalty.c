@@ -42,6 +42,7 @@
 #include "penalty.h"
 #include "session.h"
 #include "state.h"
+#include "tick.h"
 
 int
 penalty_kind_from_string(const char *cmd)
@@ -177,6 +178,17 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 		session_recompute_standings(s);
 	}
 	e->issued_ms = mono_ms();
+	/*
+	 * Every materialise (DT/SG/TP/RBL ladder step + DQ) mutates the
+	 * per-car tail bytes in the 0x36 leaderboard.  Kunos pcap
+	 * (2026-05-09 + 2026-05-13 TP-then-admin-DQ) shows 0x36 fires
+	 * within ~50 ms of every 0x41 receipt.  Flag the leaderboard
+	 * dirty; the tick loop drains and runs the memcmp-gated emit so
+	 * a no-op materialise (e.g. the RBL kind=7 case that doesn't
+	 * change payload bytes — handlers.c:1001 comment) still
+	 * suppresses the wire fan-out.
+	 */
+	leaderboard_request_emit(s);
 }
 
 /*
@@ -268,6 +280,14 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 				if (race->pen.slots[j].kind == PEN_DQ)
 					race->pen.slots[j].laps_remaining = 0;
 			}
+			/*
+			 * Same dirty-flag pattern as the ladder in-place
+			 * edit: the queue mutation changed b1 in the per-car
+			 * tail without going through penalty_materialize, so
+			 * the request_emit there doesn't fire.  Flag it here
+			 * so the next tick drains the pending bit.
+			 */
+			leaderboard_request_emit(s);
 			return 0;
 		}
 		penalty_materialize(s, car_id, EXE_DQ, collision,
@@ -437,6 +457,16 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			s->cars[car_id].race.disqualified = 1;
 			session_recompute_standings(s);
 		}
+		/*
+		 * Ladder in-place edit changes the queued entry's kind,
+		 * which the 0x36 per-car tail b0 reads.  Flag the
+		 * leaderboard dirty so the next tick emits the post-step
+		 * shape (DT->SG10, ..., SG30->DQ).  penalty_materialize
+		 * already fires request_emit for fresh-entry paths; this
+		 * covers the in-place mutation that doesn't go through
+		 * materialize.
+		 */
+		leaderboard_request_emit(s);
 	}
 	return 0;
 }

@@ -70,6 +70,7 @@
 #include "prim.h"
 #include "session.h"
 #include "state.h"
+#include "tick.h"
 #include "weather.h"
 
 /*
@@ -2635,61 +2636,17 @@ reply:
 			 * 0x36 to each existing peer with the updated car
 			 * list.
 			 */
-			{
-				struct ByteBuf lb;
-
-				bb_init(&lb);
-				if (wr_u8(&lb, SRV_LEADERBOARD_BCAST) == 0 &&
-				    write_leaderboard_section(&lb, s) == 0) {
-					(void)bcast_send_one(c, lb.data,
-					    lb.wpos);
-					if (s->nconns > 1)
-						(void)bcast_all(s, lb.data,
-						    lb.wpos, c->conn_id);
-					/*
-					 * Anchor the leaderboard cache to the
-					 * bytes we just emitted so the very
-					 * next tick's deep-compare in
-					 * broadcast_leaderboard_if_changed
-					 * doesn't fire a duplicate 0x36 a
-					 * few milliseconds later.  Pcap diff
-					 * vs kunos (TP-then-admin-DQ scenario)
-					 * caught the double-emit: kunos emits
-					 * one post-handshake 0x36, accd was
-					 * emitting two ~3 ms apart.
-					 */
-					if (lb.wpos
-					    > s->session.leaderboard_cache_cap) {
-						size_t cap =
-						    s->session.leaderboard_cache_cap;
-						uint8_t *nb;
-
-						cap = cap ? cap : 1024;
-						while (cap < lb.wpos)
-							cap *= 2;
-						nb = realloc(
-						    s->session.leaderboard_cache,
-						    cap);
-						if (nb != NULL) {
-							s->session.leaderboard_cache
-							    = nb;
-							s->session.leaderboard_cache_cap
-							    = cap;
-						}
-					}
-					if (s->session.leaderboard_cache
-					    != NULL
-					    && lb.wpos
-					    <= s->session.leaderboard_cache_cap) {
-						memcpy(
-						    s->session.leaderboard_cache,
-						    lb.data, lb.wpos);
-						s->session.leaderboard_cache_len
-						    = lb.wpos;
-					}
-				}
-				bb_free(&lb);
-			}
+			/*
+			 * Post-handshake 0x36 fan-out — kunos emits to every
+			 * connected peer (including the joiner) so the new
+			 * car appears in everyone's leaderboard immediately.
+			 * Force the emit (bypass deep-compare) because the
+			 * cache may be coincidentally byte-identical when the
+			 * joiner's car shape happens to match a freshly-reset
+			 * row.  The cache is updated inside the force call so
+			 * the next tick's gated drain won't re-emit.
+			 */
+			(void)broadcast_leaderboard_force(s);
 
 			/*
 			 * No standalone 0x37 weather here.  The welcome
