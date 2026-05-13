@@ -268,6 +268,14 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			    REASON_RACE_CONTROL);
 			race->pen_state[EXE_DQ].severity = EXE_DQ;
 			race->pen_state[EXE_DQ].issued_ms = now_ms;
+			/*
+			 * Mirror the ladder-step path above: mark this
+			 * category as terminal so a follow-up direct DQ
+			 * on the same category hits the dedup guard at
+			 * line 228 and doesn't materialise twice.
+			 */
+			if (category < sizeof(race->pen_cat_severity))
+				race->pen_cat_severity[category] = EXE_DQ;
 		}
 		return 0;
 	}
