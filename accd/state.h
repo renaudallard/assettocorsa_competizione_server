@@ -218,7 +218,14 @@ struct CarRaceState {
 	 * always emitting split_count = 0.
 	 */
 	int32_t		lap_splits_ms[ACC_LAP_HISTORY][3];
-	uint8_t		lap_history_count;
+	/*
+	 * Monotonically increasing lap counter — used by handlers.c to
+	 * pick the ring slot, and by handshake.c / handlers.c / results.c
+	 * to compute the wrap-aware first-lap index.  uint32_t (not
+	 * uint8_t) so an endurance race with > 255 laps doesn't freeze
+	 * the ring with every later lap pinned to slot 255 % 16 = 15.
+	 */
+	uint32_t	lap_history_count;
 	uint8_t		in_pit;
 	uint8_t		pit_crossing_latched;
 	uint8_t		mandatory_pit_served;	/* count of 0x54

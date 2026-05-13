@@ -321,12 +321,24 @@ results_write(struct Server *s)
 				continue;
 			hcount = cc->race.lap_history_count > ACC_LAP_HISTORY
 			    ? ACC_LAP_HISTORY
-			    : cc->race.lap_history_count;
+			    : (int)cc->race.lap_history_count;
+			/*
+			 * Wrap-aware ring walk: once the count exceeds
+			 * ACC_LAP_HISTORY the oldest retained lap is at
+			 * count % ACC_LAP_HISTORY, not at slot 0.  Without
+			 * this the JSON laps[] reorders later laps in front
+			 * of earlier ones for any car with > 16 laps.
+			 */
+			{
+			uint32_t total = cc->race.lap_history_count;
+			int start = total <= (uint32_t)ACC_LAP_HISTORY
+			    ? 0 : (int)(total % ACC_LAP_HISTORY);
 			for (hi = 0; hi < hcount; hi++) {
-				int lap_ms = cc->race.lap_history_ms[hi];
-				int s0 = cc->race.lap_splits_ms[hi][0];
-				int s1 = cc->race.lap_splits_ms[hi][1];
-				int s2 = cc->race.lap_splits_ms[hi][2];
+				int idx = (start + hi) % ACC_LAP_HISTORY;
+				int lap_ms = cc->race.lap_history_ms[idx];
+				int s0 = cc->race.lap_splits_ms[idx][0];
+				int s1 = cc->race.lap_splits_ms[idx][1];
+				int s2 = cc->race.lap_splits_ms[idx][2];
 				int valid = (lap_ms > 0 &&
 				    lap_ms != 0x7fffffff);
 
@@ -344,6 +356,7 @@ results_write(struct Server *s)
 				    s0, s1, s2);
 				fprintf(f, " }");
 				lap_first = 0;
+			}
 			}
 		}
 	}

@@ -296,15 +296,14 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 
 		/* Per-car lap history (drives 0x36 list 2 + 0x56 garage). */
 		{
-			uint8_t slot = race->lap_history_count
+			uint32_t slot = race->lap_history_count
 			    % ACC_LAP_HISTORY;
 			int si;
 			race->lap_history_ms[slot] = lap_ms;
 			for (si = 0; si < 3; si++)
 				race->lap_splits_ms[slot][si] =
 				    race->sector_ms[si];
-			if (race->lap_history_count < 0xFF)
-				race->lap_history_count++;
+			race->lap_history_count++;
 		}
 
 		/* Best-sector tracking from the just-completed lap's
