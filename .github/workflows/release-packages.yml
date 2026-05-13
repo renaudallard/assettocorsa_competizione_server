@@ -797,6 +797,15 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           cd upload
+          # softprops/action-gh-release renames any '~' in asset
+          # filenames to '.' when it uploads to the GitHub release.
+          # If we hash the originals the published SHA256SUMS won't
+          # match the published asset names, breaking 'sha256sum -c'.
+          # Rename first so the file we ship and the asset URLs agree.
+          for f in *'~'*; do
+              [ -e "$f" ] || continue
+              mv "$f" "${f//\~/.}"
+          done
           files=( *.deb *.rpm *.tar.gz )
           # nullglob makes the array empty if no files match; only run
           # sha256sum when we actually have artifacts to hash.
