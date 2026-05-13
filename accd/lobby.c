@@ -132,8 +132,16 @@ uint32_t arc4random_uniform(uint32_t);
 static void
 lobby_random_token(char *out, size_t n)
 {
+	/*
+	 * Vowel-free alphabet from accServer.exe FUN_1400449c0 line 26:
+	 *   L"123456789BCDFGHJKLMNPQRSTVWXZbcdfghjklmnpqrstvwxz" (49 chars)
+	 * No '0' (collides with 'O' visually) and no vowels (AEIOU/aeiou,
+	 * to avoid accidentally generating words).  The lobby never
+	 * validates the alphabet but matching kunos byte-for-byte keeps
+	 * the wire identical to a clean-room kunos capture.
+	 */
 	static const char alpha[] =
-	    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+	    "123456789BCDFGHJKLMNPQRSTVWXZbcdfghjklmnpqrstvwxz";
 	size_t i;
 
 	for (i = 0; i + 1 < n; i++)
