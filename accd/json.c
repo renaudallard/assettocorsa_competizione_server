@@ -62,6 +62,14 @@ struct slab {
 	size_t	 used;
 };
 
+/*
+ * Maximum object/array nesting depth.  Caps the parse_value recursion
+ * so a malformed config can't blow the C stack with `[[[[[...`.  Real
+ * ACC config + entrylist trees nest 4-5 levels at most; 64 is well
+ * above any legitimate input.
+ */
+#define JSON_MAX_DEPTH	64
+
 struct parser {
 	const char	*src;
 	size_t		 pos;
@@ -69,6 +77,7 @@ struct parser {
 	struct slab	 slab;
 	char		*err;
 	size_t		 errsz;
+	int		 depth;
 };
 
 /*
@@ -501,16 +510,27 @@ static struct json_node *
 parse_value(struct parser *p)
 {
 	int c = peek(p);
+	struct json_node *n;
 
 	if (c < 0) {
 		set_err(p, "unexpected end of input");
 		return NULL;
 	}
+	if (p->depth >= JSON_MAX_DEPTH) {
+		set_err(p, "nesting too deep");
+		return NULL;
+	}
 	switch (c) {
 	case '{':
-		return parse_object(p);
+		p->depth++;
+		n = parse_object(p);
+		p->depth--;
+		return n;
 	case '[':
-		return parse_array(p);
+		p->depth++;
+		n = parse_array(p);
+		p->depth--;
+		return n;
 	case '"': {
 		/*
 		 * Allocate the node FIRST so it is the first slab
