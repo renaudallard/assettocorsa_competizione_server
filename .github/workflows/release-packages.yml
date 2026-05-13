@@ -794,16 +794,19 @@ jobs:
               # -pie / -static-pie redundancy on the link command.
               make ACCD_LDFLAGS="-static-pie -Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack"
               file accd
-              # Verify the binary is actually static.  musl ldd prints
-              # "not a dynamic executable" for fully static binaries and
-              # exits non-zero, so guard the call.
-              if ldd accd 2>&1 | grep -q "not a dynamic"; then
-                echo "OK: statically linked"
-              else
-                echo "ERROR: binary is not static:" >&2
-                ldd accd >&2 || true
+              # Verify the binary has no DT_NEEDED entries — the canonical
+              # "fully static" test that works for both -static and
+              # -static-pie binaries on glibc and musl.  ldd is unreliable
+              # because static-pie binaries keep a PT_INTERP entry that
+              # ldd prints even though no libraries are loaded at runtime.
+              needed=$(readelf -d accd | grep -cE "\\(NEEDED\\)" || true)
+              if [ "$needed" != 0 ]; then
+                echo "ERROR: binary has $needed DT_NEEDED entries:" >&2
+                readelf -d accd | grep NEEDED >&2 || true
                 exit 1
               fi
+              echo "OK: 0 DT_NEEDED entries"
+              ./accd -V
               ver=$(cat ../VERSION | tr -d "[:space:]")
               arch=$(uname -m)
               staging="accd-${ver}-linux-static-${arch}"
