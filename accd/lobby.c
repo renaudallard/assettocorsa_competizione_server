@@ -765,6 +765,35 @@ lobby_send_config_response(struct LobbyClient *l, const struct Server *s)
 	return rc;
 }
 
+/*
+ * Two kson outbound message types exist in the exe (FUN_140044c10
+ * dispatch / FUN_140046f30 outbox enqueue) but are deliberately not
+ * implemented here:
+ *
+ *   0xd2 WRECKER_REPORT  — emitted from the exe's collision tracker
+ *                          when a driver accumulates enough contact
+ *                          incidents to be flagged.  Wire format:
+ *                          preamble(0xd2) + u16 car_id + 3 kson_string
+ *                          (reporter_name, target_name, context).
+ *                          accd has no collision-incident accumulator
+ *                          so there is no internal trigger.
+ *
+ *   0xd3 CP_RACE_RESULT  — emitted at race end when the server is a
+ *                          CP (Championship Points) event participant.
+ *                          Wire: preamble(0xd3) + u32 0x07 + u32 0x08
+ *                          + u32 0x07 + per-car record blob.
+ *                          accd intentionally has no CP storage and
+ *                          drops the inbound 0xf3 CP_PUSH after just
+ *                          logging the event_id, so the CP write-back
+ *                          channel never has data to emit.
+ *
+ * Adding senders without internal triggers would be dead code; adding
+ * the triggers would be feature work outside the clean-room dedicated-
+ * server scope.  The fields are documented here so a future operator
+ * who wants wrecker reporting or CP integration has the wire format
+ * available without re-RE'ing the exe.
+ */
+
 static int
 lobby_send_keepalive(struct LobbyClient *l, const struct Server *s)
 {
