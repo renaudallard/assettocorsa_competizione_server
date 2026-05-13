@@ -28,6 +28,7 @@ OBJS =		main.o \
 		prim.o \
 		ratings.o \
 		results.o \
+		sandbox.o \
 		session.o \
 		state.o \
 		tick.o \
@@ -88,8 +89,15 @@ ${PROG}: ${OBJS}
 	    -x c - -o /dev/null -lbsd 2>/dev/null; then \
 	    BSD="-lbsd"; \
 	fi; \
-	echo ${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD ${LIBS}; \
-	${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD ${LIBS}
+	SECCOMP=; \
+	if printf '%s\n%s\n' '#include <seccomp.h>' \
+	    'int main(){scmp_filter_ctx c=seccomp_init(0);seccomp_release(c);return 0;}' \
+	    | ${CC} ${ACCD_CFLAGS} ${CFLAGS} ${ACCD_LDFLAGS} ${LDFLAGS} \
+	    -x c - -o /dev/null -lseccomp 2>/dev/null; then \
+	    SECCOMP="-lseccomp"; \
+	fi; \
+	echo ${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD $$SECCOMP ${LIBS}; \
+	${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD $$SECCOMP ${LIBS}
 
 # main.o embeds ACCD_VERSION_STR via -DACCD_VERSION_STR=...
 # defined in ACCD_CFLAGS at make-invocation time.  After bumping
@@ -156,6 +164,7 @@ penalty.o: penalty.c log.h penalty.h state.h io.h lobby.h msg.h session.h \
 prim.o: prim.c prim.h io.h
 ratings.o: ratings.c json.h log.h ratings.h state.h io.h lobby.h msg.h
 results.o: results.c io.h log.h penalty.h state.h lobby.h msg.h results.h
+sandbox.o: sandbox.c sandbox.h log.h
 session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \
  handshake.h log.h penalty.h prim.h results.h session.h tick.h
 state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h handlers.h \
