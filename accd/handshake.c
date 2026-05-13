@@ -2405,6 +2405,28 @@ post_slot_assignment:
 		 * be reallocated; reclaim must flip it back so the rest
 		 * of the server sees the driver as active again). */
 		s->cars[c->car_id].used = 1;
+		/*
+		 * Fresh occupant (different steam_id than any zombie):
+		 * drop the previous driver's race state and archived
+		 * snapshots so we don't surface their lap history in the
+		 * 0x56 garage reply or seed the new joiner with their
+		 * leaderboard row / grid position.  Reconnects (is_reconnect)
+		 * intentionally keep the slot's prior state.
+		 */
+		if (!is_reconnect) {
+			struct CarEntry *fc = &s->cars[c->car_id];
+			int ai;
+
+			for (ai = 0; ai < ACC_MAX_SESSIONS; ai++) {
+				if (fc->race_archive[ai] != NULL) {
+					free(fc->race_archive[ai]);
+					fc->race_archive[ai] = NULL;
+				}
+			}
+			memset(&fc->race, 0, sizeof(fc->race));
+			fc->race.position = (int16_t)(c->car_id + 1);
+			fc->race.grid_position = -1;
+		}
 		/* Populate the car slot with parsed data. */
 		car = &s->cars[c->car_id];
 		if (first != NULL)
