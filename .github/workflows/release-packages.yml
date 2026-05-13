@@ -856,12 +856,42 @@ jobs:
           file accd
           lipo -info accd
           ./accd -V
-          ver=$(cat ../VERSION | tr -d "[:space:]")
-          staging="accd-${ver}-macos-universal"
-          mkdir -p "${staging}/bin"
-          cp accd "${staging}/bin/"
-          cp ../LICENSE ../README.md "${staging}/"
-          tar czf "../${staging}.tar.gz" "${staging}"
+
+      - name: Assemble accd.app bundle
+        run: |
+          set -euo pipefail
+          ver=$(cat VERSION | tr -d "[:space:]")
+          stage="accd-${ver}-macos-universal"
+          app="${stage}/accd.app"
+          mkdir -p "${app}/Contents/MacOS" "${app}/Contents/Resources"
+
+          cp accd/accd "${app}/Contents/MacOS/accd"
+
+          # Build the iconset macOS expects (icon_NxN[@2x].png pairs)
+          # and run iconutil to produce a single accd.icns multi-image.
+          iconset="$(mktemp -d)/accd.iconset"
+          mkdir -p "${iconset}"
+          cp accd/macos/icons/accd-icon-16.png   "${iconset}/icon_16x16.png"
+          cp accd/macos/icons/accd-icon-32.png   "${iconset}/icon_16x16@2x.png"
+          cp accd/macos/icons/accd-icon-32.png   "${iconset}/icon_32x32.png"
+          cp accd/macos/icons/accd-icon-64.png   "${iconset}/icon_32x32@2x.png"
+          cp accd/macos/icons/accd-icon-128.png  "${iconset}/icon_128x128.png"
+          cp accd/macos/icons/accd-icon-256.png  "${iconset}/icon_128x128@2x.png"
+          cp accd/macos/icons/accd-icon-256.png  "${iconset}/icon_256x256.png"
+          cp accd/macos/icons/accd-icon-512.png  "${iconset}/icon_256x256@2x.png"
+          cp accd/macos/icons/accd-icon-512.png  "${iconset}/icon_512x512.png"
+          cp accd/macos/icons/accd-icon-1024.png "${iconset}/icon_512x512@2x.png"
+          iconutil -c icns -o "${app}/Contents/Resources/accd.icns" "${iconset}"
+
+          # Bake VERSION into the Info.plist template.
+          sed "s|@@VERSION@@|${ver}|g" accd/macos/Info.plist \
+              > "${app}/Contents/Info.plist"
+
+          # Top-level extras alongside the bundle.
+          cp LICENSE README.md "${stage}/"
+
+          tar czf "${stage}.tar.gz" "${stage}"
+          ls -lh "${stage}.tar.gz"
 
       - name: Upload macOS artifact
         uses: actions/upload-artifact@v7
