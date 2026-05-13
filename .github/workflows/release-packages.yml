@@ -238,6 +238,11 @@ jobs:
       - name: Regenerate debian/changelog topmost stanza from VERSION
         run: |
           set -euo pipefail
+          # Inside Docker containers git refuses to operate on a
+          # workspace it sees as owned by a different UID; the
+          # 'safe.directory' marker silences that and is harmless on
+          # bare hosts.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           ver=$(cat VERSION | tr -d '[:space:]')
           # Prepend a fresh stanza whose header carries VERSION and
           # whose body is the commit subjects between the previous tag
@@ -260,7 +265,7 @@ jobs:
                   echo "  * Release $ver."
               fi
               git log --no-merges --pretty=format:'  * %s' "$range" 2>/dev/null \
-                  | head -40
+                  | head -40 || true
               printf '\n\n -- %s  %s\n\n' "$maintainer" "$date_rfc"
               cat debian/changelog
           } > "$tmp"
@@ -319,6 +324,11 @@ jobs:
       - name: Regenerate debian/changelog topmost stanza from VERSION
         run: |
           set -euo pipefail
+          # Inside Docker containers git refuses to operate on a
+          # workspace it sees as owned by a different UID; the
+          # 'safe.directory' marker silences that and is harmless on
+          # bare hosts.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           ver=$(cat VERSION | tr -d '[:space:]')
           # Prepend a fresh stanza whose header carries VERSION and
           # whose body is the commit subjects between the previous tag
@@ -341,7 +351,7 @@ jobs:
                   echo "  * Release $ver."
               fi
               git log --no-merges --pretty=format:'  * %s' "$range" 2>/dev/null \
-                  | head -40
+                  | head -40 || true
               printf '\n\n -- %s  %s\n\n' "$maintainer" "$date_rfc"
               cat debian/changelog
           } > "$tmp"
@@ -400,6 +410,11 @@ jobs:
       - name: Regenerate debian/changelog topmost stanza from VERSION
         run: |
           set -euo pipefail
+          # Inside Docker containers git refuses to operate on a
+          # workspace it sees as owned by a different UID; the
+          # 'safe.directory' marker silences that and is harmless on
+          # bare hosts.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           ver=$(cat VERSION | tr -d '[:space:]')
           # Prepend a fresh stanza whose header carries VERSION and
           # whose body is the commit subjects between the previous tag
@@ -422,7 +437,7 @@ jobs:
                   echo "  * Release $ver."
               fi
               git log --no-merges --pretty=format:'  * %s' "$range" 2>/dev/null \
-                  | head -40
+                  | head -40 || true
               printf '\n\n -- %s  %s\n\n' "$maintainer" "$date_rfc"
               cat debian/changelog
           } > "$tmp"
@@ -481,6 +496,11 @@ jobs:
       - name: Regenerate debian/changelog topmost stanza from VERSION
         run: |
           set -euo pipefail
+          # Inside Docker containers git refuses to operate on a
+          # workspace it sees as owned by a different UID; the
+          # 'safe.directory' marker silences that and is harmless on
+          # bare hosts.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
           ver=$(cat VERSION | tr -d '[:space:]')
           # Prepend a fresh stanza whose header carries VERSION and
           # whose body is the commit subjects between the previous tag
@@ -503,7 +523,7 @@ jobs:
                   echo "  * Release $ver."
               fi
               git log --no-merges --pretty=format:'  * %s' "$range" 2>/dev/null \
-                  | head -40
+                  | head -40 || true
               printf '\n\n -- %s  %s\n\n' "$maintainer" "$date_rfc"
               cat debian/changelog
           } > "$tmp"
@@ -775,13 +795,20 @@ jobs:
         if: hashFiles('upload/*') != ''
         run: |
           set -euo pipefail
+          shopt -s nullglob
           cd upload
-          # Sorted output so the checksum file is reproducible across
-          # re-runs of the same release tag.
-          sha256sum *.deb *.rpm *.tar.gz 2>/dev/null \
-            | sort -k2 > SHA256SUMS
-          echo "==> SHA256SUMS:"
-          cat SHA256SUMS
+          files=( *.deb *.rpm *.tar.gz )
+          # nullglob makes the array empty if no files match; only run
+          # sha256sum when we actually have artifacts to hash.
+          if [ ${#files[@]} -gt 0 ]; then
+              # Sorted output so the checksum file is reproducible
+              # across re-runs of the same release tag.
+              sha256sum "${files[@]}" | sort -k2 > SHA256SUMS
+              echo "==> SHA256SUMS:"
+              cat SHA256SUMS
+          else
+              echo "no artifacts to hash"
+          fi
 
       - name: Upload release assets
         if: hashFiles('upload/*') != ''
