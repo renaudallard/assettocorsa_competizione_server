@@ -235,15 +235,37 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
-      - name: Sync debian/changelog version with VERSION
+      - name: Regenerate debian/changelog topmost stanza from VERSION
         run: |
           set -euo pipefail
           ver=$(cat VERSION | tr -d '[:space:]')
-          # Rewrite the topmost changelog header so dpkg-buildpackage
-          # tags the .deb with VERSION instead of the hand-edited entry,
-          # which would otherwise stay frozen at whichever release
-          # last got a manual debian/changelog stanza.
-          sed -i "1s/^accd ([^)]*)/accd ($ver)/" debian/changelog
+          # Prepend a fresh stanza whose header carries VERSION and
+          # whose body is the commit subjects between the previous tag
+          # and HEAD.  The old hand-edited topmost stanza's body was
+          # frozen at 0.2.19's content even on 0.3.x releases, so the
+          # .deb metadata lied to operators about what was new.  Keep
+          # any older stanzas intact below so the changelog still has
+          # historical context.
+          prev_tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          date_rfc=$(date -R)
+          maintainer="Renaud Allard <renaud@allard.it>"
+          tmp=$(mktemp)
+          {
+              printf 'accd (%s) unstable; urgency=medium\n\n' "$ver"
+              if [ -n "$prev_tag" ]; then
+                  range="$prev_tag..HEAD"
+                  echo "  * Release $ver.  Changes since $prev_tag:"
+              else
+                  range="HEAD"
+                  echo "  * Release $ver."
+              fi
+              git log --no-merges --pretty=format:'  * %s' "$range" 2>/dev/null \
+                  | head -40
+              printf '\n\n -- %s  %s\n\n' "$maintainer" "$date_rfc"
+              cat debian/changelog
+          } > "$tmp"
+          mv "$tmp" debian/changelog
+          head -25 debian/changelog
 
       - name: Build Debian packages
         run: |
@@ -294,15 +316,37 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
-      - name: Sync debian/changelog version with VERSION
+      - name: Regenerate debian/changelog topmost stanza from VERSION
         run: |
           set -euo pipefail
           ver=$(cat VERSION | tr -d '[:space:]')
-          # Rewrite the topmost changelog header so dpkg-buildpackage
-          # tags the .deb with VERSION instead of the hand-edited entry,
-          # which would otherwise stay frozen at whichever release
-          # last got a manual debian/changelog stanza.
-          sed -i "1s/^accd ([^)]*)/accd ($ver)/" debian/changelog
+          # Prepend a fresh stanza whose header carries VERSION and
+          # whose body is the commit subjects between the previous tag
+          # and HEAD.  The old hand-edited topmost stanza's body was
+          # frozen at 0.2.19's content even on 0.3.x releases, so the
+          # .deb metadata lied to operators about what was new.  Keep
+          # any older stanzas intact below so the changelog still has
+          # historical context.
+          prev_tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          date_rfc=$(date -R)
+          maintainer="Renaud Allard <renaud@allard.it>"
+          tmp=$(mktemp)
+          {
+              printf 'accd (%s) unstable; urgency=medium\n\n' "$ver"
+              if [ -n "$prev_tag" ]; then
+                  range="$prev_tag..HEAD"
+                  echo "  * Release $ver.  Changes since $prev_tag:"
+              else
+                  range="HEAD"
+                  echo "  * Release $ver."
+              fi
+              git log --no-merges --pretty=format:'  * %s' "$range" 2>/dev/null \
+                  | head -40
+              printf '\n\n -- %s  %s\n\n' "$maintainer" "$date_rfc"
+              cat debian/changelog
+          } > "$tmp"
+          mv "$tmp" debian/changelog
+          head -25 debian/changelog
 
       - name: Build Debian packages
         run: |
@@ -353,15 +397,37 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
-      - name: Sync debian/changelog version with VERSION
+      - name: Regenerate debian/changelog topmost stanza from VERSION
         run: |
           set -euo pipefail
           ver=$(cat VERSION | tr -d '[:space:]')
-          # Rewrite the topmost changelog header so dpkg-buildpackage
-          # tags the .deb with VERSION instead of the hand-edited entry,
-          # which would otherwise stay frozen at whichever release
-          # last got a manual debian/changelog stanza.
-          sed -i "1s/^accd ([^)]*)/accd ($ver)/" debian/changelog
+          # Prepend a fresh stanza whose header carries VERSION and
+          # whose body is the commit subjects between the previous tag
+          # and HEAD.  The old hand-edited topmost stanza's body was
+          # frozen at 0.2.19's content even on 0.3.x releases, so the
+          # .deb metadata lied to operators about what was new.  Keep
+          # any older stanzas intact below so the changelog still has
+          # historical context.
+          prev_tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          date_rfc=$(date -R)
+          maintainer="Renaud Allard <renaud@allard.it>"
+          tmp=$(mktemp)
+          {
+              printf 'accd (%s) unstable; urgency=medium\n\n' "$ver"
+              if [ -n "$prev_tag" ]; then
+                  range="$prev_tag..HEAD"
+                  echo "  * Release $ver.  Changes since $prev_tag:"
+              else
+                  range="HEAD"
+                  echo "  * Release $ver."
+              fi
+              git log --no-merges --pretty=format:'  * %s' "$range" 2>/dev/null \
+                  | head -40
+              printf '\n\n -- %s  %s\n\n' "$maintainer" "$date_rfc"
+              cat debian/changelog
+          } > "$tmp"
+          mv "$tmp" debian/changelog
+          head -25 debian/changelog
 
       - name: Build Debian packages
         run: |
@@ -412,15 +478,37 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
-      - name: Sync debian/changelog version with VERSION
+      - name: Regenerate debian/changelog topmost stanza from VERSION
         run: |
           set -euo pipefail
           ver=$(cat VERSION | tr -d '[:space:]')
-          # Rewrite the topmost changelog header so dpkg-buildpackage
-          # tags the .deb with VERSION instead of the hand-edited entry,
-          # which would otherwise stay frozen at whichever release
-          # last got a manual debian/changelog stanza.
-          sed -i "1s/^accd ([^)]*)/accd ($ver)/" debian/changelog
+          # Prepend a fresh stanza whose header carries VERSION and
+          # whose body is the commit subjects between the previous tag
+          # and HEAD.  The old hand-edited topmost stanza's body was
+          # frozen at 0.2.19's content even on 0.3.x releases, so the
+          # .deb metadata lied to operators about what was new.  Keep
+          # any older stanzas intact below so the changelog still has
+          # historical context.
+          prev_tag=$(git describe --tags --abbrev=0 2>/dev/null || true)
+          date_rfc=$(date -R)
+          maintainer="Renaud Allard <renaud@allard.it>"
+          tmp=$(mktemp)
+          {
+              printf 'accd (%s) unstable; urgency=medium\n\n' "$ver"
+              if [ -n "$prev_tag" ]; then
+                  range="$prev_tag..HEAD"
+                  echo "  * Release $ver.  Changes since $prev_tag:"
+              else
+                  range="HEAD"
+                  echo "  * Release $ver."
+              fi
+              git log --no-merges --pretty=format:'  * %s' "$range" 2>/dev/null \
+                  | head -40
+              printf '\n\n -- %s  %s\n\n' "$maintainer" "$date_rfc"
+              cat debian/changelog
+          } > "$tmp"
+          mv "$tmp" debian/changelog
+          head -25 debian/changelog
 
       - name: Build Debian packages
         run: |
