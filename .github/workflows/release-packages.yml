@@ -156,15 +156,29 @@ jobs:
               return majors[-1] if majors else "9"
 
           def latest_alpine():
+              # The Alpine mirror at dl-cdn.alpinelinux.org publishes new
+              # series directories (v3.24/) before Docker Hub publishes the
+              # matching `alpine:3.24` image, so the prior scrape would hand
+              # the build container an unpullable tag.  Pin the choice to
+              # what Docker Hub actually ships by querying its tag listing
+              # and taking the highest x.y tag that exists there.
               try:
-                  html = fetch_text("https://dl-cdn.alpinelinux.org/alpine/")
+                  data = fetch_text(
+                      "https://hub.docker.com/v2/repositories/library/alpine"
+                      "/tags?page_size=100"
+                  )
+                  tags = json.loads(data).get("results", [])
                   versions = []
-                  for line in html.splitlines():
-                      m = re.search(r'href="v([0-9]+\.[0-9]+)/"', line)
+                  for t in tags:
+                      name = t.get("name", "")
+                      m = re.fullmatch(r"([0-9]+\.[0-9]+)", name)
                       if m:
                           versions.append(m.group(1))
                   if versions:
-                      return sorted(versions, key=lambda v: [int(x) for x in v.split(".")])[-1]
+                      return sorted(
+                          versions,
+                          key=lambda v: [int(x) for x in v.split(".")],
+                      )[-1]
               except Exception:
                   pass
               return "3.21"
