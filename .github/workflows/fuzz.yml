@@ -1,0 +1,72 @@
+name: Fuzz wire parsers
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      duration_s:
+        description: "Seconds to fuzz each target"
+        required: false
+        default: "60"
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  fuzz-json:
+    name: libFuzzer (json_parse)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y clang libbsd-dev
+
+      - name: Build fuzz_json
+        run: |
+          set -euo pipefail
+          cd accd
+          clang -fsanitize=fuzzer,address,undefined \
+            -fno-omit-frame-pointer -O1 -g -I. \
+            fuzz/fuzz_json.c json.c \
+            -o fuzz_json
+
+      - name: Run fuzz_json (60 s)
+        env:
+          ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+        run: |
+          set -euo pipefail
+          cd accd
+          dur="${{ github.event.inputs.duration_s || '60' }}"
+          mkdir -p corpus_json
+          # Seed corpus from the project's own JSON config samples so
+          # the fuzzer starts from a representative coverage frontier.
+          cp tests/integration/cfg/*.json corpus_json/ 2>/dev/null || true
+          ./fuzz_json -max_total_time="$dur" corpus_json/
+
+      - name: Upload crash artifacts
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-json-crashes
+          path: |
+            accd/crash-*
+            accd/leak-*
+            accd/timeout-*
+          if-no-files-found: ignore
