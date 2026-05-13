@@ -8,17 +8,20 @@ under Wine.
 
 ## What it is
 
-- A single C99 source file (`bot.c`, ~1400 lines) plus two Python
+- A single C99 source file (`bot.c`, ~1570 lines) plus two Python
   helpers for getting a racing line out of game data or out of a
   pcap recording.
 - Performs the real handshake: TCP `0x09` request, parses the
-  `0x0b` welcome trailer, then 30 Hz UDP `0x32` car-location
-  updates with synthesised position, velocity and heading.
+  `0x0b` welcome trailer, then 30 Hz UDP `0x1e` car-update +
+  on-demand `0x32` location packets with synthesised position,
+  velocity and heading.
 - Models enough of normal play to keep the server happy: formation
   lap (under 70 km/h), pit-lane (sub-22 m/s + `location=Pitlane`),
-  sector splits (`0x21`), mandatory pit served (`0x54`), keepalive
-  pong (`0x16`), reconnect with exponential backoff, mid-race join,
-  damage / dirt / tyre packets.
+  per-sector `0x20` splits + lap-complete `0x21` at S/F (matching
+  the kunos wire convention so the server's lap counter advances
+  in P / Q / R), mandatory pit served (`0x54`), keepalive pong
+  (`0x16`), reconnect with exponential backoff, mid-race join,
+  damage zones (`0x43`), dirt (`0x45`), tyre compound (`0x2f`).
 - Drives on a kinematic model: corner radius from the racing-line
   geometry, aero growth at speed, simple wear, bump recovery.  No
   input simulation, no slip, no kerb usage.
@@ -114,7 +117,7 @@ whatever waypoint CSV you generated.
 ## Source layout
 
 ```
-bot.c                 main driver (single TU, ~1400 lines)
+bot.c                 main driver (single TU, ~1570 lines)
 parse_ai.py           Kunos .ai → bot CSV
 extract_racing_line.py  pcap → bot CSV
 Makefile              `make` builds bot

@@ -302,9 +302,13 @@ static size_t pkt_location(uint8_t *out, uint16_t car_id, uint8_t loc)
 	return bb_n;
 }
 
-/* 0x21 ACP_SECTOR_SPLIT_SINGLE — TCP framed.
- * Body: u8 + i32 split_ms + i32 lap_ms + u8 sector + u16 car_field +
- *       u8 flag.  Server transforms to 0x3b for relay. */
+/* 0x21 ACP_LAP_COMPLETED — TCP framed, fired ONCE at the S/F line.
+ * Body: u8 + i32 laptime + i32 raw_ts + u8 flag1 + u16 lapstates +
+ *       u8 flag2.  Server transforms to 0x3b for relay AND runs the
+ *       lap-complete cascade (lap_count++, last_lap, best_lap,
+ *       lap_history, ratings, lobby 0xd0, DT/SG serve countdown).
+ * The 'sector' field here is actually flag1 — kunos's exe reads but
+ * does not interpret it. */
 static size_t pkt_sector_split(uint8_t *out, int32_t split_ms,
     int32_t lap_ms, uint8_t sector, uint16_t car_field)
 {
@@ -314,7 +318,24 @@ static size_t pkt_sector_split(uint8_t *out, int32_t split_ms,
 	bb_u32((uint32_t)lap_ms);
 	bb_u8(sector);
 	bb_u16(car_field);
-	bb_u8(0);			/* flag_d, unused */
+	bb_u8(0);			/* flag2, unused by server */
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x20 ACP_SECTOR_SPLIT — TCP framed, per-sector split for sectors
+ * 0 and 1.  Body: u8 + i32 sector_time_ms + u8 sector_index + i32
+ * clock_ms + u16 car_field.  Server stores in sector_ms[]; the
+ * lap-complete cascade fires on the 0x21 at S/F (not here). */
+static size_t pkt_sector_bulk(uint8_t *out, int32_t sector_time_ms,
+    uint8_t sector_index, int32_t clock_ms, uint16_t car_field)
+{
+	bb_reset();
+	bb_u8(0x20);
+	bb_u32((uint32_t)sector_time_ms);
+	bb_u8(sector_index);
+	bb_u32((uint32_t)clock_ms);
+	bb_u16(car_field);
 	memcpy(out, bb_buf, bb_n);
 	return bb_n;
 }
@@ -363,7 +384,9 @@ static size_t pkt_damage_zones(uint8_t *out, const uint8_t zones[5])
 static size_t pkt_car_dirt(uint8_t *out, const uint8_t dirt[5])
 {
 	bb_reset();
-	bb_u8(0x46);
+	bb_u8(0x45);  /* ACP_CAR_DIRT_UPDATE — 0x46 is the server-side
+	               * relay id; clients send 0x45 and the server
+	               * stores it for the welcome-trailer dirt tail. */
 	bb_u8(dirt[0]); bb_u8(dirt[1]); bb_u8(dirt[2]);
 	bb_u8(dirt[3]); bb_u8(dirt[4]);
 	memcpy(out, bb_buf, bb_n);
@@ -1277,9 +1300,14 @@ int main(int argc, char **argv)
 
 		/*
 		 * Sector splits.  Three sectors of equal norm_pos length
-		 * (0..1/3, 1/3..2/3, 2/3..1).  When the bot crosses a
-		 * boundary, emit 0x21 with the just-finished sector's
-		 * split time and the cumulative lap time so far.
+		 * (0..1/3, 1/3..2/3, 2/3..1).  Kunos wire convention
+		 * (FUN_1400142f0 dispatch):
+		 *   0x20 per-sector split for sectors 0 and 1
+		 *   0x21 lap-complete at S/F (sector-2 -> sector-0)
+		 * accd's lap-complete cascade (lap_count++, last_lap,
+		 * best_lap, ratings, 0xd0 lobby push, penalty serve
+		 * countdown) fires on the 0x21 only — emit the right
+		 * id at the right boundary so P/Q laps count.
 		 */
 		{
 			int new_sector = (u_pos < 1.0f / 3.0f) ? 0 :
@@ -1293,15 +1321,32 @@ int main(int argc, char **argv)
 				    (client_ts - sector_start_ms);
 				int32_t lap_t = (int32_t)
 				    (client_ts - lap_start_ms);
-				uint8_t pkt2[32];
-				size_t n = pkt_sector_split(pkt2, split,
-				    lap_t, (uint8_t)last_sector,
-				    (uint16_t)car_id);
-				send_tcp_framed(tcp_fd, pkt2, n);
-				/* Sector-2 → sector-0 transition is the
-				 * lap-end; rebase both timers. */
-				if (last_sector == 2 && new_sector == 0)
+				if (last_sector == 2 && new_sector == 0) {
+					/* S/F: emit 0x21 lap-complete with
+					 * the just-finished lap's full time
+					 * in the first u32.  On the very
+					 * first crossing lap_t is 0 (timers
+					 * just initialised); tag the lap as
+					 * IsOutLap (car_field bit 2) so
+					 * accd treats it as invalid. */
+					uint16_t car_field = (lap <= 1)
+					    ? 0x0004u : 0x0000u;
+					uint8_t pkt2[32];
+					size_t n = pkt_sector_split(pkt2,
+					    lap_t, lap_t,
+					    (uint8_t)last_sector,
+					    car_field);
+					send_tcp_framed(tcp_fd, pkt2, n);
 					lap_start_ms = client_ts;
+				} else {
+					/* Sectors 0 / 1: emit 0x20 with
+					 * the just-finished sector's time. */
+					uint8_t pkt3[16];
+					size_t m = pkt_sector_bulk(pkt3,
+					    split, (uint8_t)last_sector,
+					    lap_t, 0);
+					send_tcp_framed(tcp_fd, pkt3, m);
+				}
 				sector_start_ms = client_ts;
 				last_sector = new_sector;
 			}
