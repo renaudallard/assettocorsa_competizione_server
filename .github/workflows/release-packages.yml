@@ -221,6 +221,16 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
+      - name: Sync debian/changelog version with VERSION
+        run: |
+          set -euo pipefail
+          ver=$(cat VERSION | tr -d '[:space:]')
+          # Rewrite the topmost changelog header so dpkg-buildpackage
+          # tags the .deb with VERSION instead of the hand-edited entry,
+          # which would otherwise stay frozen at whichever release
+          # last got a manual debian/changelog stanza.
+          sed -i "1s/^accd ([^)]*)/accd ($ver)/" debian/changelog
+
       - name: Build Debian packages
         run: |
           set -euo pipefail
@@ -269,6 +279,16 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Sync debian/changelog version with VERSION
+        run: |
+          set -euo pipefail
+          ver=$(cat VERSION | tr -d '[:space:]')
+          # Rewrite the topmost changelog header so dpkg-buildpackage
+          # tags the .deb with VERSION instead of the hand-edited entry,
+          # which would otherwise stay frozen at whichever release
+          # last got a manual debian/changelog stanza.
+          sed -i "1s/^accd ([^)]*)/accd ($ver)/" debian/changelog
 
       - name: Build Debian packages
         run: |
@@ -319,6 +339,16 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
+      - name: Sync debian/changelog version with VERSION
+        run: |
+          set -euo pipefail
+          ver=$(cat VERSION | tr -d '[:space:]')
+          # Rewrite the topmost changelog header so dpkg-buildpackage
+          # tags the .deb with VERSION instead of the hand-edited entry,
+          # which would otherwise stay frozen at whichever release
+          # last got a manual debian/changelog stanza.
+          sed -i "1s/^accd ([^)]*)/accd ($ver)/" debian/changelog
+
       - name: Build Debian packages
         run: |
           set -euo pipefail
@@ -367,6 +397,16 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Sync debian/changelog version with VERSION
+        run: |
+          set -euo pipefail
+          ver=$(cat VERSION | tr -d '[:space:]')
+          # Rewrite the topmost changelog header so dpkg-buildpackage
+          # tags the .deb with VERSION instead of the hand-edited entry,
+          # which would otherwise stay frozen at whichever release
+          # last got a manual debian/changelog stanza.
+          sed -i "1s/^accd ([^)]*)/accd ($ver)/" debian/changelog
 
       - name: Build Debian packages
         run: |
