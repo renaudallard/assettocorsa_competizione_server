@@ -1310,8 +1310,13 @@ stint_check_violations(struct Server *s)
 	int i;
 	int is_race = session_is_race(s);
 
-	if (s->driver_stint_time_s == 0 && s->mandatory_pit_count == 0)
-		return;	/* no enforcement configured */
+	/*
+	 * No global early-return: each per-check gate below handles its
+	 * own "not configured" case.  The driver-ran-no-stint branch
+	 * (line below) runs even when driverStintTime and
+	 * mandatoryPitstopCount are both unset, since multi-driver
+	 * entries always carry an implied swap obligation.
+	 */
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarEntry *car = &s->cars[i];
