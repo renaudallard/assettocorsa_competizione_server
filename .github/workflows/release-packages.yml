@@ -771,6 +771,18 @@ jobs:
             while read f; do cp "$f" upload/; done
           ls -la upload/ || echo "No assets found"
 
+      - name: Generate SHA256SUMS
+        if: hashFiles('upload/*') != ''
+        run: |
+          set -euo pipefail
+          cd upload
+          # Sorted output so the checksum file is reproducible across
+          # re-runs of the same release tag.
+          sha256sum *.deb *.rpm *.tar.gz 2>/dev/null \
+            | sort -k2 > SHA256SUMS
+          echo "==> SHA256SUMS:"
+          cat SHA256SUMS
+
       - name: Upload release assets
         if: hashFiles('upload/*') != ''
         uses: softprops/action-gh-release@v3
