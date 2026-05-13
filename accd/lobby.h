@@ -76,6 +76,7 @@ struct LobbyClient {
 	uint64_t	last_session_update_ms;
 	char		token_a[65];	/* 64 alphanum + NUL */
 	char		token_b[11];	/* 10 alphanum + NUL */
+	char		server_fpr[21];	/* 20-digit random fingerprint for 0xd7 */
 	unsigned char	*rx_buf;
 	size_t		rx_len;
 	size_t		rx_cap;

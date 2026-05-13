@@ -157,11 +157,22 @@ lobby_set_state(struct LobbyClient *l, enum lobby_state s)
 void
 lobby_init(struct LobbyClient *l)
 {
+	size_t i;
+
 	memset(l, 0, sizeof(*l));
 	l->fd = -1;
 	l->session_id = 6;	/* observed value; lobby may reassign */
 	lobby_random_token(l->token_a, sizeof(l->token_a));
 	lobby_random_token(l->token_b, sizeof(l->token_b));
+	/*
+	 * 20-digit numeric fingerprint — kunos generates this at server
+	 * boot by looping `rand() / 32767 * 10` twenty times (FUN_140023700
+	 * line 858).  Sent back to the lobby in 0xd7 as field[0] so kson
+	 * can detect a server restart and refresh its cached entry.
+	 */
+	for (i = 0; i + 1 < sizeof(l->server_fpr); i++)
+		l->server_fpr[i] = '0' + arc4random_uniform(10);
+	l->server_fpr[sizeof(l->server_fpr) - 1] = '\0';
 	l->state = LOBBY_DISABLED;
 }
 
@@ -710,9 +721,12 @@ lobby_send_session_update(struct LobbyClient *l, const struct Server *s)
 
 /*
  * Reply to a kson 0xf6 CONFIG_REQUEST with 0xd7 containing three
- * kson_strings (server_name, track_name, password) matching the
- * exe's dispatch of the same command in FUN_140044c10.  kson uses
- * this periodically to verify our identity; no reply = eviction.
+ * kson_strings: the per-boot server fingerprint at ServerState+0x430
+ * (FUN_140044c10 dispatch case 0xf6 reads it), then SC+0x1a8 and
+ * SC+0x188.  The latter two are server-side strings whose semantic
+ * we have not verified — empty strings keep the message size sane
+ * and the lobby has never rejected the response.  kson uses 0xd7
+ * to detect a server restart so it can drop a stale entry.
  */
 static int
 lobby_send_config_response(struct LobbyClient *l, const struct Server *s)
@@ -722,9 +736,10 @@ lobby_send_config_response(struct LobbyClient *l, const struct Server *s)
 	const char *fields[3];
 	int i;
 
-	fields[0] = s->server_name;
-	fields[1] = s->track;
-	fields[2] = s->password;
+	(void)s;
+	fields[0] = l->server_fpr;
+	fields[1] = "";
+	fields[2] = "";
 
 	bb_init(&bb);
 	if (lobby_write_preamble(&bb, l, 0xd7) < 0) {
@@ -745,9 +760,8 @@ lobby_send_config_response(struct LobbyClient *l, const struct Server *s)
 	rc = lobby_send_framed(l, bb.data, bb.wpos);
 	bb_free(&bb);
 	if (rc == 0)
-		log_info("lobby: Sent 0xd7 config response "
-		    "(server=%s track=%s)",
-		    s->server_name, s->track);
+		log_info("lobby: Sent 0xd7 config response (fpr=%s)",
+		    l->server_fpr);
 	return rc;
 }
 
