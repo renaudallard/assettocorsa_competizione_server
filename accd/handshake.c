@@ -1104,17 +1104,20 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			b0 = (uint8_t)penalty_wire_value(
 			    pq->slots[pi].kind, pq->slots[pi].reason);
 			/*
-			 * Value clamp: kunos's "list at param_1+0x30" stores
-			 * the original 0x41 value only when the entry is fresh
-			 * (no prior entry to overwrite).  Once an entry exists
-			 * and a DQ overwrites it, the value byte resets to 0.
-			 * Approximate: clamp to 0 only when this DQ isn't
-			 * alone in the queue.
+			 * Tail b1 is the entry's laps_remaining verbatim.
+			 * Kunos's `list at param_1+0x30` stores the original
+			 * 0x41 value when an entry is fresh and resets it to
+			 * 0 on an overwrite — accd mirrors that by setting
+			 * laps_remaining at materialise time (per-entry
+			 * value for direct reports; counter/100 for the
+			 * TP-accumulation auto-DQ; explicit 0-reset in the
+			 * penalty_enqueue dedup path).  The earlier
+			 * count==1 clamp was an over-approximation that
+			 * forced b1=0 in every multi-entry case, which broke
+			 * the TP-then-admin-DQ scenario (kunos `13 03`,
+			 * accd `13 00`).
 			 */
-			if (pq->count == 1)
-				b1 = (uint8_t)pq->slots[pi].laps_remaining;
-			else
-				b1 = 0;
+			b1 = (uint8_t)pq->slots[pi].laps_remaining;
 			break;
 		}
 		if (b0 == 0) {

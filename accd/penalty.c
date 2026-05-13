@@ -135,6 +135,30 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 		q->count = ACC_MAX_PENALTIES - 1;
 	}
 
+	/*
+	 * "Second-DQ overwrite" semantics: kunos's per-car +0x30 list
+	 * stores the original 0x41 value byte only on a fresh entry; a
+	 * subsequent DQ event (regardless of who issued it — admin /dq,
+	 * TP-accum overflow, ladder step) "overwrites" the existing DQ
+	 * and resets the value byte to 0.  The new entry itself also
+	 * carries value=0 in this case.  Mirror by scanning the queue
+	 * before push: any prior PEN_DQ flips the incoming value to 0
+	 * and zeroes the existing DQ entries' laps_remaining so the
+	 * per-car tail (which scans from the back) reports 0 on both
+	 * sides.  Produces the `13 03 -> 13 00` transition pcap-observed
+	 * in the TP-then-admin-DQ scenario.
+	 */
+	if (exe_kind == EXE_DQ) {
+		int j, prior_dq = 0;
+		for (j = 0; j < q->count; j++) {
+			if (q->slots[j].kind == PEN_DQ) {
+				q->slots[j].laps_remaining = 0;
+				prior_dq = 1;
+			}
+		}
+		if (prior_dq)
+			value = 0;
+	}
 	e = &q->slots[q->count++];
 	e->kind = pen_kind;
 	e->reason = reason;
@@ -226,8 +250,26 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		 * kind=6 which is the first cat=3 DQ event.
 		 */
 		if (category < sizeof(race->pen_cat_severity) &&
-		    race->pen_cat_severity[category] == EXE_DQ)
+		    race->pen_cat_severity[category] == EXE_DQ) {
+			/*
+			 * Kunos pcap (2026-05-13 TP-then-admin-DQ) shows the
+			 * dedup'd admin /dq for an already-DQ'd category
+			 * resets the existing DQ entry's per-car tail value
+			 * byte to 0 — "overwrite" semantics for the +0x30
+			 * list even though no new Penalty is pushed.  Mirror
+			 * by zeroing laps_remaining on the queued DQ entries.
+			 * The deep-compare cache on the next tick picks up
+			 * the byte change and fans a follow-up 0x36 with the
+			 * reset tail; kunos's `13 03 -> 13 00` transition is
+			 * what we're matching here.
+			 */
+			int j;
+			for (j = 0; j < race->pen.count; j++) {
+				if (race->pen.slots[j].kind == PEN_DQ)
+					race->pen.slots[j].laps_remaining = 0;
+			}
 			return 0;
+		}
 		penalty_materialize(s, car_id, EXE_DQ, collision,
 		    value, reason);
 		if (category < sizeof(race->pen_cat_severity))
@@ -263,6 +305,15 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			 * tail wire is 19 = REASON_RACE_CONTROL + PEN_DQ,
 			 * not 5 = REASON_CUTTING + PEN_DQ even when the
 			 * triggering reports were Cutting.
+			 *
+			 * Tail value 0: run_tp_accum.sh's kunos pcap (no
+			 * admin /dq) ends at `13 00`.  When admin /dq fires
+			 * BEFORE the threshold cross (run_tp_then_admin_dq),
+			 * the admin DQ materialises with value=3 first and
+			 * the auto-DQ below lands as the "second DQ" path
+			 * in penalty_materialize, which resets the prior
+			 * entry and emits value=0.  Either way the auto-DQ
+			 * materialise itself carries value=0.
 			 */
 			penalty_materialize(s, car_id, EXE_DQ, 0, 0,
 			    REASON_RACE_CONTROL);
