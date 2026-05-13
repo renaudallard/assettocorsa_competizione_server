@@ -66,8 +66,12 @@ jobs:
           # trailer, kson register/refresh/cp_push/fingerprint/reject
           # codes, admin reject paths, lobby ping echo, make-install
           # layout, dep-freshness.
+          # run_lobby_blob.sh + the f4/f5 selectors all need a dumpcap
+          # packet capture which GH Actions runners don't grant.  The
+          # 8 selected tests below use python+socket or fake_client.py
+          # without any sudo/CAP_NET_ADMIN dependency.
+          failed=()
           for t in \
-              run_lobby_blob.sh \
               run_lobby_ping.sh \
               run_lobby_f1_refresh.sh \
               run_lobby_f3_cp_push.sh \
@@ -79,11 +83,17 @@ jobs:
           do
               if [ -x "$t" ]; then
                   echo "==> $t"
-                  ./"$t"
+                  if ! ./"$t"; then
+                      failed+=("$t")
+                  fi
               else
                   echo "skip $t (not executable)"
               fi
           done
+          if [ ${#failed[@]} -gt 0 ]; then
+              echo "FAIL: ${#failed[@]} test(s) failed: ${failed[*]}"
+              exit 1
+          fi
 
       - name: Show accd.log if a sanitizer fired
         if: failure()
