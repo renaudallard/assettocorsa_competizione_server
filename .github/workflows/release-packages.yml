@@ -717,32 +717,39 @@ jobs:
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - detect-versions
-    container: alpine:${{ needs.detect-versions.outputs.alpine_latest }}
-    defaults:
-      run:
-        shell: sh
+    # No `container:` here.  GitHub's JS action runtime (used by
+    # actions/checkout + actions/upload-artifact) requires a node binary
+    # that the runner copies into the container; no musl/arm64 node is
+    # shipped, so `container: alpine:*` on ubuntu-24.04-arm fails with
+    # "JavaScript Actions in Alpine containers are only supported on x64
+    # Linux runners".  Run JS actions on the Ubuntu host and exec the
+    # Alpine build via `docker run` instead.
     steps:
-      - name: Install build tools
-        run: |
-          apk add --no-cache git build-base libbsd-dev
-
       - name: Checkout
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
 
-      - name: Build
+      - name: Build inside Alpine container
         run: |
-          cd accd
-          make -j"$(nproc)"
-          ver=$(cat ../VERSION | tr -d '[:space:]')
-          arch=$(uname -m)
-          staging="accd-${ver}-alpine-${arch}"
-          mkdir -p "${staging}/bin"
-          cp accd "${staging}/bin/"
-          cp ../LICENSE ../README.md "${staging}/"
-          tar czf "../${staging}.tar.gz" "${staging}"
+          set -euo pipefail
+          docker run --rm \
+            -v "${PWD}:/work" -w /work \
+            "alpine:${{ needs.detect-versions.outputs.alpine_latest }}" \
+            sh -c '
+              set -eu
+              apk add --no-cache build-base libbsd-dev
+              cd accd
+              make -j"$(nproc)"
+              ver=$(cat ../VERSION | tr -d "[:space:]")
+              arch=$(uname -m)
+              staging="accd-${ver}-alpine-${arch}"
+              mkdir -p "${staging}/bin"
+              cp accd "${staging}/bin/"
+              cp ../LICENSE ../README.md "${staging}/"
+              tar czf "../${staging}.tar.gz" "${staging}"
+            '
 
       - name: Upload Alpine artifacts
         uses: actions/upload-artifact@v7
