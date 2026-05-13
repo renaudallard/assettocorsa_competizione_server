@@ -211,8 +211,12 @@ jobs:
           PY
 
   build-deb-ubuntu-stable:
-    name: Build Debian Packages (Ubuntu Stable)
-    runs-on: ubuntu-latest
+    name: Build Debian Packages (Ubuntu Stable, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - detect-versions
     container: ubuntu:${{ needs.detect-versions.outputs.ubuntu_stable }}
@@ -292,13 +296,17 @@ jobs:
       - name: Upload Debian artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: deb-packages-ubuntu-stable
+          name: deb-packages-ubuntu-stable-${{ matrix.arch }}
           path: artifacts/deb/ubuntu-stable/
           if-no-files-found: error
 
   build-deb-ubuntu-lts:
-    name: Build Debian Packages (Ubuntu LTS)
-    runs-on: ubuntu-latest
+    name: Build Debian Packages (Ubuntu LTS, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - detect-versions
     container: ubuntu:${{ needs.detect-versions.outputs.ubuntu_lts }}
@@ -378,13 +386,17 @@ jobs:
       - name: Upload Debian artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: deb-packages-ubuntu-lts
+          name: deb-packages-ubuntu-lts-${{ matrix.arch }}
           path: artifacts/deb/ubuntu-lts/
           if-no-files-found: error
 
   build-deb-debian-stable:
-    name: Build Debian Packages (Debian Stable)
-    runs-on: ubuntu-latest
+    name: Build Debian Packages (Debian Stable, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - detect-versions
     container: debian:${{ needs.detect-versions.outputs.debian_stable }}
@@ -464,13 +476,17 @@ jobs:
       - name: Upload Debian artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: deb-packages-debian-stable
+          name: deb-packages-debian-stable-${{ matrix.arch }}
           path: artifacts/deb/debian-stable/
           if-no-files-found: error
 
   build-deb-debian-lts:
-    name: Build Debian Packages (Debian LTS)
-    runs-on: ubuntu-latest
+    name: Build Debian Packages (Debian LTS, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - detect-versions
     container: debian:${{ needs.detect-versions.outputs.debian_oldstable }}
@@ -550,13 +566,17 @@ jobs:
       - name: Upload Debian artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: deb-packages-debian-lts
+          name: deb-packages-debian-lts-${{ matrix.arch }}
           path: artifacts/deb/debian-lts/
           if-no-files-found: error
 
   build-rpm-fedora:
-    name: Build RPM Packages (Fedora)
-    runs-on: ubuntu-latest
+    name: Build RPM Packages (Fedora, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - detect-versions
     container: fedora:${{ needs.detect-versions.outputs.fedora_release }}
@@ -608,13 +628,17 @@ jobs:
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: rpm-packages-fedora-${{ needs.detect-versions.outputs.fedora_release }}
+          name: rpm-packages-fedora-${{ needs.detect-versions.outputs.fedora_release }}-${{ matrix.arch }}
           path: artifacts/rpm/fedora-${{ needs.detect-versions.outputs.fedora_release }}/
           if-no-files-found: error
 
   build-rpm-rocky:
-    name: Build RPM Packages (Rocky ${{ needs.detect-versions.outputs.rocky_latest }})
-    runs-on: ubuntu-latest
+    name: Build RPM Packages (Rocky ${{ needs.detect-versions.outputs.rocky_latest }}, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - detect-versions
     container:
@@ -680,13 +704,17 @@ jobs:
       - name: Upload RPM artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: rpm-packages-rocky-${{ needs.detect-versions.outputs.rocky_latest }}
+          name: rpm-packages-rocky-${{ needs.detect-versions.outputs.rocky_latest }}-${{ matrix.arch }}
           path: artifacts/rpm/rocky-${{ needs.detect-versions.outputs.rocky_latest }}/
           if-no-files-found: error
 
   build-apk-alpine:
-    name: Build Alpine Package
-    runs-on: ubuntu-latest
+    name: Build Alpine Package (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     needs:
       - detect-versions
     container: alpine:${{ needs.detect-versions.outputs.alpine_latest }}
@@ -719,7 +747,7 @@ jobs:
       - name: Upload Alpine artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: alpine-packages
+          name: alpine-packages-${{ matrix.arch }}
           path: accd-*-alpine-*.tar.gz
           if-no-files-found: error
 
