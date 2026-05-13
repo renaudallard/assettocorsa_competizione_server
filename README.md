@@ -500,12 +500,18 @@ cd accd
 make test                                        # python smoke pair
 ```
 
-For the full integration suite (57 scripts covering every wire
+For the full integration suite (60+ scripts covering every wire
 message — handshake, welcome trailer, lobby protocol, penalty
-ladder, driver swap, weather cadence, leaderboard byte-decode, …)
-`cd tests/integration && ./run_*.sh`.  Tests that need >60 s
-(soak, phase-collapse, race-cycle) gate on `SKIP=1` for CI smoke
-runs.  Two GitHub Actions workflows run on every push:
+ladder, driver swap, weather cadence, leaderboard byte-decode,
+multi-driver team entries, …) `cd tests/integration && ./run_*.sh`.
+Tests that need >60 s (soak, phase-collapse, race-cycle) gate on
+`SKIP=1` for CI smoke runs.  accd's wire output is byte-exact
+against accServer.exe in the characterised scenarios; the small
+documented residue (e.g. `lap_count` counting the formation
+crossing) is held intentionally to match the real ACC client's
+HUD rather than the exe's strict scoring path.
+
+Two GitHub Actions workflows run on every push:
 
 - **Sanitizers** — builds `accd` with clang `-fsanitize=address,
   undefined`, runs the welcome-trailer walker through the
