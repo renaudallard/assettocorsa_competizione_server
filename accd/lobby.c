@@ -97,9 +97,12 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#ifdef __OpenBSD__
+#if defined(__OpenBSD__) || defined(__APPLE__)
 /* See header comment: __BSD_VISIBLE is forced off by _POSIX_C_SOURCE
- * so <stdlib.h> hides arc4random_uniform even though libc has it. */
+ * so <stdlib.h> hides arc4random_uniform even though libc has it.
+ * macOS's libSystem has arc4random_uniform too, but its <stdlib.h>
+ * also gates the prototype on feature macros that _POSIX_C_SOURCE
+ * suppresses — same problem, same fix. */
 uint32_t arc4random_uniform(uint32_t);
 #endif
 #include <time.h>
