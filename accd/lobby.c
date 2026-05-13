@@ -374,34 +374,59 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	if (bb_append(&bb, s->track, track_len) < 0) goto err;
 
 	/*
-	 * Lobby field is maxCarSlots (rated player capacity), NOT
-	 * the TCP max_connections.  Kunos sends 10 here when no
-	 * rating requirements are configured.  Sending the wrong
-	 * field made the lobby reject our registration with
-	 * ack-status 0x04 instead of 0x00.
-	 */
-	if (wr_u32(&bb, (uint32_t)s->max_car_slots) < 0) goto err;
-
-	/*
-	 * Magic block (post-config): verified byte-exact from a
-	 * 178-byte Kunos registration (v1.10.2): `ff fa` then six
-	 * bytes whose semantic is unknown but never observed to vary.
+	 * 13 config-dependent bytes (FUN_140047af0 decomp):
+	 *   u8 maxCarSlots        — rated capacity (NOT max_connections)
+	 *   u8 Server+0x178 low   — usually 0 in non-CP configs
+	 *   u8 trackMedalsRequirement
+	 *   u8 safetyRatingRequirement
+	 *   u8 racecraftRatingRequirement (0xff = unset)
+	 *   u8 carGroup enum      — FUN_140116480 (FFA=0xfa, GT2=0,
+	 *                            GT3=7, GT4=0xc, GTC=0xb, TCX=0xf9)
+	 *   u8 Server+0x228       — 1 = block joining during race
+	 *   u8 Server+0x229       — default 0 (unverified)
+	 *   u8 Server+0x231       — default 0 (unverified)
+	 *   u8 wineFlag           — 1 if ntdll exports wine_get_version
+	 *   u8 sessionVec[0]+0x164 — default 0
+	 *   u8 selector(0x203/0x202) — non-CP default 0
+	 *   u8 Server+0x310 low   — default 1 (semantic unverified)
+	 * accd previously wrote `u32 max + 8 magic + u8 weather.randomness`
+	 * which happens to produce identical bytes on wine+defaults but
+	 * diverges for any non-default rating, carGroup or randomness.
 	 */
 	{
-		static const unsigned char magic1[] = {
-			0xff, 0xfa, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00
-		};
-		if (bb_append(&bb, magic1, sizeof(magic1)) < 0) goto err;
+		uint8_t car_group_enum = 0xfa;	/* FreeForAll fallback */
+		if (strcmp(s->car_group, "GT2") == 0)
+			car_group_enum = 0x00;
+		else if (strcmp(s->car_group, "GT3") == 0)
+			car_group_enum = 0x07;
+		else if (strcmp(s->car_group, "GT4") == 0)
+			car_group_enum = 0x0c;
+		else if (strcmp(s->car_group, "GTC") == 0)
+			car_group_enum = 0x0b;
+		else if (strcmp(s->car_group, "TCX") == 0)
+			car_group_enum = 0xf9;
+
+		if (wr_u8(&bb, (uint8_t)s->max_car_slots) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;
+		if (wr_u8(&bb, s->track_medals_required) < 0) goto err;
+		if (wr_u8(&bb, s->safety_rating_required) < 0) goto err;
+		if (wr_u8(&bb, s->racecraft_rating_required) < 0) goto err;
+		if (wr_u8(&bb, car_group_enum) < 0) goto err;
+		if (wr_u8(&bb, s->is_race_locked) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;
+		if (wr_u8(&bb, 1) < 0) goto err;
 	}
 
 	/*
-	 * Session block: u8 weatherRandomness + u8 sessionCount, then
-	 * each 10-byte session: u8 type, u8 day_of_weekend, u8 hour,
-	 * u8 dur_min, u8 pad, u16 pre_race_s, u16 overtime_s, u8 1.
+	 * Session block: u8 sessionCount, then each 10-byte session:
+	 * u8 type, u8 day, u8 hour, i16 duration_min, u16 pre_race_s,
+	 * u16 overtime_s, u8 timeMultiplier (=1 for 1.0×).
 	 */
 	sess_count = s->session_count;
-	if (wr_u8(&bb, (uint8_t)(s->weather.randomness & 0xff)) < 0)
-		goto err;
 	if (wr_u8(&bb, sess_count) < 0) goto err;
 	for (i = 0; i < sess_count; i++) {
 		const struct SessionDef *d = &s->sessions[i];
