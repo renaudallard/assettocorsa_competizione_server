@@ -10,6 +10,7 @@ Source0:        %{name}-%{version}.tar.gz
 BuildRequires:  gcc
 BuildRequires:  make
 BuildRequires:  systemd-rpm-macros
+BuildRequires:  libbsd-devel
 
 %description
 An independent reimplementation of the Assetto Corsa Competizione

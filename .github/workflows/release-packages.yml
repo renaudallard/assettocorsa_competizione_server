@@ -212,7 +212,8 @@ jobs:
           apt-get update
           apt-get install -y \
             git ca-certificates \
-            build-essential debhelper fakeroot dpkg-dev
+            build-essential debhelper fakeroot dpkg-dev \
+            libbsd-dev
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -260,7 +261,8 @@ jobs:
           apt-get update
           apt-get install -y \
             git ca-certificates \
-            build-essential debhelper fakeroot dpkg-dev
+            build-essential debhelper fakeroot dpkg-dev \
+            libbsd-dev
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -308,7 +310,8 @@ jobs:
           apt-get update
           apt-get install -y \
             git ca-certificates \
-            build-essential debhelper fakeroot dpkg-dev
+            build-essential debhelper fakeroot dpkg-dev \
+            libbsd-dev
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -356,7 +359,8 @@ jobs:
           apt-get update
           apt-get install -y \
             git ca-certificates \
-            build-essential debhelper fakeroot dpkg-dev
+            build-essential debhelper fakeroot dpkg-dev \
+            libbsd-dev
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -401,7 +405,7 @@ jobs:
       - name: Install build tools
         run: |
           set -euo pipefail
-          dnf install -y git rpm-build make gcc which tar systemd-rpm-macros
+          dnf install -y git rpm-build make gcc which tar systemd-rpm-macros libbsd-devel
 
       - name: Mark workspace as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -473,7 +477,7 @@ jobs:
           fi
           $pkgmgr install -y epel-release || true
           dnf config-manager --set-enabled crb || true
-          $pkgmgr install -y git rpm-build make gcc which tar systemd-rpm-macros
+          $pkgmgr install -y git rpm-build make gcc which tar systemd-rpm-macros libbsd-devel
 
       - name: Mark workspace as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -530,7 +534,7 @@ jobs:
     steps:
       - name: Install build tools
         run: |
-          apk add --no-cache git build-base
+          apk add --no-cache git build-base libbsd-dev
 
       - name: Checkout
         uses: actions/checkout@v6
