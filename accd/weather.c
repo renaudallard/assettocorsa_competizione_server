@@ -398,12 +398,18 @@ weather_step(struct Server *s)
 		w->wind_speed = w->wind_speed_base * (1.0f + wind_factor);
 		w->wind_direction = w->wind_direction_base +
 		    wind_factor * w->wind_direction_change * 3.0f;
-		/* Keep direction in plausible range for HUD. */
+		/*
+		 * Keep direction in plausible range for HUD.  fmodf
+		 * preserves the sign of the dividend, so adding 360 to a
+		 * negative modulo (or even -0.0) can land back outside
+		 * [0, 360) — collapse with one extra fmodf so wrap is
+		 * idempotent.
+		 */
+		w->wind_direction = fmodf(w->wind_direction, 360.0f);
+		if (w->wind_direction < 0.0f)
+			w->wind_direction += 360.0f;
 		if (w->wind_direction >= 360.0f)
-			w->wind_direction = fmodf(w->wind_direction, 360.0f);
-		else if (w->wind_direction < 0.0f)
-			w->wind_direction = 360.0f +
-			    fmodf(w->wind_direction, 360.0f);
+			w->wind_direction = 0.0f;
 	}
 
 	/* === Ambient temperature */
