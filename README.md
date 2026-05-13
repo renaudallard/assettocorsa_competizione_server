@@ -185,11 +185,15 @@
 ## Building
 
 Portable C99, builds with either BSD or GNU `make`, no dependencies
-beyond libc + iconv + libm.
+beyond libc + iconv + libm.  Optional dependencies on Linux:
+`libbsd-dev` for `arc4random_uniform`, `libseccomp-dev` for the
+syscall sandbox.  Each is detected by a link-time probe and the build
+proceeds without it if missing.
 
 ### Linux
 
 ```sh
+sudo apt-get install build-essential libbsd-dev libseccomp-dev
 cd accd
 make
 ```
@@ -199,6 +203,13 @@ standard hardening triad: `-D_FORTIFY_SOURCE=2 -fstack-protector-strong
 -Wformat-security -fPIE` on the compile side and `-pie -Wl,-z,relro
 -Wl,-z,now -Wl,-z,noexecstack` on the link side, so the resulting
 ELF has PIE + full RELRO + BIND_NOW + non-executable stack.
+
+At runtime `accd` drops privileges via `seccomp-BPF` (allowlist of
+~70 syscalls mirroring OpenBSD's `pledge("stdio rpath wpath cpath
+inet")`) and a `Landlock` ruleset scoped to `cfg/` and `results/`
+(mirroring `unveil`).  Both features degrade gracefully if missing
+at build or runtime; pre-5.13 kernels skip Landlock with a
+`log_warn`, sanitizer builds skip seccomp.
 
 ### OpenBSD
 
@@ -593,6 +604,7 @@ interoperability of an independently created program.
 │   ├── probe.c              Standalone protocol probe tool.
 │   ├── ratings.{c,h}        Persistent SA/TR rating ledger.
 │   ├── results.{c,h}        Session results JSON writer.
+│   ├── sandbox.{c,h}        pledge/unveil (OpenBSD), seccomp/Landlock (Linux).
 │   ├── session.{c,h}        Session phase machine + standings sort.
 │   ├── state.{c,h}          Per-conn / global server state structs.
 │   ├── tick.{c,h}           Event-driven relay + periodic broadcasts.
@@ -615,8 +627,9 @@ interoperability of an independently created program.
 
 </details>
 
-27 modules, ~22,100 lines of portable C99.  No dependencies beyond
-libc, iconv, and libm (`libbsd-dev` on Linux for `arc4random_uniform`).
+28 modules, ~22,300 lines of portable C99.  No dependencies beyond
+libc, iconv, and libm; on Linux `libbsd-dev` (for `arc4random_uniform`)
+and `libseccomp-dev` (for the syscall sandbox) are recommended.
 Releases ship `.deb` (Ubuntu / Debian), `.rpm` (Fedora / Rocky), an
 Alpine `.tar.gz`, a static-musl Linux `.tar.gz` that runs on any
 distro, a macOS universal `.tar.gz` (Intel + Apple Silicon `accd.app`),
