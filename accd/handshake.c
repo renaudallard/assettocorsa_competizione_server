@@ -62,6 +62,7 @@
 #include "ratings.h"
 #include "bans.h"
 #include "entrylist.h"
+#include "handlers.h"
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
@@ -2679,6 +2680,26 @@ reply:
 			 * the next tick's gated drain won't re-emit.
 			 */
 			(void)broadcast_leaderboard_force(s);
+
+			/*
+			 * Team-entry 0x47 fan-out: when the joiner is a
+			 * member of a multi-car team group, kunos emits a
+			 * 0x47 SRV_DRIVER_SWAP_STATE_BCAST for every car
+			 * in the group at the join boundary so existing
+			 * peers see the team's current swap_state shape.
+			 * Standalone single-driver entries (team_entry_id
+			 * == -1) skip this fan-out — kunos doesn't emit
+			 * 0x47 at join for them either.
+			 */
+			if (s->cars[c->car_id].team_entry_id >= 0) {
+				int8_t group = s->cars[c->car_id].team_entry_id;
+				int g;
+				for (g = 0; g < ACC_MAX_CARS; g++) {
+					if (s->cars[g].team_entry_id == group)
+						broadcast_swap_state(s,
+						    &s->cars[g]);
+				}
+			}
 
 			/*
 			 * No standalone 0x37 weather here.  The welcome

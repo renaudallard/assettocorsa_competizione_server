@@ -1226,7 +1226,7 @@ h_car_dirt(struct Server *s, struct Conn *c,
  * connections.  Body: u8 msg_id + u16 car_id + u8 driver_count +
  * driver_count x u8 swap_state.
  */
-static void
+void
 broadcast_swap_state(struct Server *s, struct CarEntry *car)
 {
 	struct ByteBuf bb;

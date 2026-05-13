@@ -37,6 +37,7 @@
 
 #include "bcast.h"
 #include "ratings.h"
+#include "handlers.h"
 #include "io.h"
 #include "log.h"
 #include "msg.h"
@@ -360,6 +361,24 @@ conn_drop(struct Server *s, struct Conn *c)
 		 */
 		s->cars[c->car_id].used = 0;
 		car_runtime_reset_gate(&s->cars[c->car_id].rt);
+		/*
+		 * Team-entry 0x47 fan-out at conn_drop: if the leaving
+		 * driver was part of a multi-car team, kunos pcap shows
+		 * a 0x47 SRV_DRIVER_SWAP_STATE_BCAST per group member
+		 * so the remaining teammates see the disconnected
+		 * teammate's swap_state has reverted to idle.  Standalone
+		 * single-driver entries skip this — kunos doesn't emit
+		 * 0x47 at peer-leave for them.  Fire BEFORE clearing
+		 * c->car_id so the lookup works.
+		 */
+		if (s->cars[c->car_id].team_entry_id >= 0) {
+			int8_t group = s->cars[c->car_id].team_entry_id;
+			int g;
+			for (g = 0; g < ACC_MAX_CARS; g++) {
+				if (s->cars[g].team_entry_id == group)
+					broadcast_swap_state(s, &s->cars[g]);
+			}
+		}
 		c->car_id = -1;
 		session_recompute_standings(s);
 		/*

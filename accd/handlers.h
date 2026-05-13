@@ -127,4 +127,14 @@ int	h_udp_car_update(struct Server *s, struct Conn *c,
 int	h_udp_car_info_request(struct Server *s,
 		const unsigned char *body, size_t len);
 
+/*
+ * 0x47 SRV_DRIVER_SWAP_STATE_BCAST builder + fan-out.  Used by the
+ * 0x47 handler itself and by handshake.c / state.c to emit
+ * per-car swap_state at conn lifecycle events when the car is a
+ * member of a multi-car team-entry group.  Standalone cars
+ * (team_entry_id == -1) callers can pass directly; team cars
+ * should iterate the group themselves before calling.
+ */
+void	broadcast_swap_state(struct Server *s, struct CarEntry *car);
+
 #endif /* ACCD_HANDLERS_H */
