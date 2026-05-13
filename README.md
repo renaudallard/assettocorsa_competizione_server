@@ -461,8 +461,14 @@ Quick headless run:
 ./accd 2>accd.log &
 ```
 
-Production: install the `.deb` or `.rpm` package and use the shipped
-systemd unit (runs as an unprivileged dynamic user, sandboxed):
+Production: grab a prebuilt artifact from the
+[latest release](https://github.com/renaudallard/assettocorsa_competizione_server/releases/latest)
+— `.deb` (Ubuntu / Debian), `.rpm` (Fedora / Rocky), or the static-musl
+`accd-<ver>-linux-static-<arch>.tar.gz` that runs on any Linux distro
+regardless of installed libc.  Every Linux artifact is shipped for both
+`amd64` (`x86_64`) and `arm64` (`aarch64`); FreeBSD is amd64-only.
+Install the package and use the shipped systemd unit (runs as an
+unprivileged dynamic user, sandboxed):
 
 ```sh
 sudo systemctl enable --now accd
@@ -603,8 +609,11 @@ interoperability of an independently created program.
 
 27 modules, ~22,100 lines of portable C99.  No dependencies beyond
 libc, iconv, and libm (`libbsd-dev` on Linux for `arc4random_uniform`).
-Releases ship `.deb`, `.rpm`, Alpine tarball, and FreeBSD tarball
-artifacts with a published `SHA256SUMS` for integrity verification.
+Releases ship `.deb` (Ubuntu / Debian), `.rpm` (Fedora / Rocky), an
+Alpine `.tar.gz`, a static-musl Linux `.tar.gz` that runs on any
+distro, and a FreeBSD `.tar.gz` — amd64 and arm64 for every Linux
+target, amd64 only for FreeBSD.  All artifacts carry a published
+`SHA256SUMS` for integrity verification.
 
 ---
 
