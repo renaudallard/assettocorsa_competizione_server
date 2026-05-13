@@ -786,7 +786,7 @@ jobs:
             "alpine:${{ needs.detect-versions.outputs.alpine_latest }}" \
             sh -c '
               set -eu
-              apk add --no-cache build-base libbsd-dev libbsd-static libmd-static
+              apk add --no-cache build-base libbsd-dev libbsd-static
               cd accd
               # Override ACCD_LDFLAGS to drop the default -pie and add
               # -static-pie; user LDFLAGS would be appended *after* the
