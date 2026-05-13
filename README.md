@@ -27,7 +27,6 @@
 
 ## Contents
 
-- [Status](#status)
 - [What works](#what-works)
 - [Known limitations](#known-limitations)
 - [Building](#building)
@@ -43,24 +42,6 @@
 - [Repository layout](#repository-layout)
 - [Contributing](#contributing)
 - [License](#license)
-
----
-
-## Status
-
-> **Multiplayer works.** Two or more ACC clients connect, see each
-> other on track at full speed, complete laps, and race through
-> Practice → Qualifying → Race with working countdown, leaderboard,
-> and session transitions.
-
-Protocol correctness has been verified byte-for-byte against a full
-20-minute Kunos `accServer.exe` capture (101,897 packets, 2 players,
-P+Q+R on Misano).  All 20 server-to-client message types match the
-stock server's transport (TCP vs UDP), cadence, and wire format.
-
-The clean-room protocol specification lives in
-[`notebook-b/NOTEBOOK_B.md`](notebook-b/NOTEBOOK_B.md) and documents
-every wire message, string encoding, and state transition.
 
 ---
 
