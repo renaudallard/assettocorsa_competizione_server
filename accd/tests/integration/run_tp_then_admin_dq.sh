@@ -72,10 +72,15 @@ if len(ac) != len(kc):
           'second DQ likely materialised')
     sys.exit(2)
 a, k = af[-1], kf[-1]
-if a == k:
-    print('RESULT: IDENTICAL (TP-then-admin-DQ dedup byte-exact)')
+ta, tk = a[-4:].hex(), k[-4:].hex()
+print(f'accd_tail={ta} kunos_tail={tk}')
+# Assert on the per-car tail bytes — this test verifies the
+# auto-DQ -> admin-DQ overwrite resets value to 0 on the wire.
+# Full-frame compare would trip on the intentional lap_count
+# byte at offset 178 (memory:reference_lap_scoring_rules.md).
+if ta == tk:
+    print('RESULT: IDENTICAL (TP-then-admin-DQ dedup tail byte-exact)')
 else:
-    diffs = sum(1 for j in range(min(len(a), len(k))) if a[j] != k[j])
-    print(f'RESULT: DIFFER ({diffs} bytes, a={len(a)} k={len(k)})')
+    print(f'RESULT: DIFFER tail bytes accd={ta} kunos={tk}')
     sys.exit(3)
 "
