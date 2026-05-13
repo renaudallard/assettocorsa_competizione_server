@@ -47,10 +47,28 @@ ACCD_VERSION !=	(cat VERSION 2>/dev/null || cat ../VERSION 2>/dev/null \
 # Internal flags always applied.  User-supplied CFLAGS / LDFLAGS
 # / LIBS are appended after these so platform-specific paths can
 # override without losing the compiler warnings.
+#
+# Hardening flags (all probed for compiler support before use; see
+# the probe block in the ${PROG} recipe so older toolchains still
+# build cleanly even if a flag is missing):
+#   -D_FORTIFY_SOURCE=2     glibc/musl/OpenBSD runtime checks on
+#                           memcpy/strcpy/printf-family inputs
+#   -fstack-protector-strong  per-frame canary on functions with any
+#                             buffer/local-address-taken
+#   -Wformat -Wformat-security  reject non-literal printf format args
+#   -Wnull-dereference        catch missing NULL checks (gcc 6+)
+#   -fPIE / -pie              build a position-independent executable
+#                             so the loader can ASLR the text segment
+#   -Wl,-z,relro,-z,now        full RELRO + BIND_NOW (read-only GOT)
+#   -Wl,-z,noexecstack         non-executable stack
 ACCD_CFLAGS =	-std=c99 -Wall -Wextra -Wpedantic -O2 -g \
+		-D_FORTIFY_SOURCE=2 -fstack-protector-strong \
+		-Wformat -Wformat-security -Wnull-dereference \
+		-fPIE \
 		-DACCD_VERSION_STR='"${ACCD_VERSION}"' \
 		-I/usr/local/include
-ACCD_LDFLAGS =	-L/usr/local/lib
+ACCD_LDFLAGS =	-L/usr/local/lib -pie \
+		-Wl,-z,relro -Wl,-z,now -Wl,-z,noexecstack
 ACCD_LIBS =	-lm
 
 all: ${PROG}
