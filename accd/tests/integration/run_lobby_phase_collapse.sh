@@ -18,8 +18,7 @@ cd "$HERE"
 [ "$SKIP" = 1 ] && { echo "SKIP set, skipping slow test"; exit 0; }
 
 ACCD=/home/r/code/assettocorsa/accd/accd
-BOT=/home/r/code/assettocorsa/tmp/bot/bot
-WP=/home/r/code/assettocorsa/tmp/bot/waypoints/misano.csv
+BOT=/home/r/code/assettocorsa/tools/bot/bot
 FAKE_PORT=11913
 
 ACCD_PID=""
@@ -95,7 +94,7 @@ ACCD_PID=$!
 sleep 2
 
 echo "==> spawn 1 bot so accd doesn't reset to first session"
-"$BOT" --host 127.0.0.1 --tcp 9302 --track "$WP" \
+"$BOT" --host 127.0.0.1 --tcp 9302 \
     --race 911 --grid 1 --name "BotPhase" >bot1.log 2>&1 &
 BOT_PIDS="$BOT_PIDS $!"
 

@@ -13,8 +13,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 
 ACCD=/home/r/code/assettocorsa/accd/accd
-BOT=/home/r/code/assettocorsa/tmp/bot/bot
-WP=/home/r/code/assettocorsa/tmp/bot/waypoints/misano.csv
+BOT=/home/r/code/assettocorsa/tools/bot/bot
 FAKE_PORT=11911
 PCAP=/tmp/accd_f5_selector.pcap
 
@@ -92,11 +91,11 @@ ACCD_PID=$!
 sleep 2
 
 echo "==> spawn 2 bots"
-"$BOT" --host 127.0.0.1 --tcp 9302 --track "$WP" \
+"$BOT" --host 127.0.0.1 --tcp 9302 \
     --race 911 --grid 1 --name "BotOne" >bot1.log 2>&1 &
 BOT_PIDS="$BOT_PIDS $!"
 sleep 0.5
-"$BOT" --host 127.0.0.1 --tcp 9302 --track "$WP" \
+"$BOT" --host 127.0.0.1 --tcp 9302 \
     --race 922 --grid 2 --name "BotTwo" >bot2.log 2>&1 &
 BOT_PIDS="$BOT_PIDS $!"
 sleep 17

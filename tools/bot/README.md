@@ -75,6 +75,25 @@ Flags:
 | `--no-mandatory-pit` | off | skip the `0x54` after pit traversal |
 | `--bump` M, `--bump-at-lap` N | off | one-shot lateral kick, in metres, at the start of lap N |
 
+Test-only knobs the wire-level integration tests under
+`accd/tests/integration/` rely on:
+
+| Flag | Meaning |
+|------|---------|
+| `--client-version` N | override the protocol version sent in `0x09` (default `0x0100`) |
+| `--password` S | server password to send in handshake |
+| `--expect-reject` | exit cleanly on `0x0c` reject (used by reject-code matrix tests) |
+| `--chat-start-tick` N, `--chat` S | inject one-shot chat at tick N (underscores → spaces) |
+| `--report-penalty` C:K:V | self-report `0x41` ACP_REPORT_PENALTY (category, kind, value) |
+| `--penalty-start-tick` N | delay the first `0x41` until tick N (needed for PHASE_SESSION gate) |
+| `--send-penalty-served` | emit `0x42` after pit traversal |
+| `--stint-reset` T:F | emit `0x4f` driver-stint reset at tick T with force flag F |
+| `--load-setup` T:S | request `0x55` garage setup load at tick T, slot S |
+| `--swap-state` T:S[,S2...] | emit `0x47` driver-swap state at tick T |
+| `--swap-request` T:sub:state | emit `0x4a` driver-swap state request |
+| `--damage` T:z1,z2,z3,z4,z5 | emit `0x43` damage zones at tick T |
+| `--flap-at` N | force a TCP close at tick N (exercises reconnect cascade) |
+
 ## Getting a racing line
 
 The bot needs a CSV waypoint file shaped `norm_pos x y z [speed]`

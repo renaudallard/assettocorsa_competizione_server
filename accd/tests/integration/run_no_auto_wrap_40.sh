@@ -18,7 +18,7 @@ cd "$HERE"
 [ "$SKIP" = 1 ] && { echo "SKIP set, skipping slow test"; exit 0; }
 
 ACCD=/home/r/code/assettocorsa/accd/accd
-BOT=/home/r/code/assettocorsa/tmp/bot/bot
+BOT=/home/r/code/assettocorsa/tools/bot/bot
 PCAP=/tmp/accd_no_auto_wrap.pcap
 
 ACCD_PID=""

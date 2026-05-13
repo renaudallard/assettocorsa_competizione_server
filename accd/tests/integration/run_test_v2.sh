@@ -4,8 +4,7 @@
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 ACCD=/home/r/code/assettocorsa/accd/accd
-BOT=/home/r/code/assettocorsa/tmp/bot/bot
-WP=/home/r/code/assettocorsa/tmp/bot/waypoints/misano.csv
+BOT=/home/r/code/assettocorsa/tools/bot/bot
 
 cd "$HERE"
 mkdir -p log
@@ -31,7 +30,7 @@ BOT_PIDS=""
 i=0
 for botargs in "$@"; do
     i=$((i + 1))
-    "$BOT" --host 127.0.0.1 --tcp 9302 --track "$WP" $botargs \
+    "$BOT" --host 127.0.0.1 --tcp 9302 $botargs \
         >bot$i.log 2>&1 &
     BOT_PIDS="$BOT_PIDS $!"
     sleep 0.3

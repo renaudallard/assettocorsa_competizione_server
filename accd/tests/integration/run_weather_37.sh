@@ -14,7 +14,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 
 ACCD=/home/r/code/assettocorsa/accd/accd
-BOT=/home/r/code/assettocorsa/tmp/bot/bot
+BOT=/home/r/code/assettocorsa/tools/bot/bot
 PCAP=/tmp/accd_weather37.pcap
 
 ACCD_PID=""

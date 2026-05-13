@@ -19,7 +19,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 
 ACCD=/home/r/code/assettocorsa/accd/accd
-BOT=/home/r/code/assettocorsa/tmp/bot/bot
+BOT=/home/r/code/assettocorsa/tools/bot/bot
 PCAP=/tmp/accd_0x14_rtt.pcap
 
 ACCD_PID=""

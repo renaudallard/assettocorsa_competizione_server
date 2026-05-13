@@ -18,8 +18,7 @@ HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 
 ACCD=/home/r/code/assettocorsa/accd/accd
-BOT=/home/r/code/assettocorsa/tmp/bot/bot
-WP=/home/r/code/assettocorsa/tmp/bot/waypoints/misano.csv
+BOT=/home/r/code/assettocorsa/tools/bot/bot
 NBOTS=${NBOTS:-10}
 SOAK_DURATION=${SOAK_DURATION:-60}
 
@@ -58,7 +57,7 @@ i=0
 while [ $i -lt "$NBOTS" ]; do
     race=$((911 + i))
     grid=$((i + 1))
-    "$BOT" --host 127.0.0.1 --tcp 9302 --track "$WP" \
+    "$BOT" --host 127.0.0.1 --tcp 9302 \
         --race "$race" --grid "$grid" --name "BotSoak${i}" \
         >"bot${i}.log" 2>&1 &
     BOT_PIDS="$BOT_PIDS $!"

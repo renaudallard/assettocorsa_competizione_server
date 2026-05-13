@@ -1,46 +1,20 @@
 /*
- * Copyright (c) 2025-2026 Renaud Allard
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions
- * are met:
- * 1. Redistributions of source code must retain the above copyright
- *    notice, this list of conditions and the following disclaimer.
- * 2. Redistributions in binary form must reproduce the above copyright
- *    notice, this list of conditions and the following disclaimer in the
- *    documentation and/or other materials provided with the distribution.
- *
- * THIS SOFTWARE IS PROVIDED BY THE AUTHOR AND CONTRIBUTORS "AS IS" AND
- * ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED.  IN NO EVENT SHALL THE AUTHOR OR CONTRIBUTORS BE LIABLE
- * FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
- * DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS
- * OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
- * HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
- * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
- * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
- * SUCH DAMAGE.
- */
-/*
- * bot.c — protocol-test driving bot for ACC dedicated servers.
+ * bot.c — driving bot for accd / accServer.exe.
  *
  * Connects via TCP, runs the ACP_REQUEST_CONNECTION (0x09) handshake,
- * then drives a real-track polyline at ~30 Hz over UDP.  Models:
+ * then drives a real-track polyline at ~30 Hz on UDP.  Models:
  *   - formation lap (lap 0 at <70 km/h, accelerates after lap wrap)
- *   - pit-stop with sub-22 m/s velocity + location=Pitlane so the
- *     server's pit-speeding penalty never fires
+ *   - pit-stop with sub-22 m/s velocity + location=Pitlane (so the
+ *     server's pit-speeding DQ never fires)
  *   - racing line loaded from a CSV waypoint file (norm_pos x y z),
  *     defaulting to a stadium-shape loop if no file is supplied
  *
- * Built for protocol/wire validation — kinematic physics only, no
- * input model, no slip, no kerb usage.  Lap times come out around
- * 110-120 % of human pace; this is intentional.  Not a cheat tool.
- *
- * Build:   make            (or  cc -O2 -Wall -o bot bot.c -lm)
+ * Build:   cc -O2 -Wall -o bot bot.c -lm
  * Usage:   ./bot --host H --tcp P [--race N] [--name S] [--track FILE]
  *                [--length M] [--pit-on-lap N] [--laps N]
+ *
+ * Not part of the project's build system; lives under tmp/bot/ for
+ * server stress / multi-car relay validation.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -52,7 +26,6 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
-#include <limits.h>
 #include <math.h>
 #include <netdb.h>
 #include <netinet/in.h>
@@ -72,7 +45,6 @@
 #define V_PITLANE		18.0f		/* 64.8 km/h, under 80 limit */
 #define DEFAULT_LENGTH_M	4000.0f
 #define MAX_WAYPOINTS		2048	/* monza: 1152, brands_hatch: 777 */
-#define ACC_MAX_GRID		60	/* server's hard cap on car slots */
 
 /*
  * Kinematic physics model — see compute_corner_radius() and the
@@ -108,10 +80,7 @@ static void on_sigint(int s) { (void)s; g_stop = 1; }
 static uint32_t mono_ms(void)
 {
 	struct timespec ts;
-	if (clock_gettime(CLOCK_MONOTONIC, &ts) < 0) {
-		perror("clock_gettime");
-		exit(1);
-	}
+	clock_gettime(CLOCK_MONOTONIC, &ts);
 	return (uint32_t)((uint64_t)ts.tv_sec * 1000 +
 	    (uint64_t)ts.tv_nsec / 1000000);
 }
@@ -150,7 +119,7 @@ static void bb_fmta(const char *s)
 /* DriverInfo + CarInfo bodies — match fake_client.py byte-for-byte. */
 
 static void build_driver_info(const char *first, const char *last,
-    const char *shortn, const char *steam)
+    const char *shortn, const char *steam, uint8_t driver_cat)
 {
 	bb_fmta(first);
 	bb_fmta("");
@@ -161,7 +130,7 @@ static void build_driver_info(const char *first, const char *last,
 	bb_u16(0);
 	bb_u8(0);
 	bb_u32(0x1f7); bb_u32(0x11); bb_u32(0xf3);
-	bb_u8(0);
+	bb_u8(driver_cat);		/* byte 16 of numeric block = driver_category */
 	bb_u32(0); bb_u32(0);
 	bb_u32(200); bb_u32(0x1f8); bb_u32(0xf3); bb_u32(0x155);
 	bb_fmta(steam);
@@ -169,13 +138,21 @@ static void build_driver_info(const char *first, const char *last,
 
 static void build_car_info(uint8_t car_model, uint32_t race_number)
 {
-	bb_u32(0); bb_u32(0); bb_u32(car_model);
+	/*
+	 * accd reads i32 raceNumber at CarInfo +0x08 (handshake.c
+	 * real-client parser at line 1850: skip 8 + 8, then rd_i32).
+	 * carModelType lives at +0xf0 (read at line 1869 after the
+	 * string skips), so put race_number in the +0x08 slot and
+	 * leave a filler 0 where the old car_model field was — the
+	 * +0xf0 byte below still carries the real model.
+	 */
+	bb_u32(0); bb_u32(0); bb_u32(race_number);
 	bb_u8(0); bb_u8(0);
 	bb_u32(0);
 	bb_u8(0);
 	bb_u32(0); bb_u32(0); bb_u32(0);
 	bb_u8(0); bb_u8(0); bb_u8(0); bb_u8(0);
-	bb_u32(race_number);
+	bb_u32(0);	/* was race_number at +0x23, now redundant filler */
 	bb_u32(0);
 	bb_u8(0); bb_u8(0);
 	bb_fmta("");
@@ -185,14 +162,16 @@ static void build_car_info(uint8_t car_model, uint32_t race_number)
 	bb_fmta("");
 	bb_fmta("");
 	bb_u16(0);
-	bb_u8(0);
-	bb_u8(car_model);
-	bb_u8(0);
-	bb_u8(0); bb_u8(0); bb_u8(0);
+	bb_u8(0);				/* +0xca */
+	bb_u8(car_model);			/* +0xf0 carModelType */
+	bb_u8(0);				/* +0xf1 cup */
+	bb_u8(0);				/* +0xf2 */
+	bb_u8(0); bb_u8(0); bb_u8(0);		/* +0xf4..+0xf6 trailing bools */
 }
 
 static int build_handshake(const char *first, const char *last,
     const char *shortn, const char *steam, uint32_t race_number,
+    uint8_t driver_cat, uint16_t client_version, const char *password,
     uint8_t *out, size_t *out_len)
 {
 	uint8_t body[2048];
@@ -200,9 +179,9 @@ static int build_handshake(const char *first, const char *last,
 
 	bb_reset();
 	bb_u8(0x09);
-	bb_u16(0x0100);
-	bb_fmta("");
-	build_driver_info(first, last, shortn, steam);
+	bb_u16(client_version);
+	bb_fmta(password);
+	build_driver_info(first, last, shortn, steam, driver_cat);
 	bb_pad(8);
 	build_car_info(35, race_number);
 	while (bb_n <= 200)
@@ -302,13 +281,9 @@ static size_t pkt_location(uint8_t *out, uint16_t car_id, uint8_t loc)
 	return bb_n;
 }
 
-/* 0x21 ACP_LAP_COMPLETED — TCP framed, fired ONCE at the S/F line.
- * Body: u8 + i32 laptime + i32 raw_ts + u8 flag1 + u16 lapstates +
- *       u8 flag2.  Server transforms to 0x3b for relay AND runs the
- *       lap-complete cascade (lap_count++, last_lap, best_lap,
- *       lap_history, ratings, lobby 0xd0, DT/SG serve countdown).
- * The 'sector' field here is actually flag1 — kunos's exe reads but
- * does not interpret it. */
+/* 0x21 ACP_SECTOR_SPLIT_SINGLE — TCP framed.
+ * Body: u8 + i32 split_ms + i32 lap_ms + u8 sector + u16 car_field +
+ *       u8 flag.  Server transforms to 0x3b for relay. */
 static size_t pkt_sector_split(uint8_t *out, int32_t split_ms,
     int32_t lap_ms, uint8_t sector, uint16_t car_field)
 {
@@ -318,15 +293,17 @@ static size_t pkt_sector_split(uint8_t *out, int32_t split_ms,
 	bb_u32((uint32_t)lap_ms);
 	bb_u8(sector);
 	bb_u16(car_field);
-	bb_u8(0);			/* flag2, unused by server */
+	bb_u8(0);			/* flag_d, unused */
 	memcpy(out, bb_buf, bb_n);
 	return bb_n;
 }
 
-/* 0x20 ACP_SECTOR_SPLIT — TCP framed, per-sector split for sectors
- * 0 and 1.  Body: u8 + i32 sector_time_ms + u8 sector_index + i32
- * clock_ms + u16 car_field.  Server stores in sector_ms[]; the
- * lap-complete cascade fires on the 0x21 at S/F (not here). */
+/* 0x20 ACP_SECTOR_SPLIT (bulk / lap-complete) — TCP framed.
+ * Body: u8 + i32 sector_time_ms + u8 sector_index + i32 clock_ms +
+ *       u16 car_field.  This is the kunos-side "lap completed"
+ *       trigger: accd's h_sector_split_bulk increments lap_count,
+ *       updates best_lap_ms, and fires lobby_notify_lap.  Sent
+ *       only at sector_index=2 (S/F crossing) once per lap. */
 static size_t pkt_sector_bulk(uint8_t *out, int32_t sector_time_ms,
     uint8_t sector_index, int32_t clock_ms, uint16_t car_field)
 {
@@ -347,6 +324,121 @@ static size_t pkt_mandatory_pit_served(uint8_t *out, uint16_t car_id)
 	bb_reset();
 	bb_u8(0x54);
 	bb_u16(car_id);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x42 ACP_PENALTY_CLEARED — TCP framed.
+ * Body: u8 0x42 + u64 ts.  Emitted by the real AC2 client engine when
+ * it decides its dwell on a DT/SG penalty was sufficient; kunos's
+ * FUN_140126b50 removes the front DT/SG queue entry on receipt. */
+static size_t pkt_penalty_cleared(uint8_t *out, uint64_t ts_ms)
+{
+	bb_reset();
+	bb_u8(0x42);
+	bb_u32((uint32_t)ts_ms);
+	bb_u32((uint32_t)(ts_ms >> 32));
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x4f ACP_DRIVER_STINT_RESET — TCP framed.
+ * Body: u8 0x4f + u8 force + u64 ts.  Server relays as
+ * `0x4f + u16 car_id + u8 force [+ u64 ts if force=1]`.  force=0 is
+ * voluntary (ESC-to-garage / tow); force=1 is forced (e.g. server-
+ * initiated swap demand). */
+static size_t pkt_driver_stint_reset(uint8_t *out, uint8_t force,
+    uint64_t ts_ms)
+{
+	bb_reset();
+	bb_u8(0x4f);
+	bb_u8(force);
+	bb_u32((uint32_t)ts_ms);
+	bb_u32((uint32_t)(ts_ms >> 32));
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x55 ACP_LOAD_SETUP — TCP framed.
+ * Body: u8 0x55 + u8 sess_type + u16 car_id + u32 revision.
+ * Server replies with 0x56 SRV_SETUP_DATA_RESPONSE carrying the
+ * car's lap history for the requested session. */
+static size_t pkt_load_setup(uint8_t *out, uint8_t sess_type,
+    uint16_t car_id, uint32_t revision)
+{
+	bb_reset();
+	bb_u8(0x55);
+	bb_u8(sess_type);
+	bb_u16(car_id);
+	bb_u32(revision);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x4a ACP_DRIVER_SWAP_STATE_REQUEST — TCP framed.
+ * Body: u8 0x4a + u16 car_id + u8 sub_state + u8 conn_state.
+ * sub_state 2 = initiate, 3 = confirm, 4 = execute.
+ * Server applies + broadcasts SRV_DRIVER_SWAP_STATE_BCAST (0x47). */
+static size_t pkt_swap_state_request(uint8_t *out, uint16_t car_id,
+    uint8_t sub_state, uint8_t conn_state)
+{
+	bb_reset();
+	bb_u8(0x4a);
+	bb_u16(car_id);
+	bb_u8(sub_state);
+	bb_u8(conn_state);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x47 ACP_UPDATE_DRIVER_SWAP_STATE — TCP framed.
+ * Body: u8 0x47 + u16 car_id + u8 driver_count + driver_count × u8 state.
+ * Server broadcasts SRV_DRIVER_SWAP_STATE_BCAST (also 0x47) with the
+ * same body shape to every conn. */
+static size_t pkt_update_swap_state(uint8_t *out, uint16_t car_id,
+    const uint8_t *states, uint8_t dcnt)
+{
+	uint8_t i;
+	bb_reset();
+	bb_u8(0x47);
+	bb_u16(car_id);
+	bb_u8(dcnt);
+	for (i = 0; i < dcnt; i++)
+		bb_u8(states[i]);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x41 ACP_REPORT_PENALTY — TCP framed.
+ * Body: u8 + u8 cat + u8 kind + u64 ts_ms + i32 value.  Used by
+ * the diff-test flag --report-penalty. */
+static size_t pkt_report_penalty(uint8_t *out, uint8_t cat, uint8_t kind,
+    uint64_t ts_ms, int32_t value)
+{
+	bb_reset();
+	bb_u8(0x41);
+	bb_u8(cat);
+	bb_u8(kind);
+	bb_u32((uint32_t)ts_ms);
+	bb_u32((uint32_t)(ts_ms >> 32));
+	bb_u32((uint32_t)value);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x2a ACP_CHAT — TCP framed.
+ * Body: u8 0x2a + str_a text + i32 client_ts.  The AC2 client
+ * doesn't put a sender field on the wire — the server resolves
+ * the sender from the connection's car_id.  Sender arg here is
+ * kept for the log line in the caller only. */
+static size_t pkt_chat(uint8_t *out, const char *sender, const char *text,
+    uint32_t client_ts)
+{
+	(void)sender;
+	bb_reset();
+	bb_u8(0x2a);
+	bb_fmta(text);
+	bb_u32(client_ts);
 	memcpy(out, bb_buf, bb_n);
 	return bb_n;
 }
@@ -384,9 +476,7 @@ static size_t pkt_damage_zones(uint8_t *out, const uint8_t zones[5])
 static size_t pkt_car_dirt(uint8_t *out, const uint8_t dirt[5])
 {
 	bb_reset();
-	bb_u8(0x45);  /* ACP_CAR_DIRT_UPDATE — 0x46 is the server-side
-	               * relay id; clients send 0x45 and the server
-	               * stores it for the welcome-trailer dirt tail. */
+	bb_u8(0x45);  /* ACP_CAR_DIRT_UPDATE -- 0x46 is the server relay id */
 	bb_u8(dirt[0]); bb_u8(dirt[1]); bb_u8(dirt[2]);
 	bb_u8(dirt[3]); bb_u8(dirt[4]);
 	memcpy(out, bb_buf, bb_n);
@@ -794,7 +884,8 @@ static int
 connect_session(const char *host, uint16_t tcp_port,
     const char *first_name, const char *last_name,
     const char *short_name, const char *steam,
-    uint32_t race_number,
+    uint32_t race_number, uint8_t driver_cat,
+    uint16_t client_version, const char *password,
     int *tcp_fd_out, int *udp_fd_out,
     struct sockaddr_in *udp_peer_out,
     uint16_t *conn_id_out, uint32_t *car_id_out,
@@ -810,7 +901,8 @@ connect_session(const char *host, uint16_t tcp_port,
 	if (tcp_fd < 0)
 		return -1;
 	if (build_handshake(first_name, last_name, short_name, steam,
-	    race_number, hs, &hs_len) < 0) {
+	    race_number, driver_cat, client_version, password,
+	    hs, &hs_len) < 0) {
 		close(tcp_fd);
 		return -1;
 	}
@@ -823,8 +915,20 @@ connect_session(const char *host, uint16_t tcp_port,
 		return -1;
 	}
 	if (wl < 10 || welcome[0] != 0x0b) {
-		fprintf(stderr, "[bot] reply 0x%02x len=%zu (expected 0x0b)\n",
-		    welcome[0], wl);
+		if (welcome[0] == 0x0c && wl >= 14) {
+			printf("[bot] received 0x0c reject reason=%u sub=%u "
+			    "detail_a=%u detail_b=%u\n",
+			    welcome[1],
+			    welcome[2] | (welcome[3] << 8) |
+			        (welcome[4] << 16) | (welcome[5] << 24),
+			    welcome[6] | (welcome[7] << 8) |
+			        (welcome[8] << 16) | (welcome[9] << 24),
+			    welcome[10] | (welcome[11] << 8) |
+			        (welcome[12] << 16) | (welcome[13] << 24));
+		} else {
+			fprintf(stderr, "[bot] reply 0x%02x len=%zu "
+			    "(expected 0x0b)\n", welcome[0], wl);
+		}
 		close(tcp_fd);
 		return -1;
 	}
@@ -861,46 +965,6 @@ connect_session(const char *host, uint16_t tcp_port,
 
 /* ------------------------------------------------------------------ */
 
-/*
- * Parse a long from a CLI option, validate range, fail loud on
- * garbage.  atoi() silently returns 0 on parse failure, which
- * masks user typos as "valid 0" and corrupts later state.
- */
-static int
-parse_long_arg(const char *opt, const char *s, long lo, long hi, long *out)
-{
-	char *end;
-	long v;
-
-	errno = 0;
-	v = strtol(s, &end, 10);
-	if (errno != 0 || end == s || *end != '\0' || v < lo || v > hi) {
-		fprintf(stderr,
-		    "[bot] bad %s: \"%s\" (expected integer in [%ld..%ld])\n",
-		    opt, s, lo, hi);
-		return -1;
-	}
-	*out = v;
-	return 0;
-}
-
-static int
-parse_float_arg(const char *opt, const char *s, float *out)
-{
-	char *end;
-	float v;
-
-	errno = 0;
-	v = strtof(s, &end);
-	if (errno != 0 || end == s || *end != '\0') {
-		fprintf(stderr, "[bot] bad %s: \"%s\" (expected number)\n",
-		    opt, s);
-		return -1;
-	}
-	*out = v;
-	return 0;
-}
-
 static void usage(const char *p)
 {
 	fprintf(stderr,
@@ -920,8 +984,30 @@ static void usage(const char *p)
 	    "  --grid N         starting grid position (1-based; 1=pole)\n"
 	    "  --mid-race       join an in-progress race (skip formation)\n"
 	    "  --no-mandatory-pit  do not send 0x54 after pit traversal\n"
+	    "  --send-penalty-served  emit 0x42 after pit traversal,\n"
+	    "                   signalling the AC2 client served a DT/SG\n"
+	    "  --stint-reset T:F  emit 0x4f at tick T with force=F\n"
+	    "                   (force=0 voluntary / 1 forced)\n"
+	    "  --load-setup T:S  emit 0x55 at tick T for session_type S\n"
+	    "                   (S = 0 P, 4 Q, 10 R)\n"
+	    "  --swap-state T:S1[,S2,...]  emit 0x47 at tick T with the\n"
+	    "                   given per-driver swap-state bytes\n"
+	    "  --damage T:z1,z2,z3,z4,z5  emit 0x43 damage zones at tick T\n"
+	    "                   (5 u8 zones front/rear/left/right/centre)\n"
+	    "  --flap-at T      close TCP at tick T and let the bots\n"
+	    "                   reconnect path re-handshake (deliberate\n"
+	    "                   socket-flap regression for server-side\n"
+	    "                   quick-reconnect detection)\n"
+	    "  --swap-request T:sub:state  emit 0x4a at tick T (sub 2=init,\n"
+	    "                   3=confirm, 4=execute)\n"
+	    "  --client-version V  override the 0x09 handshake version u16\n"
+	    "                   (default 0x0100, the protocol version)\n"
+	    "  --password P     password to send in the 0x09 handshake\n"
+	    "  --expect-reject  exit 0 when the server replies 0x0c reject\n"
 	    "  --bump M         one-shot lateral kick of M metres\n"
-	    "  --bump-at-lap N  apply the kick at the start of lap N\n",
+	    "  --bump-at-lap N  apply the kick at the start of lap N\n"
+	    "  --report-penalty cat:kind:value\n"
+	    "                   send one 0x41 ACP_REPORT_PENALTY at tick 200\n",
 	    p);
 }
 
@@ -937,6 +1023,29 @@ int main(int argc, char **argv)
 	int grid_pos = 1;		/* 1-based; 1 = pole */
 	int mid_race = 0;		/* skip formation lap */
 	int mandatory_pit = 1;		/* send 0x54 after pit traversal */
+	int send_penalty_served = 0;	/* send 0x42 after pit traversal */
+	int stint_reset_tick = -1;	/* >=0 = emit 0x4f at this tick */
+	int stint_reset_force = 0;	/* force byte for stint reset */
+	int stint_reset_sent = 0;
+	int load_setup_tick = -1;	/* >=0 = emit 0x55 at this tick */
+	int load_setup_sess = 0;	/* session_type byte for load_setup */
+	int load_setup_sent = 0;
+	int swap_state_tick = -1;	/* >=0 = emit 0x47 at this tick */
+	uint8_t swap_state_bytes[8];	/* per-driver state bytes */
+	uint8_t swap_state_count = 0;	/* number of states populated */
+	int swap_state_sent = 0;
+	int damage_tick = -1;		/* >=0 = emit 0x43 at this tick */
+	uint8_t damage_bytes[5] = {0,0,0,0,0};
+	int damage_sent = 0;
+	int flap_at_tick = -1;		/* close+reopen TCP once at this tick */
+	int flap_done = 0;
+	int swap_req_tick = -1;		/* >=0 = emit 0x4a at this tick */
+	uint8_t swap_req_sub = 2;	/* 2=init, 3=confirm, 4=execute */
+	uint8_t swap_req_state = 0;
+	int swap_req_sent = 0;
+	uint16_t client_version = 0x0100;	/* override with --client-version */
+	const char *password = "";	/* override with --password */
+	int expect_reject = 0;		/* --expect-reject suppresses fatal on reject */
 	float bump_metres = 0;		/* one-shot lateral kick magnitude */
 	int bump_at_lap = -1;		/* lap on which to apply the bump */
 	char steam[32];
@@ -978,65 +1087,187 @@ int main(int argc, char **argv)
 		{"grid",        required_argument, 0, 'G'},
 		{"mid-race",    no_argument,       0, 'M'},
 		{"no-mandatory-pit", no_argument,  0, 'X'},
+		{"send-penalty-served", no_argument, 0, 'Y'},
+		{"stint-reset", required_argument, 0, 'r'},
+		{"load-setup",  required_argument, 0, 'q'},
+		{"swap-state",  required_argument, 0, 'k'},
+		{"damage",      required_argument, 0, 'g'},
+		{"flap-at",     required_argument, 0, 'F'},
+		{"swap-request", required_argument, 0, 'Q'},
+		{"client-version", required_argument, 0, 'v'},
+		{"password",    required_argument, 0, 'W'},
+		{"expect-reject", no_argument,     0, 'j'},
 		{"bump",        required_argument, 0, 'B'},
 		{"bump-at-lap", required_argument, 0, 'A'},
+		{"report-penalty", required_argument, 0, 'p'},
+		{"driver-cat", required_argument, 0, 'D'},
+		{"penalty-start-tick", required_argument, 0, 'S'},
+		{"chat", required_argument, 0, 'C'},
+		{"chat-start-tick", required_argument, 0, 'Z'},
 		{"help",        no_argument,       0, 'h'},
 		{0,0,0,0}
 	};
 	int o;
-	long lv;
-	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXB:A:h",
+	#define MAX_RPS 64
+	int rp_cat[MAX_RPS], rp_kind[MAX_RPS];
+	int32_t rp_value[MAX_RPS];
+	int rp_n = 0, rp_sent_n = 0;
+	uint8_t driver_cat = 0;
+	uint32_t penalty_start_tick = 200;
+	#define MAX_CHATS 16
+	const char *chat_msgs[MAX_CHATS];
+	int chat_n = 0, chat_sent_n = 0;
+	uint32_t chat_start_tick = 60;
+	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXYr:q:k:g:F:Q:v:W:jB:A:p:D:S:C:Z:h",
 	    opts, NULL)) != -1) {
 		switch (o) {
 		case 'H': host = optarg; break;
-		case 'T':
-			if (parse_long_arg("--tcp", optarg, 1, 65535, &lv) < 0)
-				return 2;
-			tcp_port = (uint16_t)lv;
-			break;
-		case 'R':
-			if (parse_long_arg("--race", optarg, 0, INT32_MAX,
-			    &lv) < 0)
-				return 2;
-			race_number = (uint32_t)lv;
-			break;
+		case 'T': tcp_port = (uint16_t)atoi(optarg); break;
+		case 'R': race_number = (uint32_t)atoi(optarg); break;
 		case 'N': name = optarg; break;
 		case 't': track_path = optarg; break;
-		case 'L':
-			if (parse_float_arg("--length", optarg,
-			    &track_length_override) < 0)
-				return 2;
-			break;
-		case 'P':
-			if (parse_long_arg("--pit-on-lap", optarg, 1, INT_MAX,
-			    &lv) < 0)
-				return 2;
-			pit_on_lap = (int)lv;
-			break;
-		case 'l':
-			if (parse_long_arg("--laps", optarg, 1, INT_MAX,
-			    &lv) < 0)
-				return 2;
-			max_laps = (int)lv;
-			break;
-		case 'G':
-			if (parse_long_arg("--grid", optarg, 1, ACC_MAX_GRID,
-			    &lv) < 0)
-				return 2;
-			grid_pos = (int)lv;
-			break;
+		case 'L': track_length_override = (float)atof(optarg); break;
+		case 'P': pit_on_lap = atoi(optarg); break;
+		case 'l': max_laps = atoi(optarg); break;
+		case 'G': grid_pos = atoi(optarg); break;
 		case 'M': mid_race = 1; break;
 		case 'X': mandatory_pit = 0; break;
-		case 'B':
-			if (parse_float_arg("--bump", optarg,
-			    &bump_metres) < 0)
+		case 'Y': send_penalty_served = 1; break;
+		case 'r': {
+			int t, f;
+			if (sscanf(optarg, "%d:%d", &t, &f) != 2) {
+				fprintf(stderr,
+				    "[bot] --stint-reset needs tick:force\n");
 				return 2;
+			}
+			stint_reset_tick = t;
+			stint_reset_force = f;
 			break;
-		case 'A':
-			if (parse_long_arg("--bump-at-lap", optarg, 1, INT_MAX,
-			    &lv) < 0)
+		}
+		case 'q': {
+			int t, st;
+			if (sscanf(optarg, "%d:%d", &t, &st) != 2) {
+				fprintf(stderr,
+				    "[bot] --load-setup needs tick:sess_type\n");
 				return 2;
-			bump_at_lap = (int)lv;
+			}
+			load_setup_tick = t;
+			load_setup_sess = st;
+			break;
+		}
+		case 'F':
+			flap_at_tick = atoi(optarg);
+			break;
+		case 'Q': {
+			int t, sub, st;
+			if (sscanf(optarg, "%d:%d:%d", &t, &sub, &st) != 3) {
+				fprintf(stderr,
+				    "[bot] --swap-request needs tick:sub:state\n");
+				return 2;
+			}
+			swap_req_tick = t;
+			swap_req_sub = (uint8_t)sub;
+			swap_req_state = (uint8_t)st;
+			break;
+		}
+		case 'g': {
+			/* --damage T:z1,z2,z3,z4,z5 */
+			int t, z[5];
+			if (sscanf(optarg, "%d:%d,%d,%d,%d,%d",
+			    &t, &z[0], &z[1], &z[2], &z[3], &z[4]) != 6) {
+				fprintf(stderr,
+				    "[bot] --damage needs tick:z1,z2,z3,z4,z5\n");
+				return 2;
+			}
+			damage_tick = t;
+			for (int dz = 0; dz < 5; dz++)
+				damage_bytes[dz] = (uint8_t)z[dz];
+			break;
+		}
+		case 'k': {
+			/* --swap-state T:S1[,S2,...] */
+			char *colon = strchr(optarg, ':');
+			char *p, *end;
+			if (!colon) {
+				fprintf(stderr,
+				    "[bot] --swap-state needs tick:state[,state...]\n");
+				return 2;
+			}
+			swap_state_tick = atoi(optarg);
+			swap_state_count = 0;
+			for (p = colon + 1;
+			    swap_state_count <
+			        (uint8_t)(sizeof(swap_state_bytes));
+			    p = end + 1) {
+				long v = strtol(p, &end, 0);
+				if (p == end)
+					break;
+				swap_state_bytes[swap_state_count++] =
+				    (uint8_t)v;
+				if (*end != ',')
+					break;
+			}
+			break;
+		}
+		case 'v':
+			client_version = (uint16_t)strtoul(optarg, NULL, 0);
+			break;
+		case 'W':
+			password = optarg;
+			break;
+		case 'j':
+			expect_reject = 1;
+			break;
+		case 'B': bump_metres = (float)atof(optarg); break;
+		case 'A': bump_at_lap = atoi(optarg); break;
+		case 'p': {
+			int a, b, c;
+			if (sscanf(optarg, "%d:%d:%d", &a, &b, &c) != 3) {
+				fprintf(stderr,
+				    "[bot] --report-penalty needs cat:kind:value\n");
+				return 2;
+			}
+			if (rp_n >= MAX_RPS) {
+				fprintf(stderr, "[bot] too many penalties\n");
+				return 2;
+			}
+			rp_cat[rp_n] = a; rp_kind[rp_n] = b;
+			rp_value[rp_n] = c; rp_n++;
+			break;
+		}
+		case 'D':
+			driver_cat = (uint8_t)atoi(optarg);
+			break;
+		case 'S':
+			penalty_start_tick = (uint32_t)atoi(optarg);
+			break;
+		case 'C':
+			if (chat_n >= MAX_CHATS) {
+				fprintf(stderr, "[bot] too many --chat\n");
+				return 2;
+			}
+			{
+				/*
+				 * Underscores in --chat are translated to spaces
+				 * so the test runners can pass slash commands
+				 * like `/admin_admin` or `/dq_911` without
+				 * tripping POSIX sh word-splitting.
+				 */
+				char *m = strdup(optarg);
+				char *p;
+				if (m == NULL) {
+					fprintf(stderr,
+					    "[bot] strdup oom\n");
+					return 2;
+				}
+				for (p = m; *p; p++)
+					if (*p == '_')
+						*p = ' ';
+				chat_msgs[chat_n++] = m;
+			}
+			break;
+		case 'Z':
+			chat_start_tick = (uint32_t)atoi(optarg);
 			break;
 		case 'h': usage(argv[0]); return 0;
 		default:  usage(argv[0]); return 2;
@@ -1046,13 +1277,6 @@ int main(int argc, char **argv)
 
 	signal(SIGINT, on_sigint);
 	signal(SIGTERM, on_sigint);
-	/*
-	 * Ignore SIGPIPE.  MSG_NOSIGNAL covers Linux at the syscall
-	 * site, but BSDs don't honour it on TCP send() — without
-	 * SIG_IGN here, an abrupt peer disconnect would terminate
-	 * the bot instead of taking the reconnect path.
-	 */
-	signal(SIGPIPE, SIG_IGN);
 	setvbuf(stdout, NULL, _IOLBF, 0);
 
 	if (track_path) {
@@ -1066,19 +1290,22 @@ int main(int argc, char **argv)
 	if (track_length_override > 0)
 		g_track_length_m = track_length_override;
 
-	/* Format produces "S7656119900" (11) + 7 digits + NUL = 19 bytes.
-	 * Static assert guards against shrinking the buffer in future
-	 * refactors. */
-	_Static_assert(sizeof steam >= 20, "steam buffer too small");
 	snprintf(steam, sizeof steam, "S7656119900%07u",
 	    (unsigned)race_number);
 
 	/* Initial connection (must succeed before driving). */
 	{
 		size_t wl;
-		if (connect_session(host, tcp_port, name, "Driver", "BOT",
-		    steam, race_number, &tcp_fd, &udp_fd, &udp_peer,
-		    &conn_id, &car_id, &wl) < 0) {
+		int rc = connect_session(host, tcp_port, name, "Driver",
+		    "BOT", steam, race_number, driver_cat, client_version,
+		    password, &tcp_fd, &udp_fd, &udp_peer, &conn_id,
+		    &car_id, &wl);
+		if (rc < 0) {
+			if (expect_reject) {
+				fprintf(stderr, "[bot] reject path "
+				    "completed (expected)\n");
+				return 0;
+			}
 			fprintf(stderr, "[bot] initial connect failed\n");
 			return 1;
 		}
@@ -1300,14 +1527,9 @@ int main(int argc, char **argv)
 
 		/*
 		 * Sector splits.  Three sectors of equal norm_pos length
-		 * (0..1/3, 1/3..2/3, 2/3..1).  Kunos wire convention
-		 * (FUN_1400142f0 dispatch):
-		 *   0x20 per-sector split for sectors 0 and 1
-		 *   0x21 lap-complete at S/F (sector-2 -> sector-0)
-		 * accd's lap-complete cascade (lap_count++, last_lap,
-		 * best_lap, ratings, 0xd0 lobby push, penalty serve
-		 * countdown) fires on the 0x21 only — emit the right
-		 * id at the right boundary so P/Q laps count.
+		 * (0..1/3, 1/3..2/3, 2/3..1).  When the bot crosses a
+		 * boundary, emit 0x21 with the just-finished sector's
+		 * split time and the cumulative lap time so far.
 		 */
 		{
 			int new_sector = (u_pos < 1.0f / 3.0f) ? 0 :
@@ -1321,14 +1543,31 @@ int main(int argc, char **argv)
 				    (client_ts - sector_start_ms);
 				int32_t lap_t = (int32_t)
 				    (client_ts - lap_start_ms);
+				/*
+				 * Kunos wire convention (FUN_1400142f0
+				 * dispatch table):
+				 *   0x20 per-sector split for sectors 0/1
+				 *   0x21 lap-complete event at S/F (sec-2
+				 *        -> sec-0 transition)
+				 * accd's h_sector_split_single (0x21) is the
+				 * lap-complete handler that bumps lap_count
+				 * and fires 0xd0 / ratings / penalty serve
+				 * countdown.  Mirror the kunos shape so
+				 * P/Q laps get counted server-side.
+				 */
 				if (last_sector == 2 && new_sector == 0) {
-					/* S/F: emit 0x21 lap-complete with
-					 * the just-finished lap's full time
-					 * in the first u32.  On the very
-					 * first crossing lap_t is 0 (timers
-					 * just initialised); tag the lap as
-					 * IsOutLap (car_field bit 2) so
-					 * accd treats it as invalid. */
+					/*
+					 * Lap complete: 0x21 with the just-
+					 * finished lap's full time in the
+					 * first u32.  On the very first S/F
+					 * crossing lap_t is 0 (timers were
+					 * initialized this same iteration);
+					 * tag the lap as IsOutLap (bit 2)
+					 * so accd treats it as invalid and
+					 * skips the 0xd0 emit + best-lap
+					 * tracking, matching the real
+					 * client's behaviour exiting pit.
+					 */
 					uint16_t car_field = (lap <= 1)
 					    ? 0x0004u : 0x0000u;
 					uint8_t pkt2[32];
@@ -1339,8 +1578,8 @@ int main(int argc, char **argv)
 					send_tcp_framed(tcp_fd, pkt2, n);
 					lap_start_ms = client_ts;
 				} else {
-					/* Sectors 0 / 1: emit 0x20 with
-					 * the just-finished sector's time. */
+					/* Sectors 0 / 1: 0x20 per-sector
+					 * split for the just-finished sector. */
 					uint8_t pkt3[16];
 					size_t m = pkt_sector_bulk(pkt3,
 					    split, (uint8_t)last_sector,
@@ -1360,14 +1599,23 @@ int main(int argc, char **argv)
 		if (pit_on_lap > 0 && lap == pit_on_lap &&
 		    last_loc != LOC_TRACK)
 			pit_served_this_visit = 1;
-		if (pit_served_this_visit && loc == LOC_TRACK &&
-		    mandatory_pit) {
+		if (pit_served_this_visit && loc == LOC_TRACK) {
 			uint8_t pkt2[16];
-			size_t n = pkt_mandatory_pit_served(pkt2,
-			    (uint16_t)car_id);
-			send_tcp_framed(tcp_fd, pkt2, n);
-			printf("[bot] mandatory pit served (0x54) at lap=%d "
-			    "u=%.3f\n", lap, u_pos);
+			if (mandatory_pit) {
+				size_t n = pkt_mandatory_pit_served(pkt2,
+				    (uint16_t)car_id);
+				send_tcp_framed(tcp_fd, pkt2, n);
+				printf("[bot] mandatory pit served (0x54) at "
+				    "lap=%d u=%.3f\n", lap, u_pos);
+			}
+			if (send_penalty_served) {
+				uint64_t ts = (uint64_t)client_ts;
+				size_t n = pkt_penalty_cleared(pkt2, ts);
+				send_tcp_framed(tcp_fd, pkt2, n);
+				printf("[bot] penalty served (0x42) at lap=%d "
+				    "u=%.3f ts=%llu\n", lap, u_pos,
+				    (unsigned long long)ts);
+			}
 			pit_served_this_visit = 0;
 		}
 
@@ -1422,6 +1670,17 @@ int main(int argc, char **argv)
 		 * reconnect.  Same for any non-EAGAIN error. */
 		{
 			int disconnected = 0;
+			/* Deliberate flap (--flap-at T): force a TCP close
+			 * once at the configured tick.  The recv loop below
+			 * then sees rn==0 and runs the reconnect cascade. */
+			if (flap_at_tick >= 0 && !flap_done &&
+			    (int)tick >= flap_at_tick) {
+				printf("[bot] deliberate flap (--flap-at %d) "
+				    "at tick %u\n",
+				    flap_at_tick, (unsigned)tick);
+				shutdown(tcp_fd, SHUT_RDWR);
+				flap_done = 1;
+			}
 			while ((rn = recv(tcp_fd, rxbuf, sizeof rxbuf, 0)) > 0)
 				;
 			if (rn == 0) {
@@ -1447,29 +1706,17 @@ int main(int argc, char **argv)
 					size_t wl;
 					if (connect_session(host, tcp_port,
 					    name, "Driver", "BOT", steam,
-					    race_number, &tcp_fd, &udp_fd,
+					    race_number, driver_cat,
+					    client_version, password,
+					    &tcp_fd, &udp_fd,
 					    &udp_peer, &conn_id, &car_id,
 					    &wl) == 0) {
 						reconnect_count++;
-						/*
-						 * Reset lap / sector timers
-						 * — otherwise the next
-						 * sector_split carries the
-						 * pre-disconnect base and
-						 * reports a wildly inflated
-						 * sector time.  Sacrifices
-						 * the in-flight lap as
-						 * out-lap, which the server
-						 * already discards anyway.
-						 */
-						lap_start_ms = 0;
-						sector_start_ms = 0;
 						printf("[bot] reconnected "
 						    "#%d: conn=%u car=%u "
 						    "(trailer %zu B), "
 						    "resuming at u=%.3f "
-						    "lap=%d (sector timer "
-						    "reset)\n",
+						    "lap=%d\n",
 						    reconnect_count, conn_id,
 						    (unsigned)car_id, wl,
 						    u_pos, lap);
@@ -1557,6 +1804,110 @@ int main(int argc, char **argv)
 			    "(%.0f km/h) loc=%s pos=(%.0f,%.0f)\n",
 			    (unsigned)(client_ts / 1000), lap, phase, u_pos,
 			    vm, vm * 3.6f, lname, px, pz);
+		}
+
+		/* Stagger multiple --report-penalty entries 20 ticks apart
+		 * (~0.66 s) starting at penalty_start_tick (default 200,
+		 * configurable via --penalty-start-tick so tests that need
+		 * the report to land during a specific session phase can
+		 * shift the burst later in the bot's lifetime). */
+		if (rp_sent_n < rp_n &&
+		    tick == penalty_start_tick + (uint32_t)(rp_sent_n * 20)) {
+			int i = rp_sent_n;
+			size_t n = pkt_report_penalty(pkt,
+			    (uint8_t)rp_cat[i], (uint8_t)rp_kind[i],
+			    (uint64_t)client_ts, rp_value[i]);
+			send_tcp_framed(tcp_fd, pkt, n);
+			printf("[bot] sent 0x41 #%d cat=%d kind=%d value=%d "
+			    "ts=%u\n", i, rp_cat[i], rp_kind[i], rp_value[i],
+			    (unsigned)client_ts);
+			rp_sent_n++;
+		}
+
+		/* Voluntary or forced 0x4f driver-stint reset, fired once
+		 * at the configured tick.  Body = u8 force + u64 ts. */
+		if (stint_reset_tick >= 0 && !stint_reset_sent &&
+		    (int)tick >= stint_reset_tick) {
+			uint8_t pkt2[16];
+			size_t n = pkt_driver_stint_reset(pkt2,
+			    (uint8_t)stint_reset_force,
+			    (uint64_t)client_ts);
+			send_tcp_framed(tcp_fd, pkt2, n);
+			printf("[bot] sent 0x4f stint reset force=%d ts=%u\n",
+			    stint_reset_force, (unsigned)client_ts);
+			stint_reset_sent = 1;
+		}
+
+		/* 0x55 garage load-setup, fired once at the configured tick.
+		 * Server replies with 0x56 carrying the car's lap history
+		 * for the requested session_type. */
+		if (load_setup_tick >= 0 && !load_setup_sent &&
+		    (int)tick >= load_setup_tick) {
+			uint8_t pkt2[16];
+			size_t n = pkt_load_setup(pkt2,
+			    (uint8_t)load_setup_sess,
+			    (uint16_t)car_id, 0);
+			send_tcp_framed(tcp_fd, pkt2, n);
+			printf("[bot] sent 0x55 load_setup sess_type=%d "
+			    "car_id=%u\n", load_setup_sess,
+			    (unsigned)car_id);
+			load_setup_sent = 1;
+		}
+
+		/* 0x43 damage zones update, fired once at the configured
+		 * tick.  Server broadcasts 0x44 over UDP. */
+		if (damage_tick >= 0 && !damage_sent &&
+		    (int)tick >= damage_tick) {
+			uint8_t pkt2[16];
+			size_t n = pkt_damage_zones(pkt2, damage_bytes);
+			send_tcp_framed(tcp_fd, pkt2, n);
+			printf("[bot] sent 0x43 damage [%u,%u,%u,%u,%u]\n",
+			    damage_bytes[0], damage_bytes[1],
+			    damage_bytes[2], damage_bytes[3],
+			    damage_bytes[4]);
+			damage_sent = 1;
+		}
+
+		/* 0x4a swap-state-request, fired once at the configured tick.
+		 * Server applies + broadcasts 0x47 with the resulting state. */
+		if (swap_req_tick >= 0 && !swap_req_sent &&
+		    (int)tick >= swap_req_tick) {
+			uint8_t pkt2[16];
+			size_t n = pkt_swap_state_request(pkt2,
+			    (uint16_t)car_id, swap_req_sub, swap_req_state);
+			send_tcp_framed(tcp_fd, pkt2, n);
+			printf("[bot] sent 0x4a swap_request sub=%u state=%u\n",
+			    (unsigned)swap_req_sub, (unsigned)swap_req_state);
+			swap_req_sent = 1;
+		}
+
+		/* 0x47 driver-swap-state update, fired once at the configured
+		 * tick.  Server broadcasts 0x47 with the same body shape. */
+		if (swap_state_tick >= 0 && !swap_state_sent &&
+		    swap_state_count > 0 &&
+		    (int)tick >= swap_state_tick) {
+			uint8_t pkt2[32];
+			size_t n = pkt_update_swap_state(pkt2,
+			    (uint16_t)car_id, swap_state_bytes,
+			    swap_state_count);
+			send_tcp_framed(tcp_fd, pkt2, n);
+			printf("[bot] sent 0x47 swap_state car_id=%u "
+			    "dcnt=%u\n", (unsigned)car_id,
+			    (unsigned)swap_state_count);
+			swap_state_sent = 1;
+		}
+
+		/* Stagger --chat messages 20 ticks apart starting at
+		 * chat_start_tick (default 60 = 2 s, so /admin <pw> fires
+		 * well before any --report-penalty burst at tick 200). */
+		if (chat_sent_n < chat_n &&
+		    tick == chat_start_tick + (uint32_t)(chat_sent_n * 20)) {
+			int i = chat_sent_n;
+			size_t n = pkt_chat(pkt, name ? name : "bot",
+			    chat_msgs[i], client_ts);
+			send_tcp_framed(tcp_fd, pkt, n);
+			printf("[bot] sent chat #%d: %s\n", i, chat_msgs[i]);
+			chat_sent_n++;
 		}
 
 		tick++;

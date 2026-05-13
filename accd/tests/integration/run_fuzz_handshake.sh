@@ -33,9 +33,9 @@ fi
 
 if [ $RC -eq 0 ]; then
     # Send one clean handshake to confirm the parser is still usable.
-    if /home/r/code/assettocorsa/tmp/bot/bot \
+    if /home/r/code/assettocorsa/tools/bot/bot \
         --host 127.0.0.1 --tcp 9302 \
-        --track /home/r/code/assettocorsa/tmp/bot/waypoints/misano.csv \
+ \
         --race 911 --grid 1 --name BotPostFuzz \
         --client-version 0x0001 --expect-reject \
         2>&1 | grep -q "reject path completed"; then
