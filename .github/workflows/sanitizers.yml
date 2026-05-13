@@ -50,15 +50,6 @@ jobs:
           file accd
           ./accd -V
 
-      - name: Build bot under ASAN + UBSAN
-        env:
-          CC: clang
-          CFLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g"
-        run: |
-          set -euo pipefail
-          cd tmp/bot
-          clang $CFLAGS -O2 -Wall -o bot bot.c -lm
-
       - name: Run fast integration tests
         env:
           ASAN_OPTIONS: detect_leaks=1:check_initialization_order=1:strict_init_order=1:detect_stack_use_after_return=1
@@ -67,9 +58,14 @@ jobs:
         run: |
           set -euo pipefail
           cd accd/tests/integration
-          # Run only the fast tests; the slow ones (SKIP=1 gate) need
-          # a real-time bot + capture infra that's slow enough to time
-          # out under the sanitizer's instrumentation.
+          # Only run tests that don't need tmp/bot/bot -- that source
+          # is intentionally gitignored ('scratch / dirty notebook'
+          # discipline), so it's not on the runner.  The selected
+          # tests cover every parsed-wire-format surface where memory-
+          # safety bugs are most likely to live: handshake, welcome
+          # trailer, kson register/refresh/cp_push/fingerprint/reject
+          # codes, admin reject paths, lobby ping echo, make-install
+          # layout, dep-freshness.
           for t in \
               run_lobby_blob.sh \
               run_lobby_ping.sh \
@@ -77,9 +73,6 @@ jobs:
               run_lobby_f3_cp_push.sh \
               run_lobby_d7_fpr.sh \
               run_lobby_ef_rejects.sh \
-              run_lobby_f4_target.sh \
-              run_lobby_f5_selector.sh \
-              run_admin_next.sh \
               run_make_install.sh \
               run_welcome_trailer_walk.sh \
               run_makefile_deps_fresh.sh
