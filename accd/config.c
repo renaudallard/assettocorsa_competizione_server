@@ -631,7 +631,7 @@ config_load(struct Server *s, const char *cfg_dir)
 	 * unparseable assistRules.json leaves everything at zero.
 	 */
 	{
-		const struct json_node *assist;
+		struct json_node *assist;
 
 		assist = load_json(cfg_dir, "assistRules.json");
 		if (assist != NULL) {
