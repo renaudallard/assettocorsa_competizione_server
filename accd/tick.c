@@ -662,7 +662,13 @@ broadcast_stats_udp(struct Server *s)
 	memset(&dst, 0, sizeof(dst));
 	dst.sin_family = AF_INET;
 	dst.sin_port = htons((uint16_t)s->stats_udp_port);
-	dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);	/* 127.0.0.1 */
+	/*
+	 * Inline 127.0.0.1 instead of INADDR_LOOPBACK -- FreeBSD hides
+	 * the macro behind __BSD_VISIBLE, which _POSIX_C_SOURCE turns
+	 * off for the rest of the file, so the package build container
+	 * can't see it.
+	 */
+	dst.sin_addr.s_addr = htonl(0x7f000001U);	/* 127.0.0.1 */
 
 	bb_init(&bb);
 	bb_init(&wb);
