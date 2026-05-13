@@ -203,11 +203,6 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	/*
-	 * Match the exe's "Received split with isSessionOver flag; will
-	 * ignore it" guard: reject late-arriving sector splits past
-	 * session end so the frozen leaderboard doesn't get mutated.
-	 */
 	if (s->session.phase >= PHASE_COMPLETED) {
 		log_info("sector split ignored: session over (car=%d)",
 		    c->car_id);
@@ -216,75 +211,94 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	race = &s->cars[c->car_id].race;
 
 	/*
-	 * Formation lap flag (exe car+0x200): flip on the first S/F
-	 * crossing (sector_index=2).  Kunos counts the formation lap
-	 * as lap 1 flagged IsOutLap (car_field & 0x0004); that bit
-	 * is honored below to keep it out of best_lap.  Do NOT drop
-	 * the 0x20 — doing so kept lap_count one behind the client
-	 * and made race lap-0 appear to start after S/F.
+	 * Per kunos's FUN_1400142f0 dispatch table, 0x20 is the per-
+	 * sector split for sectors 0 and 1 only -- the S/F crossing
+	 * is signalled exclusively by 0x21 (h_sector_split_single).
+	 * Lap-complete bookkeeping (lap_count++, last_lap, best_lap,
+	 * lap_history, ratings_on_lap, lobby_notify_lap, penalty serve
+	 * countdown, recompute_standings) lives in that handler.  This
+	 * handler just records the per-sector time and the raw clock so
+	 * lap-complete can read them when it fires at S/F.  The old
+	 * 'sector_index==2 && all sectors set' workaround that used
+	 * to live here counted laps only for the test bot (which
+	 * incorrectly emitted 0x20 with sector=2); real ACC clients
+	 * send 0x20 only for sectors 0/1 and P/Q laps never got
+	 * counted server-side.
 	 */
-	if (sector_index == 2 && !race->formation_lap_done)
-		race->formation_lap_done = 1;
-
-	/* Store per-sector time. */
 	if (sector_index < 3)
 		race->sector_ms[sector_index] = sector_time_ms;
 	race->race_time_ms = clock_ms;
+	(void)car_field;	/* per-split client flag bits unused here */
+	log_info("sector split: car=%d sector=%u time=%dms clock=%d",
+	    c->car_id, (unsigned)sector_index, (int)sector_time_ms,
+	    (int)clock_ms);
+	return 0;
+}
 
-	/*
-	 * sector_index = 2 is the start/finish line crossing
-	 * (end of sector 3 = lap complete).  sector_index 0 and 1
-	 * are the intermediate sector boundaries.  Compute full
-	 * lap time as sum of all 3 sectors.
-	 */
-	if (sector_index == 2 && race->sector_ms[0] > 0 &&
-	    race->sector_ms[1] > 0 && race->sector_ms[2] > 0) {
-		int32_t lap_ms = race->sector_ms[0] +
-		    race->sector_ms[1] + race->sector_ms[2];
+/* ----- 0x21 ACP_SECTOR_SPLIT (single) -> broadcast 0x3b ---------- */
+
+int
+h_sector_split_single(struct Server *s, struct Conn *c,
+    const unsigned char *body, size_t len)
+{
+	struct Reader r;
+	uint8_t msg_id, flag_b, flag_d;
+	int32_t split_time, lap_time;
+	uint16_t car_field;
+	struct ByteBuf out;
+
+	rd_init(&r, body, len);
+	if (rd_u8(&r, &msg_id) < 0 ||
+	    rd_i32(&r, &split_time) < 0 ||
+	    rd_i32(&r, &lap_time) < 0 ||
+	    rd_u8(&r, &flag_b) < 0 ||
+	    rd_u16(&r, &car_field) < 0 ||
+	    rd_u8(&r, &flag_d) < 0) {
+		log_warn("h_sector_split_single: short body from conn=%u",
+		    (unsigned)c->conn_id);
+		return 0;
+	}
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
+		return 0;
+	/* Skip bookkeeping past session end — match the exe's
+	 * isSessionOver guard. */
+	if (s->session.phase >= PHASE_COMPLETED)
+		return 0;
+	{
+		struct CarRaceState *race = &s->cars[c->car_id].race;
 		/*
-		 * The u16 car_field trailing every 0x20 carries the
-		 * client's lap-state bitmap.  Bit 0 = HasCut (track
-		 * limits violated), bit 2 = IsOutLap (lap started from
-		 * pit or grid).  Kunos excludes both from the personal
-		 * best.  Our own out_of_track_latched is kept as a
-		 * server-side backstop for hasCut detection.
+		 * 0x21 is kunos's lap-completed event (FUN_1400142f0 case
+		 * 0x21 logs "New laptime: %d for carId %d").  Per the body
+		 * layout in the exe:
+		 *   first  u32 = laptime   (we still call it split_time)
+		 *   second u32 = raw_ts    (we still call it lap_time)
+		 *   u8 flag_b / u16 car_field / u8 flag_d trail.
+		 * The full lap-complete bookkeeping (lap_count++, last_lap,
+		 * best_lap, lap_history, ratings_on_lap, lobby_notify_lap,
+		 * penalty serve countdown, recompute_standings) runs once
+		 * per S/F crossing, not gated on a "sector_index==2 + all
+		 * sectors set" guess like the prior 0x20-only workaround.
 		 */
+		int32_t lap_ms = split_time;
 		int has_cut = (car_field & 0x0001) != 0;
 		int is_out_lap = (car_field & 0x0004) != 0;
 		int invalid = has_cut || is_out_lap ||
 		    race->out_of_track_latched;
 
+		if (!race->formation_lap_done)
+			race->formation_lap_done = 1;
+
 		race->lap_count++;
-		/*
-		 * last_lap_ms updates on every lap (valid or invalid) so
-		 * the HUD's "Last Lap" widget always shows the most
-		 * recent lap time.  best_lap_ms only updates on a valid
-		 * lap so a slow out-lap or cut lap doesn't poison the
-		 * personal best.
-		 */
 		race->last_lap_ms = lap_ms;
 		if (!invalid && (race->best_lap_ms == 0 ||
 		    lap_ms < race->best_lap_ms))
 			race->best_lap_ms = lap_ms;
-		/*
-		 * Push the completed lap into the ring-buffer history so
-		 * the 0x36 per-car list 2 (+0x1d8) carries real lap times
-		 * instead of 0x7fffffff sentinels.  Invalid laps store the
-		 * sentinel so the HUD shows them as dashed.
-		 */
+
+		/* Per-car lap history (drives 0x36 list 2 + 0x56 garage). */
 		{
 			uint8_t slot = race->lap_history_count
 			    % ACC_LAP_HISTORY;
 			int si;
-
-			/*
-			 * Store the REAL lap time (and sectors) in history
-			 * for every completed lap, valid or not — the 0x56
-			 * garage reply uses this ring buffer to list every
-			 * lap's time.  Kunos also emits real ms for invalid
-			 * laps in the per-car history vector (confirmed via
-			 * pcap decode 2026-04-21).
-			 */
 			race->lap_history_ms[slot] = lap_ms;
 			for (si = 0; si < 3; si++)
 				race->lap_splits_ms[slot][si] =
@@ -292,12 +306,10 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			if (race->lap_history_count < 0xFF)
 				race->lap_history_count++;
 		}
-		/*
-		 * Update per-sector bests from the just-completed lap.
-		 * The single-split handler (0x21) already tracks these
-		 * but bulk (0x20) is the common path and was not, so
-		 * the session-best sector display stayed at sentinel.
-		 */
+
+		/* Best-sector tracking from the just-completed lap's
+		 * stored sector_ms[].  Skip invalid laps so a slow out-lap
+		 * or cut lap doesn't lock the session-best column. */
 		if (!invalid) {
 			int si;
 			for (si = 0; si < 3; si++) {
@@ -308,9 +320,12 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 					race->best_sectors_ms[si] = st;
 			}
 		}
+
+		/* Per-lap state reset + optional cut-counter clear
+		 * broadcast.  Matches the kunos pcap (zero 0x3c emits on
+		 * lap-boundaries for clean laps; one on a cut clear). */
 		{
 			uint8_t had_cuts = race->cuts_this_lap;
-
 			race->current_lap_ms = 0;
 			race->out_of_track_latched = 0;
 			race->cuts_this_lap = 0;
@@ -318,15 +333,6 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			race->sector_ms[0] = 0;
 			race->sector_ms[1] = 0;
 			race->sector_ms[2] = 0;
-			/*
-			 * Broadcast the cut-counter reset only when the
-			 * previous lap actually had cuts to clear.  Kunos
-			 * pcap (2026-05-09) shows zero 0x3c emits on
-			 * lap-boundaries for clean laps, so emitting
-			 * unconditionally was a divergence; the AC2 client
-			 * clears its own HUD per-lap when no cut count was
-			 * advertised this lap.
-			 */
 			if (had_cuts > 0) {
 				struct ByteBuf reset;
 				bb_init(&reset);
@@ -340,36 +346,24 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 				bb_free(&reset);
 			}
 		}
-		/*
-		 * Feed the local rating EWMA: clean lap +5 SA, cut -25,
-		 * out-laps skipped.  Keyed by driver steam_id.
-		 */
+
+		/* Local rating EWMA: clean lap +5 SA, cut -25, out-lap
+		 * skipped.  Keyed by current driver's steam_id. */
 		ratings_on_lap(s,
 		    s->cars[c->car_id].drivers[
 			s->cars[c->car_id].current_driver_index
 		    ].steam_id, has_cut, is_out_lap);
 
-		/*
-		 * Report to the Kunos lobby so the server stays listed
-		 * as actively racing.  Only valid laps — invalid laps
-		 * would bump the ghost best-lap on their side.
-		 */
+		/* kson lobby: only valid laps (invalid bumps their ghost
+		 * best, which we don't want). */
 		if (!invalid)
 			lobby_notify_lap(&s->lobby,
 			    s->cars[c->car_id].car_id,
 			    (uint16_t)s->cars[c->car_id].race_number,
 			    lap_ms, race->race_time_ms);
 
-		/*
-		 * Tick down the front DT/SG entry's service deadline.
-		 * Three racing laps to serve, else auto-DQ (or SG30 if
-		 * allowAutoDQ=0 in settings.json).  Only the front ticks
-		 * — service is sequential, the second penalty can't
-		 * start until the first is cleared.  Reckless-driving
-		 * DQs (Kunos 1.8.11+) are not downgradable but those
-		 * come from h_car_location_update (pit speeding) as
-		 * direct PEN_DQ, not via this serve-deadline path.
-		 */
+		/* DT/SG serve-deadline countdown.  Three racing laps to
+		 * serve, else auto-DQ (or SG30 if allowAutoDQ=0). */
 		if (race->pen.count > 0 && !race->disqualified) {
 			int pi = penalty_first_unserved_dtsg(&race->pen);
 			struct PenaltyEntry *front = pi >= 0
@@ -417,105 +411,17 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			}
 		}
 
-		log_info("lap completed: car=%d lap=%d time=%dms "
-		    "clock=%d sector=%u%s",
+		log_info("lap completed: car=%d lap=%d time=%dms clock=%d%s",
 		    c->car_id, race->lap_count, (int)lap_ms,
-		    (int)clock_ms, (unsigned)sector_index,
-		    invalid ? " (INVALID)" : "");
+		    (int)lap_time, invalid ? " (INVALID)" : "");
 
 		session_recompute_standings(s);
 
 		if (s->session.phase == PHASE_OVERTIME) {
 			session_overtime_car_finished(s);
-			/*
-			 * Quali "Right to Finish": an eligible car that
-			 * crosses S/F during overtime has used its right
-			 * — drop the flag so the hold can collapse once
-			 * the rest of the eligible set finishes.  No-op
-			 * for race or for cars that were never eligible.
-			 */
 			session_quali_drop_eligibility(s, c->car_id);
 		}
-	} else {
-		log_info("sector split: car=%d sector=%u time=%dms "
-		    "clock=%d",
-		    c->car_id, (unsigned)sector_index,
-		    (int)sector_time_ms, (int)clock_ms);
 	}
-
-	/* No 0x3a relay (exe never sends it). */
-	return 0;
-}
-
-/* ----- 0x21 ACP_SECTOR_SPLIT (single) -> broadcast 0x3b ---------- */
-
-int
-h_sector_split_single(struct Server *s, struct Conn *c,
-    const unsigned char *body, size_t len)
-{
-	struct Reader r;
-	uint8_t msg_id, flag_b, flag_d;
-	int32_t split_time, lap_time;
-	uint16_t car_field;
-	struct ByteBuf out;
-
-	rd_init(&r, body, len);
-	if (rd_u8(&r, &msg_id) < 0 ||
-	    rd_i32(&r, &split_time) < 0 ||
-	    rd_i32(&r, &lap_time) < 0 ||
-	    rd_u8(&r, &flag_b) < 0 ||
-	    rd_u16(&r, &car_field) < 0 ||
-	    rd_u8(&r, &flag_d) < 0) {
-		log_warn("h_sector_split_single: short body from conn=%u",
-		    (unsigned)c->conn_id);
-		return 0;
-	}
-	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
-		return 0;
-	/* Skip bookkeeping past session end — match the exe's
-	 * isSessionOver guard. */
-	if (s->session.phase >= PHASE_COMPLETED)
-		return 0;
-	{
-		struct CarRaceState *race = &s->cars[c->car_id].race;
-
-		/*
-		 * 0x21 is the lap-completed message in the exe, not a single
-		 * sector split (FUN_1400142f0 case 0x21 logs "New laptime: %d
-		 * for carId %d"; flag_b is one of two flag bytes the exe reads
-		 * but does not interpret as a sector index).  Reset the cut
-		 * latch + counter on every 0x21, since each one corresponds to
-		 * an S/F crossing.  Earlier code gated the reset on
-		 * `flag_b == 2` under the assumption that flag_b was a sector
-		 * index; with a real client that's whatever bit pattern the
-		 * client puts in flag1, so the reset rarely fired and the
-		 * orange "N" cut badge stuck into the next lap.
-		 */
-		{
-			uint8_t had_cuts = race->cuts_this_lap;
-
-			race->cuts_this_lap = 0;
-			race->last_cut_ms = 0;
-			race->out_of_track_latched = 0;
-			if (had_cuts > 0) {
-				struct ByteBuf reset;
-				bb_init(&reset);
-				if (wr_u8(&reset, SRV_OUT_OF_TRACK_RELAY) == 0 &&
-				    wr_u16(&reset,
-					s->cars[c->car_id].car_id) == 0 &&
-				    wr_u16(&reset, 0) == 0 &&
-				    wr_u32(&reset, 0) == 0)
-					(void)bcast_all(s, reset.data,
-					    reset.wpos, BCAST_EXCEPT_NONE);
-				bb_free(&reset);
-			}
-		}
-	}
-	log_info("sector split single: car=%d split=%d lap=%d "
-	    "flag_b=%u car_field=0x%04x flag_d=%u cuts=%u",
-	    c->car_id, (int)split_time, (int)lap_time,
-	    (unsigned)flag_b, (unsigned)car_field, (unsigned)flag_d,
-	    (unsigned)s->cars[c->car_id].race.cuts_this_lap);
 
 	/* Build the transformed 0x3b broadcast. Body:
 	 *   u16 car_id + u32 split_time + u8 flag + u32 lap_time +
