@@ -70,8 +70,10 @@ every wire message, string encoding, and state transition.
 
 - **TCP framing** with variable-width length prefix; variable-length
   welcome trailer (`0x0b`) built section-for-section to match the
-  Kunos layout byte-for-byte.  Reject (`0x0c`) codes 4–12 wired
-  correctly.
+  Kunos layout byte-for-byte.  All 9 reject (`0x0c`) reasons wired
+  with the correct sub/detail-a/detail-b tuple per code: 4 KICKED,
+  5 BANNED, 6 PASSWORD, 7 VERSION_LO, 8 VERSION_HI, 9 FULL, 10
+  CP_RATING, 11 BAD_CAR, 12 BAD_SESSION.
 - **Post-accept welcome sequence** — `0x28` large state, `0x36`
   leaderboard, `0x37` weather, `0x4e` rating summary sent in the
   right order and cadence.  Per-connection time-base projection
@@ -146,10 +148,11 @@ every wire message, string encoding, and state transition.
 
 - **Chat / console commands**: `/admin`, `/next`, `/restart`,
   `/resetWeekend`, `/kick`, `/ban`, `/dq`, `/tp5`, `/tp15`, `/dt`,
-  `/sg10..30` (all with collision variants), `/clear`, `/clear_all`,
-  `/ballast`, `/restrictor`, `/track`, `/connections`, `/hellban`,
-  `/lockprep`, `/unlockprep`, `/manual entrylist`, `/manual start`,
-  `/wt`, `/go` / `/start`, `/report`.
+  `/sg10..30` (all with collision variants), `/clear`, `/cleartp`,
+  `/clear_all`, `/ballast`, `/restrictor`, `/track`, `/tracks`,
+  `/connections`, `/hellban`, `/lockprep`, `/unlockprep`,
+  `/latencymode`, `/manual entrylist`, `/manual start`, `/wt`,
+  `/go` / `/start`, `/report`, `/debug <conditions|bandwidth|qos>`.
 - **Penalty system** — per-car queue, mandatory pitstop tracking,
   3-lap deadline countdown for DT/SG with auto-DQ on miss
   (downgradable via `allowAutoDQ: 0`), pit-speeding auto-DQ from
@@ -169,8 +172,9 @@ every wire message, string encoding, and state transition.
 - **BoP** — `0x53` broadcast on ballast/restrictor changes.
 - **Debug tracing** — `-d` flag or `debug` console command enables
   full wire hexdump of every message.
-- **OpenBSD support** — builds on OpenBSD 7.8 arm64, runs under
-  `pledge("stdio rpath wpath cpath inet")` after binding ports.
+- **OpenBSD support** — builds on OpenBSD 7.9 arm64 (celeborn deploy
+  target), runs under `pledge("stdio rpath wpath cpath inet")` after
+  binding ports.
 - **Zero idle CPU** — with no clients connected the main loop
   blocks in `poll()` for up to 100 ms per iteration, so the
   daemon sits near 0 % CPU until the first client is accepted
@@ -209,7 +213,11 @@ cd accd
 make
 ```
 
-Tested on Debian sid aarch64 with `gcc 15.2.0`.
+Tested on Debian sid aarch64 with `gcc 15.2.0`.  Built with the
+standard hardening triad: `-D_FORTIFY_SOURCE=2 -fstack-protector-strong
+-Wformat-security -fPIE` on the compile side and `-pie -Wl,-z,relro
+-Wl,-z,now -Wl,-z,noexecstack` on the link side, so the resulting
+ELF has PIE + full RELRO + BIND_NOW + non-executable stack.
 
 ### OpenBSD
 
@@ -219,8 +227,11 @@ make
 ```
 
 The Makefile auto-detects `/usr/local/include/iconv.h` and links
-`-liconv` when iconv is not in libc.  Tested on OpenBSD 7.8 arm64
-with `clang 19.1.7`.
+`-liconv` when iconv is not in libc.  Tested on OpenBSD 7.9 arm64
+with `clang 19.1.7`.  After changing a `#include` in any `.c` or
+`.h`, run `make depend` to refresh the inline header-dependency
+block at the bottom of the Makefile (regression-tested by
+`tests/integration/run_makefile_deps_fresh.sh`).
 
 ### Install
 
@@ -493,6 +504,26 @@ printf '\x04\x00\x09\x00\x01\x00' | nc -q 1 127.0.0.1 9232 | xxd
 # expects: large response starting with 0b 0f 24 ...
 ```
 
+### Full test suite
+
+```sh
+cd accd
+make test                                        # python smoke pair
+```
+
+For the full integration suite (57 scripts covering every wire
+message — handshake, welcome trailer, lobby protocol, penalty
+ladder, driver swap, weather cadence, leaderboard byte-decode, …)
+`cd tests/integration && ./run_*.sh`.  Tests that need >60 s
+(soak, phase-collapse, race-cycle) gate on `SKIP=1` for CI smoke
+runs.  Two GitHub Actions workflows run on every push:
+
+- **Sanitizers** — builds `accd` with clang `-fsanitize=address,
+  undefined`, runs the welcome-trailer walker through the
+  instrumented binary to catch UAF / leak / OOB / signed-overflow.
+- **Fuzz** — 60-s libFuzzer harness of `json_parse` seeded from the
+  project's own `cfg/*.json`.
+
 ---
 
 ## Scope & legal posture
@@ -572,15 +603,27 @@ interoperability of an independently created program.
 │   ├── tick.{c,h}           Event-driven relay + periodic broadcasts.
 │   ├── weather.{c,h}        Deterministic sin/cos weather simulator.
 │   └── Makefile
+│   ├── tests/
+│   │   ├── smoke_handshake.py      python wire-level smoke
+│   │   ├── smoke_reject_codes.py   reject-code matrix
+│   │   ├── fake_client.py          11-anchor welcome-trailer walker
+│   │   └── integration/            57 shell-driven integration tests
+│   └── fuzz/
+│       └── fuzz_json.c             libFuzzer harness for json_parse
 ├── debian/                  Debian/Ubuntu packaging.
 ├── redhat/                  Fedora/Rocky RPM spec.
-└── .github/workflows/       CI: autorelease + multi-distro packaging.
+└── .github/workflows/       CI: autorelease, release-packages
+                             (Ubuntu / Debian / Fedora / Rocky /
+                             Alpine / FreeBSD), sanitizers (ASAN +
+                             UBSAN), fuzz (libFuzzer for json).
 ```
 
 </details>
 
-27 modules, ~18,600 lines of portable C99.  No dependencies beyond
-libc, iconv, and libm.
+27 modules, ~22,100 lines of portable C99.  No dependencies beyond
+libc, iconv, and libm (`libbsd-dev` on Linux for `arc4random_uniform`).
+Releases ship `.deb`, `.rpm`, Alpine tarball, and FreeBSD tarball
+artifacts with a published `SHA256SUMS` for integrity verification.
 
 ---
 
