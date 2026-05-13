@@ -160,7 +160,16 @@ def main():
             #    legitimately, but the reviewer should notice.  If you
             #    deliberately change a block size, update this constant
             #    together with a commit explaining why.
-            EXPECTED_LEN = 908
+            #
+            # 919 B accounts for two kunos-pcap-driven shape changes that
+            # post-date the previous 908 B baseline:
+            #   - cvar8 gated on mandatoryPitstopCount (commit ed9cc4e):
+            #     in a no-pit smoke cfg, drops the per-car
+            #     missingMandatoryPitstop byte (-1 B for 1 car).
+            #   - lap-history padded to 3 INT32_MAX entries when empty
+            #     (commit c2a88bf): +12 B for 1 car at the welcome
+            #     moment (no laps yet).
+            EXPECTED_LEN = 919
             if len(body) != EXPECTED_LEN:
                 fail(f"welcome trailer is {len(body)} B, expected "
                      f"{EXPECTED_LEN} B — a write_* block changed "
