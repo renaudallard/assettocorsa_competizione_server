@@ -139,8 +139,8 @@ entrylist.o: entrylist.c entrylist.h state.h io.h lobby.h msg.h json.h \
 handlers.o: handlers.c bcast.h state.h io.h lobby.h msg.h chat.h \
  handlers.h handshake.h log.h penalty.h prim.h ratings.h session.h tick.h
 handshake.o: handshake.c bcast.h state.h io.h lobby.h msg.h ratings.h \
- bans.h entrylist.h handshake.h log.h penalty.h prim.h session.h \
- weather.h
+ bans.h entrylist.h handlers.h handshake.h log.h penalty.h prim.h \
+ session.h tick.h weather.h
 io.o: io.c io.h log.h
 json.o: json.c json.h
 lan.o: lan.c io.h lan.h state.h lobby.h msg.h log.h prim.h
@@ -151,14 +151,15 @@ monitor.o: monitor.c bcast.h state.h io.h lobby.h msg.h log.h monitor.h \
  pb.h prim.h
 net.o: net.c log.h net.h
 pb.o: pb.c io.h pb.h
-penalty.o: penalty.c log.h penalty.h state.h io.h lobby.h msg.h session.h
+penalty.o: penalty.c log.h penalty.h state.h io.h lobby.h msg.h session.h \
+ tick.h
 prim.o: prim.c prim.h io.h
 ratings.o: ratings.c json.h log.h ratings.h state.h io.h lobby.h msg.h
 results.o: results.c io.h log.h penalty.h state.h lobby.h msg.h results.h
 session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \
- handshake.h log.h penalty.h prim.h results.h session.h
-state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h log.h \
- prim.h session.h tick.h
+ handshake.h log.h penalty.h prim.h results.h session.h tick.h
+state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h handlers.h \
+ log.h prim.h session.h tick.h
 tick.o: tick.c bcast.h state.h io.h lobby.h msg.h chat.h ratings.h \
  handshake.h log.h penalty.h prim.h entrylist.h results.h session.h \
  tick.h weather.h
