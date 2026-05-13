@@ -31,7 +31,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             build-essential clang \
-            libbsd-dev tcpdump python3-scapy
+            libbsd-dev libseccomp-dev tcpdump python3-scapy
 
       - name: Build accd with ASAN + UBSAN
         env:
@@ -48,6 +48,14 @@ jobs:
             ACCD_CFLAGS="-std=c99 -Wall -Wextra -O1 -g -DACCD_VERSION_STR='\"sanitizer\"' -I/usr/local/include $CFLAGS" \
             ACCD_LDFLAGS="-L/usr/local/lib $CFLAGS"
           file accd
+          # The sanitizer build still links libseccomp so the symbols
+          # resolve; sandbox.c self-disables seccomp_load() under
+          # __SANITIZE_ADDRESS__ at runtime.
+          if ! readelf -d accd | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: sanitizer accd not linked against libseccomp" >&2
+            readelf -d accd | grep NEEDED >&2 || true
+            exit 1
+          fi
           ./accd -V
 
       - name: Run fast integration tests

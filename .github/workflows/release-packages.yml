@@ -231,7 +231,7 @@ jobs:
           apt-get install -y \
             git ca-certificates \
             build-essential debhelper fakeroot dpkg-dev \
-            libbsd-dev
+            libbsd-dev libseccomp-dev binutils
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -280,6 +280,13 @@ jobs:
         run: |
           set -euo pipefail
           dpkg-buildpackage -us -uc -b -j"$(nproc)"
+          # Verify the Makefile link-time probe found libseccomp-dev;
+          # otherwise the .deb silently ships an unconfined binary.
+          if ! readelf -d accd/accd | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: accd not linked against libseccomp" >&2
+            readelf -d accd/accd | grep NEEDED >&2 || true
+            exit 1
+          fi
 
       - name: Collect Debian artifacts
         run: |
@@ -321,7 +328,7 @@ jobs:
           apt-get install -y \
             git ca-certificates \
             build-essential debhelper fakeroot dpkg-dev \
-            libbsd-dev
+            libbsd-dev libseccomp-dev binutils
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -370,6 +377,13 @@ jobs:
         run: |
           set -euo pipefail
           dpkg-buildpackage -us -uc -b -j"$(nproc)"
+          # Verify the Makefile link-time probe found libseccomp-dev;
+          # otherwise the .deb silently ships an unconfined binary.
+          if ! readelf -d accd/accd | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: accd not linked against libseccomp" >&2
+            readelf -d accd/accd | grep NEEDED >&2 || true
+            exit 1
+          fi
 
       - name: Collect Debian artifacts
         run: |
@@ -411,7 +425,7 @@ jobs:
           apt-get install -y \
             git ca-certificates \
             build-essential debhelper fakeroot dpkg-dev \
-            libbsd-dev
+            libbsd-dev libseccomp-dev binutils
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -460,6 +474,13 @@ jobs:
         run: |
           set -euo pipefail
           dpkg-buildpackage -us -uc -b -j"$(nproc)"
+          # Verify the Makefile link-time probe found libseccomp-dev;
+          # otherwise the .deb silently ships an unconfined binary.
+          if ! readelf -d accd/accd | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: accd not linked against libseccomp" >&2
+            readelf -d accd/accd | grep NEEDED >&2 || true
+            exit 1
+          fi
 
       - name: Collect Debian artifacts
         run: |
@@ -501,7 +522,7 @@ jobs:
           apt-get install -y \
             git ca-certificates \
             build-essential debhelper fakeroot dpkg-dev \
-            libbsd-dev
+            libbsd-dev libseccomp-dev binutils
 
       - name: Checkout
         uses: actions/checkout@v6
@@ -550,6 +571,13 @@ jobs:
         run: |
           set -euo pipefail
           dpkg-buildpackage -us -uc -b -j"$(nproc)"
+          # Verify the Makefile link-time probe found libseccomp-dev;
+          # otherwise the .deb silently ships an unconfined binary.
+          if ! readelf -d accd/accd | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: accd not linked against libseccomp" >&2
+            readelf -d accd/accd | grep NEEDED >&2 || true
+            exit 1
+          fi
 
       - name: Collect Debian artifacts
         run: |
@@ -587,7 +615,7 @@ jobs:
       - name: Install build tools
         run: |
           set -euo pipefail
-          dnf install -y git rpm-build make gcc which tar systemd-rpm-macros libbsd-devel
+          dnf install -y git rpm-build make gcc which tar systemd-rpm-macros libbsd-devel libseccomp-devel binutils
 
       - name: Mark workspace as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -613,6 +641,16 @@ jobs:
           set -euo pipefail
           RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
           rpmbuild --define "_topdir ${RPM_TOPDIR}" --define "source_date_epoch_from_changelog 0" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
+          # Verify the Makefile link-time probe found libseccomp-devel
+          # in the build chroot; otherwise the .rpm silently ships an
+          # unconfined binary.  rpmbuild leaves the build tree under
+          # BUILD/accd-${ver}/, glob to find the just-built accd.
+          built=$(find "${RPM_TOPDIR}/BUILD" -name accd -type f -executable | head -n1)
+          if [ -z "$built" ] || ! readelf -d "$built" | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: accd not linked against libseccomp ($built)" >&2
+            [ -n "$built" ] && readelf -d "$built" | grep NEEDED >&2 || true
+            exit 1
+          fi
 
       - name: Collect RPM artifacts
         run: |
@@ -663,7 +701,7 @@ jobs:
           fi
           $pkgmgr install -y epel-release || true
           dnf config-manager --set-enabled crb || true
-          $pkgmgr install -y git rpm-build make gcc which tar systemd-rpm-macros libbsd-devel
+          $pkgmgr install -y git rpm-build make gcc which tar systemd-rpm-macros libbsd-devel libseccomp-devel binutils
 
       - name: Mark workspace as safe for git
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
@@ -689,6 +727,16 @@ jobs:
           set -euo pipefail
           RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
           rpmbuild --define "_topdir ${RPM_TOPDIR}" --define "source_date_epoch_from_changelog 0" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
+          # Verify the Makefile link-time probe found libseccomp-devel
+          # in the build chroot; otherwise the .rpm silently ships an
+          # unconfined binary.  rpmbuild leaves the build tree under
+          # BUILD/accd-${ver}/, glob to find the just-built accd.
+          built=$(find "${RPM_TOPDIR}/BUILD" -name accd -type f -executable | head -n1)
+          if [ -z "$built" ] || ! readelf -d "$built" | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: accd not linked against libseccomp ($built)" >&2
+            [ -n "$built" ] && readelf -d "$built" | grep NEEDED >&2 || true
+            exit 1
+          fi
 
       - name: Collect RPM artifacts
         run: |
@@ -739,9 +787,17 @@ jobs:
             "alpine:${{ needs.detect-versions.outputs.alpine_latest }}" \
             sh -c '
               set -eu
-              apk add --no-cache build-base libbsd-dev
+              apk add --no-cache build-base libbsd-dev libseccomp-dev binutils
               cd accd
               make -j"$(nproc)"
+              # Confirm the seccomp link probe found libseccomp-dev
+              # inside the container; otherwise the artifact silently
+              # ships unconfined.
+              if ! readelf -d accd | grep -q "NEEDED.*libseccomp"; then
+                echo "ERROR: alpine accd not linked against libseccomp" >&2
+                readelf -d accd | grep NEEDED >&2 || true
+                exit 1
+              fi
               ver=$(cat ../VERSION | tr -d "[:space:]")
               arch=$(uname -m)
               staging="accd-${ver}-alpine-${arch}"
@@ -786,7 +842,8 @@ jobs:
             "alpine:${{ needs.detect-versions.outputs.alpine_latest }}" \
             sh -c '
               set -eu
-              apk add --no-cache build-base libbsd-dev libbsd-static
+              apk add --no-cache build-base libbsd-dev libbsd-static \
+                libseccomp-dev libseccomp-static binutils
               cd accd
               # Override ACCD_LDFLAGS to drop the default -pie and add
               # -static-pie; user LDFLAGS would be appended *after* the
@@ -806,6 +863,15 @@ jobs:
                 exit 1
               fi
               echo "OK: 0 DT_NEEDED entries"
+              # Confirm libseccomp.a was statically pulled in.  A
+              # missing libseccomp-static package would leave the
+              # binary syscall-unconfined and the link probe would
+              # have silently skipped -lseccomp.
+              if ! nm accd | grep -qw seccomp_init; then
+                echo "ERROR: static accd missing seccomp_init symbol" >&2
+                exit 1
+              fi
+              echo "OK: seccomp_init present in static binary"
               ./accd -V
               ver=$(cat ../VERSION | tr -d "[:space:]")
               arch=$(uname -m)
