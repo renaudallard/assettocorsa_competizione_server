@@ -250,6 +250,72 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		loaded++;
 	}
 
+	/*
+	 * Team-entry expansion: an entrylist entry with >1 registered
+	 * drivers under forceEntryList=1 is a kunos "team entry".
+	 * Kunos allocates a separate car_id per driver in the entry
+	 * but every car shares the entry-level fields (raceNumber,
+	 * car_model, team_name, drivers[], driver_count, ballast,
+	 * restrictor, ...).  Mirror by replicating the proto slot's
+	 * entry-level state into companion slots starting after the
+	 * last loaded entry.  Each member of the group — anchor and
+	 * companions — has team_entry_id == anchor_slot.  Standalone
+	 * single-driver entries leave team_entry_id at its -1 default
+	 * so every group-iteration path short-circuits to the legacy
+	 * 1:1 conn->car invariant.
+	 */
+	if (s->force_entry_list) {
+		int next_free = loaded;
+		for (i = 0; i < loaded; i++) {
+			struct CarEntry *anchor = &s->cars[i];
+			int dn = anchor->driver_count;
+			int companion;
+
+			if (dn <= 1)
+				continue;
+			if (next_free + (dn - 1) > ACC_MAX_CARS) {
+				log_warn("entrylist: team entry %d needs "
+				    "%d slots but %d remaining; "
+				    "truncating team", i, dn,
+				    ACC_MAX_CARS - next_free);
+				dn = ACC_MAX_CARS - next_free + 1;
+				if (dn < 2)
+					break;
+			}
+			anchor->team_entry_id = (int8_t)i;
+			for (companion = 1; companion < dn; companion++) {
+				int cslot = next_free++;
+				struct CarEntry *c = &s->cars[cslot];
+
+				/* car_id is server-assigned per slot index;
+				 * keep it (server_init set it). */
+				c->race_number = anchor->race_number;
+				c->car_model = anchor->car_model;
+				c->forced_car_model = anchor->forced_car_model;
+				c->cup_category = anchor->cup_category;
+				c->nationality = anchor->nationality;
+				memcpy(c->team_name, anchor->team_name,
+				    sizeof(c->team_name));
+				c->default_grid_position =
+				    anchor->default_grid_position;
+				c->ballast_kg = anchor->ballast_kg;
+				c->restrictor = anchor->restrictor;
+				memcpy(c->custom_car, anchor->custom_car,
+				    sizeof(c->custom_car));
+				c->current_driver_index =
+				    anchor->current_driver_index;
+				c->driver_count = anchor->driver_count;
+				c->is_server_admin = anchor->is_server_admin;
+				memcpy(c->drivers, anchor->drivers,
+				    sizeof(c->drivers));
+				c->team_entry_id = (int8_t)i;
+			}
+			log_info("entrylist: team entry %d (race %d) "
+			    "expanded to %d slots", i,
+			    (int)anchor->race_number, dn);
+		}
+	}
+
 	json_free(root);
 	log_info("entrylist: loaded %d cars from %s", loaded, path);
 	return loaded;
@@ -310,6 +376,16 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 		char buf[192];
 
 		if (!car->used)
+			continue;
+		/*
+		 * Team-entry companion slots share the anchor's entry-
+		 * level fields (raceNumber, car_model, drivers[], ...).
+		 * Emit only once per group — at the anchor — so the next
+		 * load doesn't see each companion as a fresh entry.
+		 * team_entry_id == self means anchor; > anchor means
+		 * companion.
+		 */
+		if (car->team_entry_id >= 0 && car->team_entry_id != i)
 			continue;
 		if (!first_entry)
 			fputs(",\n", fp);

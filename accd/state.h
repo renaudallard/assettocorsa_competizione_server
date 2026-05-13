@@ -605,6 +605,20 @@ struct CarEntry {
 	struct DriverInfo drivers[ACC_MAX_DRIVERS_PER_CAR];
 	uint8_t		swap_state[ACC_MAX_DRIVERS_PER_CAR]; /* 0=idle..5=done */
 	int		used;			/* slot occupied? */
+	/*
+	 * Team-entry anchor: when a forceEntryList entrylist entry has
+	 * multiple registered drivers, the loader expands it into N
+	 * companion slots (one per driver, sharing entry-level fields:
+	 * race_number, car_model, team_name, drivers[], driver_count,
+	 * ballast_kg, restrictor, ...).  team_entry_id is the slot index
+	 * of the first member (the anchor); every member of the group —
+	 * including the anchor — has team_entry_id == anchor_slot.  -1 =
+	 * standalone entry (the default path, single-driver scenarios,
+	 * and forceEntryList=0 entries).  All group-iteration code paths
+	 * gate on (team_entry_id >= 0) so standalone slots short-circuit
+	 * to the legacy single-car behaviour.
+	 */
+	int8_t		team_entry_id;
 
 	/* Runtime state updated every tick by ACP_CAR_UPDATE. */
 	struct CarRuntime rt;
