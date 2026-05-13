@@ -823,6 +823,53 @@ jobs:
           path: accd-*-linux-static-*.tar.gz
           if-no-files-found: error
 
+  build-macos:
+    name: Build macOS Universal Binary
+    runs-on: macos-latest
+    needs:
+      - detect-versions
+    # macOS does not support static linking against libSystem, so the
+    # binary necessarily links against /usr/lib/libSystem.dylib and
+    # /usr/lib/libiconv.dylib (both baseline macOS libraries that ship
+    # with every supported macOS version).  Pass -arch on both compile
+    # and link sides so clang emits a single universal Mach-O fat
+    # binary that runs on Intel and Apple Silicon Macs from one
+    # download.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.ref || github.ref }}
+
+      - name: Build universal binary
+        run: |
+          set -euo pipefail
+          cd accd
+          # Override ACCD_LDFLAGS to drop the Linux-only -Wl,-z,*
+          # security flags that Apple ld doesn't recognise.  macOS gives
+          # us NX stack and BIND_NOW by default; -pie is also default
+          # but we keep it explicit for parity with the Linux builds.
+          make \
+            CFLAGS="-arch x86_64 -arch arm64" \
+            ACCD_LDFLAGS="-L/usr/local/lib -pie -arch x86_64 -arch arm64"
+          file accd
+          lipo -info accd
+          ./accd -V
+          ver=$(cat ../VERSION | tr -d "[:space:]")
+          staging="accd-${ver}-macos-universal"
+          mkdir -p "${staging}/bin"
+          cp accd "${staging}/bin/"
+          cp ../LICENSE ../README.md "${staging}/"
+          tar czf "../${staging}.tar.gz" "${staging}"
+
+      - name: Upload macOS artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-universal
+          path: accd-*-macos-universal.tar.gz
+          if-no-files-found: error
+
   build-freebsd:
     name: Build FreeBSD package (${{ needs.detect-versions.outputs.freebsd_version }})
     runs-on: ubuntu-latest
@@ -876,6 +923,7 @@ jobs:
       - build-rpm-rocky
       - build-apk-alpine
       - build-static-linux
+      - build-macos
       - build-freebsd
     steps:
       - name: Download all artifacts
