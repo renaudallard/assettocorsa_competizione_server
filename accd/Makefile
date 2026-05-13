@@ -131,7 +131,7 @@ depend:
 
 # --- header deps begin ---
 main.o: main.c bans.h state.h io.h lobby.h msg.h ratings.h config.h \
- console.h dispatch.h bcast.h lan.h log.h net.h tick.h
+ console.h dispatch.h bcast.h lan.h log.h net.h sandbox.h tick.h
 bans.o: bans.c bans.h state.h io.h lobby.h msg.h log.h
 bcast.o: bcast.c bcast.h state.h io.h lobby.h msg.h log.h
 chat.o: chat.c bans.h state.h io.h lobby.h msg.h bcast.h chat.h \

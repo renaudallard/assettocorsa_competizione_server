@@ -150,6 +150,7 @@ static const int seccomp_allow[] = {
 	SCMP_SYS(prctl), SCMP_SYS(arch_prctl),
 	SCMP_SYS(set_robust_list), SCMP_SYS(set_tid_address),
 	SCMP_SYS(futex), SCMP_SYS(getrandom),
+	SCMP_SYS(sched_yield), SCMP_SYS(sched_getaffinity),
 	SCMP_SYS(exit), SCMP_SYS(exit_group), SCMP_SYS(restart_syscall),
 
 	/* rpath */
@@ -238,18 +239,48 @@ sandbox_apply(const char *cfg_dir, const char *results_dir)
 #endif
 }
 
-#else /* not Linux */
+#elif defined(__OpenBSD__)
+
+#include <unistd.h>
+
+/*
+ * pledge(2) and unveil(2) are OpenBSD extensions declared in
+ * <unistd.h> only when _POSIX_C_SOURCE is not defined.  Forward-
+ * declare to keep strict-POSIX compiles clean.
+ */
+extern int pledge(const char *promises, const char *execpromises);
+extern int unveil(const char *path, const char *permissions);
+
+void
+sandbox_apply(const char *cfg_dir, const char *results_dir)
+{
+	/*
+	 * unveil(2) requires each path to exist when called, so
+	 * precreate results/.  unveil(NULL, NULL) seals the list and
+	 * pledge drops the implicit "unveil" promise OpenBSD grants
+	 * while the list is open.
+	 */
+	(void)mkdir(results_dir, 0755);
+
+	if (unveil(cfg_dir, "rwc") < 0)
+		log_warn("unveil %s: %s", cfg_dir, strerror(errno));
+	if (unveil(results_dir, "rwc") < 0)
+		log_warn("unveil %s: %s", results_dir, strerror(errno));
+	if (unveil(NULL, NULL) < 0)
+		log_warn("unveil lock: %s", strerror(errno));
+
+	if (pledge("stdio rpath wpath cpath inet", NULL) < 0)
+		log_warn("pledge: %s", strerror(errno));
+}
+
+#else /* macOS, FreeBSD without Capsicum wiring, etc. */
 
 void
 sandbox_apply(const char *cfg_dir, const char *results_dir)
 {
 	(void)cfg_dir;
 	(void)results_dir;
-	/*
-	 * OpenBSD still uses the inline pledge/unveil block in main.c
-	 * at this commit; Commit 3 moves that body here.  Other
-	 * platforms (macOS, FreeBSD) currently run unconfined.
-	 */
+	log_warn("sandbox: no platform support, running unconfined");
 }
 
 #endif
