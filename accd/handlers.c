@@ -294,8 +294,20 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		    lap_ms < race->best_lap_ms))
 			race->best_lap_ms = lap_ms;
 
-		/* Per-car lap history (drives 0x36 list 2 + 0x56 garage). */
-		{
+		/*
+		 * Per-car lap history (drives 0x36 list 2 + 0x56 garage).
+		 *
+		 * Invalid laps (cut / out-lap / latched out-of-track) are
+		 * skipped — kunos pcap (TP-then-admin-DQ scenario,
+		 * 2026-05-13) shows the std::vector at car ctor stays
+		 * INT32_MAX-sentinel-padded for invalid completions; our
+		 * earlier behaviour of writing lap_ms=0 into the ring slot
+		 * grew the 0x36 leaderboard payload by 4 B per recorded
+		 * invalid lap and produced visible byte-level divergence
+		 * against the exe.  lap_count above still ticks regardless
+		 * so the per-car lap counter is preserved.
+		 */
+		if (!invalid) {
 			uint32_t slot = race->lap_history_count
 			    % ACC_LAP_HISTORY;
 			int si;

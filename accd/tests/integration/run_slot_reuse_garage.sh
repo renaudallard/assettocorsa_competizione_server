@@ -125,14 +125,19 @@ lap_count = struct.unpack('<h', body[4:6])[0]
 print(f'last 0x56: sess_type={sess_type} car_id={car_id} '
       f'lap_count={lap_count}')
 
-# Bot2 itself crosses S/F right after its handshake and records a
-# fake \"lap 1\" before the load_setup tick.  So with the fix in
-# place the expected value is 1 (Bot2's own fake lap); without the
-# fix Bot2 inherits Bot1's two entries and lands at 3.
-if lap_count > 1:
+# With both v0.3.44 handshake-reset and v0.3.46 lap-history-on-invalid
+# gating in place, Bot2's lap_count in the 0x56 reply should be 0:
+# Bot1's formation-lap crossings are now skipped from lap_history (so
+# nothing valuable was there to leak in the first place), and Bot2's
+# own S/F crossing right after handshake is also invalid and so
+# doesn't appear either.  A non-zero value here means either the
+# slot-reuse reset broke or invalid laps started getting recorded
+# again.
+if lap_count != 0:
     print(f'FAIL: lap_count={lap_count} — Bot1 history leaked into '
-          f'Bot2 (race_archive / race state not reset on slot reuse)')
+          f'Bot2 (race_archive / race state not reset on slot reuse) '
+          f'or invalid laps started populating lap_history again')
     sys.exit(2)
 
-print('RESULT: PASS (fresh slot occupant sees only its own fake lap)')
+print('RESULT: PASS (fresh slot occupant has an empty lap_history)')
 "
