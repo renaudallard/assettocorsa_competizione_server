@@ -1,0 +1,18 @@
+{
+    "serverName": "AutoDQTest",
+    "password": "",
+    "adminPassword": "admin",
+    "spectatorPassword": "",
+    "trackMedalsRequirement": 0,
+    "safetyRatingRequirement": 0,
+    "racecraftRatingRequirement": 0,
+    "carGroup": "FreeForAll",
+    "maxCarSlots": 4,
+    "isRaceLocked": 0,
+    "shortFormationLap": 1,
+    "dumpLeaderboards": 0,
+    "isRaceCarSetByPassword": 0,
+    "ignorePrematureDisconnects": 0,
+    "allowAutoDQ": 1,
+    "configVersion": 1
+}
