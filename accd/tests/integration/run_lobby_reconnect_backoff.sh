@@ -1,13 +1,15 @@
 #!/bin/sh
 # Lobby reconnect-backoff regression.
 #
-# accd's lobby_disconnect transitions state -> LOBBY_BACKOFF; the
-# lobby_tick state machine then retries every LOBBY_RETRY_MS (10 s).
-# This test points accd at a TCP listener that accepts the connection
-# and immediately closes it, then counts accepts over a 25 s window
-# to confirm accd keeps trying (no stuck state) at ~10 s intervals.
+# accd's lobby_disconnect transitions state -> LOBBY_BACKOFF and the
+# lobby_tick state machine then retries.  Per kunos FUN_140048660
+# case 2, the interval is 10 s while consecutive_fails < 3 and 30 s
+# after, capped at LOBBY_BACKOFF_MAX_MS.  This test points accd at a
+# TCP listener that accepts the connection and immediately closes it,
+# then counts accepts over a 60 s window to confirm at least 4
+# retries with the first 2 gaps ~10 s and the 3rd ~30 s.
 #
-# Slow test (~30 s).  Skip via SKIP=1 in CI smoke runs.
+# Slow test (~65 s).  Skip via SKIP=1 in CI smoke runs.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
@@ -48,7 +50,7 @@ s.bind(("127.0.0.1", $FAKE_PORT))
 s.listen(8)
 s.settimeout(0.5)
 accepts = []
-end = time.time() + 25
+end = time.time() + 60
 print(f"  listener up on 127.0.0.1:{$FAKE_PORT}, accept-and-close mode", flush=True)
 while time.time() < end:
     try:
@@ -62,7 +64,7 @@ s.close()
 with open(RESULT, "w") as f:
     for t in accepts:
         f.write(f"{t}\\n")
-print(f"  total accepts in 25 s: {len(accepts)}", flush=True)
+print(f"  total accepts in 60 s: {len(accepts)}", flush=True)
 PY
 FAKE_PID=$!
 sleep 0.5
@@ -81,18 +83,19 @@ import sys
 RESULT = sys.argv[1]
 times = [float(l.strip()) for l in open(RESULT) if l.strip()]
 print(f"  accept timestamps: {len(times)}")
-if len(times) < 2:
-    print(f"FAIL: only {len(times)} accept(s) in 25 s; accd not retrying")
+if len(times) < 4:
+    print(f"FAIL: only {len(times)} accept(s) in 60 s; expected >= 4")
     sys.exit(1)
 gaps = [times[i + 1] - times[i] for i in range(len(times) - 1)]
 print(f"  gaps: " + ", ".join(f"{g:.1f}s" for g in gaps))
-# Accept anything in [8, 13] s — accd uses LOBBY_RETRY_MS=10000 plus
-# a poll-loop slack of ~1 s.
-bad = [g for g in gaps if not (8.0 <= g <= 13.0)]
-if bad:
-    print(f"FAIL: gap(s) outside [8, 13] s retry window: {bad}")
-    sys.exit(2)
-print(f"RESULT: PASS (accd retried {len(times)} times at ~10 s")
+# First two gaps should be ~10 s (fails 1->2 and 2->3), 3rd gap ~30 s
+# (fails 3+ -> LONG window).  Slack +/- 3 s for poll wake-up jitter.
+for i, g in enumerate(gaps[:3]):
+    expect = 10.0 if i < 2 else 30.0
+    if not (expect - 3.0 <= g <= expect + 3.0):
+        print(f"FAIL: gap {i+1} = {g:.1f}s, expected {expect:.0f} +/- 3s")
+        sys.exit(2)
+print(f"RESULT: PASS (accd retried {len(times)} times: 10/10/30 s growing backoff)")
 PY
 RC=$?
 rm -f "$RESULT"

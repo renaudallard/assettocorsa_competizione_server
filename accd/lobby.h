@@ -64,6 +64,7 @@ struct LobbyClient {
 	uint64_t	state_entered_ms;	/* monotonic ms */
 	uint64_t	last_keepalive_ms;
 	uint8_t		keepalive_ack_pending;	/* 0xf2 sent, awaiting 0xfd */
+	uint32_t	backoff_ms;		/* current BACKOFF dwell time */
 	uint32_t	session_id;		/* assigned by lobby (or 6) */
 	uint32_t	seq;			/* monotonically increasing */
 	int		consecutive_fails;

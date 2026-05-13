@@ -117,7 +117,14 @@ uint32_t arc4random_uniform(uint32_t);
 
 #define LOBBY_HOST_DEFAULT	"131.153.158.178"
 #define LOBBY_PORT_DEFAULT	909
-#define LOBBY_RETRY_MS		10000	/* matches Kunos 10s interval */
+/*
+ * Kunos backoff (FUN_140048660 case 2): 10 s while consecutive_fails
+ * < 3, 30 s after, plus a uniform random 0..7 s jitter.  accd mirrors
+ * the deterministic part; the random jitter is omitted for predictable
+ * test behaviour (kunos's lobby tolerates either).
+ */
+#define LOBBY_RETRY_MS		10000
+#define LOBBY_RETRY_LONG_MS	30000
 #define LOBBY_BACKOFF_MAX_MS	300000
 #define LOBBY_KEEPALIVE_MS	30000
 #define LOBBY_SESSION_UPDATE_MS	20000	/* push at least every 20 s */
@@ -874,8 +881,6 @@ lobby_send_keepalive(struct LobbyClient *l, const struct Server *s)
 static void
 lobby_disconnect(struct LobbyClient *l, const char *reason)
 {
-	uint32_t backoff;
-
 	log_info("lobby: disconnecting (%s)", reason);
 	if (l->fd >= 0) {
 		close(l->fd);
@@ -889,12 +894,10 @@ lobby_disconnect(struct LobbyClient *l, const char *reason)
 	if (l->state == LOBBY_PERMANENTLY_DISABLED)
 		return;	/* sticky terminal state */
 	l->consecutive_fails++;
-	backoff = LOBBY_RETRY_MS;
-	if (l->consecutive_fails > 3)
-		backoff *= (uint32_t)(1 << (l->consecutive_fails - 3));
-	if (backoff > LOBBY_BACKOFF_MAX_MS)
-		backoff = LOBBY_BACKOFF_MAX_MS;
-	(void)backoff;	/* state_entered_ms + LOBBY_RETRY_MS used in tick */
+	l->backoff_ms = l->consecutive_fails < 3
+	    ? LOBBY_RETRY_MS : LOBBY_RETRY_LONG_MS;
+	if (l->backoff_ms > LOBBY_BACKOFF_MAX_MS)
+		l->backoff_ms = LOBBY_BACKOFF_MAX_MS;
 	lobby_set_state(l, LOBBY_BACKOFF);
 }
 
@@ -1312,7 +1315,7 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 			lobby_set_state(l, LOBBY_BACKOFF);
 		break;
 	case LOBBY_BACKOFF:
-		if (now - l->state_entered_ms >= LOBBY_RETRY_MS)
+		if (now - l->state_entered_ms >= l->backoff_ms)
 			lobby_set_state(l, LOBBY_DISCONNECTED);
 		break;
 	case LOBBY_REGISTERED:
