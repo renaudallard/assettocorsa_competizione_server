@@ -293,8 +293,18 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		}
 		st->counter += value;
 		st->issued_ms = now_ms;
+		/*
+		 * Materialize with the CUMULATIVE counter as the entry's
+		 * laps_remaining so the 0x36 per-car tail b1 reads the
+		 * running total — kunos pcap (run_tp_accum.sh) shows the
+		 * tail progressing `0e 32 / 0e 64 / 0e 96` (50 / 100 /
+		 * 150) on three successive TP reports of value=50 each.
+		 * accd was passing the per-report value, which left b1
+		 * pinned at 50 forever and made the deep-compare cache
+		 * skip intermediate emits (same bytes after each report).
+		 */
 		penalty_materialize(s, car_id, EXE_TP, collision,
-		    value, reason);
+		    (int32_t)st->counter, reason);
 		if (st->counter >= 0x100) {
 			log_info("car %d total TP exceeded 256s -> DQ",
 			    car_id);
