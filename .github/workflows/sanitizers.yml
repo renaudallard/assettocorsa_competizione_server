@@ -1,0 +1,99 @@
+name: Sanitizers (ASAN/UBSAN/TSAN)
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  DEBIAN_FRONTEND: noninteractive
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  asan-ubsan:
+    name: AddressSanitizer + UndefinedBehaviourSanitizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang \
+            libbsd-dev tcpdump python3-scapy
+
+      - name: Build accd with ASAN + UBSAN
+        env:
+          CC: clang
+          CFLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined -O1 -g"
+        run: |
+          set -euo pipefail
+          cd accd
+          # Drop the production hardening LDFLAGS (-pie, RELRO) -- they
+          # collide with the sanitizer runtime on clang/glibc.  The
+          # sanitizers add their own hardening.
+          make clean
+          make CC=clang \
+            ACCD_CFLAGS="-std=c99 -Wall -Wextra -O1 -g -DACCD_VERSION_STR='\"sanitizer\"' -I/usr/local/include $CFLAGS" \
+            ACCD_LDFLAGS="-L/usr/local/lib $CFLAGS"
+          file accd
+          ./accd -V
+
+      - name: Build bot under ASAN + UBSAN
+        env:
+          CC: clang
+          CFLAGS: "-fsanitize=address,undefined -fno-omit-frame-pointer -O1 -g"
+        run: |
+          set -euo pipefail
+          cd tmp/bot
+          clang $CFLAGS -O2 -Wall -o bot bot.c -lm
+
+      - name: Run fast integration tests
+        env:
+          ASAN_OPTIONS: detect_leaks=1:check_initialization_order=1:strict_init_order=1:detect_stack_use_after_return=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          SKIP: 1
+        run: |
+          set -euo pipefail
+          cd accd/tests/integration
+          # Run only the fast tests; the slow ones (SKIP=1 gate) need
+          # a real-time bot + capture infra that's slow enough to time
+          # out under the sanitizer's instrumentation.
+          for t in \
+              run_lobby_blob.sh \
+              run_lobby_ping.sh \
+              run_lobby_f1_refresh.sh \
+              run_lobby_f3_cp_push.sh \
+              run_lobby_d7_fpr.sh \
+              run_lobby_ef_rejects.sh \
+              run_lobby_f4_target.sh \
+              run_lobby_f5_selector.sh \
+              run_admin_next.sh \
+              run_make_install.sh \
+              run_welcome_trailer_walk.sh \
+              run_makefile_deps_fresh.sh
+          do
+              if [ -x "$t" ]; then
+                  echo "==> $t"
+                  ./"$t"
+              else
+                  echo "skip $t (not executable)"
+              fi
+          done
+
+      - name: Show accd.log if a sanitizer fired
+        if: failure()
+        run: |
+          cd accd/tests/integration
+          tail -200 accd.log || true
