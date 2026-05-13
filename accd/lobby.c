@@ -222,6 +222,25 @@ lobby_open_socket(struct LobbyClient *l)
 	int fd;
 	struct sockaddr_in sa;
 	int flags, rc, on = 1;
+	const char *host;
+	int port;
+	const char *e;
+
+	/*
+	 * Test affordance: ACCD_LOBBY_HOST / ACCD_LOBBY_PORT override
+	 * the hardcoded kson endpoint.  Used by tests/integration/run_
+	 * lobby_* scripts that spin up a fake kson server on localhost.
+	 * Production callers should never set these.
+	 */
+	host = LOBBY_HOST_DEFAULT;
+	port = LOBBY_PORT_DEFAULT;
+	if ((e = getenv("ACCD_LOBBY_HOST")) != NULL && *e != '\0')
+		host = e;
+	if ((e = getenv("ACCD_LOBBY_PORT")) != NULL && *e != '\0') {
+		int p = atoi(e);
+		if (p > 0 && p < 65536)
+			port = p;
+	}
 
 	fd = socket(AF_INET, SOCK_STREAM, 0);
 	if (fd < 0) {
@@ -235,21 +254,20 @@ lobby_open_socket(struct LobbyClient *l)
 
 	memset(&sa, 0, sizeof(sa));
 	sa.sin_family = AF_INET;
-	sa.sin_port = htons(LOBBY_PORT_DEFAULT);
-	if (inet_pton(AF_INET, LOBBY_HOST_DEFAULT, &sa.sin_addr) != 1) {
-		log_warn("lobby: bad host %s", LOBBY_HOST_DEFAULT);
+	sa.sin_port = htons((uint16_t)port);
+	if (inet_pton(AF_INET, host, &sa.sin_addr) != 1) {
+		log_warn("lobby: bad host %s", host);
 		close(fd);
 		return -1;
 	}
 	rc = connect(fd, (struct sockaddr *)&sa, sizeof(sa));
 	if (rc < 0 && errno != EINPROGRESS) {
-		log_warn("lobby: connect %s:%d: %s", LOBBY_HOST_DEFAULT,
-		    LOBBY_PORT_DEFAULT, strerror(errno));
+		log_warn("lobby: connect %s:%d: %s", host, port,
+		    strerror(errno));
 		close(fd);
 		return -1;
 	}
-	log_info("lobby: connecting to %s:%d (fd=%d)",
-	    LOBBY_HOST_DEFAULT, LOBBY_PORT_DEFAULT, fd);
+	log_info("lobby: connecting to %s:%d (fd=%d)", host, port, fd);
 	l->fd = fd;
 	return 0;
 }
