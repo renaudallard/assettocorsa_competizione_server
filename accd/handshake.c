@@ -2643,6 +2643,47 @@ reply:
 					if (s->nconns > 1)
 						(void)bcast_all(s, lb.data,
 						    lb.wpos, c->conn_id);
+					/*
+					 * Anchor the leaderboard cache to the
+					 * bytes we just emitted so the very
+					 * next tick's deep-compare in
+					 * broadcast_leaderboard_if_changed
+					 * doesn't fire a duplicate 0x36 a
+					 * few milliseconds later.  Pcap diff
+					 * vs kunos (TP-then-admin-DQ scenario)
+					 * caught the double-emit: kunos emits
+					 * one post-handshake 0x36, accd was
+					 * emitting two ~3 ms apart.
+					 */
+					if (lb.wpos
+					    > s->session.leaderboard_cache_cap) {
+						size_t cap =
+						    s->session.leaderboard_cache_cap;
+						uint8_t *nb;
+
+						cap = cap ? cap : 1024;
+						while (cap < lb.wpos)
+							cap *= 2;
+						nb = realloc(
+						    s->session.leaderboard_cache,
+						    cap);
+						if (nb != NULL) {
+							s->session.leaderboard_cache
+							    = nb;
+							s->session.leaderboard_cache_cap
+							    = cap;
+						}
+					}
+					if (s->session.leaderboard_cache
+					    != NULL
+					    && lb.wpos
+					    <= s->session.leaderboard_cache_cap) {
+						memcpy(
+						    s->session.leaderboard_cache,
+						    lb.data, lb.wpos);
+						s->session.leaderboard_cache_len
+						    = lb.wpos;
+					}
 				}
 				bb_free(&lb);
 			}
