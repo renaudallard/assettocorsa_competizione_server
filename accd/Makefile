@@ -79,83 +79,73 @@ ${PROG}: ${OBJS}
 # touching main.c alone is not enough because the dependency
 # system can't see the macro change.  The deploy script already
 # does clean+make.
-main.o: main.c bans.h config.h console.h dispatch.h io.h lan.h log.h msg.h net.h state.h tick.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c main.c
+#
+# Header dependencies below were generated with `cc -MM *.c` so a
+# touch on any transitively-included header forces every dependent
+# .o to rebuild.  After changing a #include in any .c or .h, run
+# `make depend` and replace the block between the sentinel comments
+# with the printed output.  The previous manual list was incomplete
+# (e.g. nothing listed lobby.h even though state.h includes it),
+# which let stale .o files survive a struct change in lobby.h and
+# crashed accd at run time with a corrupted layout.
 
-bans.o: bans.c bans.h log.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c bans.c
+.SUFFIXES: .c .o
+.c.o:
+	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c $<
 
-bcast.o: bcast.c bcast.h io.h log.h msg.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c bcast.c
+# Print regenerated header-dep rules to stdout.  Copy the output over
+# the block between '# --- header deps begin ---' and '# --- header
+# deps end ---' below.  Print-only (not in-place edit) to keep the
+# recipe portable across BSD/GNU make and to avoid awk/sed having to
+# match its own sentinel markers in this same file.
+depend:
+	@for c in ${OBJS:.o=.c}; do \
+	    ${CC} -MM ${ACCD_CFLAGS} ${CFLAGS} $$c || exit 1; \
+	done
 
-chat.o: chat.c chat.h bans.h bcast.h handshake.h io.h log.h msg.h penalty.h prim.h session.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c chat.c
-
-console.o: console.c console.h chat.h log.h penalty.h session.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c console.c
-
-config.o: config.c config.h entrylist.h json.h log.h state.h weather.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c config.c
-
-dispatch.o: dispatch.c dispatch.h handlers.h handshake.h io.h log.h msg.h prim.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c dispatch.c
-
-entrylist.o: entrylist.c entrylist.h json.h log.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c entrylist.c
-
-handlers.o: handlers.c handlers.h bcast.h chat.h io.h log.h msg.h penalty.h prim.h session.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c handlers.c
-
-handshake.o: handshake.c handshake.h bans.h bcast.h io.h log.h msg.h prim.h state.h weather.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c handshake.c
-
+# --- header deps begin ---
+main.o: main.c bans.h state.h io.h lobby.h msg.h ratings.h config.h \
+ console.h dispatch.h bcast.h lan.h log.h net.h tick.h
+bans.o: bans.c bans.h state.h io.h lobby.h msg.h log.h
+bcast.o: bcast.c bcast.h state.h io.h lobby.h msg.h log.h
+chat.o: chat.c bans.h state.h io.h lobby.h msg.h bcast.h chat.h \
+ entrylist.h handshake.h log.h penalty.h prim.h session.h
+config.o: config.c config.h state.h io.h lobby.h msg.h entrylist.h \
+ json.h log.h weather.h
+console.o: console.c chat.h state.h io.h lobby.h msg.h console.h log.h \
+ penalty.h session.h
+dispatch.o: dispatch.c bcast.h state.h io.h lobby.h msg.h dispatch.h \
+ handlers.h handshake.h log.h prim.h tick.h
+entrylist.o: entrylist.c entrylist.h state.h io.h lobby.h msg.h json.h \
+ log.h
+handlers.o: handlers.c bcast.h state.h io.h lobby.h msg.h chat.h \
+ handlers.h handshake.h log.h penalty.h prim.h ratings.h session.h tick.h
+handshake.o: handshake.c bcast.h state.h io.h lobby.h msg.h ratings.h \
+ bans.h entrylist.h handshake.h log.h penalty.h prim.h session.h \
+ weather.h
 io.o: io.c io.h log.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c io.c
-
 json.o: json.c json.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c json.c
-
-lan.o: lan.c lan.h io.h log.h msg.h prim.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c lan.c
-
-lobby.o: lobby.c lobby.h io.h log.h prim.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c lobby.c
-
+lan.o: lan.c io.h lan.h state.h lobby.h msg.h log.h prim.h
+lobby.o: lobby.c bcast.h state.h io.h lobby.h msg.h chat.h log.h \
+ penalty.h prim.h session.h
 log.o: log.c log.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c log.c
-
-monitor.o: monitor.c monitor.h bcast.h io.h log.h msg.h pb.h prim.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c monitor.c
-
-net.o: net.c net.h log.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c net.c
-
-pb.o: pb.c pb.h io.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c pb.c
-
-penalty.o: penalty.c penalty.h log.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c penalty.c
-
+monitor.o: monitor.c bcast.h state.h io.h lobby.h msg.h log.h monitor.h \
+ pb.h prim.h
+net.o: net.c log.h net.h
+pb.o: pb.c io.h pb.h
+penalty.o: penalty.c log.h penalty.h state.h io.h lobby.h msg.h session.h
 prim.o: prim.c prim.h io.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c prim.c
-
-ratings.o: ratings.c ratings.h json.h log.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c ratings.c
-
-results.o: results.c results.h log.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c results.c
-
-session.o: session.c session.h log.h msg.h results.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c session.c
-
-state.o: state.c state.h bcast.h io.h log.h msg.h prim.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c state.c
-
-tick.o: tick.c tick.h bcast.h io.h log.h msg.h prim.h results.h session.h state.h weather.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c tick.c
-
-weather.o: weather.c weather.h io.h log.h msg.h prim.h state.h
-	${CC} ${ACCD_CFLAGS} ${CFLAGS} -c weather.c
+ratings.o: ratings.c json.h log.h ratings.h state.h io.h lobby.h msg.h
+results.o: results.c io.h log.h penalty.h state.h lobby.h msg.h results.h
+session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \
+ handshake.h log.h penalty.h prim.h results.h session.h
+state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h log.h \
+ prim.h session.h tick.h
+tick.o: tick.c bcast.h state.h io.h lobby.h msg.h chat.h ratings.h \
+ handshake.h log.h penalty.h prim.h entrylist.h results.h session.h \
+ tick.h weather.h
+weather.o: weather.c io.h log.h msg.h prim.h state.h lobby.h weather.h
+# --- header deps end ---
 
 probe: probe.c
 	${CC} ${ACCD_CFLAGS} ${CFLAGS} ${ACCD_LDFLAGS} ${LDFLAGS} -o probe probe.c
@@ -189,4 +179,4 @@ uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/${PROG}
 	rm -f ${DESTDIR}${MANDIR}/man1/accd.1
 
-.PHONY: all clean install uninstall probe test
+.PHONY: all clean depend install uninstall probe test
