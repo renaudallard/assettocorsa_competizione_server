@@ -572,11 +572,22 @@ h_chat(struct Server *s, struct Conn *c,
 	handled = chat_process(s, c, text);
 	if (handled == 0) {
 		bb_init(&out);
+		/*
+		 * chat_type=0 is the regular driver-to-driver lane that
+		 * the AC2 client renders in the chat window with the
+		 * driver name.  Previously hardcoded to 4 (server / SRV
+		 * notification overlay), which made every player message
+		 * surface as a system banner instead of in the chat list
+		 * -- operator-reported on celeborn 2026-05-14.  Server
+		 * announcements (chat_broadcast, /admin elevation reply,
+		 * /resetWeekend) keep their 4 / 5 codes; only the player-
+		 * relay path moves to 0.
+		 */
 		if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 		    wr_str_a(&out, sender) == 0 &&
 		    wr_str_a(&out, text) == 0 &&
 		    wr_i32(&out, 0) == 0 &&
-		    wr_u8(&out, 4) == 0)
+		    wr_u8(&out, 0) == 0)
 			(void)bcast_all(s, out.data, out.wpos,
 			    c->conn_id);
 		bb_free(&out);
