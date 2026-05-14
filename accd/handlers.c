@@ -1191,8 +1191,21 @@ h_lap_tick(struct Server *s, struct Conn *c,
 	 * redundancy guard for the case where the client serves a
 	 * penalty without going through one of those paths.
 	 */
-	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS)
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
 		penalty_serve_front(s, c->car_id);
+		/*
+		 * The 0x36 per-car tail (car+0x200/+0x201) reflects the
+		 * head unserved penalty's wire_code + value; marking an
+		 * entry served changes the tail bytes from (e.g.) 01 03
+		 * back to 00 00, but the leaderboard cache only re-emits
+		 * on a pending-flag drain.  Request an emit here so the
+		 * next tick picks up the cleared tail; otherwise the
+		 * stale (01 03) bytes sit in the cache for the rest of
+		 * the session and run_penalty_serve_42 sees accd diverge
+		 * from kunos.
+		 */
+		leaderboard_request_emit(s);
+	}
 	return 0;
 }
 
