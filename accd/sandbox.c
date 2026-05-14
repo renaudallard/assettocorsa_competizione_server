@@ -45,7 +45,10 @@ landlock_path_beneath_add(int rfd, int path_fd, uint64_t mask)
 	    LANDLOCK_RULE_PATH_BENEATH, &a, 0);
 }
 
-static void
+/* 0 on success (ruleset loaded), -1 if Landlock is unavailable or
+ * setup failed.  Failure paths still log_warn with the specific
+ * reason; the return value is for the sandbox_apply summary line. */
+static int
 apply_landlock(const char *cfg_dir, const char *results_dir)
 {
 	struct landlock_ruleset_attr ra;
@@ -60,7 +63,7 @@ apply_landlock(const char *cfg_dir, const char *results_dir)
 			    "filesystem sandbox disabled");
 		else
 			log_warn("landlock probe: %s", strerror(errno));
-		return;
+		return -1;
 	}
 
 	mask = LANDLOCK_ACCESS_FS_READ_FILE
@@ -80,7 +83,7 @@ apply_landlock(const char *cfg_dir, const char *results_dir)
 	rfd = (int)syscall(__NR_landlock_create_ruleset, &ra, sizeof(ra), 0);
 	if (rfd < 0) {
 		log_warn("landlock_create_ruleset: %s", strerror(errno));
-		return;
+		return -1;
 	}
 
 	fd = open(cfg_dir, O_PATH | O_CLOEXEC);
@@ -107,11 +110,15 @@ apply_landlock(const char *cfg_dir, const char *results_dir)
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
 		log_warn("PR_SET_NO_NEW_PRIVS: %s", strerror(errno));
 		close(rfd);
-		return;
+		return -1;
 	}
-	if (syscall(__NR_landlock_restrict_self, rfd, 0) < 0)
+	if (syscall(__NR_landlock_restrict_self, rfd, 0) < 0) {
 		log_warn("landlock_restrict_self: %s", strerror(errno));
+		close(rfd);
+		return -1;
+	}
 	close(rfd);
+	return 0;
 }
 #endif /* ACCD_HAVE_LANDLOCK */
 
@@ -179,7 +186,9 @@ static const int seccomp_allow[] = {
 	SCMP_SYS(shutdown),
 };
 
-static void
+/* 0 on success (filter installed), -1 otherwise.  See apply_landlock
+ * for the failure-path log_warn semantics. */
+static int
 apply_seccomp(void)
 {
 	scmp_filter_ctx ctx;
@@ -189,7 +198,7 @@ apply_seccomp(void)
 	ctx = seccomp_init(ACCD_SECCOMP_KILL);
 	if (!ctx) {
 		log_warn("seccomp_init: failed, syscall sandbox disabled");
-		return;
+		return -1;
 	}
 
 	for (i = 0; i < sizeof(seccomp_allow) / sizeof(seccomp_allow[0]); i++) {
@@ -212,19 +221,26 @@ apply_seccomp(void)
 		    strerror(-rc));
 
 	rc = seccomp_load(ctx);
-	if (rc < 0)
+	if (rc < 0) {
 		log_warn("seccomp_load: %s", strerror(-rc));
+		seccomp_release(ctx);
+		return -1;
+	}
 	seccomp_release(ctx);
+	return 0;
 }
 #endif /* ACCD_HAVE_SECCOMP */
 
 void
 sandbox_apply(const char *cfg_dir, const char *results_dir)
 {
+	int landlock_ok = 0;
+	int seccomp_ok = 0;
+
 	(void)mkdir(results_dir, 0755);
 
 #ifdef ACCD_HAVE_LANDLOCK
-	apply_landlock(cfg_dir, results_dir);
+	landlock_ok = (apply_landlock(cfg_dir, results_dir) == 0);
 #else
 	(void)cfg_dir;
 	log_warn("sandbox: landlock unavailable at build time");
@@ -233,10 +249,14 @@ sandbox_apply(const char *cfg_dir, const char *results_dir)
 #if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
 	log_warn("sandbox: seccomp disabled under sanitizer build");
 #elif defined(ACCD_HAVE_SECCOMP)
-	apply_seccomp();
+	seccomp_ok = (apply_seccomp() == 0);
 #else
 	log_warn("sandbox: libseccomp unavailable at build time");
 #endif
+
+	log_info("sandbox: linux landlock=%s seccomp=%s",
+	    landlock_ok ? "on" : "off",
+	    seccomp_ok ? "on" : "off");
 }
 
 #elif defined(__OpenBSD__)
@@ -271,6 +291,8 @@ sandbox_apply(const char *cfg_dir, const char *results_dir)
 
 	if (pledge("stdio rpath wpath cpath inet", NULL) < 0)
 		log_warn("pledge: %s", strerror(errno));
+	else
+		log_info("sandbox: openbsd pledge+unveil applied");
 }
 
 #else /* macOS, FreeBSD without Capsicum wiring, etc. */
