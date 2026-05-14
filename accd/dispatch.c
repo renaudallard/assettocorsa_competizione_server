@@ -353,6 +353,19 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		pc = server_find_conn(s, pong_conn);
 		if (pc == NULL)
 			return;
+		/*
+		 * SMPR observers don't speak the sim protocol: the server
+		 * never sends them a 0x14 keepalive (broadcast_keepalive
+		 * filters is_smpr), so a 0x16 arriving for an SMPR slot is
+		 * forged.  Ignoring it keeps an injected pong from (a)
+		 * writing a sim 0x28 SRV_LARGE_STATE_RESPONSE into the
+		 * observer's TCP stream via the first-pong path below and
+		 * (b) polluting pc->avg_rtt_ms, which compute_server_pings
+		 * folds into the server-wide ping average broadcast to
+		 * real drivers in every 0x14.
+		 */
+		if (pc->is_smpr)
+			return;
 
 		now_ms = (uint32_t)mono_ms();
 		rtt = now_ms - pong_srv_ts;
