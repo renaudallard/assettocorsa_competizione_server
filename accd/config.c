@@ -339,10 +339,17 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 		/*
 		 * Kunos clamps maxCarSlots based on rating requirements
-		 * (10 without any, +3 per trackMedal, +up to 17 from SA
-		 * 70).  We replicate the lower bound only — operators
-		 * setting higher values without rating reqs would have
-		 * the lobby silently re-clamp them anyway.
+		 * per FUN_1400214b0:55-66:
+		 *
+		 *   slots = min(30, 10 + min(3, max(0, TM)) +
+		 *                       max(0, SA) * 0.25)
+		 *
+		 * i.e. base 10, +1 per track medal (capped at +3), and
+		 * +0.25 per SA point.  Reaching 30 needs TM>=3 AND
+		 * SA>=68 (kunos's own log line says "3 TM + 70 SA").
+		 * Without rating reqs the cap is 10; we replicate that
+		 * lower bound so the locally advertised count matches
+		 * the lobby's clamp.
 		 */
 		s->track_medals_required = (uint8_t)json_obj_get_int(
 		    settings, "trackMedalsRequirement", 0);
