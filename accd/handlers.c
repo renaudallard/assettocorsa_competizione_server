@@ -1156,12 +1156,16 @@ h_report_penalty(struct Server *s, struct Conn *c,
 			 * on session type — see write_leaderboard_section.
 			 *
 			 * Ring eviction (penalty_materialize) may have
-			 * shifted slots back so pre can be >= count.  Clamp
-			 * to the new range; for our typical 8-slot queue
-			 * this stays correct.
+			 * shifted slots back so pre can be >= count.  When
+			 * the queue was full pre-enqueue, the shift-then-
+			 * push leaves pre == count (8 == 8 on the default
+			 * ACC_MAX_PENALTIES = 8); the strict `pre > count`
+			 * clamp missed that case and the freshly-enqueued
+			 * slot at [count-1] was left pending=0 / admin=0.
+			 * Use >= so eviction is handled.
 			 */
-			if (pre > pq->count)
-				pre = pq->count - 1;
+			if (pre >= pq->count)
+				pre = pq->count > 0 ? pq->count - 1 : 0;
 			if (pre < 0)
 				pre = 0;
 			for (pi = pre; pi < pq->count; pi++)

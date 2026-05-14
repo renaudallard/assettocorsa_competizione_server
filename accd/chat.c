@@ -852,8 +852,10 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				 * DQ in the per-car prefix.  See
 				 * chat_do_penalty for the same pattern.
 				 */
-				if (pre > pq->count)
-					pre = pq->count - 1;
+				/* See handlers.c h_report_penalty -- same
+				 * `pre == count` post-eviction case. */
+				if (pre >= pq->count)
+					pre = pq->count > 0 ? pq->count - 1 : 0;
 				if (pre < 0)
 					pre = 0;
 				for (pi = pre; pi < pq->count; pi++)
