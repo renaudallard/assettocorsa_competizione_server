@@ -63,7 +63,16 @@ jobs:
                   for line in data.splitlines() + [""]:
                       if not line.strip():
                           if block.get("Supported") == "1" and block.get("Lts", "0") == "0" and "Version" in block:
-                              versions.append(block["Version"])
+                              # The Version field can carry a trailing
+                              # suffix ("26.04 LTS") even when Lts=0
+                              # during the transition window between
+                              # releases.  Strip everything after the
+                              # leading "NN.NN" so the value can be used
+                              # verbatim as a Docker tag.
+                              ver = block["Version"].split()[0]
+                              m = re.match(r"(\d+\.\d+)", ver)
+                              if m:
+                                  versions.append(m.group(1))
                           block = {}
                           continue
                       if ":" in line:
