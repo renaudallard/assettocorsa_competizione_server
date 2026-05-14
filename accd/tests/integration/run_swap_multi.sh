@@ -1,25 +1,21 @@
 #!/bin/sh
-# Multi-driver entrylist regression -- documents known accd/kunos
-# divergence in team-entry semantics.
+# Multi-driver entrylist regression for the team_entry_id model
+# (Tier 1.B from v0.3.49, memory:reference_team_entry_id_model).
 #
 # Entrylist has one entry with two drivers + forceEntryList=1 +
 # overrideDriverInfo=1 (required by kunos for teams).  Bot1 connects
 # as drivers[0], bot2 (different steam) as drivers[1].
 #
-# Kunos behaviour: each driver gets their OWN carId, sharing the
-# entrys race_number.  Bot2 ends up on a second car, broadcasts go
-# to both conns.  Kunos emits 10+ 0x47 frames on every conn lifecycle
-# event.
+# accd expands the multi-driver entry into N companion CarEntry
+# slots linked by int8_t team_entry_id at load time (entrylist.c).
+# Bot1 takes the first slot, bot2 takes the second; broadcasts
+# (0x47/0x48/0x4a/0x58) fan out across the group by walking
+# s->cars[*] for matching team_entry_id.  Confirmed in 0.3.49
+# (run_swap_multi 0x47 frame count 4 -> 12, matches kunos).
 #
-# accd behaviour: the entry only ever allocates ONE car (slot reserved
-# for the first driver to connect).  Bot2 hits s->cars[slot].used==1
-# and gets REJECT_FULL.  accd only ever has bot1 connected, so the
-# 0x47 broadcast only fires when bot1 sends its --swap-state.
-#
-# This script captures the divergence: counts of 0x47 frames + the
-# byte shape of the last broadcast.  Fixing it properly would mean
-# adopting kunoss "two cars per team entry" model (a sizeable refactor
-# of accds 1:1 conn->car invariant).
+# This script captures the 0x47 frame count + the byte shape of
+# the last broadcast.  Both sides should be byte-identical once
+# the wine VM is responsive enough to complete the test.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
