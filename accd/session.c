@@ -936,6 +936,13 @@ enter_phase(struct Server *s, uint8_t new_phase)
 	 * handshake.  This answers "who's on pole" from server output
 	 * without needing the client UI, and any logparser (accweb's
 	 * handleGridPosition is one) keeps its grid view in sync.
+	 *
+	 * **accd-only / not in kunos** — added by user request 2026-05-14
+	 * (commit f821f80).  Kunos's accServer.exe never emits a
+	 * `Race grid:` header; operators of stock kunos have to read
+	 * the welcome trailer's spawnDef pcap to derive grid order.
+	 * Don't delete this on a "match kunos byte-for-byte" cleanup;
+	 * it's a deliberate UX addition, not a bug.
 	 */
 	if (new_phase == PHASE_SESSION &&
 	    s->session.session_index < s->session_count &&
