@@ -30,6 +30,7 @@ OBJS =		main.o \
 		results.o \
 		sandbox.o \
 		session.o \
+		smpr.o \
 		state.o \
 		tick.o \
 		weather.o
@@ -167,6 +168,8 @@ results.o: results.c io.h log.h penalty.h state.h lobby.h msg.h results.h
 sandbox.o: sandbox.c sandbox.h log.h
 session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \
  handshake.h log.h penalty.h prim.h results.h session.h tick.h
+smpr.o: smpr.c bcast.h state.h io.h lobby.h msg.h log.h monitor.h pb.h \
+ prim.h smpr.h
 state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h handlers.h \
  log.h prim.h session.h tick.h
 tick.o: tick.c bcast.h state.h io.h lobby.h msg.h chat.h ratings.h \

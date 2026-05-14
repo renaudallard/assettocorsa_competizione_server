@@ -704,6 +704,18 @@ struct Conn {
 						 * at ~18 Hz so the pivot is never
 						 * more than ~55 ms stale). */
 	uint32_t	last_udp_server_ms;
+	/*
+	 * SMPR (ServerMonitor) channel state.  is_smpr is set when the
+	 * conn delivered a ServerMonitorConnectionRequest as its first
+	 * frame; the conn never goes through the gameplay handshake and
+	 * never claims a car slot.  The remaining fields capture the
+	 * client's cadence + leaderboard preferences from that hello.
+	 */
+	uint8_t		is_smpr;
+	uint8_t		smpr_self_contained;	/* sendSelfcontainingLeaderboards */
+	uint8_t		smpr_extended;		/* sendExtendedLeaderboards */
+	uint32_t	smpr_rt_interval_ms;	/* clamped REALTIME cadence */
+	uint32_t	smpr_rt_last_ms;	/* mono_ms of last 0x06 push */
 };
 
 /*
