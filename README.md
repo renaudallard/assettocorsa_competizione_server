@@ -133,17 +133,26 @@
   below; high-frequency cockpit telemetry (throttle/brake/steering
   traces, tyre temps, suspension travel) is recorded client-side
   only and never reaches the server.
-- **ServerMonitor protocol (SMPR)** — full kunos-compatible
-  protobuf side-channel.  Sharing the gameplay `tcpPort`, accd
-  demultiplexes incoming connections at the first frame
-  (sim handshake `0x09` vs SMPR protobuf tag `0x0a`) and streams
-  the seven push message types (`0x01` REGISTRATION_RESULT,
+- **ServerMonitor (SMPR) protobuf side-channel** — accd's
+  gameplay `tcpPort` accepts a second protocol distinguished by
+  the first body byte (sim handshake `0x09` routes to the regular
+  handshake handler; a `ServerMonitorConnectionRequest` protobuf
+  starting with the field-1 tag `0x0a` routes to the SMPR
+  handler).  The seven push message types from the kunos
+  `acc_server_protocol.proto v1` schema (`0x01` REGISTRATION_RESULT,
   `0x02` SERVER_CONFIGURATION, `0x03` SESSION_STATE, `0x04`
   CAR_ENTRY, `0x05` CONNECTION_ENTRY, `0x06` REALTIME_UPDATE,
-  `0x07` LEADERBOARD_UPDATE) to attached monitors.  Per-client
-  `realtimeCarUpdateInterval` is honored, clamped [50, 10000] ms.
-  Third-party tools (accweb, accservermanager, emperorservers)
-  connect over the same port without a proxy.
+  `0x07` LEADERBOARD_UPDATE) stream out to each attached client
+  with per-client `realtimeCarUpdateInterval` (clamped [50,
+  10000] ms).
+  Note: accd's demux differs from the kunos exe's (which sets a
+  per-connection flag inside the sim handshake handler via an
+  unconfirmed string match — see §12B.1 of `NOTEBOOK_B.md`).
+  No public hosting tool currently speaks SMPR — accweb and
+  accservermanager both parse the server's stdout log instead,
+  emperorservers is closed-source — so accd's SMPR side-channel
+  is exposed primarily for purpose-built monitoring clients (e.g.
+  the integration test at `tests/integration/run_smpr.sh`).
 
 ### Admin & moderation
 
@@ -434,11 +443,12 @@ Stop with `Ctrl-C`, `quit` at the console, or `kill -TERM <pid>`.
 Ports 9232 and 9231 are configurable in `configuration.json`; UDP
 8999 is fixed by the ACC protocol.  All three must be open.
 
-External monitoring tools (accweb, accservermanager, emperorservers,
-…) connect to the game TCP port and send a
-`ServerMonitorConnectionRequest` protobuf as their first frame —
-accd distinguishes them from sim clients automatically.  Firewall
-the TCP port appropriately if you do not want public monitoring.
+Purpose-built SMPR monitoring clients (see "ServerMonitor (SMPR)
+protobuf side-channel" above) connect to the game TCP port and
+send a `ServerMonitorConnectionRequest` protobuf as their first
+frame — accd distinguishes them from sim clients automatically.
+Firewall the TCP port appropriately if you do not want public
+monitoring.
 
 ### Connecting from the ACC client
 
