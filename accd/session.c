@@ -1266,7 +1266,7 @@ broadcast_session_mgr_state_all(struct Server *s)
 		struct Conn *c = s->conns[i];
 		uint32_t client_ts_est;
 
-		if (c == NULL || c->state != CONN_AUTH)
+		if (c == NULL || c->state != CONN_AUTH || c->is_smpr)
 			continue;
 		if (c->last_udp_server_ms != 0)
 			client_ts_est = c->last_udp_client_ts +
