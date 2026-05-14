@@ -526,7 +526,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		log_info("0x5e latency report: %u -> %u = %u ms (chat=%u)",
 		    source_conn, target_conn,
 		    (unsigned)latency_raw, (unsigned)enable_chat);
-		if (enable_chat && src != NULL && dst != NULL) {
+		if (enable_chat && src != NULL && dst != NULL &&
+		    !dst->is_smpr) {
 			char body_txt[96];
 			const char *from = "?";
 			struct ByteBuf out;
