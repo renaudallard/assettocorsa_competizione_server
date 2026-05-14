@@ -2520,6 +2520,20 @@ post_slot_assignment:
 			if (team != NULL)
 				snprintf(car->team_name,
 				    sizeof(car->team_name), "%s", team);
+		} else if (car->forced_car_model == 0xff) {
+			/*
+			 * forceEntryList=1 + forcedCarModel=-1 means the
+			 * operator lets each driver pick their own car
+			 * within the entry slot.  Pick up the wire model
+			 * so the leaderboard reports the driver's actual
+			 * selection instead of the CarEntry default 0
+			 * (Porsche 991 GT3 R).  Done for both fresh joins
+			 * AND zombie/reconnect slot reclaims because kunos
+			 * logs "carModel %d" on both paths (FUN_140025690
+			 * "Creating new car connection" / "Recognized
+			 * reconnect") -- the wire byte is authoritative.
+			 */
+			car->car_model = cmodel;
 		}
 		/*
 		 * bop.json (handbook §VI.3) adds (track, carModel)-keyed
