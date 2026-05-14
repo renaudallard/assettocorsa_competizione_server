@@ -9,6 +9,16 @@ BOT=/home/r/code/assettocorsa/tools/bot/bot
 cd "$HERE"
 mkdir -p log
 
+# Kill any stale accd / bot left over from a previous crashed or
+# interrupted dev session before we touch ports.  Without this a
+# zombie bot still holding a car slot (typically slot 0 under a
+# different display name) makes the fresh bot here arrive as
+# "Recognized reconnect (zombie slot 0)", which loops handshake +
+# disconnect and breaks any wire-byte comparison downstream.
+pkill -KILL -f 'accd -c '       >/dev/null 2>&1 || true
+pkill -KILL -f 'tools/bot/bot ' >/dev/null 2>&1 || true
+sleep 1
+
 rm -f cfg/current/*.json log/*.log accd.pcap accd.log bot*.log 2>/dev/null || true
 
 PCAP_TMP=/tmp/penalty_diff_accd.pcap
