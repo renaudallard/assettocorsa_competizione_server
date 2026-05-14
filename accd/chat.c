@@ -449,7 +449,7 @@ chat_weekend_reset_broadcast(struct Server *s)
 		struct Conn *cn = s->conns[j];
 		struct ByteBuf bb;
 
-		if (cn == NULL || cn->state != CONN_AUTH)
+		if (cn == NULL || cn->state != CONN_AUTH || cn->is_smpr)
 			continue;
 
 		bb_init(&bb);
