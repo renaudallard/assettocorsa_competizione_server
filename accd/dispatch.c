@@ -482,6 +482,15 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		if (len >= 3)
 			src_conn = (uint16_t)(buf[1] | (buf[2] << 8));
 		c = server_find_conn(s, src_conn);
+		/*
+		 * Same IP-bind as 0x13: refuse a peer update if the
+		 * UDP source IP differs from the conn's accepted IP.
+		 * Stops a forged 0x1e from hijacking the per-peer
+		 * sendto destination.  Allow port changes for NAT.
+		 */
+		if (c != NULL &&
+		    c->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+			return;
 		if (c != NULL)
 			c->peer = *peer;
 		if (c != NULL && c->hellbanned) {
