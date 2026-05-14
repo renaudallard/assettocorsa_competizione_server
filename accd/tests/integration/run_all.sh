@@ -21,7 +21,7 @@ cd "$HERE"
 
 TIMEOUT=${ACCD_TEST_TIMEOUT:-300}
 
-skip_re='^run_paired\.sh$|^run_test_v2\.sh$|^kunos_run_v2\.sh$'
+skip_re='^run_all\.sh$|^run_paired\.sh$|^run_test_v2\.sh$|^kunos_run_v2\.sh$'
 
 # Tests that depend on the wine kunos host.  Their failure when the
 # host is unreachable shouldn't count against the suite.
