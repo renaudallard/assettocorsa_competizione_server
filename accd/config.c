@@ -379,7 +379,18 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 		s->randomize_track_when_empty = (uint8_t)json_obj_get_int(
 		    settings, "randomizeTrackWhenEmpty", 0);
-		if (s->max_car_slots > 10 &&
+		/*
+		 * Kunos's exe-side clamp (FUN_1400214b0:47-48) is gated
+		 * on the public-MP flag: private servers are never
+		 * clamped to 10, only public servers behind the lobby
+		 * are.  Mirror that gate here -- a private server with
+		 * registerToLobby=0 and maxCarSlots=30 used to be
+		 * silently reset to 10 because the local clamp ran
+		 * unconditionally.  Operators of Pi-4-class private
+		 * boxes hit this directly.
+		 */
+		if (s->register_to_lobby &&
+		    s->max_car_slots > 10 &&
 		    s->track_medals_required < 3 &&
 		    s->safety_rating_required < 70)
 			s->max_car_slots = 10;
