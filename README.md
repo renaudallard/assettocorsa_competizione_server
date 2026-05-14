@@ -150,9 +150,10 @@
   unconfirmed string match — see §12B.1 of `NOTEBOOK_B.md`).
   No public hosting tool currently speaks SMPR — accweb and
   accservermanager both parse the server's stdout log instead,
-  emperorservers is closed-source — so accd's SMPR side-channel
-  is exposed primarily for purpose-built monitoring clients (e.g.
-  the integration test at `tests/integration/run_smpr.sh`).
+  emperorservers is closed-source — so accd ships its own
+  drop-in client at `tools/smpr-inspect/` (stdlib-only Python,
+  text / JSON / raw output modes) and a Go-compatible
+  log-scraping bridge at `tools/accweb-bridge/`.
 
 ### Admin & moderation
 
@@ -447,8 +448,10 @@ Purpose-built SMPR monitoring clients (see "ServerMonitor (SMPR)
 protobuf side-channel" above) connect to the game TCP port and
 send a `ServerMonitorConnectionRequest` protobuf as their first
 frame — accd distinguishes them from sim clients automatically.
-Firewall the TCP port appropriately if you do not want public
-monitoring.
+The bundled `tools/smpr-inspect/smpr-inspect.py` is the reference
+implementation; point it at any accd-hosted server to stream live
+state in text or NDJSON form.  Firewall the TCP port appropriately
+if you do not want public monitoring.
 
 ### Connecting from the ACC client
 
@@ -506,6 +509,43 @@ replies go to stdout, server logs go to stderr — split with
 When stdin isn't a TTY (e.g. `./accd < /dev/null` or systemd) the
 console disables itself and the server runs headless.  All admin
 commands remain available via in-game chat after `/admin <password>`.
+
+### Reading live state with smpr-inspect
+
+`tools/smpr-inspect/smpr-inspect.py` is a drop-in CLI client that
+speaks accd's ServerMonitor protobuf side-channel.  Stdlib-only
+Python 3 — no `pip install` needed.
+
+```sh
+# Live tail (default text output, ~per-tick updates):
+tools/smpr-inspect/smpr-inspect.py 127.0.0.1:9232
+
+# NDJSON to a file, capture 60 s for offline analysis:
+tools/smpr-inspect/smpr-inspect.py acc.example.com:9232 \
+    -o json -t 60 > race.ndjson
+
+# Filter for leaderboard updates only:
+tools/smpr-inspect/smpr-inspect.py acc.example.com:9232 -o json \
+    | jq -c 'select(.type=="Leaderboard")'
+
+# Wire raw decoded fields into a custom dashboard / Slack bot /
+# Prometheus exporter -- one event per JSON line is the API.
+tools/smpr-inspect/smpr-inspect.py acc.example.com:9232 -o json \
+    | python3 my_dashboard.py
+```
+
+The inspector decodes all seven SMPR message types
+(`RegistrationResult`, `ServerConfiguration`, `SessionState`,
+`CarEntry`, `ConnectionEntry`, `RealtimeUpdate`, `Leaderboard`)
+matching the field numbers in `accd/monitor.h`.  See
+`tools/smpr-inspect/README.md` for the full CLI reference,
+compatibility caveats, and use-case recipes.
+
+Operators who already run [accweb](https://github.com/assetto-corsa-web/accweb)
+should look at `tools/accweb-bridge/` instead — that path wraps
+accd so accweb's stdout-scraping pipeline picks up the kunos-
+format log lines `log_kunos()` emits (see "Telemetry & relay"
+above).
 
 ### Background service
 
@@ -668,6 +708,16 @@ interoperability of an independently created program.
 │   │   └── integration/            60 shell-driven integration tests
 │   └── fuzz/
 │       └── fuzz_json.c             libFuzzer harness for json_parse
+├── tools/
+│   ├── accweb-bridge/       accServer.exe-shaped wrapper that lets
+│   │                        the upstream `accweb` web manager drive
+│   │                        accd unchanged (see README inside).
+│   ├── bot/                 Local sim-client simulator used by the
+│   │                        integration tests (race lines, pcap
+│   │                        diff against kunos).
+│   └── smpr-inspect/        Drop-in Python CLI client for accd's
+│                            SMPR protobuf side-channel.  Text or
+│                            NDJSON output; stdlib-only.
 ├── debian/                  Debian/Ubuntu packaging.
 ├── redhat/                  Fedora/Rocky RPM spec.
 └── .github/workflows/       CI: autorelease, release-packages
