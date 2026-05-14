@@ -1305,10 +1305,16 @@ session_advance(struct Server *s)
 		 *
 		 * Emit a trailing empty 0x3e (count=0) to clear the
 		 * client-side session-results widget before the wrap.
-		 * Kunos's race-end pcap shows this 2-byte frame ~15 s
-		 * after the main results (aftercare ts[5]->ts[6]); it
-		 * signals "previous-weekend results no longer valid"
-		 * so the widget collapses cleanly across the wrap.
+		 * This is **accd-only** at this site: the wine-VM kunos
+		 * capture is too flaky to confirm whether the real exe
+		 * emits the same 2 B frame during natural wrap, so the
+		 * run_race_end pcap diff treats this as a wine flake
+		 * (see memory:feedback_wine_cpu_starvation_ring_evict).
+		 * Either way the empty frame is a widget hint that makes
+		 * the AC2 results panel collapse cleanly across the
+		 * wrap; clients that don't see it just keep showing the
+		 * previous-weekend frame until the next session's real
+		 * results arrive.  Cost is 2 bytes per peer per wrap.
 		 */
 		for (ci = 0; ci < ACC_MAX_CARS; ci++) {
 			struct Conn *c = s->conns[ci];
