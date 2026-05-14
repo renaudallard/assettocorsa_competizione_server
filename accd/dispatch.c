@@ -378,6 +378,21 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		if (pc->is_smpr)
 			return;
+		/*
+		 * Same IP-bind as 0x13 / 0x1e / 0x5e / 0x22: refuse a
+		 * pong whose UDP source IP doesn't match the conn's
+		 * accepted IP.  Without this, an attacker can guess a
+		 * 16-bit conn_id and (a) poison pc->avg_rtt_ms (it
+		 * folds into the server-wide ping average that every
+		 * 0x14 broadcast carries), (b) drag the per-conn clock
+		 * offset which the 0x4f force=1 relay derives ts from,
+		 * and (c) trigger an extra first-pong 0x28 SRV_LARGE_
+		 * STATE_RESPONSE.  c->peer is set at TCP accept time
+		 * and re-anchored to the same IP on every 0x13 / 0x1e,
+		 * so a clean comparison.
+		 */
+		if (pc->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+			return;
 
 		now_ms = (uint32_t)mono_ms();
 		rtt = now_ms - pong_srv_ts;
