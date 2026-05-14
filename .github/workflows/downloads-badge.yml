@@ -1,0 +1,54 @@
+name: Downloads badge
+
+# Compute the true lifetime download total across every release and
+# write it into a tiny shields.io endpoint JSON.  The native
+# img.shields.io/github/downloads/<repo>/total badge only sums the
+# first API page (~30 releases), so once the repo has more than that
+# the badge drifts low.  Our repo has 100+ releases and the badge
+# under-reported ~80%.  This job paginates the API and writes the
+# real total; README points at the JSON via the shields endpoint
+# proxy.
+on:
+  release:
+    types: [published, unpublished, deleted]
+  schedule:
+    # Daily refresh in case downloads happen between releases.
+    - cron: '0 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compute total and write JSON
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          total=$(gh api --paginate \
+              /repos/${{ github.repository }}/releases \
+              --jq '.[].assets[].download_count' \
+              | awk '{s+=$1} END {print s+0}')
+          echo "total=$total"
+          mkdir -p .github/badges
+          printf '{"schemaVersion":1,"label":"downloads","message":"%s","color":"green"}\n' \
+              "$total" > .github/badges/downloads.json
+          cat .github/badges/downloads.json
+
+      - name: Commit if changed
+        run: |
+          set -eu
+          git config user.name  "downloads-badge"
+          git config user.email "downloads-badge@noreply.github.com"
+          git add .github/badges/downloads.json
+          if git diff --cached --quiet; then
+              echo "no change"
+              exit 0
+          fi
+          git commit -m "ci: refresh downloads badge [skip ci]"
+          git push
