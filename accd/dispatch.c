@@ -363,8 +363,32 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			pc->avg_rtt_ms = rtt;
 			log_info("pong: first sample conn=%u rtt=%u ms",
 			    (unsigned)pong_conn, (unsigned)rtt);
-		} else
+		} else {
+			/*
+			 * Spike clamp: cap a single bad sample at 3x the
+			 * running average so the EMA can't be dragged by
+			 * an outlier (a real network glitch is fine; a
+			 * 5-second hiccup shouldn't permanently inflate
+			 * the leaderboard ping column).  Mirrors kunos's
+			 * FUN_1400420e0 (line 40-44 in
+			 * notebook-a/decomp/full/1400420e0.c):
+			 *   if (avg != 0 && avg*3 < rtt) {
+			 *       log("Received Ping spike ...");
+			 *       rtt = avg * 3;
+			 *   }
+			 */
+			if (pc->avg_rtt_ms * 3 < rtt) {
+				uint32_t cap = pc->avg_rtt_ms * 3;
+
+				log_kunos("Received Ping spike from connectionId %u; %u vs. avg %u ms, is capped to %u",
+				    (unsigned)pong_conn,
+				    (unsigned)rtt,
+				    (unsigned)pc->avg_rtt_ms,
+				    (unsigned)cap);
+				rtt = cap;
+			}
 			pc->avg_rtt_ms = (pc->avg_rtt_ms * 7 + rtt) / 8;
+		}
 		/*
 		 * Clock offset — exe's FUN_1400420e0 stores
 		 *   param_1[0x2802a] = server_now - (rtt/2 + client_ts)
