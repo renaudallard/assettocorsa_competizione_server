@@ -92,6 +92,28 @@ dispatch_one_tcp(struct Server *s, struct Conn *c,
 		    "(dropping)", (unsigned)msg_id, c->fd);
 		return -1;
 	}
+	/*
+	 * Reject a second ACP_REQUEST_CONNECTION on an already-
+	 * authenticated conn.  Without this gate, an authenticated
+	 * client (legitimate or hostile) can re-send 0x09 and:
+	 *
+	 *   * leak c->hs_echo (handshake.c unconditionally mallocs
+	 *     a new echo buffer on every call, ≤ 16 KiB / re-handshake)
+	 *   * re-allocate a fresh car slot via server_alloc_car,
+	 *     orphaning the prior slot's `used=1` reservation until
+	 *     session end (burns max_connections)
+	 *   * preserve c->is_admin across the re-handshake (state
+	 *     confusion -- not a privilege gain, but unexpected).
+	 *
+	 * The real ACC client never re-sends 0x09 after a successful
+	 * handshake; the only path that does is a reconnect, which
+	 * goes through conn_drop + a fresh socket.
+	 */
+	if (c->state == CONN_AUTH && msg_id == ACP_REQUEST_CONNECTION) {
+		log_warn("tcp: duplicate 0x09 on authenticated conn=%u "
+		    "(dropping)", (unsigned)c->conn_id);
+		return -1;
+	}
 
 	/*
 	 * Shadow-ban: the /hellban admin command flips c->hellbanned so
