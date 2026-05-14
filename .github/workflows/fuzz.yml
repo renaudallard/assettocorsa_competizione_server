@@ -89,9 +89,14 @@ jobs:
         run: |
           set -euo pipefail
           cd accd
+          # pb.c carries both the writer (pb_w_*) and reader (pb_r_*);
+          # the writer calls bb_append in io.c, which in turn calls
+          # log_warn in log.c.  The fuzz harness only drives the
+          # reader but the writer TU's references still need to
+          # resolve at link time.
           clang -fsanitize=fuzzer,address,undefined \
             -fno-omit-frame-pointer -O1 -g -I. \
-            fuzz/fuzz_pb.c pb.c \
+            fuzz/fuzz_pb.c pb.c io.c log.c \
             -o fuzz_pb
 
       - name: Run fuzz_pb (60 s)
