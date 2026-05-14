@@ -199,3 +199,146 @@ pb_sub_end(struct ByteBuf *bb, size_t start)
 	bb->data[start + 4] = (unsigned char)((v >> 28) & 0x0f);
 	return 0;
 }
+
+/* ----- read side --------------------------------------------------- */
+
+void
+pb_r_init(struct PbReader *r, const void *buf, size_t len)
+{
+	r->buf = (const unsigned char *)buf;
+	r->pos = 0;
+	r->end = len;
+	r->error = 0;
+}
+
+int
+pb_r_eof(const struct PbReader *r)
+{
+	return r->error != 0 || r->pos >= r->end;
+}
+
+int
+pb_r_varint(struct PbReader *r, uint64_t *out)
+{
+	uint64_t v = 0;
+	int shift = 0;
+
+	if (r->error)
+		return -1;
+	/* Protobuf varints are at most 10 bytes (64-bit value). */
+	while (shift < 64) {
+		unsigned char b;
+
+		if (r->pos >= r->end) {
+			r->error = 1;
+			return -1;
+		}
+		b = r->buf[r->pos++];
+		v |= (uint64_t)(b & 0x7f) << shift;
+		if ((b & 0x80) == 0) {
+			*out = v;
+			return 0;
+		}
+		shift += 7;
+	}
+	r->error = 1;
+	return -1;
+}
+
+int
+pb_r_tag(struct PbReader *r, uint32_t *field, uint32_t *wire)
+{
+	uint64_t key;
+
+	if (pb_r_varint(r, &key) < 0)
+		return -1;
+	*field = (uint32_t)(key >> 3);
+	*wire = (uint32_t)(key & 0x07);
+	return 0;
+}
+
+int
+pb_r_int32(struct PbReader *r, int32_t *out)
+{
+	uint64_t v;
+
+	if (pb_r_varint(r, &v) < 0)
+		return -1;
+	*out = (int32_t)(int64_t)v;
+	return 0;
+}
+
+int
+pb_r_bool(struct PbReader *r, int *out)
+{
+	uint64_t v;
+
+	if (pb_r_varint(r, &v) < 0)
+		return -1;
+	*out = v != 0;
+	return 0;
+}
+
+int
+pb_r_string(struct PbReader *r, char *out, size_t outsz)
+{
+	uint64_t len64;
+	size_t len, copy;
+
+	if (pb_r_varint(r, &len64) < 0)
+		return -1;
+	len = (size_t)len64;
+	if (len64 != (uint64_t)len || r->pos + len > r->end) {
+		r->error = 1;
+		return -1;
+	}
+	if (outsz > 0) {
+		copy = len < outsz - 1 ? len : outsz - 1;
+		if (copy > 0)
+			memcpy(out, r->buf + r->pos, copy);
+		out[copy] = '\0';
+	}
+	r->pos += len;
+	return 0;
+}
+
+int
+pb_r_skip(struct PbReader *r, uint32_t wire)
+{
+	uint64_t v;
+
+	if (r->error)
+		return -1;
+	switch (wire) {
+	case PB_WIRE_VARINT:
+		return pb_r_varint(r, &v);
+	case PB_WIRE_FIXED64:
+		if (r->pos + 8 > r->end) {
+			r->error = 1;
+			return -1;
+		}
+		r->pos += 8;
+		return 0;
+	case PB_WIRE_LENGTH_DELIM:
+		if (pb_r_varint(r, &v) < 0)
+			return -1;
+		if (r->pos + (size_t)v > r->end ||
+		    v != (uint64_t)(size_t)v) {
+			r->error = 1;
+			return -1;
+		}
+		r->pos += (size_t)v;
+		return 0;
+	case PB_WIRE_FIXED32:
+		if (r->pos + 4 > r->end) {
+			r->error = 1;
+			return -1;
+		}
+		r->pos += 4;
+		return 0;
+	default:
+		/* Unknown wire type (3/4 are deprecated groups). */
+		r->error = 1;
+		return -1;
+	}
+}

@@ -79,4 +79,38 @@ int	pb_w_float(struct ByteBuf *bb, int field, float v);
 int	pb_sub_begin(struct ByteBuf *bb, int field, size_t *out_start);
 int	pb_sub_end(struct ByteBuf *bb, size_t start);
 
+/*
+ * Read-side primitives.  Symmetric to the writers above, used by
+ * SMPR to decode the ServerMonitorConnectionRequest the monitor
+ * sends as its first frame.  All readers return 0 on success and
+ * -1 on bounds-overrun / malformed input; the PbReader's error
+ * flag latches so callers can chain reads and check once at the
+ * end.
+ */
+struct PbReader {
+	const unsigned char	*buf;
+	size_t			 pos;
+	size_t			 end;
+	int			 error;
+};
+
+void	pb_r_init(struct PbReader *r, const void *buf, size_t len);
+int	pb_r_eof(const struct PbReader *r);
+int	pb_r_varint(struct PbReader *r, uint64_t *out);
+int	pb_r_tag(struct PbReader *r, uint32_t *field, uint32_t *wire);
+int	pb_r_int32(struct PbReader *r, int32_t *out);
+int	pb_r_bool(struct PbReader *r, int *out);
+
+/*
+ * pb_r_string copies up to outsz-1 bytes of the length-delimited
+ * string and null-terminates.  Oversized strings get truncated and
+ * the reader cursor still advances past the full encoded length so
+ * subsequent fields stay aligned.
+ */
+int	pb_r_string(struct PbReader *r, char *out, size_t outsz);
+
+/* Skip an unknown field of the given wire type (consumes the value
+ * after the tag has already been read). */
+int	pb_r_skip(struct PbReader *r, uint32_t wire);
+
 #endif /* ACCD_PB_H */
