@@ -15,14 +15,16 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 
-NAME=$1
-DURATION=$2
-shift 2
-
-if [ -z "$NAME" ] || [ -z "$DURATION" ] || [ $# -lt 1 ]; then
+# Helper script, not a self-contained test: must be called with args.
+# Reject the 0/1-arg invocation up front so a bulk `for t in run_*.sh`
+# sweep aborts cleanly with rc=2 instead of dying on shift.
+if [ $# -lt 3 ]; then
     echo "usage: $0 TESTNAME TEST_DURATION bot1_args [bot2_args ...]" >&2
     exit 2
 fi
+NAME=$1
+DURATION=$2
+shift 2
 
 # Assemble bot args for ssh quoting (single string, double-quotes
 # protected) — both invocations use the same args.
