@@ -1823,6 +1823,10 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 		goto fail;
 
 	rc = conn_send_framed(c, bb.data, bb.wpos);
+	/* Remember the welcome trailer body size so the post-handshake
+	 * `Sent handshake response for car N connection M with N bytes`
+	 * banner can report it (matches kunos's log output verbatim). */
+	c->welcome_bytes = (uint32_t)bb.wpos;
 	bb_free(&bb);
 	if (rc < 0)
 		return rc;
@@ -2596,30 +2600,35 @@ post_slot_assignment:
 		    ldrv->short_name,
 		    (unsigned)ldrv->driver_category, ldrv->steam_id);
 		/*
-		 * Kunos-format stdout banners for log scrapers.  Three
-		 * lines, matching accweb's regexes:
-		 *   ^New connection request: id (\d+) (.+) (S\d+) on car model (\d+)$
-		 *   ^Creating new car connection: carId (\d+), carModel (\d+), raceNumber #(\d+)$
-		 *   ^Sent handshake response for car (\d+) connection (\d+) with
-		 * The full-name field is "First Last" joined with a space,
-		 * matching how accServer.exe formats the driver tuple.
+		 * Kunos-format stdout banners for log scrapers.  Output
+		 * matches accServer.exe's actual runtime lines verbatim,
+		 * sampled from a live kunos capture on 2026-05-14:
+		 *
+		 *   New connection request: id 26 BotTPAccum Driver S76561199000000911 on car model 35
+		 *   Creating new car connection: carId 1014, carModel 35, raceNumber #911
+		 *   Sent handshake response for car 1014 connection 26 with 1121 bytes
+		 *
+		 * Kunos's printf string is `id %d %s %s %s on car model %d`
+		 * with 3 separate string args -- firstName, lastName,
+		 * steamId (in that order).  Emit the three fields as
+		 * distinct args so a downstream parser that walks
+		 * whitespace-separated tokens gets the same shape.
 		 */
-		{
-			char fullname[128];
-
-			snprintf(fullname, sizeof(fullname), "%s %s",
-			    ldrv->first_name, ldrv->last_name);
-			log_kunos("New connection request: id %u %s %s on car model %u",
-			    (unsigned)c->conn_id, fullname, ldrv->steam_id,
-			    (unsigned)lcar->car_model);
-			log_kunos("Creating new car connection: carId %d, "
-			    "carModel %u, raceNumber #%d",
-			    ACC_CAR_ID_BASE + c->car_id,
-			    (unsigned)lcar->car_model, lcar->race_number);
-			log_kunos("Sent handshake response for car %d connection %u with welcome trailer",
-			    ACC_CAR_ID_BASE + c->car_id,
-			    (unsigned)c->conn_id);
-		}
+		log_kunos("New connection request: id %u %s %s %s on car model %u",
+		    (unsigned)c->conn_id,
+		    ldrv->first_name, ldrv->last_name, ldrv->steam_id,
+		    (unsigned)lcar->car_model);
+		log_kunos("Creating new car connection: carId %d, "
+		    "carModel %u, raceNumber #%d",
+		    ACC_CAR_ID_BASE + c->car_id,
+		    (unsigned)lcar->car_model, lcar->race_number);
+		/*
+		 * "Sent handshake response ... with N bytes" is emitted
+		 * AFTER handshake_send_accept runs (further down in
+		 * handshake_handle, past the reply: label) so the
+		 * N-bytes value reflects the actual welcome trailer
+		 * size stored on c->welcome_bytes.
+		 */
 		for (j = 0; j < ACC_MAX_CARS; j++)
 			if (s->cars[j].used) n++;
 		lobby_notify_drivers_changed(&s->lobby, (uint8_t)n);
@@ -2649,6 +2658,17 @@ reply:
 		return -1;
 	log_debug("handshake accept sent: conn=%u udp_port=%d",
 	    (unsigned)c->conn_id, s->udp_port);
+	/*
+	 * Kunos-format `Sent handshake response for car %d connection
+	 * %d with %d bytes` banner.  Emitted here (not inside the
+	 * earlier banner block) because handshake_send_accept is what
+	 * fills in c->welcome_bytes.
+	 */
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS)
+		log_kunos("Sent handshake response for car %d connection %u with %u bytes",
+		    ACC_CAR_ID_BASE + c->car_id,
+		    (unsigned)c->conn_id,
+		    (unsigned)c->welcome_bytes);
 
 	/*
 	 * Recompute standings now that the new car has been added.

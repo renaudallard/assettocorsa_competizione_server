@@ -704,6 +704,12 @@ struct Conn {
 						 * at ~18 Hz so the pivot is never
 						 * more than ~55 ms stale). */
 	uint32_t	last_udp_server_ms;
+	uint32_t	welcome_bytes;		/* size of last 0x0b welcome
+						 * trailer sent on this
+						 * conn — reported on the
+						 * kunos-compat `Sent
+						 * handshake response …
+						 * with N bytes` log line */
 	/*
 	 * SMPR (ServerMonitor) channel state.  is_smpr is set when the
 	 * conn delivered a ServerMonitorConnectionRequest as its first

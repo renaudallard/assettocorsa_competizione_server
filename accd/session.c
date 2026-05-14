@@ -820,23 +820,25 @@ session_phase_name(uint8_t p)
 
 /*
  * Kunos-format phase name for stdout `Detected sessionPhase` log
- * line.  accweb's regex expects [A-Za-z ]+ (letters + spaces, no
- * underscore / dash), so we present the names in title case with
- * spaces where accd's internal names use underscores.
+ * line.  Strings match accServer.exe's actual runtime output
+ * verbatim (sampled from a kunos run on 2026-05-14: `Detected
+ * sessionPhase <waiting for drivers> -> <pre session> (Practice)`).
+ * Lowercase with spaces, no underscores.  accweb's regex pattern
+ * `[A-Za-z ]+` accepts these too.
  */
 const char *
 session_phase_kname(uint8_t p)
 {
 	switch (p) {
-	case PHASE_WAITING:	return "Waiting";
-	case PHASE_FORMATION:	return "Formation";
-	case PHASE_PRE_SESSION:	return "Pre Session";
-	case PHASE_SESSION:	return "Session";
-	case PHASE_OVERTIME:	return "Overtime";
-	case PHASE_COMPLETED:	return "Session Over";
-	case PHASE_ADVANCE:	return "Post Session";
-	case PHASE_RESULTS:	return "Result UI";
-	default:		return "Unknown";
+	case PHASE_WAITING:	return "waiting for drivers";
+	case PHASE_FORMATION:	return "formation";
+	case PHASE_PRE_SESSION:	return "pre session";
+	case PHASE_SESSION:	return "session";
+	case PHASE_OVERTIME:	return "overtime";
+	case PHASE_COMPLETED:	return "session over";
+	case PHASE_ADVANCE:	return "post session";
+	case PHASE_RESULTS:	return "result ui";
+	default:		return "unknown";
 	}
 }
 

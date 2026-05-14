@@ -325,9 +325,19 @@ conn_drop(struct Server *s, struct Conn *c)
 
 	log_debug("conn_drop: conn=%u fd=%d car=%d state=%d",
 	    (unsigned)c->conn_id, c->fd, c->car_id, (int)c->state);
-	/* accweb regex: Removing dead connection (\d+) */
+	/*
+	 * accweb regex: Removing dead connection (\d+)
+	 * Kunos's actual output (sampled 2026-05-14) includes a
+	 * trailing `(last lastUdpPaketReceived N)` field separated
+	 * from the connection id by a DOUBLE space.  N is the
+	 * last_udp_client_ts (the client-side timestamp of the
+	 * freshest UDP packet received from this conn) reported in
+	 * the units kunos already uses for its own tracking; we
+	 * mirror by emitting last_udp_client_ts directly.
+	 */
 	if (c->state == CONN_AUTH)
-		log_kunos("Removing dead connection %u", (unsigned)c->conn_id);
+		log_kunos("Removing dead connection %u  (last lastUdpPaketReceived %u)",
+		    (unsigned)c->conn_id, (unsigned)c->last_udp_client_ts);
 	/*
 	 * Flush pending TX before closing so kick/ban notify + 0x24
 	 * disconnect broadcast reach the wire.  EAGAIN is accepted as

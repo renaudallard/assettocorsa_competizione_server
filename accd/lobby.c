@@ -976,9 +976,22 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			}
 			log_warn("lobby: registration rejected code=%u (%s)",
 			    (unsigned)code, lobby_reject_reason(code));
-			/* accweb regex: ^RegisterToLobby TCP connection failed */
-			log_kunos("RegisterToLobby TCP connection failed, code %u (%s)",
-			    (unsigned)code, lobby_reject_reason(code));
+			/*
+			 * accweb regex: ^RegisterToLobby TCP connection failed
+			 * Kunos has two byte-exact variants in the exe (per
+			 * notebook-a/decomp/full/1400446d0.c):
+			 *   line 65: "...probably outdated ACC server. Please
+			 *            search for updates"
+			 *   line 89: "...couldn't connect to the lobby server"
+			 * Reject-code mapping is approximate: 1 = bad version
+			 * (outdated server message), everything else = generic
+			 * couldn't-connect.  accd's `code N (reason)` form was
+			 * accweb-regex-friendly but not byte-exact.
+			 */
+			if (code == 1)
+				log_kunos("RegisterToLobby TCP connection failed, probably outdated ACC server. Please search for updates");
+			else
+				log_kunos("RegisterToLobby TCP connection failed, couldn't connect to the lobby server");
 			return 0;
 		}
 		break;
