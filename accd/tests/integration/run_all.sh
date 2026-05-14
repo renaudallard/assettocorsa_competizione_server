@@ -25,7 +25,7 @@ skip_re='^run_all\.sh$|^run_paired\.sh$|^run_test_v2\.sh$|^kunos_run_v2\.sh$'
 
 # Tests that depend on the wine kunos host.  Their failure when the
 # host is unreachable shouldn't count against the suite.
-wine_re='^(run_2bot_dq|run_4bot|run_admin_(clear|dq|dt|tp15|reset)|run_cat(14|15|17)|run_damage_zones|run_ladder|run_ladder_f0|run_garage|run_every_penalty|run_paired|run_ring_evict)\.sh$'
+wine_re='^(run_2bot_dq|run_4bot|run_admin_(clear|dq|dt|tp15|reset)|run_cat(14|15|17)|run_damage_zones|run_ladder|run_ladder_f0|run_garage|run_every_penalty|run_paired|run_ring_evict|run_race_end)\.sh$'
 
 total=0; pass=0; fail=0; wine_fail=0; skipped=0
 
