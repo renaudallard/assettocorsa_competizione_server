@@ -106,3 +106,52 @@ jobs:
         run: |
           cd accd/tests/integration
           tail -200 accd.log || true
+
+  tsan:
+    name: ThreadSanitizer
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Install build dependencies
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang \
+            libbsd-dev libseccomp-dev tcpdump python3-scapy
+
+      - name: Build accd with TSAN
+        env:
+          CC: clang
+          CFLAGS: "-fsanitize=thread -fno-omit-frame-pointer -O1 -g"
+        run: |
+          set -euo pipefail
+          cd accd
+          # accd is single-threaded today, but TSAN still catches
+          # signal-handler / memory-model races on g_stop and any
+          # data the SIGINT/SIGTERM handler touches.  Establishing
+          # the baseline now means the eventual threaded variant
+          # (TX worker pool) starts clean.
+          make clean
+          make CC=clang \
+            ACCD_CFLAGS="-std=c99 -Wall -Wextra -O1 -g -DACCD_VERSION_STR='\"tsan\"' -I/usr/local/include $CFLAGS" \
+            ACCD_LDFLAGS="-L/usr/local/lib $CFLAGS"
+          ./accd -V
+
+      - name: Run handshake + reject smokes under TSAN
+        env:
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: |
+          set -euo pipefail
+          cd accd
+          python3 tests/smoke_handshake.py
+          python3 tests/smoke_reject_codes.py
+
+      - name: Show accd.log if TSAN fired
+        if: failure()
+        run: |
+          cd accd/tests/integration
+          tail -200 accd.log || true
