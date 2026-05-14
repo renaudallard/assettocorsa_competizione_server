@@ -181,6 +181,7 @@ static const int seccomp_allow[] = {
 	SCMP_SYS(connect),
 	SCMP_SYS(sendto), SCMP_SYS(recvfrom),
 	SCMP_SYS(sendmsg), SCMP_SYS(recvmsg),
+	SCMP_SYS(sendmmsg), SCMP_SYS(recvmmsg),
 	SCMP_SYS(setsockopt), SCMP_SYS(getsockopt),
 	SCMP_SYS(getsockname), SCMP_SYS(getpeername),
 	SCMP_SYS(shutdown),

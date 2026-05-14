@@ -34,6 +34,17 @@
  */
 
 #define _POSIX_C_SOURCE 200809L
+/*
+ * sendmmsg(2) is a Linux-specific extension behind glibc's
+ * _GNU_SOURCE feature gate.  Used in broadcast_percar_dirty to
+ * collapse a 30 Hz x (N-1) per-peer relay into a single kernel
+ * crossing per dirty car.  Defined only on Linux; other platforms
+ * (OpenBSD / FreeBSD / macOS) keep the per-peer sendto path.
+ */
+#if defined(__linux__)
+#  define _GNU_SOURCE	1
+#  define ACCD_HAVE_SENDMMSG	1
+#endif
 
 #include <stdint.h>
 #include <stddef.h>
@@ -202,8 +213,23 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 static void
 broadcast_percar_dirty(struct Server *s)
 {
+	/*
+	 * Per-peer body buffer.  76 B per packet for the 0x1e fast-rate
+	 * relay, plus a few bytes of headroom for the legacy 0x39 wire
+	 * (msg_id + count=1 prefix).  ACC_MAX_CARS = 64, so the worst-
+	 * case stack budget is 64 x 96 = 6 KB, well under typical
+	 * 8 MB pthread stack defaults.
+	 */
+	enum { PEER_BODY_MAX = 96 };
+	uint8_t pkt[ACC_MAX_CARS][PEER_BODY_MAX];
+	size_t pkt_len[ACC_MAX_CARS];
+	struct sockaddr_in pkt_to[ACC_MAX_CARS];
+#if ACCD_HAVE_SENDMMSG
+	struct mmsghdr msgs[ACC_MAX_CARS];
+	struct iovec iovs[ACC_MAX_CARS];
+#endif
 	struct ByteBuf bb;
-	int i, j;
+	int i, j, n;
 	uint8_t msg_id = s->legacy_netcode
 	    ? SRV_PERCAR_SLOW_RATE : SRV_PERCAR_FAST_RATE;
 
@@ -226,6 +252,7 @@ broadcast_percar_dirty(struct Server *s)
 			}
 		}
 
+		n = 0;
 		for (j = 0; j < ACC_MAX_CARS; j++) {
 			struct Conn *peer = s->conns[j];
 			int32_t delta = 0;
@@ -260,10 +287,52 @@ broadcast_percar_dirty(struct Server *s)
 				continue;
 			if (build_percar_body(&bb, car, s, delta) < 0)
 				continue;
-			(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
-			    (const struct sockaddr *)&peer->peer,
-			    sizeof(peer->peer));
+			if (bb.wpos > PEER_BODY_MAX)
+				continue;	/* over-budget; skip */
+			memcpy(pkt[n], bb.data, bb.wpos);
+			pkt_len[n] = bb.wpos;
+			pkt_to[n] = peer->peer;
+			n++;
 		}
+
+#if ACCD_HAVE_SENDMMSG
+		/*
+		 * Linux fast path: collapse the per-peer fan-out into
+		 * one sendmmsg call.  At 32 cars x 30 Hz that drops the
+		 * UDP send-syscall load from roughly 30k/s of one-shot
+		 * sendto calls to ~960/s of batched calls -- the same
+		 * total packets on the wire, but a fraction of the
+		 * kernel crossings.  sendmmsg returns the number of
+		 * datagrams it accepted; partial drops fall back to
+		 * per-msg sendto for the unsent tail.
+		 */
+		if (n > 0) {
+			int sent;
+			memset(msgs, 0, sizeof(msgs[0]) * (size_t)n);
+			for (j = 0; j < n; j++) {
+				iovs[j].iov_base = pkt[j];
+				iovs[j].iov_len = pkt_len[j];
+				msgs[j].msg_hdr.msg_iov = &iovs[j];
+				msgs[j].msg_hdr.msg_iovlen = 1;
+				msgs[j].msg_hdr.msg_name = &pkt_to[j];
+				msgs[j].msg_hdr.msg_namelen =
+				    sizeof(pkt_to[j]);
+			}
+			sent = sendmmsg(s->udp_fd, msgs,
+			    (unsigned int)n, 0);
+			if (sent < 0)
+				sent = 0;
+			for (j = sent; j < n; j++)
+				(void)sendto(s->udp_fd, pkt[j], pkt_len[j],
+				    0, (const struct sockaddr *)&pkt_to[j],
+				    sizeof(pkt_to[j]));
+		}
+#else
+		for (j = 0; j < n; j++)
+			(void)sendto(s->udp_fd, pkt[j], pkt_len[j], 0,
+			    (const struct sockaddr *)&pkt_to[j],
+			    sizeof(pkt_to[j]));
+#endif
 
 		car->rt.dirty = 0;
 	}
