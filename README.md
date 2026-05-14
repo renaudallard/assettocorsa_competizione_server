@@ -20,7 +20,13 @@
 <p align="center">
   <b>ACC dedicated server, clean-room reimplementation</b><br/>
   An unmodified Assetto Corsa Competizione client connects and races,<br/>
-  on Linux, OpenBSD, or FreeBSD — no Wine, no Kunos binaries.
+  on Linux, OpenBSD, or FreeBSD — no Wine, no Kunos binaries.<br/>
+  <br/>
+  Plus a built-in <b>live telemetry feed</b> over the same TCP port:
+  21 kunos-format stdout banners for log scrapers (accweb, custom
+  tail scripts) and a protobuf side-channel
+  (<code>ServerMonitor v1</code>) for dashboards, with a
+  zero-dependency Python CLI client included.
 </p>
 
 ---
@@ -36,6 +42,7 @@
   - [Firewall / ports](#firewall--ports)
   - [Connecting from the ACC client](#connecting-from-the-acc-client)
   - [Admin console](#admin-console)
+  - [Reading live state with smpr-inspect](#reading-live-state-with-smpr-inspect)
   - [Background service](#background-service)
   - [Quick smoke test](#quick-smoke-test)
 - [Scope & legal posture](#scope--legal-posture)
