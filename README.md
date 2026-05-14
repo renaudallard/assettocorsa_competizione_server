@@ -322,6 +322,11 @@ plain UTF-8 — detection is automatic.
 `0xbe` state snapshot to `127.0.0.1:<port>` for local monitoring
 tools (never routed off loopback).  `0` disables it.
 
+`maxConnections` is also the **upper bound on the advertised slot
+count** — see [How many car slots can the server advertise?](#how-many-car-slots-can-the-server-advertise).
+If you've configured `maxCarSlots: 30` but `maxConnections: 24`,
+the server browser will show 24, not 30.
+
 </details>
 
 <details>
@@ -361,9 +366,9 @@ tools (never routed off loopback).  `0` disables it.
 | `doDriverSwapBroadcast` | `1` | `0` suppresses the 0x47 driver-swap-state fan-out; swap progress stays on the swapping car. |
 | `ignorePrematureDisconnects` | `0` | `1` tolerates client-side premature drops. |
 | `dumpLeaderboards` | `0` | `1` writes snapshots to `results/` on every update. |
-| `maxCarSlots` | `10` | Advertised car capacity.  The ACC lobby clamps this using `slots = min(30, 10 + min(3, trackMedalsRequirement) + safetyRatingRequirement × 0.25)` (per `FUN_1400214b0` in the kunos exe).  Reaching 30 needs `trackMedalsRequirement ≥ 3` AND `safetyRatingRequirement ≥ 68` (kunos's own log says "3 TM + 70 SA").  Without rating gates the cap is 10; accd mirrors that lower-bound clamp locally so the server-side and lobby-advertised counts stay consistent. |
-| `trackMedalsRequirement` | `0` | Minimum track-medals (0..5) to join.  Each medal adds 1 to the advertised slot cap, up to a maximum of +3. |
-| `safetyRatingRequirement` | `0` | Minimum SA rating (0..99) to join.  Adds `SA × 0.25` to the advertised slot cap (so SA 70 → +17.5, SA 99 → +24.75, both then bounded by the 30-slot ceiling). |
+| `maxCarSlots` | `10` | Advertised car capacity.  See [How many car slots can the server advertise?](#how-many-car-slots-can-the-server-advertise) for the full chain of clamps: `maxConnections`, the public-MP 30-cap, the rating-gate formula, and the per-track pit count. |
+| `trackMedalsRequirement` | `0` | Minimum track-medals (0..5) to join.  On public servers, each medal also adds 1 to the advertised slot cap, up to a maximum of +3.  No effect on private servers. |
+| `safetyRatingRequirement` | `0` | Minimum SA rating (0..99) to join.  On public servers, adds `SA × 0.25` to the advertised slot cap (SA 70 → +17.5, SA 99 → +24.75, bounded by the 30-slot ceiling).  No effect on private servers. |
 | `racecraftRatingRequirement` | `0` | Minimum RC rating (0..99) to join.  Does NOT affect the advertised slot cap. |
 | `maxMonitors` | `max_connections / 4` (min 2) | Cap on simultaneous SMPR observer connections so monitors can't starve sim drivers out of the shared slot pool.  `0` disables observers entirely. |
 | `maxMonitorsPerIp` | `2` | Per-source-IP observer cap.  Stops a single host from filling the global observer quota. |
@@ -439,31 +444,44 @@ iconv -f UTF-16LE -t UTF-8 cfg/settings.json | tr -d '\r' > tmp \
 
 ### How many car slots can the server advertise?
 
-The ACC lobby silently clamps the `maxCarSlots` value you put in
-`settings.json` based on the server's advertised rating
-requirements.  Without rating gates, the cap is **10**, regardless
-of what you set.  Setting `maxCarSlots: 30` with no other gates
-still shows 10 slots in the in-game server browser.
+The slot count an operator wants to advertise (`maxCarSlots`) is
+the result of a chain of clamps.  Both the kunos exe
+(`FUN_1400214b0`) and accd apply them in this order:
 
-The exact formula (verified against `FUN_1400214b0` in the kunos
-exe):
+1. **`maxConnections` cap (`configuration.json`)** — if
+   `maxConnections < maxCarSlots`, the advertised count is
+   reduced to `maxConnections`.  Operators on hardware-
+   constrained hosts (Pi 4, low-RAM VPS) often set
+   `maxConnections` lower than they realise and bump into this
+   first.  *Always applied, public or private.*
+2. **Global 30-cap (public MP only)** — the kunos lobby refuses
+   to publish more than 30 slots for any public server.  Private
+   servers (`registerToLobby: 0`) are not affected.
+3. **Rating-gate formula (public MP only)** — for public servers
+   the lobby additionally clamps using
+   `min(30, 10 + min(3, trackMedalsRequirement) + safetyRatingRequirement × 0.25)`.
+   To reach 30 you need `trackMedalsRequirement: 3` AND
+   `safetyRatingRequirement ≥ 68` (kunos's diagnostic says "3 TM
+   + 70 SA").  Without rating gates the public cap is 10.
+   Private servers skip this clamp entirely.
+4. **Pit count (per-track)** — every ACC circuit has a hard pit-
+   box count; the lobby clamps the advertised count to it.  Most
+   tracks have ≥ 30 pits; the few that don't (short layouts) cap
+   below their nominal slot count.
 
-```
-advertised_slots = min(30, 10
-                      + min(3, trackMedalsRequirement)
-                      + safetyRatingRequirement × 0.25)
-```
+So the practical decision tree:
 
-| Goal | settings.json |
+| What you want | How to configure |
 |---|---|
-| Advertise 10 slots (no gates) | leave the three `*Requirement` keys at 0 |
-| Advertise up to 13 slots | `trackMedalsRequirement: 3` (each medal = +1, max +3) |
-| Advertise up to 30 slots | `trackMedalsRequirement: 3` + `safetyRatingRequirement: 70` |
+| Advertise N ≤ 10 slots on any server | leave rating gates at 0, set `maxConnections ≥ N` and `maxCarSlots: N` |
+| Advertise 11–30 on a **private** server (`registerToLobby: 0`) | set `maxConnections ≥ N` and `maxCarSlots: N`; rating gates don't matter |
+| Advertise 11–13 on a **public** server (`registerToLobby: 1`) | add `trackMedalsRequirement: 3` (each medal = +1, max +3) |
+| Advertise up to 30 on a **public** server | add `trackMedalsRequirement: 3` + `safetyRatingRequirement: 70` |
 
 `racecraftRatingRequirement` does **not** affect the slot count —
-it only gates joining.  accd applies the same lower-bound clamp
-locally so the server-side count matches the lobby's advertised
-number.
+it only gates which drivers can join.  accd mirrors clamps #1
+and #3 locally (the latter only when `registerToLobby: 1`) so
+the server-side count matches the lobby's advertised number.
 
 ### Starting the server
 
