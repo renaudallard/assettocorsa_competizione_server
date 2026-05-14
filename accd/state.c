@@ -223,6 +223,16 @@ server_free(struct Server *s)
 		fclose((FILE *)s->latency_dump_fp);
 		s->latency_dump_fp = NULL;
 	}
+	/*
+	 * Drop the per-car / per-session race_archive entries.  Each
+	 * holds the prior-session leaderboard line, lap history and
+	 * sector splits used for 0x56 garage replies, ratings deltas
+	 * and weekend-result builders; on a long-running server they
+	 * grow unboundedly across weekend wraps.  session_reset
+	 * clears them on a wrap, but a clean shutdown without a wrap
+	 * (e.g. SIGTERM at end of session) skipped this.
+	 */
+	session_archive_clear(s);
 	free(s->session.leaderboard_cache);
 	s->session.leaderboard_cache = NULL;
 	s->session.leaderboard_cache_cap = 0;
