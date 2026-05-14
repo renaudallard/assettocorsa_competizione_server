@@ -39,6 +39,7 @@
 #include "ratings.h"
 #include "handlers.h"
 #include "io.h"
+#include "lobby.h"
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
@@ -237,6 +238,13 @@ server_free(struct Server *s)
 	s->session.leaderboard_cache = NULL;
 	s->session.leaderboard_cache_cap = 0;
 	s->session.leaderboard_cache_len = 0;
+	/*
+	 * Tear the lobby client down too -- it owns an rx_buf alloc
+	 * that grows up to ~192 KiB and would otherwise leak on a
+	 * clean shutdown.  lobby_shutdown is idempotent; safe to call
+	 * even when registerToLobby was off (fd stays -1).
+	 */
+	lobby_shutdown(&s->lobby);
 }
 
 struct Conn *
