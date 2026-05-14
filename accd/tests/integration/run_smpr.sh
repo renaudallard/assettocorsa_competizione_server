@@ -20,6 +20,16 @@ cd "$(dirname "$0")"
 pkill -KILL -f 'accd -c cfg' >/dev/null 2>&1 || true
 sleep 1
 
+APID=
+B=
+cleanup() {
+    [ -n "$B" ]    && kill -TERM "$B"    2>/dev/null || :
+    [ -n "$APID" ] && kill -TERM "$APID" 2>/dev/null || :
+    wait 2>/dev/null || :
+    rm -f smpr_accd.log smpr_bot.log
+}
+trap cleanup EXIT INT TERM
+
 rm -f smpr_accd.log smpr_bot.log
 /home/r/code/assettocorsa/accd/accd -c cfg > smpr_accd.log 2>&1 &
 APID=$!
@@ -94,9 +104,3 @@ if rt < 7 or rt > 14:
 
 print('RESULT: PASS (all 7 SMPR message types observed, cadence within bounds)')
 PY
-
-rc=$?
-kill -TERM $B $APID 2>/dev/null || true
-wait 2>/dev/null || true
-rm -f smpr_accd.log smpr_bot.log
-exit $rc
