@@ -96,6 +96,5 @@ leaderboard, lap times) populate as drivers connect and run.
 - accweb decodes stdout as UTF-16 LE when it detects a BOM
   (`instance.go:368-380`).  accd writes plain UTF-8 with no BOM, so
   accweb falls through to UTF-8 — works.
-- The `Received Ping spike` log line (one of the 18 patterns in
-  accweb's parser) is not implemented in accd, so the ping-spike
-  panel will stay empty.  Every other panel works.
+- All 18 of accweb's stdout patterns are wired up in accd, so every
+  panel populates from a live run.
