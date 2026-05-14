@@ -931,7 +931,8 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			struct Conn *cn = s->conns[j];
 			uint8_t probe = SRV_CTRL_INFO_REQUEST;
 
-			if (cn == NULL || cn->state != CONN_AUTH)
+			if (cn == NULL || cn->state != CONN_AUTH ||
+			    cn->is_smpr)
 				continue;
 			if (conn_send_framed(cn, &probe, 1) == 0)
 				sent++;
