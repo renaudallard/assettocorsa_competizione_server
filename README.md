@@ -142,7 +142,9 @@
   `/clear_all`, `/ballast`, `/restrictor`, `/track`, `/tracks`,
   `/connections`, `/hellban`, `/lockprep`, `/unlockprep`,
   `/latencymode`, `/manual entrylist`, `/manual start`, `/wt`,
-  `/go` / `/start`, `/report`, `/debug <conditions|bandwidth|qos>`.
+  `/go` / `/start`, `/report`,
+  `/broadcast` (aliases `/say`, `/announce`),
+  `/debug <conditions|bandwidth|qos>`.
 - **Penalty system** — per-car queue, mandatory pitstop tracking,
   3-lap deadline countdown for DT/SG with auto-DQ on miss
   (downgradable via `allowAutoDQ: 0`), pit-speeding auto-DQ from
@@ -163,8 +165,13 @@
 - **Debug tracing** — `-d` flag or `debug` console command enables
   full wire hexdump of every message.
 - **OpenBSD support** — builds on OpenBSD 7.9 arm64 (celeborn deploy
-  target), runs under `pledge("stdio rpath wpath cpath inet")` after
-  binding ports.
+  target), runs under `pledge("stdio rpath wpath cpath inet")` +
+  `unveil(cfg, results)` after binding ports.
+- **Linux sandbox** — on Linux accd applies the equivalent
+  `seccomp-BPF` syscall allowlist (matching the pledge surface,
+  with `SCMP_ACT_KILL_PROCESS` default) and a `Landlock` ruleset
+  scoped to `cfg/` and `results/` (matching unveil).  Both fall
+  through gracefully when the kernel or `libseccomp` is missing.
 - **Zero idle CPU** — with no clients connected the main loop
   blocks in `poll()` for up to 100 ms per iteration, so the
   daemon sits near 0 % CPU until the first client is accepted
@@ -409,12 +416,18 @@ Stop with `Ctrl-C`, `quit` at the console, or `kill -TERM <pid>`.
 
 | Port | Proto | Purpose |
 |-----:|:-----:|---------|
-| 9232 | TCP | Game connection (handshake, chat, session data) |
+| 9232 | TCP | Game connection (handshake, chat, session data) **and** SMPR (ServerMonitor protobuf) — same listener, demultiplexed at the first frame |
 | 9231 | UDP | Car telemetry (position, inputs, timing) |
 | 8999 | UDP | Client discovery (required for in-game find) |
 
 Ports 9232 and 9231 are configurable in `configuration.json`; UDP
 8999 is fixed by the ACC protocol.  All three must be open.
+
+External monitoring tools (accweb, accservermanager, emperorservers,
+…) connect to the game TCP port and send a
+`ServerMonitorConnectionRequest` protobuf as their first frame —
+accd distinguishes them from sim clients automatically.  Firewall
+the TCP port appropriately if you do not want public monitoring.
 
 ### Connecting from the ACC client
 
@@ -531,13 +544,20 @@ documented residue (e.g. `lap_count` counting the formation
 crossing) is held intentionally to match the real ACC client's
 HUD rather than the exe's strict scoring path.
 
-Two GitHub Actions workflows run on every push:
+Four GitHub Actions workflows run on every push:
 
-- **Sanitizers** — builds `accd` with clang `-fsanitize=address,
-  undefined`, runs the welcome-trailer walker through the
-  instrumented binary to catch UAF / leak / OOB / signed-overflow.
+- **Sanitizers (ASAN/UBSAN/TSAN)** — builds `accd` with clang
+  `-fsanitize=address,undefined`, runs the welcome-trailer walker
+  through the instrumented binary to catch UAF / leak / OOB /
+  signed-overflow.  Sandbox self-disables under the sanitizer build.
 - **Fuzz** — 60-s libFuzzer harness of `json_parse` seeded from the
   project's own `cfg/*.json`.
+- **Autorelease** — on `VERSION` bumps, creates a GitHub release
+  and chains the Release Packages workflow.
+- **Release Packages** — fans out across Debian / Ubuntu / Fedora /
+  Rocky / Alpine / static-musl / macOS-universal / FreeBSD targets,
+  builds amd64 + arm64 (Linux), and uploads the binaries / .deb /
+  .rpm / .tar.gz artifacts to the release.
 
 ---
 
@@ -588,7 +608,7 @@ interoperability of an independently created program.
 ├── VERSION                  Version number (triggers releases).
 ├── notebook-b/
 │   └── NOTEBOOK_B.md        The public clean-room protocol spec.
-├── accd/                    The C implementation (27 modules).
+├── accd/                    The C implementation (29 modules).
 │   ├── main.c               Poll loop + signal handling + lifecycle.
 │   ├── bans.{c,h}           Persistent kick / ban list.
 │   ├── bcast.{c,h}          Broadcast helpers (TCP + UDP relay).
@@ -624,15 +644,17 @@ interoperability of an independently created program.
 │   │   ├── smoke_handshake.py      python wire-level smoke
 │   │   ├── smoke_reject_codes.py   reject-code matrix
 │   │   ├── fake_client.py          11-anchor welcome-trailer walker
-│   │   └── integration/            57 shell-driven integration tests
+│   │   └── integration/            60 shell-driven integration tests
 │   └── fuzz/
 │       └── fuzz_json.c             libFuzzer harness for json_parse
 ├── debian/                  Debian/Ubuntu packaging.
 ├── redhat/                  Fedora/Rocky RPM spec.
 └── .github/workflows/       CI: autorelease, release-packages
                              (Ubuntu / Debian / Fedora / Rocky /
-                             Alpine / FreeBSD), sanitizers (ASAN +
-                             UBSAN), fuzz (libFuzzer for json).
+                             Alpine / static-musl / macOS /
+                             FreeBSD; amd64 + arm64 on Linux),
+                             sanitizers (ASAN + UBSAN + TSAN),
+                             fuzz (libFuzzer for json).
 ```
 
 </details>
