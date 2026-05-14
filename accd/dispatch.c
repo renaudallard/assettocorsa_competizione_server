@@ -505,7 +505,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 	}
 
 	case ACP_CAR_INFO_REQUEST:	/* 0x22 */
-		(void)h_udp_car_info_request(s, buf, len);
+		(void)h_udp_car_info_request(s, peer, buf, len);
 		return;
 
 	case ACP_TIME_EVENT: {		/* 0x5e */

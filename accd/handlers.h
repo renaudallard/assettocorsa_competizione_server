@@ -36,6 +36,7 @@
 #define ACCD_HANDLERS_H
 
 #include <stddef.h>
+#include <netinet/in.h>
 
 #include "state.h"
 
@@ -125,6 +126,7 @@ int	h_udp_car_update(struct Server *s, struct Conn *c,
 
 /* UDP 0x22 CAR_INFO_REQUEST -> reply 0x23 */
 int	h_udp_car_info_request(struct Server *s,
+		const struct sockaddr_in *peer,
 		const unsigned char *body, size_t len);
 
 /*

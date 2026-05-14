@@ -2176,6 +2176,7 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 
 int
 h_udp_car_info_request(struct Server *s,
+    const struct sockaddr_in *peer,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
@@ -2216,6 +2217,14 @@ h_udp_car_info_request(struct Server *s,
 	 * SRV_CAR_INFO_RESPONSE into the protobuf side-channel.
 	 */
 	if (requester->is_smpr)
+		return 0;
+	/*
+	 * Require the UDP source IP to match the requester conn's
+	 * accepted IP.  Without this, any UDP peer can pick another
+	 * driver's conn_id and flood their TCP TX queue with ~1 KiB
+	 * 0x23 spawnDef responses.
+	 */
+	if (requester->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
 		return 0;
 
 	slot = (int)target_car_id - ACC_CAR_ID_BASE;
