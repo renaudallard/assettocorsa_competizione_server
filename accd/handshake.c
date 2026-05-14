@@ -70,6 +70,7 @@
 #include "penalty.h"
 #include "prim.h"
 #include "session.h"
+#include "smpr.h"
 #include "state.h"
 #include "tick.h"
 #include "weather.h"
@@ -2589,6 +2590,12 @@ post_slot_assignment:
 		for (j = 0; j < ACC_MAX_CARS; j++)
 			if (s->cars[j].used) n++;
 		lobby_notify_drivers_changed(&s->lobby, (uint8_t)n);
+		/* Fan out CONNECTION_ENTRY + CAR_ENTRY to any attached
+		 * SMPR monitors so external dashboards see the new
+		 * driver / car immediately, matching kunos's per-conn
+		 * push from the handshake handler. */
+		smpr_notify_conn_changed(s, c);
+		smpr_notify_car_changed(s, c->car_id);
 	}
 
 reply:

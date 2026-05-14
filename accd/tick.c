@@ -58,6 +58,7 @@
 #include "entrylist.h"
 #include "results.h"
 #include "session.h"
+#include "smpr.h"
 #include "state.h"
 #include "tick.h"
 #include "weather.h"
@@ -231,6 +232,8 @@ broadcast_percar_dirty(struct Server *s)
 
 			if (peer == NULL || peer->state != CONN_AUTH)
 				continue;
+			if (peer->is_smpr)
+				continue;
 			if (peer->car_id == i)
 				continue;
 			/*
@@ -346,7 +349,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		struct Conn *c = s->conns[i];
 		uint16_t per_conn_ping;
 
-		if (c == NULL || c->state != CONN_AUTH)
+		if (c == NULL || c->state != CONN_AUTH || c->is_smpr)
 			continue;
 		/* Clamp like build_percar_body does — a stalled link can
 		 * push avg_rtt_ms past 65535 and the silent cast wraps to
@@ -670,7 +673,8 @@ broadcast_session_results(struct Server *s)
 	if (ok) {
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct Conn *c = s->conns[i];
-			if (c == NULL || c->state != CONN_AUTH)
+			if (c == NULL || c->state != CONN_AUTH ||
+			    c->is_smpr)
 				continue;
 			(void)conn_send_framed(c, bb.data, bb.wpos);
 		}
@@ -745,7 +749,8 @@ broadcast_stats_udp(struct Server *s)
 	n_conn = 0;
 	for (i = 0; i < ACC_MAX_CARS; i++)
 		if (s->conns[i] != NULL &&
-		    s->conns[i]->state == CONN_AUTH)
+		    s->conns[i]->state == CONN_AUTH &&
+		    !s->conns[i]->is_smpr)
 			n_conn++;
 	ok = ok && wr_u8(&bb, (uint8_t)(n_conn > 255 ? 255 : n_conn)) == 0;
 	for (i = 0; i < ACC_MAX_CARS && ok; i++) {
@@ -753,7 +758,7 @@ broadcast_stats_udp(struct Server *s)
 		struct CarEntry *car;
 		const char *name = "";
 
-		if (c == NULL || c->state != CONN_AUTH)
+		if (c == NULL || c->state != CONN_AUTH || c->is_smpr)
 			continue;
 		car = (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) ?
 		    &s->cars[c->car_id] : NULL;
@@ -940,6 +945,14 @@ tick_run(struct Server *s)
 	broadcast_percar_dirty(s);
 
 	/*
+	 * SMPR REALTIME_UPDATE (0x06): per-attached-monitor push,
+	 * throttled to each client's smpr_rt_interval_ms (default
+	 * 250 ms, clamped [50, 10000] ms in smpr_handle_connect).
+	 * No-op when no SMPR conns are attached.
+	 */
+	smpr_tick_realtime(s);
+
+	/*
 	 * Keepalive 0x14 + 0xbe localhost telemetry + optional latency
 	 * CSV row, all sharing the 1 s wall-clock cadence.  See
 	 * CADENCE_KEEPALIVE_MS — driven off now_ms so the cadence is
@@ -959,7 +972,8 @@ tick_run(struct Server *s)
 				struct Conn *c = s->conns[i];
 				const char *sid = "";
 
-				if (c == NULL || c->state != CONN_AUTH)
+				if (c == NULL || c->state != CONN_AUTH ||
+				    c->is_smpr)
 					continue;
 				if (c->car_id >= 0 &&
 				    c->car_id < ACC_MAX_CARS &&
@@ -994,13 +1008,17 @@ tick_run(struct Server *s)
 	 */
 	if (s->session.leaderboard_pending) {
 		s->session.leaderboard_pending = 0;
-		if (broadcast_leaderboard_if_changed(s))
+		if (broadcast_leaderboard_if_changed(s)) {
 			*last_leaderboard_ms = now_ms;
+			smpr_broadcast_leaderboard(s);
+		}
 	}
 	if (s->use_async_leaderboard &&
 	    now_ms - *last_leaderboard_ms >= CADENCE_LEADERBOARD_MS) {
-		if (broadcast_leaderboard_if_changed(s))
+		if (broadcast_leaderboard_if_changed(s)) {
 			*last_leaderboard_ms = now_ms;
+			smpr_broadcast_leaderboard(s);
+		}
 	}
 
 	/*
@@ -1045,7 +1063,8 @@ tick_run(struct Server *s)
 					uint32_t client_ts_est;
 
 					if (c == NULL ||
-					    c->state != CONN_AUTH)
+					    c->state != CONN_AUTH ||
+					    c->is_smpr)
 						continue;
 					/*
 					 * Extrapolate the client's clock from

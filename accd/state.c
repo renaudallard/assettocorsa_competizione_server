@@ -43,6 +43,7 @@
 #include "msg.h"
 #include "prim.h"
 #include "session.h"
+#include "smpr.h"
 #include "state.h"
 #include "tick.h"
 
@@ -265,6 +266,14 @@ conn_drop(struct Server *s, struct Conn *c)
 {
 	if (c == NULL)
 		return;
+
+	/*
+	 * Notify any attached SMPR monitors that this conn is going
+	 * away.  Done before the slot reset so monitor_build_connection_
+	 * entry still sees the driver names.
+	 */
+	if (c->state == CONN_AUTH && !c->is_smpr)
+		smpr_notify_conn_changed(s, c);
 
 	/*
 	 * If the connection was authenticated, broadcast 0x24 to

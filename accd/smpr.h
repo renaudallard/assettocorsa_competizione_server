@@ -71,4 +71,25 @@ struct Server;
 int	smpr_handle_connect(struct Server *s, struct Conn *c,
 		const unsigned char *body, size_t len);
 
+/*
+ * Per-tick: push REALTIME_UPDATE (0x06) to every SMPR conn whose
+ * smpr_rt_interval_ms has elapsed since the last push.
+ */
+void	smpr_tick_realtime(struct Server *s);
+
+/*
+ * Fan-out hook: push LEADERBOARD_UPDATE (0x07) to every SMPR conn
+ * immediately after a sim-side 0x36 fires.  Wired right after the
+ * broadcast_leaderboard_if_changed call in tick.c.
+ */
+void	smpr_broadcast_leaderboard(struct Server *s);
+
+/*
+ * Delta notifies — fan out CONNECTION_ENTRY / CAR_ENTRY to every
+ * SMPR conn when a sim conn joins or leaves.  Called from
+ * handshake.c on success and state.c on conn_drop.
+ */
+void	smpr_notify_conn_changed(struct Server *s, struct Conn *changed);
+void	smpr_notify_car_changed(struct Server *s, int car_id);
+
 #endif /* ACCD_SMPR_H */

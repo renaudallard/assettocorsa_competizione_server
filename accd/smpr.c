@@ -53,6 +53,8 @@
 #define SMPR_MSG_SESSION_STATE		0x03
 #define SMPR_MSG_CAR_ENTRY		0x04
 #define SMPR_MSG_CONNECTION_ENTRY	0x05
+#define SMPR_MSG_REALTIME_UPDATE	0x06
+#define SMPR_MSG_LEADERBOARD_UPDATE	0x07
 
 /* Cadence clamps for client-supplied realtimeCarUpdateInterval. */
 #define SMPR_RT_INTERVAL_MIN_MS		50
@@ -254,4 +256,110 @@ smpr_handle_connect(struct Server *s, struct Conn *c,
 	smpr_push_connection_entries(s, c);
 
 	return 0;
+}
+
+void
+smpr_tick_realtime(struct Server *s)
+{
+	uint32_t now = (uint32_t)mono_ms();
+	int i;
+
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+		struct ByteBuf body;
+
+		if (c == NULL || !c->is_smpr)
+			continue;
+		if (c->state != CONN_AUTH)
+			continue;
+		if (c->smpr_rt_last_ms != 0 &&
+		    now - c->smpr_rt_last_ms < c->smpr_rt_interval_ms)
+			continue;
+		bb_init(&body);
+		if (monitor_build_realtime_update(&body, s) == 0)
+			(void)smpr_send_msg(c, SMPR_MSG_REALTIME_UPDATE, &body);
+		bb_free(&body);
+		c->smpr_rt_last_ms = now;
+	}
+}
+
+void
+smpr_broadcast_leaderboard(struct Server *s)
+{
+	int i;
+	int any = 0;
+
+	for (i = 0; i < ACC_MAX_CARS; i++)
+		if (s->conns[i] != NULL && s->conns[i]->is_smpr)
+			any = 1;
+	if (!any)
+		return;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+		struct ByteBuf body;
+
+		if (c == NULL || !c->is_smpr || c->state != CONN_AUTH)
+			continue;
+		bb_init(&body);
+		if (monitor_build_leaderboard(&body, s) == 0)
+			(void)smpr_send_msg(c,
+			    SMPR_MSG_LEADERBOARD_UPDATE, &body);
+		bb_free(&body);
+	}
+}
+
+/*
+ * Fan out a single CONNECTION_ENTRY for `changed` to every SMPR
+ * conn currently attached.  Skips when changed itself is an SMPR
+ * conn (observers don't show up in the connection list).
+ */
+void
+smpr_notify_conn_changed(struct Server *s, struct Conn *changed)
+{
+	int i;
+
+	if (changed == NULL || changed->is_smpr)
+		return;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+		struct ByteBuf body;
+
+		if (c == NULL || !c->is_smpr || c->state != CONN_AUTH)
+			continue;
+		bb_init(&body);
+		if (monitor_build_connection_entry(&body, s, changed) == 0)
+			(void)smpr_send_msg(c, SMPR_MSG_CONNECTION_ENTRY,
+			    &body);
+		bb_free(&body);
+	}
+}
+
+void
+smpr_notify_car_changed(struct Server *s, int car_id)
+{
+	int i, driving_conn = -1;
+
+	if (car_id < 0 || car_id >= ACC_MAX_CARS)
+		return;
+	if (!s->cars[car_id].used)
+		return;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		if (s->conns[i] != NULL &&
+		    s->conns[i]->car_id == car_id) {
+			driving_conn = s->conns[i]->conn_id;
+			break;
+		}
+	}
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+		struct ByteBuf body;
+
+		if (c == NULL || !c->is_smpr || c->state != CONN_AUTH)
+			continue;
+		bb_init(&body);
+		if (monitor_build_car_entry(&body, &s->cars[car_id],
+		    driving_conn) == 0)
+			(void)smpr_send_msg(c, SMPR_MSG_CAR_ENTRY, &body);
+		bb_free(&body);
+	}
 }

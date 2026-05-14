@@ -149,7 +149,7 @@ handlers.o: handlers.c bcast.h state.h io.h lobby.h msg.h chat.h \
  handlers.h handshake.h log.h penalty.h prim.h ratings.h session.h tick.h
 handshake.o: handshake.c bcast.h state.h io.h lobby.h msg.h ratings.h \
  bans.h entrylist.h handlers.h handshake.h log.h penalty.h prim.h \
- session.h tick.h weather.h
+ session.h smpr.h tick.h weather.h
 io.o: io.c io.h log.h
 json.o: json.c json.h
 lan.o: lan.c io.h lan.h state.h lobby.h msg.h log.h prim.h
@@ -171,10 +171,10 @@ session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \
 smpr.o: smpr.c bcast.h state.h io.h lobby.h msg.h log.h monitor.h pb.h \
  prim.h smpr.h
 state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h handlers.h \
- log.h prim.h session.h tick.h
+ log.h prim.h session.h smpr.h tick.h
 tick.o: tick.c bcast.h state.h io.h lobby.h msg.h chat.h ratings.h \
  handshake.h log.h penalty.h prim.h entrylist.h results.h session.h \
- tick.h weather.h
+ smpr.h tick.h weather.h
 weather.o: weather.c io.h log.h msg.h prim.h state.h lobby.h weather.h
 # --- header deps end ---
 
