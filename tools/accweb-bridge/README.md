@@ -99,6 +99,10 @@ leaderboard, lap times) populate as drivers connect and run.
 - accweb decodes stdout as UTF-16 LE when it detects a BOM
   (`instance.go:368-380`).  accd writes plain UTF-8 with no BOM, so
   accweb falls through to UTF-8 — works.
-- All 20 stdout matchers in accweb's `logparser.go` map onto
+- All 21 stdout matchers in accweb's `logparser.go` map onto
   `log_kunos()` callsites in accd, so every accweb panel populates
-  from a live run.
+  from a live run.  The 21st (`Lap  ?carId N, driverId N, lapTime
+  35791:23:647 ...`) is accweb's "current-lap heartbeat" pattern;
+  accd doesn't emit it today, but the regex still matches the
+  normal `Lap carId ...` form so the current-lap panel stays in
+  sync via the same lap-complete callsite.
