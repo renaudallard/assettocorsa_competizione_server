@@ -649,9 +649,15 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		/*
 		 * Acknowledge the handover request back to the sender
 		 * with SRV_DRIVER_HANDOVER_REQ (0x59).  Matches
-		 * FUN_140027990 in accServer.exe: 4-byte body carrying
-		 * the source car_id and the (driver_index - 1) slot of
-		 * the driver who will take over.  Clients use this to
+		 * FUN_140027990 in accServer.exe (the &swap chat
+		 * handler); that function in turn calls FUN_140020380
+		 * to enumerate team-mate slots and emits one 0x59
+		 * unicast per teammate.  accd's &swap targets a driver
+		 * in the SAME car (single CarEntry, multi-driver), so
+		 * the team-mate iteration collapses to a single 0x59
+		 * back to the requester; the 4-byte body still carries
+		 * the source car_id and (driver_index - 1) of the
+		 * driver who will take over.  Clients use this to
 		 * display the "handover pending" UI until the matching
 		 * 0x48 ACP_EXECUTE_DRIVER_SWAP is received.
 		 */
