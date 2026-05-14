@@ -977,6 +977,19 @@ struct Server {
 	struct RatingEntry	ratings[ACC_RATINGS_MAX];
 	uint8_t			ratings_dirty;
 	uint64_t		ratings_last_emit_ms;
+
+	/*
+	 * Per-source-IP /admin retry table.  The per-Conn rate limit
+	 * (Conn.last_admin_attempt_ms) is lost when conn_drop frees
+	 * the struct, so a hostile client can re-handshake to reset
+	 * the gate.  Keying the cooldown by source IP closes the
+	 * bypass.  Small LRU; 32 entries cover any plausible
+	 * concurrent attacker pool while staying tiny on the wire.
+	 */
+	struct AdminRetry {
+		uint32_t	ip;	/* network-order, 0 == empty slot */
+		uint64_t	last_ms;
+	} admin_retry[32];
 };
 
 void	server_init(struct Server *s);

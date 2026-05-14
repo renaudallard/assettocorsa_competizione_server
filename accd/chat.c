@@ -512,19 +512,45 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			return 1;
 		}
 		/*
-		 * Per-conn rate limit: one attempt per second.  Without
-		 * this an authenticated driver can spam /admin guesses
-		 * over the chat channel; at chat's typical 10+ msg/s
-		 * throughput a 4-char numeric admin password falls in
-		 * seconds.  No bypass for already-admin since the
-		 * elevation reply itself is unicast and idempotent.
+		 * Per-source-IP rate limit: one attempt per second per
+		 * remote IP.  Without keying on the IP an attacker can
+		 * drop the conn, reconnect (calloc gives a fresh Conn
+		 * with last_admin_attempt_ms=0), and try again -- the
+		 * per-conn variant from commit 5d4f1be is bypassable
+		 * once Conn is recycled.  The Server-level admin_retry
+		 * table outlives any individual conn so the cooldown
+		 * stays in force across reconnects.
 		 */
 		now_ms = mono_ms();
-		if (c->last_admin_attempt_ms != 0 &&
-		    now_ms - c->last_admin_attempt_ms < 1000) {
-			log_info("admin: conn=%u throttled",
-			    (unsigned)c->conn_id);
-			return 1;
+		{
+			uint32_t ip = c->peer.sin_addr.s_addr;
+			size_t n = sizeof(s->admin_retry) /
+			    sizeof(s->admin_retry[0]);
+			size_t i, slot = n;
+			uint64_t oldest = UINT64_MAX;
+			size_t oldest_idx = 0;
+
+			for (i = 0; i < n; i++) {
+				if (s->admin_retry[i].ip == ip) {
+					slot = i;
+					break;
+				}
+				if (s->admin_retry[i].last_ms < oldest) {
+					oldest = s->admin_retry[i].last_ms;
+					oldest_idx = i;
+				}
+			}
+			if (slot == n)
+				slot = oldest_idx;
+			if (s->admin_retry[slot].ip == ip &&
+			    s->admin_retry[slot].last_ms != 0 &&
+			    now_ms - s->admin_retry[slot].last_ms < 1000) {
+				log_info("admin: ip throttled (conn=%u)",
+				    (unsigned)c->conn_id);
+				return 1;
+			}
+			s->admin_retry[slot].ip = ip;
+			s->admin_retry[slot].last_ms = now_ms;
 		}
 		c->last_admin_attempt_ms = now_ms;
 		if (strcmp(arg, s->admin_password) == 0) {
