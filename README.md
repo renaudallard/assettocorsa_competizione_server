@@ -709,7 +709,7 @@ interoperability of an independently created program.
 │   │   ├── smoke_handshake.py      python wire-level smoke
 │   │   ├── smoke_reject_codes.py   reject-code matrix
 │   │   ├── fake_client.py          11-anchor welcome-trailer walker
-│   │   └── integration/            60 shell-driven integration tests
+│   │   └── integration/            61 shell-driven integration tests
 │   └── fuzz/
 │       └── fuzz_json.c             libFuzzer harness for json_parse
 ├── tools/
