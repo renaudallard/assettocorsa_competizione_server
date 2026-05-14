@@ -733,6 +733,11 @@ struct Server {
 	int		tcp_port;
 	int		udp_port;
 	int		max_connections;
+	int		max_monitors;	/* SMPR observer cap; settings.json
+					 * "maxMonitors"; defaults to
+					 * max_connections / 4 (>=2) */
+	int		max_monitors_per_ip;	/* settings.json
+						 * "maxMonitorsPerIp"; default 2 */
 	int		lan_discovery;
 	/*
 	 * UDP port on 127.0.0.1 for 0xbe periodic state snapshots.  0 =

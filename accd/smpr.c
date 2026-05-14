@@ -37,6 +37,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
+#include <arpa/inet.h>		/* inet_ntoa for the cap-reject log */
 
 #include "bcast.h"
 #include "io.h"
@@ -227,6 +228,47 @@ smpr_handle_connect(struct Server *s, struct Conn *c,
 		rt_interval = SMPR_RT_INTERVAL_MIN_MS;
 	if (rt_interval > SMPR_RT_INTERVAL_MAX_MS)
 		rt_interval = SMPR_RT_INTERVAL_MAX_MS;
+
+	/*
+	 * Cap observers globally (maxMonitors) and per source IP
+	 * (maxMonitorsPerIp).  Without these limits an unauthenticated
+	 * peer can open max_connections SMPR conns and starve sim
+	 * drivers out of the shared slot pool.
+	 */
+	{
+		int total = 0, from_ip = 0, i;
+
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct Conn *o = s->conns[i];
+
+			if (o == NULL || !o->is_smpr || o == c)
+				continue;
+			total++;
+			if (o->peer.sin_addr.s_addr ==
+			    c->peer.sin_addr.s_addr)
+				from_ip++;
+		}
+		if (s->max_monitors > 0 && total >= s->max_monitors) {
+			log_warn("SMPR conn %u: rejected, global cap %d "
+			    "reached", (unsigned)c->conn_id,
+			    s->max_monitors);
+			c->is_smpr = 1;
+			smpr_push_registration_result(c, 0,
+			    "monitor cap reached");
+			return -1;
+		}
+		if (s->max_monitors_per_ip > 0 &&
+		    from_ip >= s->max_monitors_per_ip) {
+			log_warn("SMPR conn %u: rejected, per-IP cap %d "
+			    "reached for %s", (unsigned)c->conn_id,
+			    s->max_monitors_per_ip,
+			    inet_ntoa(c->peer.sin_addr));
+			c->is_smpr = 1;
+			smpr_push_registration_result(c, 0,
+			    "monitor cap reached");
+			return -1;
+		}
+	}
 
 	c->is_smpr = 1;
 	c->smpr_rt_interval_ms = (uint32_t)rt_interval;

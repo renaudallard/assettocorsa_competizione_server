@@ -322,6 +322,21 @@ config_load(struct Server *s, const char *cfg_dir)
 		    (unsigned)s->preparation_locked);
 		s->max_car_slots = json_obj_get_int(settings,
 		    "maxCarSlots", 10);
+		{
+			int dflt_monitors = s->max_connections / 4;
+			if (dflt_monitors < 2)
+				dflt_monitors = 2;
+			s->max_monitors = json_obj_get_int(settings,
+			    "maxMonitors", dflt_monitors);
+			if (s->max_monitors < 0)
+				s->max_monitors = 0;
+			if (s->max_monitors > s->max_connections)
+				s->max_monitors = s->max_connections;
+			s->max_monitors_per_ip = json_obj_get_int(settings,
+			    "maxMonitorsPerIp", 2);
+			if (s->max_monitors_per_ip < 1)
+				s->max_monitors_per_ip = 1;
+		}
 		/*
 		 * Kunos clamps maxCarSlots based on rating requirements
 		 * (10 without any, +3 per trackMedal, +up to 17 from SA
