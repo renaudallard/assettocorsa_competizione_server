@@ -122,6 +122,17 @@
   (`&swap`, `0x47`/`0x48`/`0x4a`/`0x58`) for multi-driver entries.
 - **Live track change** — `/track <name>` swaps the track
   mid-session with `0x4b` welcome redelivery to every client.
+- **Live server-side state** — the server receives and tracks
+  per-car position, speed, direction, gear, fuel, damage zones,
+  lateral G, sector splits, lap times, IsOutLap / HasCut flags,
+  in-pit status, mandatory-pit progress, penalty queue, and the
+  per-driver swap state on every authenticated connection.  This
+  state drives internal logic (penalty serve countdowns,
+  mandatory-pit gating, pit-speeding auto-DQ) and is exposed to
+  external monitoring tools via the ServerMonitor (SMPR) protocol
+  below; high-frequency cockpit telemetry (throttle/brake/steering
+  traces, tyre temps, suspension travel) is recorded client-side
+  only and never reaches the server.
 - **ServerMonitor protocol (SMPR)** — full kunos-compatible
   protobuf side-channel.  Sharing the gameplay `tcpPort`, accd
   demultiplexes incoming connections at the first frame
