@@ -1312,7 +1312,8 @@ session_advance(struct Server *s)
 		 */
 		for (ci = 0; ci < ACC_MAX_CARS; ci++) {
 			struct Conn *c = s->conns[ci];
-			if (c == NULL || c->state != CONN_AUTH)
+			if (c == NULL || c->state != CONN_AUTH ||
+			    c->is_smpr)
 				continue;
 			(void)conn_send_framed(c, empty_results,
 			    sizeof(empty_results));
