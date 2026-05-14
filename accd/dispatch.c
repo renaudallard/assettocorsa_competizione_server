@@ -307,7 +307,19 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			return;
 
 		/*
-		 * Learn / update the UDP peer address.  Do NOT emit a 0x14
+		 * Bind the UDP peer to the conn's accepted IP.  c->peer
+		 * starts as the TCP socket peer (set by conn_new at
+		 * accept time) and stays anchored to that IP across UDP
+		 * peer learning; only the port is allowed to change to
+		 * tolerate NAT rebinds.  Without this gate, any UDP
+		 * sender that knows or guesses a conn_id can overwrite
+		 * c->peer and redirect that conn's outbound 0x14 / 0x1e
+		 * traffic to itself.
+		 */
+		if (kc->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+			return;
+		/*
+		 * Learn / update the UDP peer port.  Do NOT emit a 0x14
 		 * here: per FUN_140041e80 in accServer.exe, 0x14 has a
 		 * single emit path gated on a 1000 ms cadence per conn -
 		 * matched by tick.c's broadcast_keepalive(SRV_KEEPALIVE_14).
