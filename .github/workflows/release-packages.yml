@@ -641,14 +641,25 @@ jobs:
           set -euo pipefail
           RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
           rpmbuild --define "_topdir ${RPM_TOPDIR}" --define "source_date_epoch_from_changelog 0" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
-          # Verify the Makefile link-time probe found libseccomp-devel
-          # in the build chroot; otherwise the .rpm silently ships an
-          # unconfined binary.  rpmbuild leaves the build tree under
-          # BUILD/accd-${ver}/, glob to find the just-built accd.
-          built=$(find "${RPM_TOPDIR}/BUILD" -name accd -type f -executable | head -n1)
-          if [ -z "$built" ] || ! readelf -d "$built" | grep -q "NEEDED.*libseccomp"; then
-            echo "ERROR: accd not linked against libseccomp ($built)" >&2
-            [ -n "$built" ] && readelf -d "$built" | grep NEEDED >&2 || true
+          # Verify the produced .rpm actually links libseccomp; extract
+          # /usr/bin/accd from the binary RPM and readelf it.  Going
+          # through the RPM is more reliable than walking BUILD/
+          # because Fedora's %clean step removes the build tree after
+          # %install.
+          rpmpkg=$(find "${RPM_TOPDIR}/RPMS" -name 'accd-*.rpm' \
+            ! -name 'accd-debug*' ! -name 'accd-debuginfo*' \
+            ! -name 'accd-debugsource*' | head -n1)
+          if [ -z "$rpmpkg" ]; then
+            echo "ERROR: no accd-*.rpm produced under ${RPM_TOPDIR}/RPMS" >&2
+            exit 1
+          fi
+          extract=$(mktemp -d)
+          ( cd "$extract" && rpm2cpio "$rpmpkg" | cpio -idm --quiet )
+          accd_bin="$extract/usr/bin/accd"
+          if [ ! -x "$accd_bin" ] \
+              || ! readelf -d "$accd_bin" | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: $rpmpkg accd not linked against libseccomp" >&2
+            [ -x "$accd_bin" ] && readelf -d "$accd_bin" | grep NEEDED >&2 || true
             exit 1
           fi
 
@@ -727,14 +738,25 @@ jobs:
           set -euo pipefail
           RPM_TOPDIR="${RPMBUILD_TOPDIR:-/tmp/rpmbuild}"
           rpmbuild --define "_topdir ${RPM_TOPDIR}" --define "source_date_epoch_from_changelog 0" -ba "${RPM_TOPDIR}/SPECS/accd.spec"
-          # Verify the Makefile link-time probe found libseccomp-devel
-          # in the build chroot; otherwise the .rpm silently ships an
-          # unconfined binary.  rpmbuild leaves the build tree under
-          # BUILD/accd-${ver}/, glob to find the just-built accd.
-          built=$(find "${RPM_TOPDIR}/BUILD" -name accd -type f -executable | head -n1)
-          if [ -z "$built" ] || ! readelf -d "$built" | grep -q "NEEDED.*libseccomp"; then
-            echo "ERROR: accd not linked against libseccomp ($built)" >&2
-            [ -n "$built" ] && readelf -d "$built" | grep NEEDED >&2 || true
+          # Verify the produced .rpm actually links libseccomp; extract
+          # /usr/bin/accd from the binary RPM and readelf it.  Going
+          # through the RPM is more reliable than walking BUILD/
+          # because Fedora's %clean step removes the build tree after
+          # %install.
+          rpmpkg=$(find "${RPM_TOPDIR}/RPMS" -name 'accd-*.rpm' \
+            ! -name 'accd-debug*' ! -name 'accd-debuginfo*' \
+            ! -name 'accd-debugsource*' | head -n1)
+          if [ -z "$rpmpkg" ]; then
+            echo "ERROR: no accd-*.rpm produced under ${RPM_TOPDIR}/RPMS" >&2
+            exit 1
+          fi
+          extract=$(mktemp -d)
+          ( cd "$extract" && rpm2cpio "$rpmpkg" | cpio -idm --quiet )
+          accd_bin="$extract/usr/bin/accd"
+          if [ ! -x "$accd_bin" ] \
+              || ! readelf -d "$accd_bin" | grep -q "NEEDED.*libseccomp"; then
+            echo "ERROR: $rpmpkg accd not linked against libseccomp" >&2
+            [ -x "$accd_bin" ] && readelf -d "$accd_bin" | grep NEEDED >&2 || true
             exit 1
           fi
 
