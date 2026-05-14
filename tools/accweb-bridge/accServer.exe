@@ -1,0 +1,47 @@
+#!/bin/sh
+# accweb-bridge -- masquerade as Kunos's accServer.exe so the
+# assetto-corsa-web/accweb manager can drive accd as its backing
+# dedicated server.
+#
+# accweb hard-codes the binary name `accServer.exe` and launches
+# `./accServer.exe` from each instance directory (with `wine` in
+# front of it by default on Linux; that is bypassed by setting
+# `SkipWine: true` in accweb's own config, see the README next to
+# this file).  Linux ignores the .exe extension when the file is
+# executable and has a shebang, so this shell script gets run by
+# accweb exactly like the real binary would.
+#
+# What we do here:
+#   1. Locate the real accd binary (env override + PATH + common
+#      install paths).
+#   2. Re-exec it with `-c .` so it reads cfg from the current
+#      directory (= accweb's instance dir, where configuration.json
+#      and friends already live).  No accd config rewrite needed.
+#   3. stdout (the 18 kunos-format log lines accd emits) flows
+#      straight back into accweb's StdoutPipe.
+set -eu
+
+ACCD=${ACCD:-}
+if [ -z "$ACCD" ]; then
+	# Try PATH first, then common install paths the make-install
+	# recipe and the packaged .deb / .rpm drop binaries into.
+	for cand in $(command -v accd 2>/dev/null) \
+	    /usr/local/bin/accd \
+	    /usr/bin/accd \
+	    "$(dirname "$0")/accd" \
+	    "$(dirname "$0")/../../accd/accd" ; do
+		if [ -n "$cand" ] && [ -x "$cand" ]; then
+			ACCD=$cand
+			break
+		fi
+	done
+fi
+if [ -z "$ACCD" ] || [ ! -x "$ACCD" ]; then
+	echo "accweb-bridge: cannot find accd binary." >&2
+	echo "set the ACCD env var or install accd to /usr/local/bin." >&2
+	exit 127
+fi
+
+# accweb captures stdout via cmd.StdoutPipe(); accd already emits
+# the kunos-compat lines there.  No further plumbing needed.
+exec "$ACCD" -c .
