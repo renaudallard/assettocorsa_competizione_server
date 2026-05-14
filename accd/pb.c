@@ -288,7 +288,14 @@ pb_r_string(struct PbReader *r, char *out, size_t outsz)
 	if (pb_r_varint(r, &len64) < 0)
 		return -1;
 	len = (size_t)len64;
-	if (len64 != (uint64_t)len || r->pos + len > r->end) {
+	/*
+	 * Bounds check via subtraction: r->pos <= r->end is invariant,
+	 * so `r->end - r->pos` is a non-wrapping remaining-bytes count.
+	 * The earlier `r->pos + len > r->end` form wrapped modulo
+	 * SIZE_MAX for an attacker-supplied UINT64_MAX varint and let
+	 * the memcpy below read past the body.
+	 */
+	if (len64 != (uint64_t)len || len > r->end - r->pos) {
 		r->error = 1;
 		return -1;
 	}
@@ -322,8 +329,8 @@ pb_r_skip(struct PbReader *r, uint32_t wire)
 	case PB_WIRE_LENGTH_DELIM:
 		if (pb_r_varint(r, &v) < 0)
 			return -1;
-		if (r->pos + (size_t)v > r->end ||
-		    v != (uint64_t)(size_t)v) {
+		if (v != (uint64_t)(size_t)v ||
+		    (size_t)v > r->end - r->pos) {
 			r->error = 1;
 			return -1;
 		}
