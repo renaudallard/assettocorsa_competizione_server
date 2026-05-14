@@ -47,7 +47,7 @@ An ACC multiplayer session consists of:
 - **One dedicated server process.** Runs headless, manages session state, accepts client connections over TCP and UDP, drives the session state machine, computes timing and penalties, optionally registers with Kunos's lobby backend.
 - **N game clients.** Each connects to the dedicated server over TCP (control channel) and UDP (car state streaming).
 - **Optionally, a spectator overlay chain.** A spectator-mode game client exposes a broadcasting UDP endpoint on localhost (see §12). Overlay software connects to the local game client, not to the dedicated server.
-- **Optionally, server-monitoring tooling** (accweb, accservermanager, emperorservers). These connect to the dedicated server over a separate protobuf-based "ServerMonitor" protocol documented in §12B.
+- **Optionally, server-monitoring tooling.** Two paths today: stdout-log scrapers (accweb / accservermanager / emperorservers — they `cmd.StdoutPipe()` the kunos exe and match line-regexes), and the protobuf "ServerMonitor" side-channel documented in §12B. **No public tool currently speaks SMPR**; the side-channel is what kunos's own in-house management UI uses. A reimplementation can either emit the kunos log lines to stdout (the scraper path covers every public hosting tool today), implement SMPR, or both.
 
 ### 1.1 Two protocols, not one
 
@@ -2282,7 +2282,7 @@ No local rating computation is possible or necessary.
 
 ### 12B.1 Transport and framing
 
-Uses the same TCP listener as the sim protocol (`tcpPort`). The server distinguishes ServerMonitor clients from sim clients at connection time via the first message, which is a `ServerMonitorConnectionRequest` protobuf message instead of a sim-protocol handshake. (The exact demultiplexing rule needs to be confirmed; it may be based on a magic byte, an SNI-like prefix, or lazy fallback.)
+Uses the same TCP listener as the sim protocol (`tcpPort`). The server distinguishes ServerMonitor clients from sim clients at connection time. **The kunos demux** has been narrowed down via static RE: per-conn flag at `conn+0x1403e` is set by `FUN_140025690` (the sim handshake handler) only when an inbound wstring read off the connection matches a server-side wstring stored at `ServerConfiguration+0x430`. The matching wstring is **computed at server startup** from runtime config values (realtime-Hz / 32767-derived; see `FUN_140023700:854-866`), not loaded from any settings.json key, so a third-party client cannot guess it without first observing the server's local state.  Empirically, sending a bare `ServerMonitorConnectionRequest` protobuf to the kunos listener returns zero response bytes. **accd's demux differs**: it inspects the first body byte after TCP framing and routes `0x0a` (the protobuf field-1 tag that begins every `ServerMonitorConnectionRequest`) to the SMPR handler — a permissive shortcut that lets any client connect without prior knowledge of a magic wstring. The encoder side (`monitor.{c,h}`, `pb_w_*`) is byte-compatible with kunos's schema; only the establishment differs.
 
 Standard protobuf binary wire format (little-endian varints, length-delimited strings, tag-wire-type headers). No encryption. No custom framing beyond what protobuf itself provides.
 
