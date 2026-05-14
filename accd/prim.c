@@ -262,6 +262,17 @@ rd_str_a(struct Reader *r, char **out)
 			free(buf);
 			return -1;
 		}
+		/*
+		 * Replace C0 controls + DEL with '?' so a malicious
+		 * name / chat string can't inject newlines into
+		 * log_kunos stdout lines (which downstream log
+		 * scrapers like accweb parse with line-anchored
+		 * regexes).  Done at the reader so every consumer
+		 * (log, wire echo, results JSON) sees a sanitized
+		 * value without ad-hoc filtering at each site.
+		 */
+		if (cp < 0x20 || cp == 0x7f)
+			cp = '?';
 		n = utf8_encode(cp, tmp);
 		if (n == 0) {
 			/* Replace invalid with U+FFFD. */
