@@ -79,7 +79,7 @@ labels = {
 for mt in sorted(counts):
     print(f'  0x{mt:02x} {labels.get(mt, "?")}: {counts[mt]}')
 
-required = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+required = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07}
 missing = [mt for mt in required if counts.get(mt, 0) == 0]
 if missing:
     print(f'FAIL missing message types: {", ".join(f"0x{m:02x}" for m in missing)}')
