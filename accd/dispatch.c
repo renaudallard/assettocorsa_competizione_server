@@ -547,6 +547,15 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		log_info("0x5e latency report: %u -> %u = %u ms (chat=%u)",
 		    source_conn, target_conn,
 		    (unsigned)latency_raw, (unsigned)enable_chat);
+		/*
+		 * Refuse the chat relay if the UDP source IP doesn't
+		 * match the source conn's accepted IP -- otherwise any
+		 * peer can forge a "Latency error: N ms" chat under
+		 * another driver's name by picking their conn_id.
+		 */
+		if (src != NULL &&
+		    src->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+			return;
 		if (enable_chat && src != NULL && dst != NULL &&
 		    !dst->is_smpr) {
 			char body_txt[96];
