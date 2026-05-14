@@ -98,7 +98,11 @@
   cannot fire the green flag.
 - **Race grid from qualy** — race grid derived from the most recent
   prior qualifying session's finishing order.  `defaultGridPosition`
-  in `entrylist.json` is used only when no prior Q/P exists.
+  in `entrylist.json` is used only when no prior Q/P exists.  On the
+  formation-to-green transition the server prints a `Race grid:`
+  block followed by one `  Car N Pos M` line per slot in pole-first
+  order, so the final starting order is visible in the server output
+  without needing the client HUD.
 - **Ranked leaderboard / results** — real-time standings on lap
   completion, `0x36` broadcast in ranked order, `0x3f` grid at race
   start, `0x3e` session results at session end.

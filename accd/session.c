@@ -929,6 +929,30 @@ enter_phase(struct Server *s, uint8_t new_phase)
 	default:
 		break;
 	}
+	/*
+	 * Race-start grid dump: on the green-flag entry to PHASE_SESSION
+	 * for a race session, log every used slot in pole-first order
+	 * using the same `  Car N Pos M` shape we already emit at
+	 * handshake.  This answers "who's on pole" from server output
+	 * without needing the client UI, and any logparser (accweb's
+	 * handleGridPosition is one) keeps its grid view in sync.
+	 */
+	if (new_phase == PHASE_SESSION &&
+	    s->session.session_index < s->session_count &&
+	    s->sessions[s->session.session_index].session_type == 10) {
+		int pos, i;
+
+		log_kunos("Race grid:");
+		for (pos = 0; pos < ACC_MAX_CARS; pos++) {
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				if (s->cars[i].used &&
+				    s->cars[i].race.grid_position == pos) {
+					log_kunos("  Car %d Pos %d",
+					    ACC_CAR_ID_BASE + i, pos);
+				}
+			}
+		}
+	}
 }
 
 void
