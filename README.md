@@ -437,6 +437,34 @@ iconv -f UTF-16LE -t UTF-8 cfg/settings.json | tr -d '\r' > tmp \
 
 </details>
 
+### How many car slots can the server advertise?
+
+The ACC lobby silently clamps the `maxCarSlots` value you put in
+`settings.json` based on the server's advertised rating
+requirements.  Without rating gates, the cap is **10**, regardless
+of what you set.  Setting `maxCarSlots: 30` with no other gates
+still shows 10 slots in the in-game server browser.
+
+The exact formula (verified against `FUN_1400214b0` in the kunos
+exe):
+
+```
+advertised_slots = min(30, 10
+                      + min(3, trackMedalsRequirement)
+                      + safetyRatingRequirement × 0.25)
+```
+
+| Goal | settings.json |
+|---|---|
+| Advertise 10 slots (no gates) | leave the three `*Requirement` keys at 0 |
+| Advertise up to 13 slots | `trackMedalsRequirement: 3` (each medal = +1, max +3) |
+| Advertise up to 30 slots | `trackMedalsRequirement: 3` + `safetyRatingRequirement: 70` |
+
+`racecraftRatingRequirement` does **not** affect the slot count —
+it only gates joining.  accd applies the same lower-bound clamp
+locally so the server-side count matches the lobby's advertised
+number.
+
 ### Starting the server
 
 ```sh
