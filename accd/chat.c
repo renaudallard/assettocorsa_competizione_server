@@ -47,6 +47,7 @@
 #include "bcast.h"
 #include "chat.h"
 #include "entrylist.h"
+#include "handlers.h"
 #include "handshake.h"
 #include "io.h"
 #include "log.h"
@@ -632,22 +633,18 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    (unsigned)c->conn_id, target,
 		    (unsigned)car->car_id);
 
-		/* Broadcast updated swap state to all clients. */
-		{
-			struct ByteBuf bb;
-			int i;
-
-			bb_init(&bb);
-			if (wr_u8(&bb, SRV_DRIVER_SWAP_STATE_BCAST) == 0 &&
-			    wr_u16(&bb, car->car_id) == 0 &&
-			    wr_u8(&bb, car->driver_count) == 0) {
-				for (i = 0; i < car->driver_count; i++)
-					(void)wr_u8(&bb, car->swap_state[i]);
-				(void)bcast_all(s, bb.data, bb.wpos,
-				    BCAST_EXCEPT_NONE);
-			}
-			bb_free(&bb);
-		}
+		/*
+		 * Broadcast the updated swap state via the shared helper
+		 * instead of open-coding 0x47 inline.  Two reasons:
+		 *   * broadcast_swap_state honors do_driver_swap_broadcast
+		 *     (settings.json knob); the open-coded version
+		 *     bypassed it.
+		 *   * For multi-driver team_entry_id groups the caller
+		 *     loops over team mates -- not a concern here since
+		 *     &swap targets a driver in the SAME car, but using
+		 *     the shared path keeps the wire shape canonical.
+		 */
+		broadcast_swap_state(s, car);
 
 		/*
 		 * Acknowledge the handover request back to the sender
