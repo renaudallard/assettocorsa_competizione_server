@@ -2210,6 +2210,13 @@ h_udp_car_info_request(struct Server *s,
 		    (unsigned)requester_conn_id);
 		return 0;
 	}
+	/*
+	 * SMPR observers don't issue UDP 0x22; any frame naming an
+	 * observer slot is forged, and acting on it would push a sim
+	 * SRV_CAR_INFO_RESPONSE into the protobuf side-channel.
+	 */
+	if (requester->is_smpr)
+		return 0;
 
 	slot = (int)target_car_id - ACC_CAR_ID_BASE;
 	if (slot < 0 || slot >= ACC_MAX_CARS || !s->cars[slot].used) {
