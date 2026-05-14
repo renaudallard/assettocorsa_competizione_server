@@ -819,6 +819,43 @@ session_phase_name(uint8_t p)
 }
 
 /*
+ * Kunos-format phase name for stdout `Detected sessionPhase` log
+ * line.  accweb's regex expects [A-Za-z ]+ (letters + spaces, no
+ * underscore / dash), so we present the names in title case with
+ * spaces where accd's internal names use underscores.
+ */
+const char *
+session_phase_kname(uint8_t p)
+{
+	switch (p) {
+	case PHASE_WAITING:	return "Waiting";
+	case PHASE_FORMATION:	return "Formation";
+	case PHASE_PRE_SESSION:	return "Pre Session";
+	case PHASE_SESSION:	return "Session";
+	case PHASE_OVERTIME:	return "Overtime";
+	case PHASE_COMPLETED:	return "Session Over";
+	case PHASE_ADVANCE:	return "Post Session";
+	case PHASE_RESULTS:	return "Result UI";
+	default:		return "Unknown";
+	}
+}
+
+/*
+ * Kunos-format session-type name for the same stdout lines.
+ * The wire enum is 0=Practice, 4=Qualifying, 10=Race.
+ */
+const char *
+session_type_kname(uint8_t t)
+{
+	switch (t) {
+	case 0:	return "Practice";
+	case 4:	return "Qualifying";
+	case 10:return "Race";
+	default:return "Unknown";
+	}
+}
+
+/*
  * Map our internal phase enum (1-8) to the ACC Broadcasting SDK
  * SessionPhase enum used on the wire and expected by clients:
  *
@@ -857,6 +894,16 @@ enter_phase(struct Server *s, uint8_t new_phase)
 	    (unsigned)s->session.session_index,
 	    session_phase_name(s->session.phase),
 	    session_phase_name(new_phase));
+	/* accweb regex: ^Detected sessionPhase <X> -> <Y> (Z)$ */
+	{
+		uint8_t st = (s->session.session_index < s->session_count)
+		    ? s->sessions[s->session.session_index].session_type
+		    : 0;
+		log_kunos("Detected sessionPhase <%s> -> <%s> (%s)",
+		    session_phase_kname(s->session.phase),
+		    session_phase_kname(new_phase),
+		    session_type_kname(st));
+	}
 	s->session.phase = new_phase;
 	s->session.phase_started_ms = mono_ms();
 	lobby_notify_session_changed(&s->lobby);
@@ -1246,6 +1293,8 @@ session_advance(struct Server *s)
 		}
 		log_info("session: weekend complete, resetting to "
 		    "session 0");
+		/* accweb regex: ^Resetting race weekend$ */
+		log_kunos("Resetting race weekend");
 		/*
 		 * Kicks are ephemeral and tied to the in-progress weekend;
 		 * a fresh weekend gets a fresh kick list (kunos clears them
@@ -1274,6 +1323,22 @@ session_advance(struct Server *s)
 		if (s->nconns > 0)
 			session_start(s);
 		return;
+	}
+	{
+		/*
+		 * accweb regex: ^Session changed: X -> Y N$ where X and
+		 * Y are session type names ("Practice", "Qualifying",
+		 * "Race") and N is the new session index.
+		 */
+		uint8_t prev_t = (s->session.session_index < s->session_count)
+		    ? s->sessions[s->session.session_index].session_type
+		    : 0;
+		uint8_t next_t = (next < s->session_count)
+		    ? s->sessions[next].session_type : 0;
+		log_kunos("Session changed: %s -> %s %u",
+		    session_type_kname(prev_t),
+		    session_type_kname(next_t),
+		    (unsigned)next);
 	}
 	session_reset(s, next);
 	/*

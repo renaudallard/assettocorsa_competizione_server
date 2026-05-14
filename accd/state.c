@@ -325,6 +325,9 @@ conn_drop(struct Server *s, struct Conn *c)
 
 	log_debug("conn_drop: conn=%u fd=%d car=%d state=%d",
 	    (unsigned)c->conn_id, c->fd, c->car_id, (int)c->state);
+	/* accweb regex: Removing dead connection (\d+) */
+	if (c->state == CONN_AUTH)
+		log_kunos("Removing dead connection %u", (unsigned)c->conn_id);
 	/*
 	 * Flush pending TX before closing so kick/ban notify + 0x24
 	 * disconnect broadcast reach the wire.  EAGAIN is accepted as
@@ -370,6 +373,8 @@ conn_drop(struct Server *s, struct Conn *c)
 		 */
 		s->cars[c->car_id].used = 0;
 		car_runtime_reset_gate(&s->cars[c->car_id].rt);
+		/* accweb regex: ^Purging car_id (\d+)$ */
+		log_kunos("Purging car_id %d", ACC_CAR_ID_BASE + c->car_id);
 		/*
 		 * Team-entry 0x47 fan-out at conn_drop: if the leaving
 		 * driver was part of a multi-car team, kunos pcap shows

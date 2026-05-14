@@ -970,9 +970,14 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			uint8_t code = body[1];
 			if (code == 0) {
 				log_info("lobby: registration accepted");
+				/* accweb regex: ^RegisterToLobby succeeded$ */
+				log_kunos("RegisterToLobby succeeded");
 				return 1;
 			}
 			log_warn("lobby: registration rejected code=%u (%s)",
+			    (unsigned)code, lobby_reject_reason(code));
+			/* accweb regex: ^RegisterToLobby TCP connection failed */
+			log_kunos("RegisterToLobby TCP connection failed, code %u (%s)",
 			    (unsigned)code, lobby_reject_reason(code));
 			return 0;
 		}

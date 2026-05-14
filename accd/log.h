@@ -44,6 +44,18 @@ void	log_debug(const char *fmt, ...)
 
 void	log_hexdump(const char *prefix, const void *buf, size_t len);
 
+/*
+ * log_kunos -- emit a kunos-compatible log line to STDOUT with no
+ * accd prefix.  Matches accServer.exe's stdout shapes so generic
+ * ACC monitoring tools (accweb, accservermanager, custom log
+ * scrapers) can attach to accd without changes.  Goes to a
+ * different stream than the regular accd logs (stderr) so
+ * operators who don't care about kunos compatibility can drop
+ * stdout without losing diagnostics.
+ */
+void	log_kunos(const char *fmt, ...)
+		__attribute__((format(printf, 1, 2)));
+
 extern int g_debug;
 
 #endif /* ACCD_LOG_H */

@@ -97,6 +97,26 @@ log_debug(const char *fmt, ...)
 	va_end(ap);
 }
 
+/*
+ * Kunos-compatible stdout log line.  No timestamp / level prefix
+ * so existing accServer.exe log-parsers (e.g. accweb's
+ * logparser.go) can regex-match the kunos format directly.  Goes
+ * to stdout to keep accd's structured diagnostics on stderr
+ * separable -- operators who pipe stdout to a parser still get
+ * the full diagnostic stream on stderr.
+ */
+void
+log_kunos(const char *fmt, ...)
+{
+	va_list ap;
+
+	va_start(ap, fmt);
+	vfprintf(stdout, fmt, ap);
+	fputc('\n', stdout);
+	va_end(ap);
+	fflush(stdout);
+}
+
 void
 log_hexdump(const char *prefix, const void *buf, size_t len)
 {

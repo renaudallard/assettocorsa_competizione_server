@@ -310,9 +310,17 @@ main(int argc, char **argv)
 	    "(dev)",
 #endif
 	    (int)getpid());
+	/*
+	 * Kunos-format stdout banner.  accweb's logparser regex is
+	 * `^Server starting with version (\d+)$`; version 256 (=0x100)
+	 * is the wire protocol version, matching the value
+	 * accServer.exe prints.
+	 */
+	log_kunos("Server starting with version 256");
 	log_info("config: tcp=%d udp=%d max=%d lan=%d track=\"%s\"",
 	    srv.tcp_port, srv.udp_port, srv.max_connections,
 	    srv.lan_discovery, srv.track);
+	log_kunos("Track %s was set and updated", srv.track);
 	if (srv.stats_udp_port > 0)
 		log_info("policy: statsUdpPort=%d (0xbe telemetry to "
 		    "127.0.0.1)", srv.stats_udp_port);

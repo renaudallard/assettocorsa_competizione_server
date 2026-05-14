@@ -150,6 +150,12 @@ int	session_advance_race_triggers(struct Server *s,
 const char *
 	session_phase_name(uint8_t phase);
 
+/* Kunos-format phase/type names for stdout log_kunos lines. */
+const char *
+	session_phase_kname(uint8_t phase);
+const char *
+	session_type_kname(uint8_t session_type);
+
 /*
  * Current session_type with bound-checked index.  Returns 0xff
  * when session_index is out of range (PHASE_RESULTS post-weekend

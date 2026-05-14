@@ -447,6 +447,27 @@ broadcast_leaderboard_if_changed(struct Server *s)
 
 	(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
 	log_info("Updated leaderboard for %d clients", s->nconns);
+	/*
+	 * accweb regex: ^Updated leaderboard for \d+ clients
+	 *               \((Type)-<(Phase)> (N) min\)$
+	 * Type = Practice / Qualifying / Race; Phase per
+	 * session_phase_kname.  Remaining-min is computed from the
+	 * session duration minus elapsed wall time (best-effort, the
+	 * accweb regex tolerates 0 for paused / pre-start sessions).
+	 */
+	{
+		uint8_t si = s->session.session_index;
+		uint8_t st = (si < s->session_count)
+		    ? s->sessions[si].session_type : 0;
+		int dur = (si < s->session_count)
+		    ? (int)s->sessions[si].duration_min : 0;
+		uint64_t elapsed_ms = mono_ms() - s->session.phase_started_ms;
+		int rem = dur - (int)(elapsed_ms / 60000);
+		if (rem < 0) rem = 0;
+		log_kunos("Updated leaderboard for %d clients (%s-<%s> %d min)",
+		    s->nconns, session_type_kname(st),
+		    session_phase_kname(s->session.phase), rem);
+	}
 	emitted = 1;
 done:
 	bb_free(&bb);

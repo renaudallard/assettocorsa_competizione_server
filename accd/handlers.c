@@ -426,6 +426,60 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		    c->car_id, race->lap_count, (int)lap_ms,
 		    (int)lap_time, invalid ? " (INVALID)" : "");
 
+		/*
+		 * Kunos-format Lap line for log scrapers (accweb, etc.):
+		 *   Lap carId N, driverId N, lapTime M:S:fff,
+		 *   timestampMS N.000000, flags: N,
+		 *   S1 M:S:fff, S2 M:S:fff, S3 M:S:fff,
+		 *   fuel 0.000000[, hasCut][, InLap][, OutLap][, SessionOver]
+		 *
+		 * fuel is emitted as 0.000000 -- accd doesn't track per-
+		 * lap fuel at the server level (the client-side telemetry
+		 * carrying fuel is the 0x1e physics relay, which we don't
+		 * snapshot per lap).  Operators who need fuel telemetry
+		 * use the 0x1e relay directly.
+		 */
+		{
+			uint16_t cf = car_field;
+			int is_inlap = (cf & 0x0008) != 0;
+			int session_over = (cf & 0x0400) != 0;
+			int lm = lap_ms < 0 ? 0 : lap_ms;
+			int s1 = race->sector_ms[0] < 0 ? 0 : race->sector_ms[0];
+			int s2 = race->sector_ms[1] < 0 ? 0 : race->sector_ms[1];
+			int s3 = race->sector_ms[2] < 0 ? 0 : race->sector_ms[2];
+			uint8_t didx = s->cars[c->car_id].current_driver_index;
+			char tail[64];
+
+			tail[0] = '\0';
+			if (has_cut)
+				strncat(tail, ", hasCut",
+				    sizeof(tail) - strlen(tail) - 1);
+			if (is_inlap)
+				strncat(tail, ", InLap",
+				    sizeof(tail) - strlen(tail) - 1);
+			if (is_out_lap)
+				strncat(tail, ", OutLap",
+				    sizeof(tail) - strlen(tail) - 1);
+			if (session_over)
+				strncat(tail, ", SessionOver",
+				    sizeof(tail) - strlen(tail) - 1);
+
+			log_kunos("Lap carId %d, driverId %u, "
+			    "lapTime %d:%d:%d, timestampMS %d.000000, "
+			    "flags: %u, "
+			    "S1 %d:%d:%d, S2 %d:%d:%d, S3 %d:%d:%d, "
+			    "fuel 0.000000%s",
+			    ACC_CAR_ID_BASE + c->car_id,
+			    (unsigned)didx,
+			    lm / 60000, (lm / 1000) % 60, lm % 1000,
+			    (int)lap_time,
+			    (unsigned)cf,
+			    s1 / 60000, (s1 / 1000) % 60, s1 % 1000,
+			    s2 / 60000, (s2 / 1000) % 60, s2 % 1000,
+			    s3 / 60000, (s3 / 1000) % 60, s3 % 1000,
+			    tail);
+		}
+
 		session_recompute_standings(s);
 
 		if (s->session.phase == PHASE_OVERTIME) {
@@ -508,6 +562,8 @@ h_chat(struct Server *s, struct Conn *c,
 			sender = dd->short_name;
 	}
 	log_info("CHAT %s: %s", sender, text);
+	/* accweb regex: ^CHAT (.*?): (.*)$  -- stdout plain form */
+	log_kunos("CHAT %s: %s", sender, text);
 	if (text != NULL && strstr(text, "%%") != NULL) {
 		log_warn("h_chat: dropping message with format "
 		    "specifier from conn=%u", (unsigned)c->conn_id);
@@ -1182,6 +1238,9 @@ h_damage_zones(struct Server *s, struct Conn *c,
 	rc = bcast_all_udp(s, out.data, out.wpos, c->conn_id);
 	log_info("Updated %d clients with new damage zones for car %d",
 	    rc, c->car_id);
+	/* accweb regex: Updated \d+ clients with new damage zones for car (\d+) */
+	log_kunos("Updated %d clients with new damage zones for car %d",
+	    rc, ACC_CAR_ID_BASE + c->car_id);
 out:
 	bb_free(&out);
 	return 0;

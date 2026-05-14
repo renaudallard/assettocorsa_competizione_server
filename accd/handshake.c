@@ -2565,6 +2565,14 @@ post_slot_assignment:
 					car->race.grid_position = (int16_t)g;
 			}
 		}
+		/* accweb regex: ^\s*Car (\d+) Pos (\d+)$  -- grid slot.
+		 * Emit unconditionally on successful handshake; the
+		 * grid slot is meaningful even when 0 (pole = unused
+		 * in 0-indexed find_grid_slot return). */
+		if (car->race.grid_position >= 0)
+			log_kunos("  Car %d Pos %d",
+			    ACC_CAR_ID_BASE + c->car_id,
+			    (int)car->race.grid_position);
 
 		free(first);
 		free(last);
@@ -2587,9 +2595,35 @@ post_slot_assignment:
 		    ldrv->first_name, ldrv->last_name,
 		    ldrv->short_name,
 		    (unsigned)ldrv->driver_category, ldrv->steam_id);
+		/*
+		 * Kunos-format stdout banners for log scrapers.  Three
+		 * lines, matching accweb's regexes:
+		 *   ^New connection request: id (\d+) (.+) (S\d+) on car model (\d+)$
+		 *   ^Creating new car connection: carId (\d+), carModel (\d+), raceNumber #(\d+)$
+		 *   ^Sent handshake response for car (\d+) connection (\d+) with
+		 * The full-name field is "First Last" joined with a space,
+		 * matching how accServer.exe formats the driver tuple.
+		 */
+		{
+			char fullname[128];
+
+			snprintf(fullname, sizeof(fullname), "%s %s",
+			    ldrv->first_name, ldrv->last_name);
+			log_kunos("New connection request: id %u %s %s on car model %u",
+			    (unsigned)c->conn_id, fullname, ldrv->steam_id,
+			    (unsigned)lcar->car_model);
+			log_kunos("Creating new car connection: carId %d, "
+			    "carModel %u, raceNumber #%d",
+			    ACC_CAR_ID_BASE + c->car_id,
+			    (unsigned)lcar->car_model, lcar->race_number);
+			log_kunos("Sent handshake response for car %d connection %u with welcome trailer",
+			    ACC_CAR_ID_BASE + c->car_id,
+			    (unsigned)c->conn_id);
+		}
 		for (j = 0; j < ACC_MAX_CARS; j++)
 			if (s->cars[j].used) n++;
 		lobby_notify_drivers_changed(&s->lobby, (uint8_t)n);
+		log_kunos("%d client(s) online", n);
 		/* Fan out CONNECTION_ENTRY + CAR_ENTRY to any attached
 		 * SMPR monitors so external dashboards see the new
 		 * driver / car immediately, matching kunos's per-conn
