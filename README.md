@@ -9,6 +9,9 @@
   <a href="https://github.com/renaudallard/assettocorsa_competizione_server/actions">
     <img src="https://img.shields.io/github/actions/workflow/status/renaudallard/assettocorsa_competizione_server/autorelease.yml?style=flat-square&label=build" alt="Build Status"/>
   </a>
+  <a href="https://github.com/renaudallard/assettocorsa_competizione_server/releases">
+    <img src="https://img.shields.io/github/downloads/renaudallard/assettocorsa_competizione_server/total?style=flat-square&label=downloads" alt="Total Downloads"/>
+  </a>
   <img src="https://img.shields.io/badge/lang-C99-blue?style=flat-square" alt="C99"/>
   <img src="https://img.shields.io/badge/platforms-Linux%20%7C%20OpenBSD%20%7C%20FreeBSD-green?style=flat-square" alt="Platforms"/>
   <a href="LICENSE">
