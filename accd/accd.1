@@ -15,7 +15,7 @@
 .\" IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
 .\" PURPOSE ARE DISCLAIMED.
 .\"
-.Dd April 22, 2026
+.Dd May 14, 2026
 .Dt ACCD 1
 .Os
 .Sh NAME
@@ -106,6 +106,8 @@ Server identity, access control, and policy toggles.
     "doDriverSwapBroadcast": 1,
     "ignorePrematureDisconnects": 0,
     "dumpLeaderboards": 0,
+    "maxMonitors": 8,
+    "maxMonitorsPerIp": 2,
     "configVersion": 1
 }
 .Ed
@@ -179,6 +181,18 @@ hard drop.
 Default 0.
 When 1, every leaderboard update is snapshot-written to
 .Pa results/ .
+.It Va maxMonitors
+Default
+.Va maxConnections
+/ 4 (minimum 2).
+Cap on simultaneous SMPR observer connections; 0 disables observers
+entirely.
+SMPR observers share the same TCP port and slot pool as sim drivers,
+so a low cap protects driver slots from observer floods.
+.It Va maxMonitorsPerIp
+Default 2.
+Per-source-IP observer cap.
+Stops a single host from filling the global observer quota.
 .El
 .It Pa event.json
 Track, weather, and session schedule.
