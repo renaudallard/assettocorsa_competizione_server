@@ -732,6 +732,32 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    (int)s->session.track_temp);
 		log_info("admin: /wt");
 		chat_broadcast(s, msg, 4);
+	} else if (chat_prefix(text, "/broadcast") ||
+	           chat_prefix(text, "/say") ||
+	           chat_prefix(text, "/announce")) {
+		/*
+		 * Admin-only system broadcast.  Pushes the operator's
+		 * text to every client as a 0x2b "Race Control" message
+		 * (the same wire used internally for penalty / BoP /
+		 * weekend-reset notifications).  Useful for race-start
+		 * countdowns, pit-window reminders, or manual incident
+		 * announcements when the operator isn't in-car.
+		 *
+		 * Length cap: wr_str_a truncates at 255 UTF-8 codepoints
+		 * (ksstr u8 length prefix), so longer payloads simply
+		 * get clipped rather than failing the broadcast.
+		 */
+		const char *arg = text;
+		while (*arg != '\0' && *arg != ' ')
+			arg++;
+		while (*arg == ' ')
+			arg++;
+		if (*arg == '\0') {
+			chat_broadcast(s, "usage: /broadcast <message>", 4);
+		} else {
+			log_info("admin: /broadcast %s", arg);
+			chat_broadcast(s, arg, 4);
+		}
 	} else if (chat_prefix(text, "/go") ||
 	    chat_prefix(text, "/start")) {
 		/*
