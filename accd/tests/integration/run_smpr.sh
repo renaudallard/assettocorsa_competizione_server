@@ -17,21 +17,33 @@
 #       cadence matches the requested 250 ms interval.
 set -e
 cd "$(dirname "$0")"
-pkill -KILL -f 'accd -c cfg' >/dev/null 2>&1 || true
+# Kill any stale accd AND any stale bot left over from a previous
+# crash or interrupted dev session.  A bot still holding slot 0
+# under a different display name makes the SmprBot here arrive as
+# a "Recognized reconnect (zombie slot 0)", which kicks off a
+# reconnect cascade that inflates CAR_ENTRY / CONNECTION_ENTRY
+# counts and races the 0x07 leaderboard emit out of the 2.5 s
+# observation window.
+pkill -KILL -f 'accd -c '       >/dev/null 2>&1 || true
+pkill -KILL -f 'tools/bot/bot ' >/dev/null 2>&1 || true
 sleep 1
 
+# Snapshot cfg/ into a per-run temp dir so accd's writes back to
+# ratings.json / results/ don't accumulate state between runs.
+RUNDIR=$(mktemp -d -p . smpr_run.XXXXXX)
+cp -r cfg/. "$RUNDIR/"
 APID=
 B=
 cleanup() {
     [ -n "$B" ]    && kill -TERM "$B"    2>/dev/null || :
     [ -n "$APID" ] && kill -TERM "$APID" 2>/dev/null || :
     wait 2>/dev/null || :
-    rm -f smpr_accd.log smpr_bot.log
+    rm -rf "$RUNDIR" smpr_accd.log smpr_bot.log
 }
 trap cleanup EXIT INT TERM
 
 rm -f smpr_accd.log smpr_bot.log
-/home/r/code/assettocorsa/accd/accd -c cfg > smpr_accd.log 2>&1 &
+/home/r/code/assettocorsa/accd/accd -c "$RUNDIR" > smpr_accd.log 2>&1 &
 APID=$!
 sleep 1
 
