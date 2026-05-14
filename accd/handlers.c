@@ -1559,12 +1559,30 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 		break;
 	case 3:
 		/*
-		 * Confirm: bump any slot at state 3 (REQ_PENDING)
-		 * back to 2 (FOREIGN), then apply conn_state.
+		 * Confirm: kunos's FUN_1400142f0:1105-1194 resets every
+		 * team mate's swap_state[i] in {3,4} back to 2 (per
+		 * `(state - 3) < 2`), then applies the new conn_state
+		 * on the requesting driver.  For non-team cars (team_
+		 * entry_id == -1) the team-mate scan collapses to just
+		 * this car.
 		 */
-		for (i = 0; i < car->driver_count; i++)
-			if (car->swap_state[i] == 3)
-				car->swap_state[i] = 2;
+		if (car->team_entry_id >= 0) {
+			int g;
+			for (g = 0; g < ACC_MAX_CARS; g++) {
+				struct CarEntry *mate = &s->cars[g];
+				int k;
+				if (mate->team_entry_id != car->team_entry_id)
+					continue;
+				for (k = 0; k < mate->driver_count; k++)
+					if (mate->swap_state[k] == 3 ||
+					    mate->swap_state[k] == 4)
+						mate->swap_state[k] = 2;
+			}
+		} else {
+			for (i = 0; i < car->driver_count; i++)
+				if (car->swap_state[i] == 3)
+					car->swap_state[i] = 2;
+		}
 		if (car->current_driver_index < car->driver_count)
 			car->swap_state[car->current_driver_index] = conn_state;
 		break;
@@ -1581,7 +1599,20 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 
 	log_info("driver swap state request: car=%u sub=%u state=%u",
 	    (unsigned)car_id, (unsigned)sub_state, (unsigned)conn_state);
-	broadcast_swap_state(s, car);
+	/*
+	 * Same team-group fan-out as h_update_driver_swap_state: kunos
+	 * emits one 0x47 per car in the group, each carrying its own
+	 * (possibly mutated by the Confirm reset above) swap_state[].
+	 */
+	if (car->team_entry_id >= 0) {
+		int g;
+		for (g = 0; g < ACC_MAX_CARS; g++) {
+			if (s->cars[g].team_entry_id == car->team_entry_id)
+				broadcast_swap_state(s, &s->cars[g]);
+		}
+	} else {
+		broadcast_swap_state(s, car);
+	}
 	return 0;
 }
 
