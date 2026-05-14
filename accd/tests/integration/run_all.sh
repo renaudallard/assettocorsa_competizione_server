@@ -25,7 +25,7 @@ skip_re='^run_all\.sh$|^run_paired\.sh$|^run_test_v2\.sh$|^kunos_run_v2\.sh$'
 
 # Tests that depend on the wine kunos host.  Their failure when the
 # host is unreachable shouldn't count against the suite.
-wine_re='^(run_2bot_dq|run_4bot|run_admin_(clear|dq|dt|tp15|reset)|run_cat(14|15|17)|run_damage_zones|run_ladder|run_ladder_f0|run_garage|run_every_penalty|run_paired)\.sh$'
+wine_re='^(run_2bot_dq|run_4bot|run_admin_(clear|dq|dt|tp15|reset)|run_cat(14|15|17)|run_damage_zones|run_ladder|run_ladder_f0|run_garage|run_every_penalty|run_paired|run_ring_evict)\.sh$'
 
 total=0; pass=0; fail=0; wine_fail=0; skipped=0
 
@@ -36,6 +36,13 @@ for t in run_*.sh; do
         printf '%-40s  SKIP (helper)\n' "$t"
         continue
     fi
+    # Defensive: kill any accd / bot left behind by the previous
+    # test (some tests start accd directly without going through
+    # run_test_v2.sh, so they don't carry the pkill guard in
+    # commit 4909ed2; this catches them centrally).
+    pkill -KILL -f 'accd -c '       >/dev/null 2>&1 || true
+    pkill -KILL -f 'tools/bot/bot ' >/dev/null 2>&1 || true
+    sleep 1
     total=$((total + 1))
     out=$(timeout "$TIMEOUT" "./$t" 2>&1)
     rc=$?

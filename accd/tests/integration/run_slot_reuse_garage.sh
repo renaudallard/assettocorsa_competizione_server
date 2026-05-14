@@ -31,7 +31,10 @@ mkdir -p log
 rm -f cfg/current/*.json log/*.log accd.pcap accd.log bot*.log 2>/dev/null || true
 
 PCAP_TMP=/tmp/penalty_diff_accd.pcap
-rm -f "$PCAP_TMP"
+# dumpcap below runs as root via sudo and writes /tmp as root; a
+# leftover file from a previous run is also root-owned so a plain
+# rm fails Operation-not-permitted.  Match the create with sudo.
+sudo -n rm -f "$PCAP_TMP"
 sudo -n dumpcap -i lo -w "$PCAP_TMP" -f 'tcp port 9302 or udp port 9303' \
     -q >/dev/null 2>&1 &
 TCPDUMP_PID=$!
