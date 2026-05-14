@@ -361,6 +361,10 @@ tools (never routed off loopback).  `0` disables it.
 | `doDriverSwapBroadcast` | `1` | `0` suppresses the 0x47 driver-swap-state fan-out; swap progress stays on the swapping car. |
 | `ignorePrematureDisconnects` | `0` | `1` tolerates client-side premature drops. |
 | `dumpLeaderboards` | `0` | `1` writes snapshots to `results/` on every update. |
+| `maxCarSlots` | `10` | Advertised car capacity.  The ACC lobby clamps this based on rating requirements: base 10, +3 per `trackMedalsRequirement`, +up to 17 from `safetyRatingRequirement` ≥ 70.  To exceed 10 in the public server browser you must advertise the matching rating gates below; accd mirrors the same lower-bound clamp locally so a server with no rating gates is silently re-clamped to 10. |
+| `trackMedalsRequirement` | `0` | Minimum track-medals (0..5) to join.  Each medal also unlocks +3 advertised slots. |
+| `safetyRatingRequirement` | `0` | Minimum SA rating (0..99) to join.  ≥ 70 unlocks up to +17 advertised slots. |
+| `racecraftRatingRequirement` | `0` | Minimum RC rating (0..99) to join. |
 | `maxMonitors` | `max_connections / 4` (min 2) | Cap on simultaneous SMPR observer connections so monitors can't starve sim drivers out of the shared slot pool.  `0` disables observers entirely. |
 | `maxMonitorsPerIp` | `2` | Per-source-IP observer cap.  Stops a single host from filling the global observer quota. |
 
