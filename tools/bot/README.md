@@ -8,7 +8,7 @@ under Wine.
 
 ## What it is
 
-- A single C99 source file (`bot.c`, ~1570 lines) plus two Python
+- A single C99 source file (`bot.c`, ~1900 lines) plus two Python
   helpers for getting a racing line out of game data or out of a
   pcap recording.
 - Performs the real handshake: TCP `0x09` request, parses the
@@ -136,7 +136,7 @@ whatever waypoint CSV you generated.
 ## Source layout
 
 ```
-bot.c                 main driver (single TU, ~1570 lines)
+bot.c                 main driver (single TU, ~1900 lines)
 parse_ai.py           Kunos .ai → bot CSV
 extract_racing_line.py  pcap → bot CSV
 Makefile              `make` builds bot

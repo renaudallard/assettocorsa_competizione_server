@@ -37,8 +37,11 @@ For each accweb server instance directory (the path accweb stores
 config JSON in):
 
 ```sh
-# 1. Install the bridge as the "binary" accweb launches.
-ln -s /usr/local/share/accd/accweb-bridge/accServer.exe accServer.exe
+# 1. Copy the bridge as the "binary" accweb launches.  Either
+#    drop it in place, or point at a checkout of the accd source
+#    tree -- the wrapper is just a portable POSIX shell script.
+cp /path/to/accd/tools/accweb-bridge/accServer.exe accServer.exe
+chmod +x accServer.exe
 
 # 2. Accweb already writes configuration.json, settings.json,
 #    event.json, entrylist.json, eventRules.json, assistRules.json,
@@ -96,5 +99,6 @@ leaderboard, lap times) populate as drivers connect and run.
 - accweb decodes stdout as UTF-16 LE when it detects a BOM
   (`instance.go:368-380`).  accd writes plain UTF-8 with no BOM, so
   accweb falls through to UTF-8 — works.
-- All 18 of accweb's stdout patterns are wired up in accd, so every
-  panel populates from a live run.
+- All 20 stdout matchers in accweb's `logparser.go` map onto
+  `log_kunos()` callsites in accd, so every accweb panel populates
+  from a live run.

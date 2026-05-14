@@ -341,7 +341,7 @@ tools (never routed off loopback).  `0` disables it.
 | `spectatorPassword` | `""` | Admits the client as a spectator. |
 | `allowAutoDQ` | `1` | `0` downgrades failed DT/SG to a 30 s stop&go. |
 | `registerToLobby` | `0` | `1` lists the server publicly in the ACC browser. |
-| `useAsyncLeaderboard` | `0` | `0` broadcasts on every standings change (matches the exe).  `1` coalesces to a 75 s cadence. |
+| `useAsyncLeaderboard` | `0` | Leaderboard fan-out is event-driven (every standings change) in both modes; `1` also runs a 75 s heartbeat on top as a defense-in-depth refresh. |
 | `unsafeRejoin` | `1` | `0` refuses fresh mid-race handshakes. |
 | `formationLapType` | `3` | Race-start variant (matches exe ctor default). `3` / `5` = silent path (`FUN_14012f300`, 1000 ms phase-4 window, no chat — public-server default). `1` / `4` = verbose path (`FUN_14012f4a0`, random 3000-5500 ms window, "Race start initialized" chat — private servers only; the exe force-downgrades `1` to `3` on public). `2` is rejected and snapped to `3` by both the exe and accd. |
 | `isPrepPhaseLocked` | `0` | `1` freezes the preparation phase; returning drivers still pass (same knob as the `/lockprep` admin command). |
@@ -685,7 +685,7 @@ interoperability of an independently created program.
 │   ├── console.{c,h}        stdin admin console (poll-driven).
 │   ├── dispatch.{c,h}       TCP / UDP message dispatchers.
 │   ├── entrylist.{c,h}      entrylist.json reader.
-│   ├── handlers.{c,h}       Per-msg-id handlers (22 TCP + 5 UDP).
+│   ├── handlers.{c,h}       Per-msg-id handlers (22 TCP + 7 UDP).
 │   ├── handshake.{c,h}      ACP_REQUEST_CONNECTION + 0x0b + welcome.
 │   ├── io.{c,h}             Byte buffer + TCP framing layer.
 │   ├── json.{c,h}           Recursive-descent JSON parser.
@@ -737,7 +737,7 @@ interoperability of an independently created program.
 
 </details>
 
-29 modules, ~23,600 lines of portable C99.  No dependencies beyond
+29 modules, ~24,100 lines of portable C99.  No dependencies beyond
 libc, iconv, and libm; on Linux `libbsd-dev` (for `arc4random_uniform`)
 and `libseccomp-dev` (for the syscall sandbox) are recommended.
 Releases ship `.deb` (Ubuntu / Debian), `.rpm` (Fedora / Rocky), an
