@@ -142,7 +142,7 @@ config.o: config.c config.h state.h io.h lobby.h msg.h entrylist.h \
 console.o: console.c chat.h state.h io.h lobby.h msg.h console.h log.h \
  penalty.h session.h
 dispatch.o: dispatch.c bcast.h state.h io.h lobby.h msg.h dispatch.h \
- handlers.h handshake.h log.h prim.h tick.h
+ handlers.h handshake.h log.h prim.h smpr.h tick.h
 entrylist.o: entrylist.c entrylist.h state.h io.h lobby.h msg.h json.h \
  log.h
 handlers.o: handlers.c bcast.h state.h io.h lobby.h msg.h chat.h \

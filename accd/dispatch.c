@@ -49,6 +49,7 @@
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
+#include "smpr.h"
 #include "state.h"
 #include "tick.h"
 
@@ -70,6 +71,21 @@ dispatch_one_tcp(struct Server *s, struct Conn *c,
 	    (unsigned)c->conn_id, (unsigned)msg_id, len);
 	if (g_debug && len > 1)
 		log_hexdump("  rx", body, len);
+
+	/*
+	 * SMPR (ServerMonitor) demux.  Kunos shares the gameplay
+	 * tcpPort with the protobuf monitoring channel; the first
+	 * body byte tells the lanes apart.  0x0a is the protobuf
+	 * tag for field 1 wire-type 2 (length-delimited), which is
+	 * how every ServerMonitorConnectionRequest begins (field 1
+	 * is `string displayName`).  No sim opcode in msg.h equals
+	 * 0x0a, so the demux is unambiguous.  After the hello the
+	 * conn is push-only; we silently drop any inbound frames.
+	 */
+	if (msg_id == 0x0a && c->state == CONN_UNAUTH && !c->is_smpr)
+		return smpr_handle_connect(s, c, body, len);
+	if (c->is_smpr)
+		return 0;
 
 	if (c->state == CONN_UNAUTH && msg_id != ACP_REQUEST_CONNECTION) {
 		log_warn("tcp: unauthenticated msg 0x%02x from fd %d "

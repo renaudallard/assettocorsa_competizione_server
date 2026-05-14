@@ -232,6 +232,16 @@ smpr_handle_connect(struct Server *s, struct Conn *c,
 	c->smpr_self_contained = self_contained ? 1 : 0;
 	c->smpr_extended = extended ? 1 : 0;
 	(void)register_all;	/* not used yet */
+	/*
+	 * Move out of CONN_UNAUTH so main.c's 30 s unauth-reaper
+	 * doesn't kill the connection.  SMPR clients never claim a
+	 * car slot (car_id stays -1) so gameplay broadcast loops
+	 * that gate on `c->car_id >= 0` already skip them; the few
+	 * loops that gate only on `c->state == CONN_AUTH` need an
+	 * additional `!c->is_smpr` filter (audited in tick.c +
+	 * bcast.c).
+	 */
+	c->state = CONN_AUTH;
 
 	log_info("Received SMPR connection %u for \"%s\" (rt=%dms self=%d ext=%d)",
 	    (unsigned)c->conn_id, display_name, rt_interval,
