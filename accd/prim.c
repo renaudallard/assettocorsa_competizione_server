@@ -335,6 +335,9 @@ rd_str_b(struct Reader *r, char **out)
 		 */
 		if (cp >= 0xD800 && cp <= 0xDFFF)
 			cp = 0xFFFD;
+		/* C0 controls + DEL -> '?'; see rd_str_a for rationale. */
+		if (cp < 0x20 || cp == 0x7f)
+			cp = '?';
 		n = utf8_encode(cp, tmp);
 		if (n == 0)
 			continue;
