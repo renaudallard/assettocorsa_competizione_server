@@ -503,6 +503,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	/* /admin elevation. */
 	if (chat_prefix(text, "/admin")) {
 		const char *arg = text + 6;
+		uint64_t now_ms;
 
 		while (*arg == ' ')
 			arg++;
@@ -510,6 +511,22 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			log_info("admin: missing password");
 			return 1;
 		}
+		/*
+		 * Per-conn rate limit: one attempt per second.  Without
+		 * this an authenticated driver can spam /admin guesses
+		 * over the chat channel; at chat's typical 10+ msg/s
+		 * throughput a 4-char numeric admin password falls in
+		 * seconds.  No bypass for already-admin since the
+		 * elevation reply itself is unicast and idempotent.
+		 */
+		now_ms = mono_ms();
+		if (c->last_admin_attempt_ms != 0 &&
+		    now_ms - c->last_admin_attempt_ms < 1000) {
+			log_info("admin: conn=%u throttled",
+			    (unsigned)c->conn_id);
+			return 1;
+		}
+		c->last_admin_attempt_ms = now_ms;
 		if (strcmp(arg, s->admin_password) == 0) {
 			struct ByteBuf out;
 			c->is_admin = 1;

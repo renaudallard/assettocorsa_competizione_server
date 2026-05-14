@@ -659,6 +659,7 @@ struct Conn {
 	uint16_t	conn_id;	/* server-assigned, also "carIndex" */
 	int32_t		car_id;		/* index into server.cars[], -1 if spectator */
 	int		is_admin;
+	uint64_t	last_admin_attempt_ms;	/* /admin rate limit anchor */
 	int		is_spectator;
 	int		hellbanned;	/* /hellban: drop inbound, skip in
 					 * broadcasts.  Per-session only. */
