@@ -122,8 +122,17 @@
   (`&swap`, `0x47`/`0x48`/`0x4a`/`0x58`) for multi-driver entries.
 - **Live track change** — `/track <name>` swaps the track
   mid-session with `0x4b` welcome redelivery to every client.
-- **ServerMonitor protocol** — protobuf builders for session state,
-  cars, connections, leaderboard, and realtime updates.
+- **ServerMonitor protocol (SMPR)** — full kunos-compatible
+  protobuf side-channel.  Sharing the gameplay `tcpPort`, accd
+  demultiplexes incoming connections at the first frame
+  (sim handshake `0x09` vs SMPR protobuf tag `0x0a`) and streams
+  the seven push message types (`0x01` REGISTRATION_RESULT,
+  `0x02` SERVER_CONFIGURATION, `0x03` SESSION_STATE, `0x04`
+  CAR_ENTRY, `0x05` CONNECTION_ENTRY, `0x06` REALTIME_UPDATE,
+  `0x07` LEADERBOARD_UPDATE) to attached monitors.  Per-client
+  `realtimeCarUpdateInterval` is honored, clamped [50, 10000] ms.
+  Third-party tools (accweb, accservermanager, emperorservers)
+  connect over the same port without a proxy.
 
 ### Admin & moderation
 
@@ -598,7 +607,7 @@ interoperability of an independently created program.
 │   ├── monitor.{c,h}        ServerMonitor protobuf message builders.
 │   ├── msg.h                All message id constants + enums.
 │   ├── net.{c,h}            tcp_listen / udp_bind helpers.
-│   ├── pb.{c,h}             Minimal write-only protobuf encoder.
+│   ├── pb.{c,h}             Minimal protobuf encoder + decoder.
 │   ├── penalty.{c,h}        Per-car penalty queue.
 │   ├── prim.{c,h}           Primitive readers / writers + strings.
 │   ├── probe.c              Standalone protocol probe tool.
@@ -606,6 +615,7 @@ interoperability of an independently created program.
 │   ├── results.{c,h}        Session results JSON writer.
 │   ├── sandbox.{c,h}        pledge/unveil (OpenBSD), seccomp/Landlock (Linux).
 │   ├── session.{c,h}        Session phase machine + standings sort.
+│   ├── smpr.{c,h}           ServerMonitor protobuf protocol handler.
 │   ├── state.{c,h}          Per-conn / global server state structs.
 │   ├── tick.{c,h}           Event-driven relay + periodic broadcasts.
 │   ├── weather.{c,h}        Deterministic sin/cos weather simulator.
@@ -627,7 +637,7 @@ interoperability of an independently created program.
 
 </details>
 
-28 modules, ~22,300 lines of portable C99.  No dependencies beyond
+29 modules, ~23,600 lines of portable C99.  No dependencies beyond
 libc, iconv, and libm; on Linux `libbsd-dev` (for `arc4random_uniform`)
 and `libseccomp-dev` (for the syscall sandbox) are recommended.
 Releases ship `.deb` (Ubuntu / Debian), `.rpm` (Fedora / Rocky), an
