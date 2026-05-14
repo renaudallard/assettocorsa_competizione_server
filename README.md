@@ -134,9 +134,10 @@
   state drives internal logic (penalty serve countdowns,
   mandatory-pit gating, pit-speeding auto-DQ) and is exposed to
   external monitoring tools via the ServerMonitor (SMPR) protocol
-  below; high-frequency cockpit telemetry (throttle/brake/steering
-  traces, tyre temps, suspension travel) is recorded client-side
-  only and never reaches the server.
+  below.  Each car_update also carries 8 input bytes whose semantic
+  the kunos exe never reveals; we relay them opaquely.  Anything
+  outside that frame (tyre temps, suspension travel, detailed
+  control traces) stays client-side and never reaches the server.
 - **ServerMonitor (SMPR) protobuf side-channel** — accd's
   gameplay `tcpPort` accepts a second protocol distinguished by
   the first body byte (sim handshake `0x09` routes to the regular
