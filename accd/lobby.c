@@ -481,9 +481,16 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 		if (wr_u8(&bb, d->session_type) < 0) goto err;
 		if (wr_u8(&bb, d->day_of_weekend) < 0) goto err;
 		if (wr_u8(&bb, d->hour_of_day) < 0) goto err;
-		if (wr_u8(&bb, (uint8_t)(d->duration_min & 0xFF)) < 0)
-			goto err;
-		if (wr_u8(&bb, 0) < 0) goto err;
+		/*
+		 * duration_min is u16 (LE) on the wire per the comment at
+		 * the top of this loop.  The earlier u8+u8(0) layout
+		 * truncated any endurance-race duration above 255 min
+		 * (360 min showed up as 104 min in the lobby listing).
+		 * wr_u16 keeps the layout byte-identical for the common
+		 * <256-min case and fixes the high byte for everything
+		 * else.
+		 */
+		if (wr_u16(&bb, d->duration_min) < 0) goto err;
 		if (wr_u16(&bb, pre_race) < 0) goto err;
 		if (wr_u16(&bb, s->session_overtime_s > 0
 		    ? s->session_overtime_s : 120) < 0) goto err;
