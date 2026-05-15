@@ -483,6 +483,49 @@ static size_t pkt_car_dirt(uint8_t *out, const uint8_t dirt[5])
 	return bb_n;
 }
 
+/* 0x19 ACP_LAP_COMPLETED (SA contact) — TCP framed.
+ * Body: u8 0x19 + u16 reporter + u16 target + i32 ts + u8 quality. */
+static size_t pkt_sa_contact(uint8_t *out, uint16_t reporter, uint16_t target,
+    int32_t ts, uint8_t quality)
+{
+	bb_reset();
+	bb_u8(0x19);
+	bb_u16(reporter);
+	bb_u16(target);
+	bb_u32((uint32_t)ts);
+	bb_u8(quality);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x3d ACP_OUT_OF_TRACK — TCP framed.
+ * Body: u8 0x3d + u8 force + i32 ts. */
+static size_t pkt_out_of_track(uint8_t *out, uint8_t force, int32_t ts)
+{
+	bb_reset();
+	bb_u8(0x3d);
+	bb_u8(force);
+	bb_u32((uint32_t)ts);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
+/* 0x5e ACP_TIME_EVENT — UDP, not framed.
+ * Body: u8 0x5e + u16 source_conn + u16 target_conn + u64 latency + u8 chat. */
+static size_t pkt_time_event(uint8_t *out, uint16_t src, uint16_t dst,
+    uint64_t latency_ms, uint8_t enable_chat)
+{
+	bb_reset();
+	bb_u8(0x5e);
+	bb_u16(src);
+	bb_u16(dst);
+	bb_u32((uint32_t)(latency_ms & 0xffffffffu));
+	bb_u32((uint32_t)(latency_ms >> 32));
+	bb_u8(enable_chat);
+	memcpy(out, bb_buf, bb_n);
+	return bb_n;
+}
+
 /* TCP-frame helper: prepend u16 length and send via the TCP socket. */
 static void send_tcp_framed(int tcp_fd, const uint8_t *body, size_t n)
 {
@@ -1078,6 +1121,11 @@ static void usage(const char *p)
 	    "                   given per-driver swap-state bytes\n"
 	    "  --damage T:z1,z2,z3,z4,z5  emit 0x43 damage zones at tick T\n"
 	    "                   (5 u8 zones front/rear/left/right/centre)\n"
+	    "  --sa-contact T:target:quality  emit 0x19 SA contact at tick T\n"
+	    "                   (target = race number, 0xffff = wall hit)\n"
+	    "  --oot-at T       emit 0x3d ACP_OUT_OF_TRACK at tick T (force=0)\n"
+	    "  --time-event T   emit 0x5e UDP latency event at tick T\n"
+	    "                   (source=target=self, latency=42 ms, chat=1)\n"
 	    "  --flap-at T      close TCP at tick T and let the bots\n"
 	    "                   reconnect path re-handshake (deliberate\n"
 	    "                   socket-flap regression for server-side\n"
@@ -1128,6 +1176,14 @@ int main(int argc, char **argv)
 	int damage_tick = -1;		/* >=0 = emit 0x43 at this tick */
 	uint8_t damage_bytes[5] = {0,0,0,0,0};
 	int damage_sent = 0;
+	int sa_tick = -1;		/* >=0 = emit 0x19 at this tick */
+	uint16_t sa_target_race = 0;
+	uint8_t  sa_quality = 0;
+	int sa_sent = 0;
+	int oot_tick = -1;		/* >=0 = emit 0x3d at this tick */
+	int oot_sent = 0;
+	int te_tick = -1;		/* >=0 = emit 0x5e at this tick */
+	int te_sent = 0;
 	int flap_at_tick = -1;		/* close+reopen TCP once at this tick */
 	int flap_done = 0;
 	int swap_req_tick = -1;		/* >=0 = emit 0x4a at this tick */
@@ -1186,6 +1242,9 @@ int main(int argc, char **argv)
 		{"load-setup",  required_argument, 0, 'q'},
 		{"swap-state",  required_argument, 0, 'k'},
 		{"damage",      required_argument, 0, 'g'},
+		{"sa-contact",  required_argument, 0, 'a'},
+		{"oot-at",      required_argument, 0, 'o'},
+		{"time-event",  required_argument, 0, 'E'},
 		{"flap-at",     required_argument, 0, 'F'},
 		{"swap-request", required_argument, 0, 'Q'},
 		{"client-version", required_argument, 0, 'v'},
@@ -1282,6 +1341,25 @@ int main(int argc, char **argv)
 				damage_bytes[dz] = (uint8_t)z[dz];
 			break;
 		}
+		case 'a': {
+			/* --sa-contact T:target:quality */
+			int t, tgt, q;
+			if (sscanf(optarg, "%d:%d:%d", &t, &tgt, &q) != 3) {
+				fprintf(stderr,
+				    "[bot] --sa-contact needs tick:target:quality\n");
+				return 2;
+			}
+			sa_tick = t;
+			sa_target_race = (uint16_t)tgt;
+			sa_quality = (uint8_t)q;
+			break;
+		}
+		case 'o':
+			oot_tick = atoi(optarg);
+			break;
+		case 'E':
+			te_tick = atoi(optarg);
+			break;
 		case 'k': {
 			/* --swap-state T:S1[,S2,...] */
 			char *colon = strchr(optarg, ':');
@@ -2018,6 +2096,37 @@ int main(int argc, char **argv)
 			    damage_bytes[2], damage_bytes[3],
 			    damage_bytes[4]);
 			damage_sent = 1;
+		}
+
+		/* 0x19 SA contact, fired once.  Server relays as 0x1b. */
+		if (sa_tick >= 0 && !sa_sent && (int)tick >= sa_tick) {
+			uint8_t pkt2[16];
+			size_t n = pkt_sa_contact(pkt2, (uint16_t)car_id,
+			    sa_target_race, (int32_t)client_ts, sa_quality);
+			send_tcp_framed(tcp_fd, pkt2, n);
+			printf("[bot] sent 0x19 SA contact target=%u quality=%u\n",
+			    (unsigned)sa_target_race, (unsigned)sa_quality);
+			sa_sent = 1;
+		}
+
+		/* 0x3d out-of-track, fired once with force=0.  Relayed 0x3c. */
+		if (oot_tick >= 0 && !oot_sent && (int)tick >= oot_tick) {
+			uint8_t pkt2[8];
+			size_t n = pkt_out_of_track(pkt2, 0, (int32_t)client_ts);
+			send_tcp_framed(tcp_fd, pkt2, n);
+			printf("[bot] sent 0x3d out-of-track\n");
+			oot_sent = 1;
+		}
+
+		/* 0x5e UDP time event, fired once.  Source=target=self with
+		 * chat=1 so accd echoes a "Latency error" 0x2b to ourselves. */
+		if (te_tick >= 0 && !te_sent && (int)tick >= te_tick) {
+			uint8_t pkt2[24];
+			size_t n = pkt_time_event(pkt2, conn_id, conn_id, 42, 1);
+			sendto(udp_fd, pkt2, n, 0,
+			    (struct sockaddr *)&udp_peer, sizeof udp_peer);
+			printf("[bot] sent 0x5e time event\n");
+			te_sent = 1;
 		}
 
 		/* 0x4a swap-state-request, fired once at the configured tick.
