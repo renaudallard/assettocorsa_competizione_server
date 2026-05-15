@@ -232,9 +232,13 @@ chat_do_penalty(struct Server *s, const char *cmd, const char *args,
 		 * even though the broadcast chat reports the penalty).
 		 * Mark every slot freshly enqueued by this call as `admin`
 		 * so write_car_leaderboard_record can skip them.
+		 * Use >= so the post-eviction pre==count case is handled
+		 * too: when the queue is at ACC_MAX_PENALTIES and the new
+		 * push evicts one, pre lands equal to count and a plain >
+		 * would leave the freshly-enqueued slot unmarked.
 		 */
-		if (pre > pq->count)
-			pre = pq->count - 1;
+		if (pre >= pq->count)
+			pre = pq->count > 0 ? pq->count - 1 : 0;
 		if (pre < 0)
 			pre = 0;
 		for (pi = pre; pi < pq->count; pi++)
