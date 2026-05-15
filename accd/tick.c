@@ -528,10 +528,15 @@ broadcast_leaderboard_if_changed(struct Server *s)
 		uint8_t si = s->session.session_index;
 		uint8_t st = (si < s->session_count)
 		    ? s->sessions[si].session_type : 0;
-		int dur = (si < s->session_count)
-		    ? (int)s->sessions[si].duration_min : 0;
-		uint64_t elapsed_ms = mono_ms() - s->session.phase_started_ms;
-		int rem = dur - (int)(elapsed_ms / 60000);
+		/*
+		 * Remaining minutes derives from s->session.time_remaining_ms
+		 * (ts[4] - now, clamped) so the figure stays accurate across
+		 * OVERTIME and PHASE_COMPLETED.  Previously this used
+		 * mono_ms() - phase_started_ms, which restarts at every phase
+		 * transition; during OVERTIME the line reported the full
+		 * duration as remaining.
+		 */
+		int rem = s->session.time_remaining_ms / 60000;
 		if (rem < 0) rem = 0;
 		log_kunos("Updated leaderboard for %d clients (%s-<%s> %d min)",
 		    s->nconns, session_type_kname(st),
