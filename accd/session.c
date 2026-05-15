@@ -1160,12 +1160,20 @@ session_tick(struct Server *s)
 	 * Time remaining in the active session, in ms.  Used by the
 	 * lobby session-update message and the admin console.
 	 * Computed as ts[4] (active end) minus now, clamped to 0.
+	 * ts[4] = UINT64_MAX is a "not yet known" sentinel set during
+	 * race pre-green (session.c init for green-flag race); the
+	 * subtraction would produce a huge value the i32 cast wraps,
+	 * so report 0 in that window.  Also clamp values that exceed
+	 * INT32_MAX (~24.8 days) for endurance-style sessions.
 	 */
-	if (s->session.ts_valid && s->session.ts[4] > now)
-		s->session.time_remaining_ms =
-		    (int32_t)(s->session.ts[4] - now);
-	else
+	if (s->session.ts_valid && s->session.ts[4] > now &&
+	    s->session.ts[4] != UINT64_MAX) {
+		uint64_t delta = s->session.ts[4] - now;
+		s->session.time_remaining_ms = delta > INT32_MAX
+		    ? INT32_MAX : (int32_t)delta;
+	} else {
 		s->session.time_remaining_ms = 0;
+	}
 
 	/* Phase 7 (ADVANCE) triggers session advance. */
 	if (s->session.phase == PHASE_ADVANCE)
