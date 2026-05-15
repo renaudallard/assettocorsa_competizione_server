@@ -100,8 +100,17 @@ int	write_session_result_header(struct ByteBuf *bb,
  * 0x3e race-end emit needs per-entry cvar8 / pq_emit policy, so it
  * passes the type of each completed session in the result list.
  */
+/*
+ * session_idx selects the per-car race-state source:
+ *   -1                            use live s->cars[j].race
+ *   0..ACC_MAX_SESSIONS-1         use s->cars[j].race_archive[session_idx]
+ * The race-end 0x3e emit passes the index for each completed past
+ * session so P/Q rows reflect what was true at that session's end
+ * rather than the current race's live state.
+ */
 int	write_session_leaderboard_section(struct ByteBuf *bb,
-		struct Server *s, uint8_t session_type, int is_archived);
+		struct Server *s, uint8_t session_type, int is_archived,
+		int session_idx);
 
 /*
  * Emit the assist_rules + leaderboard section from FUN_140034a40
@@ -120,9 +129,15 @@ int	write_leaderboard_section(struct ByteBuf *bb, struct Server *s);
  * as a tail.  cvar8 controls the 1-byte gated block — pass the
  * car's own formation_lap_done in single-car contexts.
  */
+/*
+ * race_src lets the caller substitute a non-live CarRaceState (e.g. an
+ * archive snapshot for a completed prior session).  Pass NULL to use
+ * the live ec->race.
+ */
 int	write_car_leaderboard_record(struct ByteBuf *bb,
 		const struct Server *s, const struct CarEntry *ec,
-		uint8_t cvar8, int is_archived);
+		uint8_t cvar8, int is_archived,
+		const struct CarRaceState *race_src);
 
 /*
  * Build the 0x4e SRV_RATING_SUMMARY body for every used car

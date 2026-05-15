@@ -695,75 +695,28 @@ broadcast_session_results(struct Server *s)
 	 * session).
 	 */
 	for (n = 0; n < result_count && ok; n++) {
-		int leader = -1;
-		const struct CarRaceState *src = NULL;
+		/*
+		 * Per-session result header (session metadata, NOT per-car).
+		 * Pcap-verified (2026-05-11 race-end test): kunos's 23 B
+		 * header carries hour_of_day, dayOfWeekend-1, session-type
+		 * AC2 enum, durations.  The per-session leaderboard section
+		 * picks its data source via session_idx — pass `n` so past
+		 * sessions read from race_archive[n] instead of the current
+		 * race's live state.  (Earlier versions of this loop resolved
+		 * a leader car here but never passed it down; the function
+		 * iterates every car internally.)
+		 */
+		const struct SessionDef *sd =
+		    (n < ACC_MAX_SESSIONS && n < s->session_count)
+		    ? &s->sessions[n] : &s->sessions[0];
 		int cur = s->session.session_index;
 
-		for (j = 0; j < ACC_MAX_CARS; j++) {
-			if (!s->cars[j].used)
-				continue;
-			if (n == cur) {
-				if (s->cars[j].race.position == 1) {
-					leader = j;
-					src = &s->cars[j].race;
-					break;
-				}
-			} else if (n < cur &&
-			    n < ACC_MAX_SESSIONS &&
-			    s->cars[j].race_archive[n] != NULL &&
-			    s->cars[j].race_archive[n]->position
-				== 1) {
-				leader = j;
-				src = s->cars[j].race_archive[n];
-				break;
-			}
-		}
-		if (leader < 0) {
-			/* Fallback: first used car, archived state
-			 * if available, else live. */
-			for (j = 0; j < ACC_MAX_CARS; j++)
-				if (s->cars[j].used) {
-					leader = j;
-					break;
-				}
-			if (leader < 0) {
-				ok = 0;
-				break;
-			}
-			if (n < cur && n < ACC_MAX_SESSIONS &&
-			    s->cars[leader].race_archive[n] != NULL)
-				src = s->cars[leader]
-				    .race_archive[n];
-			else
-				src = &s->cars[leader].race;
-		}
-		/*
-		 * Per-session result header — session metadata, NOT
-		 * per-car data.  Pcap-verified (2026-05-11 race-end
-		 * test): kunos's 23 B header carries hour_of_day,
-		 * dayOfWeekend-1, session-type AC2 enum, durations.
-		 * Our previous write_result_header (port of
-		 * FUN_1400351f0 from accServer.exe) emitted per-car
-		 * data that AC2's result widget never used.
-		 */
-		{
-			const struct SessionDef *sd =
-			    (n < ACC_MAX_SESSIONS && n < s->session_count)
-			    ? &s->sessions[n] : &s->sessions[0];
-			ok = ok && write_session_result_header(&bb,
-			    sd, s->session_overtime_s) == 0;
-			/*
-			 * Per-session leaderboard — pass the entry's
-			 * session_type so cvar8 + pq_emit policy matches
-			 * kunos (in a race-end results frame, the practice
-			 * entry emits cvar8=0 even though the current
-			 * server phase is the race that just completed).
-			 */
-			ok = ok && write_session_leaderboard_section(&bb, s,
-			    sd->session_type,
-			    n != s->session.session_index) == 0;
-		}
-		(void)leader; (void)src;
+		ok = ok && write_session_result_header(&bb,
+		    sd, s->session_overtime_s) == 0;
+		ok = ok && write_session_leaderboard_section(&bb, s,
+		    sd->session_type,
+		    n != cur,
+		    n != cur ? n : -1) == 0;
 	}
 	if (ok) {
 		for (i = 0; i < ACC_MAX_CARS; i++) {

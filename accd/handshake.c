@@ -603,14 +603,26 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
 	uint8_t cur_type = s->session_count > 0
 	    ? s->sessions[s->session.session_index].session_type : 0;
-	/* Default emit (0x36 / welcome trailer) — never an archived
-	 * session.  is_archived=0. */
-	return write_session_leaderboard_section(bb, s, cur_type, 0);
+	/* Default emit (0x36 / welcome trailer) — current session.
+	 * is_archived=0, session_idx=-1 (live state). */
+	return write_session_leaderboard_section(bb, s, cur_type, 0, -1);
+}
+
+/* Resolve the per-car race-state source for the given session_idx.
+ * session_idx == -1 -> live; archive[idx] != NULL -> snapshot; else live. */
+static const struct CarRaceState *
+race_src_for(const struct CarEntry *ec, int session_idx)
+{
+	if (session_idx < 0 || session_idx >= ACC_MAX_SESSIONS)
+		return &ec->race;
+	if (ec->race_archive[session_idx] != NULL)
+		return ec->race_archive[session_idx];
+	return &ec->race;
 }
 
 int
 write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
-    uint8_t session_type, int is_archived)
+    uint8_t session_type, int is_archived, int session_idx)
 {
 	int j, d, nc = 0;
 	/*
@@ -642,7 +654,8 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 	 * connected cars.
 	 */
 	for (j = 0; j < ACC_MAX_CARS; j++) {
-		struct CarRaceState *r = &s->cars[j].race;
+		const struct CarRaceState *r =
+		    race_src_for(&s->cars[j], session_idx);
 
 		if (!r->disqualified) {
 			if (r->best_lap_ms > 0 &&
@@ -693,25 +706,31 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 
 		for (pos = 1; pos <= ACC_MAX_CARS && emitted < nc; pos++) {
 			for (j = 0; j < ACC_MAX_CARS; j++) {
+				const struct CarRaceState *src;
 				if (!s->cars[j].used)
 					continue;
-				if (s->cars[j].race.position != pos)
+				src = race_src_for(&s->cars[j], session_idx);
+				if (src->position != pos)
 					continue;
 				if (write_car_leaderboard_record(bb, s,
-				    &s->cars[j], cvar8, is_archived) < 0)
+				    &s->cars[j], cvar8, is_archived,
+				    src) < 0)
 					return -1;
 				emitted++;
 			}
 		}
 		/* Emit any stragglers whose position wasn't in [1..n]. */
 		for (j = 0; j < ACC_MAX_CARS && emitted < nc; j++) {
-			int16_t p = s->cars[j].race.position;
+			const struct CarRaceState *src;
+			int16_t p;
 			if (!s->cars[j].used)
 				continue;
+			src = race_src_for(&s->cars[j], session_idx);
+			p = src->position;
 			if (p >= 1 && p <= ACC_MAX_CARS)
 				continue;
 			if (write_car_leaderboard_record(bb, s,
-			    &s->cars[j], cvar8, is_archived) < 0)
+			    &s->cars[j], cvar8, is_archived, src) < 0)
 				return -1;
 			emitted++;
 		}
@@ -744,9 +763,10 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 int
 write_car_leaderboard_record(struct ByteBuf *bb,
     const struct Server *s, const struct CarEntry *ec, uint8_t cvar8,
-    int is_archived)
+    int is_archived, const struct CarRaceState *race_src)
 {
-	const struct CarRaceState *race = &ec->race;
+	const struct CarRaceState *race = race_src != NULL
+	    ? race_src : &ec->race;
 	const struct PenaltyQueue *pq = &race->pen;
 	/*
 	 * Derive in_race from cvar8 — the leaderboard caller passed it
