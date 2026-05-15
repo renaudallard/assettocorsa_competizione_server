@@ -495,6 +495,25 @@ static void send_tcp_framed(int tcp_fd, const uint8_t *body, size_t n)
 }
 
 /*
+ * Per-tick physics snapshot the bot feeds into pkt_car_update so the
+ * 8 input bytes (input_a + wheel_slip) and the RPM / gear / fuel /
+ * damage bytes carry content-varying values instead of all-zero.
+ * `zero` opts back into the legacy all-zero behaviour for byte-diff
+ * tests that compare against a kunos pcap captured under similar
+ * "stationary input" conditions.
+ */
+struct CarInputs {
+	int      zero;        /* 1 = emit legacy all-zero inputs */
+	float    v_current;   /* m/s */
+	float    v_target;    /* m/s */
+	float    yaw_delta;   /* radians since last tick */
+	uint8_t  gear;        /* 0 = neutral, 1.. = N+1 */
+	uint8_t  fuel;        /* 0..255 (255 = full tank) */
+	uint8_t  damage;      /* 0..255 (0 = pristine) */
+	uint16_t rpm;         /* 1..65000 */
+};
+
+/*
  * 0x1e ACP_CAR_UPDATE — 68 bytes.
  * scalar_44 (offset 57) is reinterpreted as f32 by accd to read the
  * normalized track position used for formation/green triggers.
@@ -503,8 +522,64 @@ static size_t pkt_car_update(uint8_t *out, uint16_t conn_id,
     uint16_t car_id, uint8_t seq, uint32_t client_ts_ms,
     float pos_x, float pos_y, float pos_z,
     float vel_x, float vel_y, float vel_z,
-    float norm_pos)
+    float norm_pos, const struct CarInputs *in)
 {
+	uint8_t steering = 0, throttle = 0, brake = 0, slip = 0, lat_g = 127;
+	uint8_t gear = 0, fuel = 0, damage = 0;
+	uint16_t rpm = 0;
+
+	if (in != NULL && !in->zero) {
+		float dv = in->v_target - in->v_current;
+		float s;
+		int t, b, st;
+
+		/*
+		 * Steering: yaw_delta in radians, mapped onto signed-
+		 * biased u8 with full-lock at ~0.05 rad / tick (~15
+		 * deg/s on a real car, plenty for the synthetic loop).
+		 */
+		st = 127 + (int)(in->yaw_delta * (127.0f / 0.05f));
+		if (st < 0) st = 0;
+		if (st > 255) st = 255;
+		steering = (uint8_t)st;
+
+		/*
+		 * Throttle / brake: derived from the v_target gap.  When
+		 * the bot wants to accelerate, throttle scales with the
+		 * normalised positive gap; when it wants to brake,
+		 * brake scales with the negative gap.  Approximate but
+		 * non-zero across every tick the bot actually drives.
+		 */
+		t = dv > 0 ? (int)((dv / V_RACE) * 255.0f) : 0;
+		b = dv < 0 ? (int)((-dv / V_RACE) * 255.0f) : 0;
+		if (t > 255) t = 255;
+		if (b > 255) b = 255;
+		throttle = (uint8_t)t;
+		brake = (uint8_t)b;
+
+		/*
+		 * Wheel slip proxy: v_current normalised × 25 (scaling
+		 * matches the kunos receiver's `slip/25` decode per
+		 * memory:reference_0x1e_field_semantics).  Same byte
+		 * on all four wheels in this approximation.
+		 */
+		s = (in->v_current / V_RACE) * 25.0f * 4.0f;
+		if (s < 0) s = 0;
+		if (s > 255) s = 255;
+		slip = (uint8_t)s;
+
+		gear = in->gear;
+		fuel = in->fuel;
+		damage = in->damage;
+		rpm = in->rpm;
+		/*
+		 * lateral_g_or_head_lean stays at signed-bias zero
+		 * (127); we don't model cornering G in the synthetic
+		 * loop precisely enough to fake the sign.
+		 */
+		lat_g = 127;
+	}
+
 	bb_reset();
 	bb_u8(0x1e);
 	bb_u16(conn_id);
@@ -514,15 +589,22 @@ static size_t pkt_car_update(uint8_t *out, uint16_t conn_id,
 	bb_f32(pos_x); bb_f32(pos_y); bb_f32(pos_z);
 	bb_f32(0); bb_f32(0); bb_f32(0);
 	bb_f32(vel_x); bb_f32(vel_y); bb_f32(vel_z);
-	bb_u8(0); bb_u8(0); bb_u8(0); bb_u8(0);
-	bb_u8(0); bb_u8(0); bb_u16(0);
-	bb_u8(0); bb_u8(0); bb_u8(0);
+	/* input_a[4]: steering, throttle, brake, clutch */
+	bb_u8(steering); bb_u8(throttle); bb_u8(brake); bb_u8(0);
+	/* yaw_or_torque + steer_wheel_deg_half + engine_rpm */
+	bb_u8(0); bb_u8(0); bb_u16(rpm);
+	/* gear + fuel + damage */
+	bb_u8(gear); bb_u8(fuel); bb_u8(damage);
 	{
 		uint32_t u; memcpy(&u, &norm_pos, 4);
 		bb_u32(u);
 	}
-	bb_u8(0); bb_u8(0); bb_u8(0); bb_u8(0);
-	bb_u8(0);
+	/* wheel_slip[4] (a.k.a. input_b in older spec versions) */
+	bb_u8(slip); bb_u8(slip); bb_u8(slip); bb_u8(slip);
+	/* lateral_g_or_head_lean */
+	bb_u8(lat_g);
+	/* i16 alive_sentinel — sender side leaves at 0; server gates
+	 * its own checks on the relayed value. */
 	bb_u8(0); bb_u8(0);
 	memcpy(out, bb_buf, bb_n);
 	return bb_n;
@@ -1007,7 +1089,13 @@ static void usage(const char *p)
 	    "  --bump M         one-shot lateral kick of M metres\n"
 	    "  --bump-at-lap N  apply the kick at the start of lap N\n"
 	    "  --report-penalty cat:kind:value\n"
-	    "                   send one 0x41 ACP_REPORT_PENALTY at tick 200\n",
+	    "                   send one 0x41 ACP_REPORT_PENALTY at tick 200\n"
+	    "  --zero-inputs    emit legacy all-zero input bytes in every\n"
+	    "                   0x1e car_update (steering / throttle / brake /\n"
+	    "                   wheel_slip / rpm / gear / fuel / damage all\n"
+	    "                   zero).  Use when pcap-diffing against a kunos\n"
+	    "                   capture that itself was taken with stationary\n"
+	    "                   inputs.\n",
 	    p);
 }
 
@@ -1068,6 +1156,8 @@ int main(int argc, char **argv)
 	int reconnect_count = 0;
 	uint32_t reconnect_backoff_ms = 1000;
 	float v_current = 0;	/* physics: actual speed, smoothed toward target */
+	float prev_yaw = 0;	/* atan2(vz, vx) from previous tick; for steering proxy */
+	int   have_yaw = 0;
 	float lateral_offset = 0;	/* metres off the racing line; > 0 = right */
 	uint32_t on_track_ms = 0;	/* total ms with location=Track for tyre wear */
 	int bump_applied_for_lap = -1;
@@ -1104,6 +1194,7 @@ int main(int argc, char **argv)
 		{"penalty-start-tick", required_argument, 0, 'S'},
 		{"chat", required_argument, 0, 'C'},
 		{"chat-start-tick", required_argument, 0, 'Z'},
+		{"zero-inputs", no_argument,       0, 'I'},
 		{"help",        no_argument,       0, 'h'},
 		{0,0,0,0}
 	};
@@ -1118,7 +1209,9 @@ int main(int argc, char **argv)
 	const char *chat_msgs[MAX_CHATS];
 	int chat_n = 0, chat_sent_n = 0;
 	uint32_t chat_start_tick = 60;
-	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXYr:q:k:g:F:Q:v:W:jB:A:p:D:S:C:Z:h",
+	int zero_inputs = 0;	/* --zero-inputs: emit all-zero input bytes
+				 * for byte-diff parity with legacy pcaps. */
+	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXYr:q:k:g:F:Q:v:W:jB:A:p:D:S:C:Z:Ih",
 	    opts, NULL)) != -1) {
 		switch (o) {
 		case 'H': host = optarg; break;
@@ -1268,6 +1361,9 @@ int main(int argc, char **argv)
 			break;
 		case 'Z':
 			chat_start_tick = (uint32_t)atoi(optarg);
+			break;
+		case 'I':
+			zero_inputs = 1;
 			break;
 		case 'h': usage(argv[0]); return 0;
 		default:  usage(argv[0]); return 2;
@@ -1786,11 +1882,62 @@ int main(int argc, char **argv)
 		}
 
 		{
+			struct CarInputs ci;
+			float yaw_now = atan2f(vz, vx);
+			float yaw_delta = have_yaw ? (yaw_now - prev_yaw) : 0.0f;
+			int dsum, k;
+
+			/* unwrap yaw_delta to (-pi, pi] so a wrap-around
+			 * tick doesn't fake a hard steering input. */
+			while (yaw_delta >  (float)M_PI) yaw_delta -= 2.0f * (float)M_PI;
+			while (yaw_delta < -(float)M_PI) yaw_delta += 2.0f * (float)M_PI;
+
+			ci.zero      = zero_inputs;
+			ci.v_current = v_current;
+			ci.v_target  = v_target;
+			ci.yaw_delta = yaw_delta;
+			/*
+			 * Crude gear ladder: 1 at idle, +1 per ~12 m/s up to
+			 * 7th.  Matches the bot's V_RACE = 85 m/s ceiling.
+			 */
+			ci.gear = (uint8_t)(1 + (int)(v_current / 12.0f));
+			if (ci.gear > 7) ci.gear = 7;
+			/*
+			 * RPM: 1500 idle, climbing to ~7500 at V_RACE.
+			 * Matches the AC2 HUD's typical band for a GT3 car.
+			 */
+			{
+				int rpm_calc = 1500 +
+				    (int)((v_current / V_RACE) * 6000.0f);
+				if (rpm_calc < 0) rpm_calc = 0;
+				if (rpm_calc > 65000) rpm_calc = 65000;
+				ci.rpm = (uint16_t)rpm_calc;
+			}
+			/*
+			 * Fuel: linear decay across 5 laps from full (255).
+			 * Per-lap drain ≈ 51 bytes; bot rarely runs more
+			 * than 3-4 laps in integration tests.
+			 */
+			{
+				int f = 255 - lap * 51;
+				if (f < 0) f = 0;
+				ci.fuel = (uint8_t)f;
+			}
+			/* Damage: sum of the 5 zone bytes, clamped. */
+			dsum = 0;
+			for (k = 0; k < 5; k++)
+				dsum += damage[k];
+			if (dsum > 255) dsum = 255;
+			ci.damage = (uint8_t)dsum;
+
 			size_t n = pkt_car_update(pkt, conn_id,
 			    (uint16_t)car_id, seq++, client_ts,
-			    px, py, pz, vx, vy, vz, u_pos);
+			    px, py, pz, vx, vy, vz, u_pos, &ci);
 			sendto(udp_fd, pkt, n, 0,
 			    (struct sockaddr *)&udp_peer, sizeof udp_peer);
+
+			prev_yaw = yaw_now;
+			have_yaw = 1;
 		}
 
 		if (tick % 60 == 0) {
