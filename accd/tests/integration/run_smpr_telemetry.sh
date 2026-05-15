@@ -96,6 +96,8 @@ sock.settimeout(0.3)
 buf = b''
 car_entries = []          # list of {car_id, race_number, ...}
 conn_first_names = []     # driver first names seen in CONNECTION_ENTRY
+lb_entry_names = []       # driver names seen in LEADERBOARD entries
+rtu_car_ids = set()       # cars listed inside REALTIME_UPDATE
 deadline = time.time() + 3.5
 while time.time() < deadline:
     try:
@@ -128,6 +130,24 @@ while time.time() < deadline:
                         conn_first_names.append(v.decode('utf-8','replace'))
             except Exception:
                 pass
+        elif mt == 0x06:  # REALTIME_UPDATE
+            try:
+                for fn, (wt, v) in walk_fields(body):
+                    if fn == 4 and wt == 'len':  # PB_RTU_CARS submessage
+                        for sub_fn, (sub_wt, sv) in walk_fields(v):
+                            if sub_fn == 1 and sub_wt == 'varint':
+                                rtu_car_ids.add(sv)
+            except Exception:
+                pass
+        elif mt == 0x07:  # LEADERBOARD
+            try:
+                for fn, (wt, v) in walk_fields(body):
+                    if fn == 4 and wt == 'len':  # PB_LB_ENTRIES sub
+                        for sub_fn, (sub_wt, sv) in walk_fields(v):
+                            if sub_fn == 13 and sub_wt == 'len':
+                                lb_entry_names.append(sv.decode('utf-8','replace'))
+            except Exception:
+                pass
 
 print(f'CAR_ENTRY count: {len(car_entries)}')
 race_nums = sorted({e.get("race_number") for e in car_entries if "race_number" in e})
@@ -148,5 +168,17 @@ if missing:
     print(f'FAIL: missing driver names in CONNECTION_ENTRY: {missing}')
     sys.exit(2)
 
-print("RESULT: PASS (SMPR exposes both bots' race_numbers + driver names)")
+print(f'REALTIME_UPDATE cars repeated: {sorted(rtu_car_ids)}')
+if not rtu_car_ids:
+    print('FAIL: no car_ids inside REALTIME_UPDATE cars subs')
+    sys.exit(3)
+
+print(f'LEADERBOARD driver names: {sorted(set(lb_entry_names))}')
+# Drivers default to first_name='Bot' last_name='Driver' so the
+# combined PB_LBE_DRIVER_NAME is 'Bot Driver'.  Just assert non-empty.
+if not lb_entry_names:
+    print('FAIL: no LEADERBOARD entries (wiring stub regression?)')
+    sys.exit(4)
+
+print('RESULT: PASS (SMPR exposes race_numbers, names, RTU cars, LB entries)')
 PY

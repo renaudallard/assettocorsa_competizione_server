@@ -130,7 +130,7 @@ smpr_push_car_entries(struct Server *s, struct Conn *c)
 			continue;
 		for (j = 0; j < ACC_MAX_CARS; j++) {
 			if (s->conns[j] != NULL &&
-			    s->conns[j]->car_id == car->car_id) {
+			    s->conns[j]->car_id == i) {
 				driving_conn = s->conns[j]->conn_id;
 				break;
 			}
@@ -296,6 +296,18 @@ smpr_handle_connect(struct Server *s, struct Conn *c,
 	smpr_push_session_state(s, c);
 	smpr_push_car_entries(s, c);
 	smpr_push_connection_entries(s, c);
+
+	/* Initial leaderboard push so the observer sees current standings
+	 * immediately, instead of waiting on the next event-driven
+	 * leaderboard_pending or the 75s async heartbeat. */
+	{
+		struct ByteBuf body;
+		bb_init(&body);
+		if (monitor_build_leaderboard(&body, s) == 0)
+			(void)smpr_send_msg(c,
+			    SMPR_MSG_LEADERBOARD_UPDATE, &body);
+		bb_free(&body);
+	}
 
 	return 0;
 }

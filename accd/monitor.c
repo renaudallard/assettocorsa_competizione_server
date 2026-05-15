@@ -236,11 +236,23 @@ monitor_build_session_state(struct ByteBuf *bb, const struct Server *s)
 	return 0;
 }
 
+/* Find the conn_id driving slot `car_idx`, or -1 if no live driver. */
+static int
+driving_conn_for_car(const struct Server *s, int car_idx)
+{
+	int j;
+	for (j = 0; j < ACC_MAX_CARS; j++)
+		if (s->conns[j] != NULL && s->conns[j]->car_id == car_idx)
+			return (int)s->conns[j]->conn_id;
+	return -1;
+}
+
 int
 monitor_build_realtime_update(struct ByteBuf *bb,
     const struct Server *s)
 {
 	size_t sub_start;
+	int i;
 
 	if (pb_w_int32(bb, PB_RTU_SERVER_NOW,
 	    (int32_t)(s->session.weekend_time_s * 1000)) < 0)
@@ -251,20 +263,175 @@ monitor_build_realtime_update(struct ByteBuf *bb,
 		return -1;
 	if (pb_sub_end(bb, sub_start) < 0)
 		return -1;
-	/* Repeated connections / cars are emitted as one sub each;
-	 * we leave them empty for the post-handshake push and
-	 * fill them in phase 5/6 when CarRaceState exists. */
+
+	/* Repeated PB_RTU_CONNECTIONS — one ConnectionEntry submessage per
+	 * authenticated, non-SMPR conn currently attached. */
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		const struct Conn *o = s->conns[i];
+		if (o == NULL || o->state != CONN_AUTH || o->is_smpr)
+			continue;
+		if (pb_sub_begin(bb, PB_RTU_CONNECTIONS, &sub_start) < 0)
+			return -1;
+		if (monitor_build_connection_entry(bb, s, o) < 0)
+			return -1;
+		if (pb_sub_end(bb, sub_start) < 0)
+			return -1;
+	}
+
+	/* Repeated PB_RTU_CARS — one CarEntry per used slot. */
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+		const struct CarEntry *car = &s->cars[i];
+		int driving_conn;
+		if (!car->used)
+			continue;
+		driving_conn = driving_conn_for_car(s, i);
+		if (pb_sub_begin(bb, PB_RTU_CARS, &sub_start) < 0)
+			return -1;
+		if (monitor_build_car_entry(bb, car, driving_conn) < 0)
+			return -1;
+		if (pb_sub_end(bb, sub_start) < 0)
+			return -1;
+	}
+	return 0;
+}
+
+static int
+build_leaderboard_entry(struct ByteBuf *bb, const struct Server *s,
+    int car_idx)
+{
+	const struct CarEntry *car = &s->cars[car_idx];
+	const struct CarRaceState *race = &car->race;
+	const struct DriverInfo *d = NULL;
+	int driving_conn = driving_conn_for_car(s, car_idx);
+	size_t sub_start;
+	int k;
+	uint8_t idx;
+
+	idx = car->current_driver_index;
+	if (idx < car->driver_count && idx < ACC_MAX_DRIVERS_PER_CAR)
+		d = &car->drivers[idx];
+
+	if (pb_sub_begin(bb, PB_LBE_CAR_ENTRY, &sub_start) < 0) return -1;
+	if (monitor_build_car_entry(bb, car, driving_conn) < 0) return -1;
+	if (pb_sub_end(bb, sub_start) < 0) return -1;
+
+	if (d != NULL && d->steam_id[0] != '\0')
+		if (pb_w_string(bb, PB_LBE_CURRENT_STEAM_ID, d->steam_id) < 0)
+			return -1;
+
+	/* missing-mandatory-pits gauge: cfg requirement - served. */
+	if (s->mandatory_pit_count > 0) {
+		int32_t miss = (int32_t)s->mandatory_pit_count -
+		    (int32_t)race->mandatory_pit_served;
+		if (miss < 0) miss = 0;
+		if (pb_w_int32(bb, PB_LBE_MISSING_MANDATORY_PITS, miss) < 0)
+			return -1;
+	}
+
+	/* PB_LBE_DRIVER_TIMES (repeated i32) — accumulated stint ms per
+	 * driver index, in order. */
+	for (k = 0; k < car->driver_count && k < ACC_MAX_DRIVERS_PER_CAR; k++)
+		if (pb_w_int32(bb, PB_LBE_DRIVER_TIMES,
+		    race->driver_stint_ms[k]) < 0)
+			return -1;
+
+	if (pb_w_int32(bb, PB_LBE_LAST_LAP_TIME, race->last_lap_ms) < 0)
+		return -1;
+
+	/* PB_LBE_LAST_LAP_SPLITS (repeated) — splits of the just-completed
+	 * lap.  Pick from lap_splits_ms[last_idx] where last_idx wraps
+	 * around the ring. */
+	if (race->lap_history_count > 0) {
+		uint32_t last_idx = (race->lap_history_count - 1)
+		    % ACC_LAP_HISTORY;
+		for (k = 0; k < 3; k++)
+			if (pb_w_int32(bb, PB_LBE_LAST_LAP_SPLITS,
+			    race->lap_splits_ms[last_idx][k]) < 0)
+				return -1;
+	}
+
+	if (pb_w_int32(bb, PB_LBE_BEST_LAP_TIME, race->best_lap_ms) < 0)
+		return -1;
+
+	for (k = 0; k < 3; k++)
+		if (pb_w_int32(bb, PB_LBE_BEST_LAP_SPLITS,
+		    race->best_sectors_ms[k]) < 0)
+			return -1;
+
+	if (pb_w_int32(bb, PB_LBE_LAP_COUNT, race->lap_count) < 0)
+		return -1;
+	if (pb_w_int32(bb, PB_LBE_TOTAL_TIME, race->race_time_ms) < 0)
+		return -1;
+
+	/* Head pending penalty (slot 0).  Non-admin slots only — admin
+	 * penalties don't surface in client-visible leaderboard either. */
+	if (race->pen.count > 0 && !race->pen.slots[0].admin) {
+		if (pb_w_enum(bb, PB_LBE_CURRENT_PENALTY,
+		    race->pen.slots[0].kind) < 0)
+			return -1;
+		if (pb_w_int32(bb, PB_LBE_CURRENT_PENALTY_VALUE,
+		    race->pen.slots[0].laps_remaining) < 0)
+			return -1;
+	}
+
+	if (d != NULL) {
+		char full[ACC_MAX_NAME_LEN * 2 + 2];
+
+		snprintf(full, sizeof full, "%s %s",
+		    d->first_name, d->last_name);
+		if (pb_w_string(bb, PB_LBE_DRIVER_NAME, full) < 0)
+			return -1;
+		if (pb_w_string(bb, PB_LBE_DRIVER_SHORT_NAME,
+		    d->short_name) < 0)
+			return -1;
+	}
+
+	if (pb_w_enum(bb, PB_LBE_CAR_MODEL, car->car_model) < 0)
+		return -1;
 	return 0;
 }
 
 int
 monitor_build_leaderboard(struct ByteBuf *bb, const struct Server *s)
 {
-	if (pb_w_int32(bb, PB_LB_BEST_LAP, 0) < 0)
+	int32_t session_best_lap = 0;
+	int32_t session_best_splits[3] = {0, 0, 0};
+	int i, k;
+	size_t sub_start;
+
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+		const struct CarRaceState *race = &s->cars[i].race;
+		if (!s->cars[i].used)
+			continue;
+		if (race->best_lap_ms > 0 && (session_best_lap == 0 ||
+		    race->best_lap_ms < session_best_lap))
+			session_best_lap = race->best_lap_ms;
+		for (k = 0; k < 3; k++)
+			if (race->best_sectors_ms[k] > 0 &&
+			    (session_best_splits[k] == 0 ||
+			    race->best_sectors_ms[k] < session_best_splits[k]))
+				session_best_splits[k] = race->best_sectors_ms[k];
+	}
+
+	if (pb_w_int32(bb, PB_LB_BEST_LAP, session_best_lap) < 0)
 		return -1;
+	for (k = 0; k < 3; k++)
+		if (pb_w_int32(bb, PB_LB_BEST_SPLITS,
+		    session_best_splits[k]) < 0)
+			return -1;
 	if (pb_w_bool(bb, PB_LB_IS_DECLARED_WET_SESSION, 0) < 0)
 		return -1;
-	(void)s;
+
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+		if (!s->cars[i].used)
+			continue;
+		if (pb_sub_begin(bb, PB_LB_ENTRIES, &sub_start) < 0)
+			return -1;
+		if (build_leaderboard_entry(bb, s, i) < 0)
+			return -1;
+		if (pb_sub_end(bb, sub_start) < 0)
+			return -1;
+	}
 	return 0;
 }
 
