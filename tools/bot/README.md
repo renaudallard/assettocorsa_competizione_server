@@ -97,6 +97,7 @@ Test-only knobs the wire-level integration tests under
 | `--swap-state` T:S[,S2...] | emit `0x47` driver-swap state at tick T |
 | `--swap-request` T:sub:state | emit `0x4a` driver-swap state request |
 | `--damage` T:z1,z2,z3,z4,z5 | emit `0x43` damage zones at tick T |
+| `--pit-speed` M | override pit-lane speed cap (m/s; default 18, server pit-speeding DQ fires above 22.22) |
 | `--flap-at` N | force a TCP close at tick N (exercises reconnect cascade) |
 | `--zero-inputs` | emit legacy all-zero input / rpm / gear / fuel / damage bytes in every 0x1e car-update; default is the realistic-content encoding |
 
