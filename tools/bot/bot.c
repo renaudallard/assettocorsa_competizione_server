@@ -1062,6 +1062,8 @@ static void usage(const char *p)
 	    "  --length M       override the track length (default: derive\n"
 	    "                   from cumulative waypoint distance)\n"
 	    "  --pit-on-lap N   enter pit on lap N (1-based; default never)\n"
+	    "  --pit-speed M    override pit-lane speed cap (m/s; default 18,\n"
+	    "                   server pit-speeding gate fires above 22.22)\n"
 	    "  --laps N         stop after N completed laps (default loop)\n"
 	    "  --grid N         starting grid position (1-based; 1=pole)\n"
 	    "  --mid-race       join an in-progress race (skip formation)\n"
@@ -1107,6 +1109,7 @@ int main(int argc, char **argv)
 	uint32_t race_number = 911;
 	float track_length_override = -1.0f;
 	int pit_on_lap = -1;
+	float pit_speed_cap = V_PITLANE;
 	int max_laps = -1;
 	int grid_pos = 1;		/* 1-based; 1 = pole */
 	int mid_race = 0;		/* skip formation lap */
@@ -1173,6 +1176,7 @@ int main(int argc, char **argv)
 		{"track",       required_argument, 0, 't'},
 		{"length",      required_argument, 0, 'L'},
 		{"pit-on-lap",  required_argument, 0, 'P'},
+		{"pit-speed",   required_argument, 0, 'K'},
 		{"laps",        required_argument, 0, 'l'},
 		{"grid",        required_argument, 0, 'G'},
 		{"mid-race",    no_argument,       0, 'M'},
@@ -1221,6 +1225,7 @@ int main(int argc, char **argv)
 		case 't': track_path = optarg; break;
 		case 'L': track_length_override = (float)atof(optarg); break;
 		case 'P': pit_on_lap = atoi(optarg); break;
+		case 'K': pit_speed_cap = (float)atof(optarg); break;
 		case 'l': max_laps = atoi(optarg); break;
 		case 'G': grid_pos = atoi(optarg); break;
 		case 'M': mid_race = 1; break;
@@ -1518,13 +1523,13 @@ int main(int argc, char **argv)
 			v_target = V_FORMATION;
 		if (pit_on_lap > 0 && lap == pit_on_lap) {
 			if (u_pos > 0.95f) {
-				if (v_target > V_PITLANE)
-					v_target = V_PITLANE;
+				if (v_target > pit_speed_cap)
+					v_target = pit_speed_cap;
 				loc = (last_loc == LOC_TRACK) ?
 				    LOC_PITENTRY : LOC_PITLANE;
 			} else if (u_pos < 0.05f) {
-				if (v_target > V_PITLANE)
-					v_target = V_PITLANE;
+				if (v_target > pit_speed_cap)
+					v_target = pit_speed_cap;
 				loc = (last_loc == LOC_PITLANE) ?
 				    LOC_PITEXIT : LOC_PITLANE;
 			}
