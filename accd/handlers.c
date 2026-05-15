@@ -2024,22 +2024,32 @@ h_ctrl_info(struct Server *s, struct Conn *c,
 			    ? car->current_driver_index : 0].last_name;
 	}
 
-	off = (size_t)snprintf(chat, sizeof(chat),
-	    "Ctrl Info carId %u (%s): %s",
+	/*
+	 * snprintf returns "would-have-written", not bytes-actually-
+	 * written.  Tracking the accumulator with the would-have-written
+	 * count can overshoot sizeof(chat) on truncation; the subsequent
+	 * `off < sizeof(chat)` gate prevents an out-of-bounds write but
+	 * leaves a misleading invariant.  Clamp every append to the
+	 * remaining space so `off` always equals bytes actually written.
+	 */
+#define APPEND(...) do {                                                     \
+	if (off < sizeof(chat) - 1) {                                        \
+		int _n = snprintf(chat + off, sizeof(chat) - off, __VA_ARGS__); \
+		if (_n < 0) break;                                           \
+		off += ((size_t)_n < sizeof(chat) - off)                     \
+		    ? (size_t)_n : sizeof(chat) - off - 1;                   \
+	}                                                                    \
+} while (0)
+
+	off = 0;
+	APPEND("Ctrl Info carId %u (%s): %s",
 	    (unsigned)(car_id_u32 & 0xffff), driver_name,
 	    model ? model : "");
-	if (gpe && off < sizeof(chat))
-		off += (size_t)snprintf(chat + off, sizeof(chat) - off,
-		    ", gpe");
-	if (as_flag && off < sizeof(chat))
-		off += (size_t)snprintf(chat + off, sizeof(chat) - off,
-		    ", as");
-	if (sc_active && off < sizeof(chat))
-		off += (size_t)snprintf(chat + off, sizeof(chat) - off,
-		    ", sc %.2f", (double)sc_scale);
-	if (!gpe && !as_flag && !sc_active && off < sizeof(chat))
-		off += (size_t)snprintf(chat + off, sizeof(chat) - off,
-		    ", running defaults");
+	if (gpe) APPEND(", gpe");
+	if (as_flag) APPEND(", as");
+	if (sc_active) APPEND(", sc %.2f", (double)sc_scale);
+	if (!gpe && !as_flag && !sc_active) APPEND(", running defaults");
+#undef APPEND
 
 	log_info("ctrl info: conn=%u car=%u cam=%s-%s setup=%u",
 	    (unsigned)c->conn_id, (unsigned)(car_id_u32 & 0xffff),
