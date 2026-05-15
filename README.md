@@ -772,7 +772,7 @@ interoperability of an independently created program.
 │   │   ├── smoke_handshake.py      python wire-level smoke
 │   │   ├── smoke_reject_codes.py   reject-code matrix
 │   │   ├── fake_client.py          11-anchor welcome-trailer walker
-│   │   └── integration/            61 shell-driven integration tests
+│   │   └── integration/            65 shell-driven integration tests
 │   └── fuzz/
 │       └── fuzz_json.c             libFuzzer harness for json_parse
 ├── tools/
@@ -780,8 +780,11 @@ interoperability of an independently created program.
 │   │                        the upstream `accweb` web manager drive
 │   │                        accd unchanged (see README inside).
 │   ├── bot/                 Local sim-client simulator used by the
-│   │                        integration tests (race lines, pcap
-│   │                        diff against kunos).
+│   │                        integration tests.  `bot.c` drives the
+│   │                        wire path with realistic input_a/b
+│   │                        bytes derived from per-tick physics;
+│   │                        defaults to a synthetic stadium loop
+│   │                        when no `--track` CSV is supplied.
 │   └── smpr-inspect/        Drop-in Python CLI client for accd's
 │                            SMPR protobuf side-channel.  Text or
 │                            NDJSON output; stdlib-only.

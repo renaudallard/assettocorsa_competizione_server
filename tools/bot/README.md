@@ -23,8 +23,13 @@ under Wine.
   (`0x16`), reconnect with exponential backoff, mid-race join,
   damage zones (`0x43`), dirt (`0x45`), tyre compound (`0x2f`).
 - Drives on a kinematic model: corner radius from the racing-line
-  geometry, aero growth at speed, simple wear, bump recovery.  No
-  input simulation, no slip, no kerb usage.
+  geometry, aero growth at speed, simple wear, bump recovery.  Each
+  0x1e car-update carries content-varying input bytes derived from
+  the per-tick physics state -- steering from yaw delta, throttle
+  / brake from the v_target vs v_current gap, gear / rpm / fuel /
+  damage from the lap + speed model, wheel-slip approximated from
+  v_current/V_RACE.  Use `--zero-inputs` to opt back into the
+  legacy all-zero behaviour for byte-diff parity with old pcaps.
 
 ## What it isn't
 
@@ -93,13 +98,16 @@ Test-only knobs the wire-level integration tests under
 | `--swap-request` T:sub:state | emit `0x4a` driver-swap state request |
 | `--damage` T:z1,z2,z3,z4,z5 | emit `0x43` damage zones at tick T |
 | `--flap-at` N | force a TCP close at tick N (exercises reconnect cascade) |
+| `--zero-inputs` | emit legacy all-zero input / rpm / gear / fuel / damage bytes in every 0x1e car-update; default is the realistic-content encoding |
 
 ## Getting a racing line
 
 The bot needs a CSV waypoint file shaped `norm_pos x y z [speed]`
 to drive a real track.  No racing-line data ships with this
 repository — Assetto Corsa Competizione's track data is Kunos's
-copyrighted material.  Two ways to produce a CSV yourself:
+copyrighted material, and our internal test pcaps are
+protocol-probing sessions where the bot-driven trajectory is not a
+representative racing line.  Two ways to produce a CSV yourself:
 
 1. **From a local ACC install** (Windows or via a Wine prefix
    that has the game installed), use `parse_ai.py` on the source
