@@ -112,6 +112,21 @@ results_write(struct Server *s)
 	strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm);
 	snprintf(path, sizeof(path), "%s/%s_%s.json",
 	    dir, ts, session_type_str(st));
+	/*
+	 * Two sessions of the same type closing in the same wall-clock
+	 * second (admin DQ chain, force advance) used to overwrite the
+	 * earlier file via the atomic_open rename.  If the file already
+	 * exists, append "_2", "_3", ... until a free name turns up.
+	 */
+	{
+		struct stat sb;
+		int suffix;
+
+		for (suffix = 2; suffix < 100 && stat(path, &sb) == 0;
+		    suffix++)
+			snprintf(path, sizeof(path), "%s/%s_%s_%d.json",
+			    dir, ts, session_type_str(st), suffix);
+	}
 
 	f = atomic_open(tmp_path, sizeof(tmp_path), path, "results");
 	if (f == NULL)
