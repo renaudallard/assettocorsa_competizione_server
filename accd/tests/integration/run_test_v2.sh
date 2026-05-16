@@ -23,10 +23,25 @@ rm -f cfg/current/*.json log/*.log accd.pcap accd.log bot*.log 2>/dev/null || tr
 
 PCAP_TMP=/tmp/penalty_diff_accd.pcap
 rm -f "$PCAP_TMP"
+# Verify sudo + dumpcap up front so a NOPASSWD misconfiguration
+# fails the test with a clear message instead of having `set -e`
+# trip on the later `sudo -n cp` and produce a misleading symptom.
+if ! sudo -n true 2>/dev/null; then
+    echo "FAIL: sudo -n not allowed — run_test_v2 needs passwordless sudo for dumpcap" >&2
+    exit 90
+fi
+if ! command -v dumpcap >/dev/null 2>&1; then
+    echo "FAIL: dumpcap not on PATH" >&2
+    exit 91
+fi
 sudo -n dumpcap -i lo -w "$PCAP_TMP" -f 'tcp port 9302 or udp port 9303' \
     -q >/dev/null 2>&1 &
 TCPDUMP_PID=$!
 sleep 1
+if ! kill -0 "$TCPDUMP_PID" 2>/dev/null; then
+    echo "FAIL: dumpcap exited within 1s — capture filter or permission issue" >&2
+    exit 92
+fi
 
 "$ACCD" -c cfg >accd.log 2>&1 &
 ACCD_PID=$!
