@@ -161,6 +161,16 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 			value = 0;
 	}
 	e = &q->slots[q->count++];
+	/*
+	 * Zero the whole entry first so the eviction shift above doesn't
+	 * leak the previous occupant's `pending`, `admin`, or
+	 * `race_end_tp` flags into a fresh push.  Without this, a real
+	 * server-detected penalty (pit-speeding DQ, auto-DT) landing in
+	 * a slot that previously held an admin-issued penalty silently
+	 * inherits `admin=1` and is hidden from the 0x36 active_pen /
+	 * pq_emit lists.
+	 */
+	memset(e, 0, sizeof(*e));
 	e->kind = pen_kind;
 	e->reason = reason;
 	e->collision = collision ? 1 : 0;
