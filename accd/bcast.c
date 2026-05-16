@@ -92,6 +92,18 @@ conn_send_framed(struct Conn *c, const void *body, size_t len)
 
 	if (c == NULL || c->fd < 0)
 		return -1;
+	/*
+	 * Refuse to send on a conn that's already been flagged for
+	 * disconnect (slow-client hard cap, bb_append-fail mid-frame,
+	 * dispatch-driven teardown).  Without this gate, same-tick
+	 * direct callers (chat.c:463/675/998/1025, handshake.c, tick.c,
+	 * dispatch.c, handlers.c) keep pushing fresh frame headers
+	 * into the kernel TCP buffer that already holds a partial
+	 * frame from the failing call — corrupting the stream until
+	 * the dispatch loop finally reaps the conn.
+	 */
+	if (c->state == CONN_DISCONNECT)
+		return -1;
 	hdrlen = build_tcp_hdr(hdr, len);
 	total = hdrlen + len;
 	queued_before = c->tx.wpos - c->tx.rpos;
