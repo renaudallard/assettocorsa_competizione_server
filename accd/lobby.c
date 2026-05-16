@@ -325,18 +325,33 @@ lobby_send_framed(struct LobbyClient *l, const void *body, size_t len)
 				continue;
 			if (errno == EAGAIN || errno == EWOULDBLOCK) {
 				/*
-				 * Backpressure: wait for the socket to drain
-				 * instead of returning -1 mid-frame, which
-				 * would leave a partial header in the kernel
-				 * buffer and desync kson framing for every
-				 * subsequent message until the lobby
-				 * disconnects.
+				 * Backpressure: wait briefly for the socket
+				 * to drain instead of returning -1 mid-frame,
+				 * which would leave a partial header in the
+				 * kernel buffer and desync kson framing for
+				 * every subsequent message until the lobby
+				 * disconnects.  Cap the wait at 100 ms — this
+				 * function runs on the main poll loop and a
+				 * longer block stalls UDP relay + accept for
+				 * every other peer.  A real lobby stall takes
+				 * multiple 100 ms ticks to recover anyway;
+				 * the caller treats -1 as "lost the lobby
+				 * link" and the periodic reconnect resumes.
 				 */
 				struct pollfd pfd;
+				int prc;
 				pfd.fd = l->fd;
 				pfd.events = POLLOUT;
-				if (poll(&pfd, 1, 2000) <= 0) {
+				prc = poll(&pfd, 1, 100);
+				if (prc <= 0) {
 					log_warn("lobby: writev stalled");
+					return -1;
+				}
+				if (pfd.revents & (POLLERR | POLLHUP |
+				    POLLNVAL)) {
+					log_warn("lobby: writev peer hung up "
+					    "(revents=0x%x)",
+					    (unsigned)pfd.revents);
 					return -1;
 				}
 				continue;
