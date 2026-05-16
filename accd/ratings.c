@@ -148,6 +148,29 @@ done:
 	fclose(f);
 }
 
+/*
+ * JSON-escape a key into f.  steam_id strings come from wire-supplied
+ * handshake data; rd_str_a strips C0 controls but NOT '"' or '\', so a
+ * malicious / malformed steam_id with embedded quote bytes would
+ * otherwise corrupt cfg/ratings.json (next ratings_load rejects the
+ * entire file and wipes every operator's ladder).
+ */
+static void
+fprint_json_key(FILE *f, const char *s)
+{
+	fputc('"', f);
+	for (; *s != '\0'; s++) {
+		unsigned char c = (unsigned char)*s;
+		if (c == '"' || c == '\\')
+			fprintf(f, "\\%c", c);
+		else if (c < 0x20)
+			fprintf(f, "\\u%04x", c);
+		else
+			fputc((int)c, f);
+	}
+	fputc('"', f);
+}
+
 void
 ratings_save(struct Server *s)
 {
@@ -171,9 +194,9 @@ ratings_save(struct Server *s)
 			continue;
 		if (!first)
 			fputs(",\n", f);
-		fprintf(f,
-		    "  \"%s\": { \"sa\": %u, \"tr\": %u }",
-		    e->steam_id,
+		fputs("  ", f);
+		fprint_json_key(f, e->steam_id);
+		fprintf(f, ": { \"sa\": %u, \"tr\": %u }",
 		    (unsigned)e->sa_x100, (unsigned)e->tr_x100);
 		first = 0;
 	}
