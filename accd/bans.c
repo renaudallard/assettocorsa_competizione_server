@@ -36,6 +36,7 @@
 #include <unistd.h>
 
 #include "bans.h"
+#include "io.h"
 #include "log.h"
 #include "state.h"
 
@@ -92,32 +93,26 @@ bans_save(const struct BanList *bl, const char *cfg_dir)
 	int i;
 
 	snprintf(path, sizeof(path), "%s/banlist.txt", cfg_dir);
-	snprintf(tmp, sizeof(tmp), "%s.tmp", path);
 
 	/*
-	 * Write through a sibling .tmp first, then rename(2) atomically
-	 * onto the live file.  Without this, a crash mid-write truncates
-	 * banlist.txt and the operator silently loses the entire ban
-	 * list on next boot.
+	 * Route through the io.c helpers so we pick up the same
+	 * fsync-before-rename + ferror handling as ratings.json /
+	 * results.json — a crash or power loss mid-write no longer
+	 * renames an empty .tmp onto the live banlist.
 	 */
-	f = fopen(tmp, "w");
-	if (f == NULL) {
-		log_warn("bans: write %s: %s", tmp, strerror(errno));
+	f = atomic_open(tmp, sizeof(tmp), path, "bans");
+	if (f == NULL)
 		return;
-	}
 	fprintf(f, "# accd ban list -- one Steam64 ID per line\n");
 	for (i = 0; i < bl->count; i++)
 		fprintf(f, "%s\n", bl->entries[i]);
-	if (fclose(f) != 0) {
-		log_warn("bans: fclose %s: %s", tmp, strerror(errno));
+	if (ferror(f)) {
+		log_warn("bans: write %s: %s", tmp, strerror(errno));
+		fclose(f);
 		(void)unlink(tmp);
 		return;
 	}
-	if (rename(tmp, path) != 0) {
-		log_warn("bans: rename %s -> %s: %s",
-		    tmp, path, strerror(errno));
-		(void)unlink(tmp);
-	}
+	(void)atomic_close(f, tmp, path, "bans");
 }
 
 int
