@@ -166,28 +166,36 @@ conn_send_framed(struct Conn *c, const void *body, size_t len)
 		}
 		if (sent >= total)
 			return 0;
-		/* Partial: queue whatever's left. */
+		/* Partial: queue whatever's left.  If the tail can't be
+		 * queued (ENOMEM / BB_MAX_CAP), the kernel buffer already
+		 * has a partial header; the next send would emit a fresh
+		 * header that the peer parses as continuation of the prior
+		 * body.  Mark the conn for disconnect so the dispatch loop
+		 * tears it down instead of corrupting the frame stream. */
 		if (sent < hdrlen) {
 			if (bb_append(&c->tx, hdr + sent,
 			    hdrlen - sent) < 0)
-				return -1;
+				goto tx_full;
 			if (bb_append(&c->tx, body, len) < 0)
-				return -1;
+				goto tx_full;
 		} else {
 			size_t body_sent = sent - hdrlen;
 			if (bb_append(&c->tx,
 			    (const unsigned char *)body + body_sent,
 			    len - body_sent) < 0)
-				return -1;
+				goto tx_full;
 		}
 		goto track_queue;
 	}
 
-	/* Queue not empty — preserve order, append the whole frame. */
+	/* Queue not empty — preserve order, append the whole frame.
+	 * Same rationale as the partial-send branch: if append fails
+	 * we cannot just drop the body; the queue already contains
+	 * preceding frames that expect this one to follow. */
 	if (bb_append(&c->tx, hdr, hdrlen) < 0)
-		return -1;
+		goto tx_full;
 	if (bb_append(&c->tx, body, len) < 0)
-		return -1;
+		goto tx_full;
 
 track_queue:
 	queued_after = c->tx.wpos - c->tx.rpos;
@@ -203,6 +211,11 @@ track_queue:
 		}
 	}
 	return 0;
+tx_full:
+	log_warn("tx alloc fail mid-frame: conn=%u — disconnecting",
+	    (unsigned)c->conn_id);
+	c->state = CONN_DISCONNECT;
+	return -1;
 }
 
 int
