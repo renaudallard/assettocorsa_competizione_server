@@ -285,11 +285,27 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		int invalid = has_cut || is_out_lap ||
 		    race->out_of_track_latched;
 
+		/*
+		 * Reject negative wire lap_ms.  The field is signed only
+		 * because the kunos wire shape is i32; a real client never
+		 * produces lap_ms < 0.  Without the guard, a crafted 0x21
+		 * with lap_time = -1000 would set best_lap_ms negative
+		 * (the existing best==0 sentinel fires), and session.c's
+		 * cmp_cars would then sort the attacker ahead of every
+		 * legitimate driver.  Same path also pollutes lobby +
+		 * SMPR last_lap_ms.  Treat negative as "invalid lap" so
+		 * lap_count still advances but no lap-time field is
+		 * updated from the corrupt value.
+		 */
+		if (lap_ms < 0)
+			invalid = 1;
+
 		if (!race->formation_lap_done)
 			race->formation_lap_done = 1;
 
 		race->lap_count++;
-		race->last_lap_ms = lap_ms;
+		if (!invalid)
+			race->last_lap_ms = lap_ms;
 		if (!invalid && (race->best_lap_ms == 0 ||
 		    lap_ms < race->best_lap_ms))
 			race->best_lap_ms = lap_ms;
