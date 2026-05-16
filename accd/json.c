@@ -371,13 +371,37 @@ parse_number(struct parser *p)
 	char *end;
 	double v;
 	const char *start = p->src + p->pos;
+	size_t remaining = p->len - p->pos;
+	size_t numlen;
+	char buf[64];
 
-	v = strtod(start, &end);
-	if (end == start) {
+	/*
+	 * strtod expects a NUL-terminated C string and reads ahead
+	 * looking for the end of the numeric literal.  If the caller
+	 * passes a non-NUL-terminated buffer (the fuzz harness, any
+	 * future wire-fed JSON path) strtod overruns p->src + p->len.
+	 * Copy the candidate digits into a small NUL-terminated stack
+	 * buffer first.  Numbers longer than 63 chars are exotic;
+	 * truncation falls through to the strtod "no digits" path,
+	 * matching the existing bad-number error.
+	 */
+	numlen = 0;
+	while (numlen < remaining && numlen < sizeof(buf) - 1) {
+		char c = start[numlen];
+		if (!((c >= '0' && c <= '9') || c == '+' || c == '-' ||
+		    c == '.' || c == 'e' || c == 'E'))
+			break;
+		buf[numlen] = c;
+		numlen++;
+	}
+	buf[numlen] = '\0';
+
+	v = strtod(buf, &end);
+	if (end == buf) {
 		set_err(p, "bad number");
 		return NULL;
 	}
-	p->pos += (size_t)(end - start);
+	p->pos += (size_t)(end - buf);
 	n = new_node(p, JSON_NUM);
 	if (n != NULL)
 		n->u.num = v;
