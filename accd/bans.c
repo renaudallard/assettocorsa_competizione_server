@@ -33,6 +33,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <unistd.h>
 
 #include "bans.h"
 #include "log.h"
@@ -86,20 +87,37 @@ void
 bans_save(const struct BanList *bl, const char *cfg_dir)
 {
 	char path[512];
+	char tmp[528];
 	FILE *f;
 	int i;
 
 	snprintf(path, sizeof(path), "%s/banlist.txt", cfg_dir);
-	f = fopen(path, "w");
+	snprintf(tmp, sizeof(tmp), "%s.tmp", path);
+
+	/*
+	 * Write through a sibling .tmp first, then rename(2) atomically
+	 * onto the live file.  Without this, a crash mid-write truncates
+	 * banlist.txt and the operator silently loses the entire ban
+	 * list on next boot.
+	 */
+	f = fopen(tmp, "w");
 	if (f == NULL) {
-		log_warn("bans: write %s: %s", path, strerror(errno));
+		log_warn("bans: write %s: %s", tmp, strerror(errno));
 		return;
 	}
 	fprintf(f, "# accd ban list -- one Steam64 ID per line\n");
 	for (i = 0; i < bl->count; i++)
 		fprintf(f, "%s\n", bl->entries[i]);
-	if (fclose(f) != 0)
-		log_warn("bans: fclose %s: %s", path, strerror(errno));
+	if (fclose(f) != 0) {
+		log_warn("bans: fclose %s: %s", tmp, strerror(errno));
+		(void)unlink(tmp);
+		return;
+	}
+	if (rename(tmp, path) != 0) {
+		log_warn("bans: rename %s -> %s: %s",
+		    tmp, path, strerror(errno));
+		(void)unlink(tmp);
+	}
 }
 
 int
