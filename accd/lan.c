@@ -109,13 +109,23 @@ lan_handle(struct Server *s, int fd)
 	 * Minimum 6 bytes.
 	 */
 	rd_init(&r, buf, (size_t)n);
-	if (rd_u8(&r, &envelope) < 0 || envelope != 0xbf) {
+	if (rd_u8(&r, &envelope) < 0) {
+		log_warn("lan: empty datagram from %s:%u",
+		    inet_ntoa(from.sin_addr), ntohs(from.sin_port));
+		return;
+	}
+	if (envelope != 0xbf) {
 		log_warn("lan: unexpected envelope 0x%02x from %s:%u",
-		    (unsigned)buf[0], inet_ntoa(from.sin_addr),
+		    (unsigned)envelope, inet_ntoa(from.sin_addr),
 		    ntohs(from.sin_port));
 		return;
 	}
-	if (rd_u8(&r, &sub) < 0 || sub != ACP_LAN_DISCOVER) {
+	if (rd_u8(&r, &sub) < 0) {
+		log_warn("lan: short datagram (1 B) from %s:%u",
+		    inet_ntoa(from.sin_addr), ntohs(from.sin_port));
+		return;
+	}
+	if (sub != ACP_LAN_DISCOVER) {
 		log_warn("lan: unexpected sub-opcode 0x%02x from %s:%u",
 		    (unsigned)sub, inet_ntoa(from.sin_addr),
 		    ntohs(from.sin_port));
