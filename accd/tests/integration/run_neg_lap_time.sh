@@ -23,12 +23,17 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
 
-# Drive long enough to complete one lap, then fire the bad lap on
-# the next.  Bot lap times are ~25 s; 60 s gives two laps.
-BOT="--race 911 --grid 1 --name BotEvil --bad-lap-time 750:-1000"
-TEST_DURATION=35
+# Arm the bad-lap injection BEFORE lap 2's S/F crossing.  The bot
+# only fires the bad 0x21 on a lap-complete emit (last_sector==2 -&gt;
+# new_sector==0), so the tick threshold must fall between lap 1 end
+# (~t=1s, tick ~30) and lap 2 end (~t=33s, tick ~990).  Lap 1 is
+# the out-lap (car_field=0x0004) which would set invalid=1 pre-fix
+# anyway, so the test must hit lap 2+ to actually probe the fix.
+# Tick 100 (~t=3s) lands deep in lap 2.
+BOT="--race 911 --grid 1 --name BotEvil --bad-lap-time 100:-1000"
+TEST_DURATION=45
 
-echo "==> accd + bot, --bad-lap-time 750:-1000"
+echo "==> accd + bot, --bad-lap-time 100:-1000 (arms before lap 2 S/F)"
 sudo -n rm -f /tmp/penalty_diff_accd.pcap accd.pcap
 TEST_DURATION=$TEST_DURATION ./run_test_v2.sh "$BOT" >/dev/null 2>&1
 mv accd.pcap accd_neg_lap_time.pcap
