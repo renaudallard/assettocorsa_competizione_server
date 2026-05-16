@@ -406,8 +406,17 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 						    "serve %s -> DQ",
 						    c->car_id,
 						    penalty_name(front->kind));
-						cat = (uint8_t)penalty_wire_value(
-						    PEN_DQ, inherited);
+						/*
+						 * `cat` here is the AC2 cat
+						 * enum (0..17) — not the
+						 * dispatcher wire byte.  Use
+						 * 8 (Trolling/RaceControl) so
+						 * the dedup gate in
+						 * penalty_enqueue actually
+						 * fires and repeated auto-
+						 * promotions don't pile.
+						 */
+						cat = 8;
 						penalty_enqueue(s, c->car_id,
 						    EXE_DQ, cat, 3, 1, 0,
 						    inherited);
@@ -423,8 +432,9 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 						    "(allowAutoDQ=0)",
 						    c->car_id,
 						    penalty_name(front->kind));
-						cat = (uint8_t)penalty_wire_value(
-						    PEN_SG30, inherited);
+						/* Same AC2-enum-vs-wire-byte
+						 * issue as the DQ branch. */
+						cat = 8;
 						penalty_enqueue(s, c->car_id,
 						    EXE_SG30, cat, 3, 0, 0,
 						    inherited);
