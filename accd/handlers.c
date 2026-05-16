@@ -555,11 +555,19 @@ h_chat(struct Server *s, struct Conn *c,
 	sender = "<anon>";
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
 	    s->cars[c->car_id].used) {
-		const struct DriverInfo *dd =
-		    &s->cars[c->car_id].drivers[
-		    s->cars[c->car_id].current_driver_index];
-		if (dd->short_name[0] != '\0')
-			sender = dd->short_name;
+		struct CarEntry *car = &s->cars[c->car_id];
+		uint8_t idx = car->current_driver_index;
+		/*
+		 * current_driver_index is clamped on entrylist load
+		 * (entrylist.c) and on every driver-swap path, but
+		 * confirm here before deref'ing the drivers[] array —
+		 * an OOB read past the 4-element array would land on
+		 * an arbitrary CarEntry tail field.
+		 */
+		if (idx < car->driver_count &&
+		    idx < ACC_MAX_DRIVERS_PER_CAR &&
+		    car->drivers[idx].short_name[0] != '\0')
+			sender = car->drivers[idx].short_name;
 	}
 	log_info("CHAT %s: %s", sender, text);
 	/* accweb regex: ^CHAT (.*?): (.*)$  -- stdout plain form */

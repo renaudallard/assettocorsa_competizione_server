@@ -215,8 +215,22 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		    "ballastKg", 0);
 		car->restrictor = (float)json_obj_get_num(e,
 		    "restrictor", 0.0);
-		car->current_driver_index = (uint8_t)json_obj_get_int(e,
-		    "defaultDriverIndex", 0);
+		{
+			int ddi = json_obj_get_int(e, "defaultDriverIndex", 0);
+			/*
+			 * Clamp to the per-car driver-array bound so a
+			 * mistaken "defaultDriverIndex": 200 in
+			 * entrylist.json doesn't seed an out-of-range
+			 * current_driver_index that later handlers (h_chat,
+			 * write_car_leaderboard_record, swap-state) would
+			 * dereference past the 4-element drivers[] array.
+			 */
+			if (ddi < 0)
+				ddi = 0;
+			if (ddi >= ACC_MAX_DRIVERS_PER_CAR)
+				ddi = ACC_MAX_DRIVERS_PER_CAR - 1;
+			car->current_driver_index = (uint8_t)ddi;
+		}
 		car->is_server_admin = (uint8_t)json_obj_get_int(e,
 		    "isServerAdmin", 0);
 		copy_str(car->team_name, sizeof(car->team_name),
