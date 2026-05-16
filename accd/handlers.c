@@ -516,15 +516,27 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 
 	/* Build the transformed 0x3b broadcast. Body:
 	 *   u16 car_id + u32 split_time + u8 flag + u32 lap_time +
-	 *   u16 flags. */
-	bb_init(&out);
-	if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
-	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
-	    wr_u32(&out, (uint32_t)split_time) < 0 ||
-	    wr_u8(&out, flag_b) < 0 ||
-	    wr_u32(&out, (uint32_t)lap_time) < 0 ||
-	    wr_u16(&out, car_field) < 0)
-		goto done;
+	 *   u16 flags.
+	 *
+	 * Negative wire values get rewritten to LAP_TIME_INVALID before
+	 * the relay so an attacker's crafted 0x21 (with lap_time=-1000)
+	 * doesn't sign-extend into a ~4-billion-ms value on every other
+	 * client's 0x3b receiver.  The bookkeeping path above already
+	 * treated negative as invalid; relay does the same. */
+	{
+		uint32_t split_wire = split_time < 0
+		    ? LAP_TIME_INVALID : (uint32_t)split_time;
+		uint32_t lap_wire = lap_time < 0
+		    ? LAP_TIME_INVALID : (uint32_t)lap_time;
+		bb_init(&out);
+		if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
+		    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
+		    wr_u32(&out, split_wire) < 0 ||
+		    wr_u8(&out, flag_b) < 0 ||
+		    wr_u32(&out, lap_wire) < 0 ||
+		    wr_u16(&out, car_field) < 0)
+			goto done;
+	}
 	(void)bcast_all(s, out.data, out.wpos, c->conn_id);
 done:
 	bb_free(&out);
