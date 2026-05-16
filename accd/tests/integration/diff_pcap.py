@@ -105,20 +105,29 @@ def reassemble_server_tx(pcap_path, server_port):
     for key, segs in streams.items():
         base = init_seq[key]
         # Sort by seq (handle wrap by treating all as relative to base)
-        prev_seq = None
         running = base
         for seq in sorted(segs.keys(), key=lambda s: (s - base) & 0xffffffff):
             payload, ts = segs[seq]
             if seq != running:
-                # Gap — fill with placeholder so we don't misalign.
+                # Gap.  Fill small gaps (< 64 KiB) with zeros so the
+                # next packet lands at the correct offset; for larger
+                # gaps the capture is too damaged to reassemble, so
+                # advance `running` and resync without padding (the
+                # ACC-frame walker will misparse this stream, but at
+                # least subsequent packets are positioned correctly
+                # if the capture later rejoins clean).  The earlier
+                # version dropped the >= 1024 case through to the
+                # body append WITHOUT updating `running`, which
+                # silently corrupted every downstream offset.
                 gap = (seq - running) & 0xffffffff
-                if gap > 0 and gap < 1024:
+                if gap > 0 and gap < 65536:
                     out_payload += b"\x00" * gap
-                    running = seq
+                # In either branch, resync `running` to `seq` before
+                # appending the new payload below.
+                running = seq
             out_marks.append((len(out_payload), ts))
             out_payload += payload
             running = (seq + len(payload)) & 0xffffffff
-            prev_seq = seq
     return first_ts, out_payload, out_marks
 
 
