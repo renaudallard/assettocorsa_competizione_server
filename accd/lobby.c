@@ -323,6 +323,24 @@ lobby_send_framed(struct LobbyClient *l, const void *body, size_t len)
 		if (n < 0) {
 			if (errno == EINTR)
 				continue;
+			if (errno == EAGAIN || errno == EWOULDBLOCK) {
+				/*
+				 * Backpressure: wait for the socket to drain
+				 * instead of returning -1 mid-frame, which
+				 * would leave a partial header in the kernel
+				 * buffer and desync kson framing for every
+				 * subsequent message until the lobby
+				 * disconnects.
+				 */
+				struct pollfd pfd;
+				pfd.fd = l->fd;
+				pfd.events = POLLOUT;
+				if (poll(&pfd, 1, 2000) <= 0) {
+					log_warn("lobby: writev stalled");
+					return -1;
+				}
+				continue;
+			}
 			log_warn("lobby: writev: %s", strerror(errno));
 			return -1;
 		}
