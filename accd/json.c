@@ -38,6 +38,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <ctype.h>
+#include <limits.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -661,8 +662,21 @@ json_obj_get_int(const struct json_node *obj, const char *key, int def)
 
 	if (n == NULL)
 		return def;
-	if (n->kind == JSON_NUM)
-		return (int)n->u.num;
+	if (n->kind == JSON_NUM) {
+		double v = n->u.num;
+		/*
+		 * Direct cast double->int is implementation-defined when v
+		 * is outside [INT_MIN, INT_MAX] — clamp instead so a config
+		 * containing 1e20 doesn't trip UB.  NaN clamps to def.
+		 */
+		if (v != v)
+			return def;
+		if (v >= (double)INT_MAX)
+			return INT_MAX;
+		if (v <= (double)INT_MIN)
+			return INT_MIN;
+		return (int)v;
+	}
 	if (n->kind == JSON_BOOL)
 		return n->u.b;
 	return def;
