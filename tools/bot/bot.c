@@ -526,15 +526,48 @@ static size_t pkt_time_event(uint8_t *out, uint16_t src, uint16_t dst,
 	return bb_n;
 }
 
-/* TCP-frame helper: prepend u16 length and send via the TCP socket. */
+/* TCP-frame helper: prepend u16 length and send via the TCP socket.
+ *
+ * The bot's TCP socket is non-blocking (fcntl O_NONBLOCK set in
+ * main).  A naked send() can return EAGAIN or a short write under
+ * backpressure; without the loop, critical frames like 0x21 lap-
+ * complete, 0x41 penalty report, 0x54 mandatory-pit-served, 0x4a
+ * swap request would silently vanish — producing false-FAIL
+ * integration tests that look like accd regressions.
+ *
+ * On a hard EAGAIN we sleep 1 ms and retry; cap at 200 retries so a
+ * truly dead socket doesn't hang the bot forever.  Real backpressure
+ * on the test loopback path drains within microseconds. */
 static void send_tcp_framed(int tcp_fd, const uint8_t *body, size_t n)
 {
 	uint8_t buf[280];
+	size_t sent = 0;
+	size_t total;
+	int retries = 0;
+
 	if (n + 2 > sizeof buf) return;
 	buf[0] = (uint8_t)(n & 0xff);
 	buf[1] = (uint8_t)((n >> 8) & 0xff);
 	memcpy(buf + 2, body, n);
-	(void)send(tcp_fd, buf, n + 2, MSG_NOSIGNAL);
+	total = n + 2;
+	while (sent < total) {
+		ssize_t w = send(tcp_fd, buf + sent, total - sent,
+		    MSG_NOSIGNAL);
+		if (w > 0) {
+			sent += (size_t)w;
+			continue;
+		}
+		if (w < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+			struct timespec ts = {0, 1000000};
+			if (++retries > 200)
+				return;
+			nanosleep(&ts, NULL);
+			continue;
+		}
+		if (w < 0 && errno == EINTR)
+			continue;
+		return;
+	}
 }
 
 /*
