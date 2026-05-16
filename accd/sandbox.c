@@ -247,7 +247,27 @@ sandbox_apply(const char *cfg_dir, const char *results_dir)
 	log_warn("sandbox: landlock unavailable at build time");
 #endif
 
-#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__)
+	/*
+	 * Disable seccomp under any sanitizer.  GCC sets the
+	 * __SANITIZE_* macros directly; Clang exposes the same
+	 * information via __has_feature() and only Clang's
+	 * __SANITIZE_ADDRESS__ has been documented.  Check both so
+	 * an ASAN / TSAN / UBSAN build doesn't SIGSYS the sanitizer
+	 * runtime calling rt_sigprocmask / mremap / etc.
+	 */
+#if defined(__SANITIZE_ADDRESS__) || defined(__SANITIZE_THREAD__) || \
+    defined(__SANITIZE_UNDEFINED__)
+#  define ACCD_UNDER_SANITIZER 1
+#elif defined(__has_feature)
+#  if __has_feature(address_sanitizer) || \
+      __has_feature(thread_sanitizer) || \
+      __has_feature(memory_sanitizer) || \
+      __has_feature(undefined_behavior_sanitizer)
+#    define ACCD_UNDER_SANITIZER 1
+#  endif
+#endif
+
+#if defined(ACCD_UNDER_SANITIZER)
 	log_warn("sandbox: seccomp disabled under sanitizer build");
 #elif defined(ACCD_HAVE_SECCOMP)
 	seccomp_ok = (apply_seccomp() == 0);
