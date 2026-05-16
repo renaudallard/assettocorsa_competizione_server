@@ -553,6 +553,12 @@ penalty_clear(struct Server *s, int car_id)
 	 */
 	memset(s->cars[car_id].race.pen_cat_severity, 0,
 	    sizeof(s->cars[car_id].race.pen_cat_severity));
+	/*
+	 * 0x36 per-car tail bytes change when the queue is wiped — the
+	 * memcmp-cache must re-emit so AC2 stops rendering the cleared
+	 * penalty.  Same family as the chat.c:236 post-eviction fix.
+	 */
+	leaderboard_request_emit(s);
 }
 
 void
@@ -560,8 +566,18 @@ penalty_clear_all(struct Server *s)
 {
 	int i;
 
-	for (i = 0; i < ACC_MAX_CARS; i++)
-		penalty_clear(s, i);
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct PenaltyQueue *q;
+		if (!s->cars[i].used)
+			continue;
+		q = &s->cars[i].race.pen;
+		q->count = 0;
+		memset(q->slots, 0, sizeof(q->slots));
+		memset(s->cars[i].race.pen_cat_severity, 0,
+		    sizeof(s->cars[i].race.pen_cat_severity));
+	}
+	/* Single emit covers the multi-car wipe. */
+	leaderboard_request_emit(s);
 }
 
 uint32_t
