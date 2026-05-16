@@ -560,6 +560,11 @@ config_load(struct Server *s, const char *cfg_dir)
 
 			if (stint_min < 0)
 				stint_min = 0;
+			/* (uint32_t)stint_min * 60u wraps silently above
+			 * INT_MAX/60.  Cap at 24h (= 1440 min) which already
+			 * dwarfs any realistic stint config. */
+			if (stint_min > 1440)
+				stint_min = 1440;
 			if (pit_count < 0)
 				pit_count = 0;
 			if (pit_count > 255)
