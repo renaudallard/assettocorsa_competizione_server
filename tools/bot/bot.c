@@ -1126,6 +1126,10 @@ static void usage(const char *p)
 	    "  --oot-at T       emit 0x3d ACP_OUT_OF_TRACK at tick T (force=0)\n"
 	    "  --time-event T   emit 0x5e UDP latency event at tick T\n"
 	    "                   (source=target=self, latency=42 ms, chat=1)\n"
+	    "  --bad-lap-time T:V  on the next 0x21 emit at tick >= T,\n"
+	    "                   override the lap-time field with V (signed\n"
+	    "                   ms).  V < 0 exercises the server-side\n"
+	    "                   negative-lap-time rejection path.\n"
 	    "  --flap-at T      close TCP at tick T and let the bots\n"
 	    "                   reconnect path re-handshake (deliberate\n"
 	    "                   socket-flap regression for server-side\n"
@@ -1184,6 +1188,9 @@ int main(int argc, char **argv)
 	int oot_sent = 0;
 	int te_tick = -1;		/* >=0 = emit 0x5e at this tick */
 	int te_sent = 0;
+	int bad_lap_tick = -1;		/* >=0 = override next 0x21 lap_time */
+	int32_t bad_lap_value = 0;
+	int bad_lap_sent = 0;
 	int flap_at_tick = -1;		/* close+reopen TCP once at this tick */
 	int flap_done = 0;
 	int swap_req_tick = -1;		/* >=0 = emit 0x4a at this tick */
@@ -1245,6 +1252,7 @@ int main(int argc, char **argv)
 		{"sa-contact",  required_argument, 0, 'a'},
 		{"oot-at",      required_argument, 0, 'o'},
 		{"time-event",  required_argument, 0, 'E'},
+		{"bad-lap-time", required_argument, 0, 'b'},
 		{"flap-at",     required_argument, 0, 'F'},
 		{"swap-request", required_argument, 0, 'Q'},
 		{"client-version", required_argument, 0, 'v'},
@@ -1360,6 +1368,17 @@ int main(int argc, char **argv)
 		case 'E':
 			te_tick = atoi(optarg);
 			break;
+		case 'b': {
+			int t, v;
+			if (sscanf(optarg, "%d:%d", &t, &v) != 2) {
+				fprintf(stderr,
+				    "[bot] --bad-lap-time needs tick:value\n");
+				return 2;
+			}
+			bad_lap_tick = t;
+			bad_lap_value = (int32_t)v;
+			break;
+		}
 		case 'k': {
 			/* --swap-state T:S1[,S2,...] */
 			char *colon = strchr(optarg, ':');
@@ -1750,8 +1769,19 @@ int main(int argc, char **argv)
 					uint16_t car_field = (lap <= 1)
 					    ? 0x0004u : 0x0000u;
 					uint8_t pkt2[32];
-					size_t n = pkt_sector_split(pkt2,
-					    lap_t, lap_t,
+					int32_t emit_lap_t = lap_t;
+					size_t n;
+					if (bad_lap_tick >= 0 &&
+					    !bad_lap_sent &&
+					    (int)tick >= bad_lap_tick) {
+						emit_lap_t = bad_lap_value;
+						bad_lap_sent = 1;
+						printf("[bot] sending bad "
+						    "0x21 lap_time=%d\n",
+						    (int)emit_lap_t);
+					}
+					n = pkt_sector_split(pkt2,
+					    emit_lap_t, emit_lap_t,
 					    (uint8_t)last_sector,
 					    car_field);
 					send_tcp_framed(tcp_fd, pkt2, n);
