@@ -53,6 +53,49 @@
 
 #define LAN_RECV_BUF	2048
 
+/*
+ * Per-source-IP rate limit on discovery replies.  The probe is 6 B
+ * and the reply is ~140-270 B, so without throttling a single
+ * source IP can leverage the server as a UDP-reflection amplifier
+ * (~25-45x).  Cap to one reply per second per source IP via a
+ * small LRU table; legitimate browsers probe once on open.
+ */
+#define LAN_RATE_TABLE_SZ	16
+#define LAN_RATE_INTERVAL_MS	1000ull
+
+struct lan_rate_entry {
+	uint32_t	addr;		/* network byte order */
+	uint64_t	last_reply_ms;
+};
+
+static struct lan_rate_entry lan_rate[LAN_RATE_TABLE_SZ];
+
+/*
+ * Returns 1 if a reply to `addr` is allowed right now, 0 if it
+ * should be dropped.  Side-effect: on allow, stamps the table.
+ */
+static int
+lan_rate_allow(uint32_t addr, uint64_t now_ms)
+{
+	int i, oldest = 0;
+
+	for (i = 0; i < LAN_RATE_TABLE_SZ; i++) {
+		if (lan_rate[i].addr == addr) {
+			if (now_ms - lan_rate[i].last_reply_ms <
+			    LAN_RATE_INTERVAL_MS)
+				return 0;
+			lan_rate[i].last_reply_ms = now_ms;
+			return 1;
+		}
+		if (lan_rate[i].last_reply_ms <
+		    lan_rate[oldest].last_reply_ms)
+			oldest = i;
+	}
+	lan_rate[oldest].addr = addr;
+	lan_rate[oldest].last_reply_ms = now_ms;
+	return 1;
+}
+
 int
 lan_open(int *out_fd)
 {
@@ -140,6 +183,12 @@ lan_handle(struct Server *s, int fd)
 	log_info("lan: discovery probe from %s:%u nonce=0x%08x",
 	    inet_ntoa(from.sin_addr), ntohs(from.sin_port),
 	    (unsigned)nonce);
+
+	if (!lan_rate_allow(from.sin_addr.s_addr, (uint64_t)mono_ms())) {
+		log_debug("lan: rate-limited reply to %s",
+		    inet_ntoa(from.sin_addr));
+		return;
+	}
 
 	clients = 0;
 	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
