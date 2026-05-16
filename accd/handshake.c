@@ -609,15 +609,24 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 }
 
 /* Resolve the per-car race-state source for the given session_idx.
- * session_idx == -1 -> live; archive[idx] != NULL -> snapshot; else live. */
+ * session_idx == -1 -> live (current session, every entry).
+ * session_idx >= 0  -> archive snapshot if the car participated, NULL
+ *                      if it didn't (caller skips the row).
+ *
+ * Returning NULL — instead of falling back to the live state — keeps
+ * the race-end 0x3e per-session results truthful: a driver who joined
+ * the server AFTER session N ended has race_archive[N] == NULL and
+ * therefore no row in session N's results.  The previous fall-through
+ * to ec->race emitted that driver's CURRENT race state under session
+ * N's header, mixing live and historical data in the same frame. */
 static const struct CarRaceState *
 race_src_for(const struct CarEntry *ec, int session_idx)
 {
-	if (session_idx < 0 || session_idx >= ACC_MAX_SESSIONS)
+	if (session_idx < 0)
 		return &ec->race;
-	if (ec->race_archive[session_idx] != NULL)
-		return ec->race_archive[session_idx];
-	return &ec->race;
+	if (session_idx >= ACC_MAX_SESSIONS)
+		return NULL;
+	return ec->race_archive[session_idx];
 }
 
 int
@@ -656,6 +665,9 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		const struct CarRaceState *r =
 		    race_src_for(&s->cars[j], session_idx);
+
+		if (r == NULL)
+			continue;	/* didn't participate in this session */
 
 		if (!r->disqualified) {
 			if (r->best_lap_ms > 0 &&
@@ -710,7 +722,7 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 				if (!s->cars[j].used)
 					continue;
 				src = race_src_for(&s->cars[j], session_idx);
-				if (src->position != pos)
+				if (src == NULL || src->position != pos)
 					continue;
 				if (write_car_leaderboard_record(bb, s,
 				    &s->cars[j], cvar8, is_archived,
@@ -726,6 +738,8 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 			if (!s->cars[j].used)
 				continue;
 			src = race_src_for(&s->cars[j], session_idx);
+			if (src == NULL)
+				continue;
 			p = src->position;
 			if (p >= 1 && p <= ACC_MAX_CARS)
 				continue;
