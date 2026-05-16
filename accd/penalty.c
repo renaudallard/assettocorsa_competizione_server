@@ -444,21 +444,36 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		 * creates a new entry with kind=bVar6 value=0.
 		 */
 		{
-			uint8_t old_pen = penalty_pen_kind_of(old_sev,
-			    collision, value);
+			/*
+			 * old_pen was previously derived from the NEW report's
+			 * collision flag, not the queued entry's.  When the
+			 * driver's first DT was clean (col=0 → PEN_DT) and the
+			 * escalation step arrives with col=1, we'd compute
+			 * old_pen = PEN_DTC and fail to find the queued
+			 * PEN_DT.  Match on the unaccented kind and walk past
+			 * the per-entry collision; only the queued entry's
+			 * reason needs to line up.
+			 */
+			uint8_t old_pen_base =
+			    penalty_pen_kind_of(old_sev, 0, value);
+			uint8_t old_pen_col =
+			    penalty_pen_kind_of(old_sev, 1, value);
 			uint8_t new_pen = penalty_pen_kind_of(new_sev, 0, 0);
 			struct PenaltyQueue *q = &race->pen;
 			int i;
 			for (i = q->count - 1; i >= 0; i--) {
-				if (!q->slots[i].served &&
-				    q->slots[i].kind == old_pen &&
-				    q->slots[i].reason == reason) {
-					q->slots[i].kind = new_pen;
-					q->slots[i].laps_remaining = 0;
-					q->slots[i].issued_ms = now_ms;
-					break;
-				}
+				if (q->slots[i].served ||
+				    q->slots[i].reason != reason)
+					continue;
+				if (q->slots[i].kind != old_pen_base &&
+				    q->slots[i].kind != old_pen_col)
+					continue;
+				q->slots[i].kind = new_pen;
+				q->slots[i].laps_remaining = 0;
+				q->slots[i].issued_ms = now_ms;
+				break;
 			}
+			(void)collision;
 		}
 
 		race->pen_cat_severity[category] = new_sev;
