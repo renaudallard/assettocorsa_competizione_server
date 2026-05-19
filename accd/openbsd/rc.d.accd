@@ -1,0 +1,36 @@
+#!/bin/ksh
+#
+# /etc/rc.d/accd -- ACC dedicated server rc.d wrapper for OpenBSD.
+#
+# Run-state directory:    /var/accd
+# Config + state files:   /var/accd/{settings,event,entrylist}.json,
+#                         /var/accd/{ratings,bans,reports,results}
+# Standard install:       /usr/local/bin/accd
+# Service user:           _accd
+#
+# Install:
+#   doas install -m 555 rc.d.accd /etc/rc.d/accd
+#   doas rcctl enable accd
+#   doas rcctl start  accd
+#
+# Logs go to /var/log/accd via syslog daemon.info (logger pipe).
+# Add a newsyslog.conf entry for rotation:
+#   /var/log/accd     _accd:_accd 644  10  *  $D0  Z
+#
+daemon="/usr/local/bin/accd"
+daemon_flags="-c /var/accd"
+daemon_user="_accd"
+
+. /etc/rc.d/rc.subr
+
+rc_bg=YES
+rc_reload=NO
+
+rc_start() {
+	${rcexec} \
+	    "( cd /var/accd && \
+	       exec ${daemon} ${daemon_flags} 2>&1 \
+	     | logger -t accd -p daemon.info ) ${_bg}"
+}
+
+rc_cmd $1

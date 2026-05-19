@@ -206,8 +206,17 @@ install: ${PROG}
 	install -d ${DESTDIR}${MANDIR}/man1
 	install -m 644 accd.1 ${DESTDIR}${MANDIR}/man1/accd.1
 
+# OpenBSD service install — puts the rc.d wrapper under /etc/rc.d
+# and (if missing) creates the /var/accd run-state directory owned
+# by the _accd user.  The wrapper assumes the _accd user already
+# exists (created by useradd / port install).  Run as root.
+install-openbsd-service:
+	install -m 555 openbsd/rc.d.accd ${DESTDIR}/etc/rc.d/accd
+	test -d ${DESTDIR}/var/accd || install -d -o _accd -g _accd -m 750 \
+	    ${DESTDIR}/var/accd
+
 uninstall:
 	rm -f ${DESTDIR}${PREFIX}/bin/${PROG}
 	rm -f ${DESTDIR}${MANDIR}/man1/accd.1
 
-.PHONY: all clean depend install uninstall probe test
+.PHONY: all clean depend install install-openbsd-service uninstall probe test
