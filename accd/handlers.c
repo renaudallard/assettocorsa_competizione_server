@@ -1226,8 +1226,23 @@ h_report_penalty(struct Server *s, struct Conn *c,
 				pre = pq->count > 0 ? pq->count - 1 : 0;
 			if (pre < 0)
 				pre = 0;
-			for (pi = pre; pi < pq->count; pi++)
-				pq->slots[pi].pending = 1;
+			/*
+			 * Surface client-reported penalties immediately
+			 * instead of latching them pending=1 (the prior
+			 * behaviour kept them hidden from active_pen forever
+			 * because nothing ever cleared the flag).  The 0x36
+			 * builder treats pending entries with wire=0 in
+			 * pq_emit and skips them entirely from active_pen —
+			 * which means the self-reporting driver's own HUD
+			 * never showed the DT they just issued, and other
+			 * peers never knew either.  Real kunos pcaps imply
+			 * a "server confirms" path before exposing the
+			 * penalty, but that path was never implemented here;
+			 * defaulting to "visible immediately" matches the
+			 * actual operator-visible UX better than "invisible
+			 * indefinitely".
+			 */
+			(void)pre; (void)pi;
 		}
 	}
 	return 0;
