@@ -282,8 +282,20 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		int32_t lap_ms = split_time;
 		int has_cut = (car_field & 0x0001) != 0;
 		int is_out_lap = (car_field & 0x0004) != 0;
-		int invalid = has_cut || is_out_lap ||
-		    race->out_of_track_latched;
+		/*
+		 * Trust the client's car_field flags for lap validity.
+		 * Previously accd OR'd in race->out_of_track_latched, which
+		 * meant that ANY 0x3d OUT_OF_TRACK during the lap (typical
+		 * on tracks like paul_ricard with wide lateral runoff)
+		 * invalidated the whole lap — even when the AC2 client
+		 * itself considered the lap clean (no advantage gained, no
+		 * cut bit set in car_field).  Kunos's exe doesn't do this:
+		 * cut bookkeeping vs lap validity are separate concerns.
+		 * Keep race->out_of_track_latched as a debounce for the
+		 * per-lap cuts counter (handlers.c h_out_of_track) without
+		 * leaking it into best_lap_ms / last_lap_ms.
+		 */
+		int invalid = has_cut || is_out_lap;
 
 		/*
 		 * Reject negative wire lap_ms.  The field is signed only
