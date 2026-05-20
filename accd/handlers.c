@@ -549,7 +549,15 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		    wr_u16(&out, car_field) < 0)
 			goto done;
 	}
-	(void)bcast_all(s, out.data, out.wpos, c->conn_id);
+	/*
+	 * Include the sender on the 0x3b relay (BCAST_EXCEPT_NONE).  The
+	 * AC2 client's HUD TOURS counter for the OWN car only advances
+	 * when the server echoes the lap-complete relay back — without
+	 * the self-echo, a 1-driver server leaves the driver's lap count
+	 * frozen even after they cross S/F.  Other peers see this car's
+	 * lap_count change too, exactly as before.
+	 */
+	(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
 done:
 	bb_free(&out);
 	return 0;
