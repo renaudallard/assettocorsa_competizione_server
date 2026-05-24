@@ -460,8 +460,15 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	 *   u8 trackMedalsRequirement
 	 *   u8 safetyRatingRequirement
 	 *   u8 racecraftRatingRequirement (0xff = unset)
-	 *   u8 carGroup enum      — FUN_140116480 (FFA=0xfa, GT2=0,
-	 *                            GT3=7, GT4=0xc, GTC=0xb, TCX=0xf9)
+	 *   u8 carGroup enum      = FUN_140116480 lookup table.
+	 *                          Live ACC browser pcap (issue #1,
+	 *                          2026-05-24) confirms FFA=0xfa,
+	 *                          GT3=0, GT4=7, GT2=0xb, TCX=0xc,
+	 *                          GTC=0xf9.  Earlier decomp had GT2/
+	 *                          GT3/GT4 rotated so league operators
+	 *                          who set GT3 were listed as GT4 and
+	 *                          ACC clients got prompted to buy the
+	 *                          GT4 Pack DLC before they could join.
 	 *   u8 Server+0x228       — 1 = block joining during race
 	 *   u8 Server+0x229       — default 0 (unverified)
 	 *   u8 Server+0x231       — default 0 (unverified)
@@ -475,15 +482,15 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	 */
 	{
 		uint8_t car_group_enum = 0xfa;	/* FreeForAll fallback */
-		if (strcmp(s->car_group, "GT2") == 0)
+		if (strcmp(s->car_group, "GT3") == 0)
 			car_group_enum = 0x00;
-		else if (strcmp(s->car_group, "GT3") == 0)
-			car_group_enum = 0x07;
 		else if (strcmp(s->car_group, "GT4") == 0)
-			car_group_enum = 0x0c;
-		else if (strcmp(s->car_group, "GTC") == 0)
+			car_group_enum = 0x07;
+		else if (strcmp(s->car_group, "GT2") == 0)
 			car_group_enum = 0x0b;
 		else if (strcmp(s->car_group, "TCX") == 0)
+			car_group_enum = 0x0c;
+		else if (strcmp(s->car_group, "GTC") == 0)
 			car_group_enum = 0xf9;
 
 		if (wr_u8(&bb, (uint8_t)s->max_car_slots) < 0) goto err;

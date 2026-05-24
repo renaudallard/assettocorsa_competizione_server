@@ -203,27 +203,27 @@ lan_handle(struct Server *s, int fd)
 	bb_init(&reply);
 	/*
 	 * Trailing byte is the carGroup code, NOT the session_type.
-	 * FUN_140116480 in the exe maps settings.json carGroup to
-	 * this byte: "FreeForAll" -> 0xfa, 3-char groups (GT3/GT4/
-	 * GTC/TCX/GT2) to specific codes, invalid -> 0xfa fallback.
-	 * The ACC server browser reads this byte to categorise each
-	 * server AND to validate the probe reply for the ping column
-	 * — emitting the SDK session_type here (0/4/10) matches no
-	 * carGroup code and the client silently discards the RTT
-	 * measurement, showing '-- ms' in the list.
+	 * Live ACC browser pcap (issue #1, 2026-05-24) confirms the
+	 * FUN_140116480 lookup table: GT3=0, GT4=7, GT2=0xb, TCX=0xc,
+	 * GTC=0xf9, FreeForAll=0xfa fallback.  The browser reads this
+	 * byte to categorise each server AND to validate the probe
+	 * reply for the ping column; emitting the SDK session_type
+	 * here (0/4/10) matches no carGroup code and the client
+	 * silently discards the RTT measurement, showing '-- ms' in
+	 * the list.
 	 */
 	{
 		uint8_t cg = 0xfa;	/* FreeForAll default */
 		if (strcmp(s->car_group, "GT3") == 0)
-			cg = 0x07;
+			cg = 0x00;
 		else if (strcmp(s->car_group, "GT4") == 0)
-			cg = 0x0c;
-		else if (strcmp(s->car_group, "GTC") == 0)
+			cg = 0x07;
+		else if (strcmp(s->car_group, "GT2") == 0)
 			cg = 0x0b;
 		else if (strcmp(s->car_group, "TCX") == 0)
+			cg = 0x0c;
+		else if (strcmp(s->car_group, "GTC") == 0)
 			cg = 0xf9;
-		else if (strcmp(s->car_group, "GT2") == 0)
-			cg = 0x00;
 		if (wr_u8(&reply, ACP_LAN_RESPONSE) == 0 &&
 		    wr_str_a(&reply, s->server_name) == 0 &&
 		    wr_u8(&reply, (uint8_t)clients) == 0 &&
