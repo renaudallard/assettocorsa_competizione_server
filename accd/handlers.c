@@ -1205,53 +1205,21 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		    "category=%u -> reason=%u",
 		    c->car_id, (unsigned)kind, (unsigned)category,
 		    (unsigned)reason);
-		{
-			struct PenaltyQueue *pq = &s->cars[c->car_id].race.pen;
-			int pre = pq->count;
-			int pi;
-
-			(void)penalty_enqueue(s, c->car_id, kind, category,
-			    val, force, 0, reason);
-			/*
-			 * Mark every slot freshly enqueued by this call as
-			 * pending so the 0x36 builder hides them from
-			 * active_pen (kunos's car+0xc8/+0xcc are populated
-			 * by a separate "server confirms" path that a 0x41
-			 * alone doesn't trigger).  Whether the slot also
-			 * appears in pq_emit is decided at emit time based
-			 * on session type — see write_leaderboard_section.
-			 *
-			 * Ring eviction (penalty_materialize) may have
-			 * shifted slots back so pre can be >= count.  When
-			 * the queue was full pre-enqueue, the shift-then-
-			 * push leaves pre == count (8 == 8 on the default
-			 * ACC_MAX_PENALTIES = 8); the strict `pre > count`
-			 * clamp missed that case and the freshly-enqueued
-			 * slot at [count-1] was left pending=0 / admin=0.
-			 * Use >= so eviction is handled.
-			 */
-			if (pre >= pq->count)
-				pre = pq->count > 0 ? pq->count - 1 : 0;
-			if (pre < 0)
-				pre = 0;
-			/*
-			 * Surface client-reported penalties immediately
-			 * instead of latching them pending=1 (the prior
-			 * behaviour kept them hidden from active_pen forever
-			 * because nothing ever cleared the flag).  The 0x36
-			 * builder treats pending entries with wire=0 in
-			 * pq_emit and skips them entirely from active_pen —
-			 * which means the self-reporting driver's own HUD
-			 * never showed the DT they just issued, and other
-			 * peers never knew either.  Real kunos pcaps imply
-			 * a "server confirms" path before exposing the
-			 * penalty, but that path was never implemented here;
-			 * defaulting to "visible immediately" matches the
-			 * actual operator-visible UX better than "invisible
-			 * indefinitely".
-			 */
-			(void)pre; (void)pi;
-		}
+		/*
+		 * No pending=1 latch here.  The prior behaviour kept
+		 * client-reported penalties hidden from active_pen forever
+		 * because nothing ever cleared the flag.  The 0x36 builder
+		 * treats pending entries with wire=0 in pq_emit and skips
+		 * them entirely from active_pen, which meant the self-
+		 * reporting driver's own HUD never showed the DT they just
+		 * issued and other peers never knew either.  Real kunos
+		 * pcaps imply a "server confirms" path before exposing the
+		 * penalty, but that path was never implemented here;
+		 * defaulting to "visible immediately" matches the actual
+		 * operator-visible UX better than "invisible indefinitely".
+		 */
+		(void)penalty_enqueue(s, c->car_id, kind, category,
+		    val, force, 0, reason);
 	}
 	return 0;
 }
