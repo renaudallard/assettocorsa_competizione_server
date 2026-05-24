@@ -55,8 +55,8 @@
 #define ACP_TYRE_COMPOUND_UPDATE	0x2f
 #define ACP_CAR_LOCATION_UPDATE		0x32
 #define ACP_OUT_OF_TRACK		0x3d
-#define ACP_REPORT_PENALTY		0x41	/* tentative */
-#define ACP_LAP_TICK			0x42	/* tentative */
+#define ACP_REPORT_PENALTY		0x41
+#define ACP_LAP_TICK			0x42
 #define ACP_DAMAGE_ZONES_UPDATE		0x43
 #define ACP_CAR_DIRT_UPDATE		0x45
 #define ACP_UPDATE_DRIVER_SWAP_STATE	0x47
@@ -75,7 +75,7 @@
 #define ACP_KEEPALIVE_B			0x17	/* silent */
 #define ACP_CAR_UPDATE			0x1e	/* per-tick state */
 #define ACP_CAR_INFO_REQUEST		0x22
-#define ACP_TIME_EVENT			0x5e	/* tentative */
+#define ACP_TIME_EVENT			0x5e
 #define ACP_ADMIN_QUERY			0x5f
 
 /* ----- LAN discovery (UDP 8999) ---------------------------------- */

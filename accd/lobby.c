@@ -470,8 +470,8 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	 *                          ACC clients got prompted to buy the
 	 *                          GT4 Pack DLC before they could join.
 	 *   u8 Server+0x228       — 1 = block joining during race
-	 *   u8 Server+0x229       — default 0 (unverified)
-	 *   u8 Server+0x231       — default 0 (unverified)
+	 *   u8 Server+0x229       — default 0 (kunos pcap 2026-05-24 Q+R)
+	 *   u8 Server+0x231       — default 0 (kunos pcap 2026-05-24 Q+R)
 	 *   u8 wineFlag           — 1 if ntdll exports wine_get_version
 	 *   u8 sessionVec[0]+0x164 — default 0
 	 *   u8 selector(0x203/0x202) — non-CP default 0
