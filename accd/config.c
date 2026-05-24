@@ -351,12 +351,21 @@ config_load(struct Server *s, const char *cfg_dir)
 		 * lower bound so the locally advertised count matches
 		 * the lobby's clamp.
 		 */
+		/*
+		 * Defaults are -1 ("unset" wire sentinel 0xff via the
+		 * uint8_t cast), matching the manpage example and the
+		 * kunos SDK.  A previous default of 0 told the ACC
+		 * server browser "ranked-only with rating >= 0", which
+		 * blocked unrated players from joining even on a
+		 * password-less server (issue #1, reporter
+		 * thomasbourimech, 2026-05-24).
+		 */
 		s->track_medals_required = (uint8_t)json_obj_get_int(
-		    settings, "trackMedalsRequirement", 0);
+		    settings, "trackMedalsRequirement", -1);
 		s->safety_rating_required = (uint8_t)json_obj_get_int(
-		    settings, "safetyRatingRequirement", 0);
+		    settings, "safetyRatingRequirement", -1);
 		s->racecraft_rating_required = (uint8_t)json_obj_get_int(
-		    settings, "racecraftRatingRequirement", 0);
+		    settings, "racecraftRatingRequirement", -1);
 		/*
 		 * isRaceLocked (handbook III.2.2): default 1.  Inverse
 		 * of unsafe_rejoin which already controls the same

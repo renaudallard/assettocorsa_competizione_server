@@ -367,9 +367,9 @@ the server browser will show 24, not 30.
 | `ignorePrematureDisconnects` | `0` | `1` tolerates client-side premature drops. |
 | `dumpLeaderboards` | `0` | `1` writes snapshots to `results/` on every update. |
 | `maxCarSlots` | `10` | Advertised car capacity.  See [How many car slots can the server advertise?](#how-many-car-slots-can-the-server-advertise) for the full chain of clamps: `maxConnections`, the public-MP 30-cap, the rating-gate formula, and the per-track pit count. |
-| `trackMedalsRequirement` | `0` | Minimum track-medals (0..5) to join.  On public servers, each medal also adds 1 to the advertised slot cap, up to a maximum of +3.  No effect on private servers. |
-| `safetyRatingRequirement` | `0` | Minimum SA rating (0..99) to join.  On public servers, adds `SA × 0.25` to the advertised slot cap (SA 70 → +17.5, SA 99 → +24.75, bounded by the 30-slot ceiling).  No effect on private servers. |
-| `racecraftRatingRequirement` | `0` | Minimum RC rating (0..99) to join.  Does NOT affect the advertised slot cap. |
+| `trackMedalsRequirement` | `-1` | Minimum track-medals (0..5) to join, or `-1` to leave the server open to unrated players.  On public servers, each medal also adds 1 to the advertised slot cap, up to a maximum of +3.  No effect on private servers.  Set `0` only if you specifically want a ranked-only server (the ACC browser then refuses unrated joiners). |
+| `safetyRatingRequirement` | `-1` | Minimum SA rating (0..99) to join, or `-1` to leave open.  On public servers, adds `SA × 0.25` to the advertised slot cap (SA 70 → +17.5, SA 99 → +24.75, bounded by the 30-slot ceiling).  No effect on private servers. |
+| `racecraftRatingRequirement` | `-1` | Minimum RC rating (0..99) to join, or `-1` to leave open.  Does NOT affect the advertised slot cap. |
 | `maxMonitors` | `max_connections / 4` (min 2) | Cap on simultaneous SMPR observer connections so monitors can't starve sim drivers out of the shared slot pool.  `0` disables observers entirely. |
 | `maxMonitorsPerIp` | `2` | Per-source-IP observer cap.  Stops a single host from filling the global observer quota. |
 
