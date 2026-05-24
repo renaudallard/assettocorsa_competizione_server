@@ -1839,8 +1839,18 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 		struct CarEntry *ecar = &s->cars[c->car_id];
 		struct CarRaceState *race = &ecar->race;
 
-		if (race->mandatory_pit_served < 255)
+		if (race->mandatory_pit_served < 255) {
 			race->mandatory_pit_served++;
+			/*
+			 * 0x36 leaderboard byte at +0x204 carries
+			 * max(0, mandatory_pit_count - mandatory_pit_served);
+			 * trigger a rebroadcast so peers' OBLIGATOIRE widget
+			 * decrements within one tick instead of waiting for
+			 * the next leaderboard-pending event (or the 75 s
+			 * async heartbeat, off by default).
+			 */
+			leaderboard_request_emit(s);
+		}
 		/*
 		 * Kunos's 0x54 handler (FUN_1400142f0:1265) decrements a
 		 * "mandatory pits remaining" counter via FUN_14012aff0
