@@ -119,6 +119,34 @@ chat_broadcast(struct Server *s, const char *text, uint8_t chat_type)
 	bb_free(&out);
 }
 
+/*
+ * Same wire as the player-relay path in handlers.c::h_chat (0x2b
+ * with chat_type=0) but the sender label is operator-supplied so
+ * the message renders in the in-game chat panel under a fake
+ * driver name (e.g. "SERVER", "ADMIN").  Useful for the `say`
+ * console command -- Race-Control broadcasts (chat_broadcast
+ * above) land in the dedicated overlay lane which most operators
+ * expect for system notifications, but operator chatter to
+ * drivers needs the regular chat panel.
+ */
+void
+chat_broadcast_as(struct Server *s, const char *sender, const char *text)
+{
+	struct ByteBuf out;
+
+	if (text == NULL || text[0] == '\0' ||
+	    sender == NULL || sender[0] == '\0')
+		return;
+	bb_init(&out);
+	if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
+	    wr_str_a(&out, sender) == 0 &&
+	    wr_str_a(&out, text) == 0 &&
+	    wr_i32(&out, 0) == 0 &&
+	    wr_u8(&out, 0) == 0)
+		(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
+	bb_free(&out);
+}
+
 void
 chat_do_bop(struct Server *s, const char *args, int is_ballast,
     char *reply, size_t replysz)
