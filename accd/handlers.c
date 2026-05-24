@@ -520,6 +520,19 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 
 		session_recompute_standings(s);
 
+		/*
+		 * Request a 0x36 leaderboard re-broadcast.  Without this,
+		 * the AC2 client never sees the updated last_lap / lap_count
+		 * / position columns until the next phase boundary or
+		 * conn_drop emits a 0x36 — so the entire in-race timetable
+		 * stays blank for the duration of the session.  The deep-
+		 * compare gate in broadcast_leaderboard_if_changed dedupes
+		 * any frame that happens to match the cached bytes (the
+		 * earlier "over-emit on formation crossings" concern), so
+		 * unconditional request here is safe.
+		 */
+		leaderboard_request_emit(s);
+
 		if (s->session.phase == PHASE_OVERTIME) {
 			session_overtime_car_finished(s);
 			session_quali_drop_eligibility(s, c->car_id);
