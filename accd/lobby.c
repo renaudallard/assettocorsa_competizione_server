@@ -475,7 +475,17 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	 *   u8 wineFlag           — 1 if ntdll exports wine_get_version
 	 *   u8 sessionVec[0]+0x164 — default 0
 	 *   u8 selector(0x203/0x202) — non-CP default 0
-	 *   u8 Server+0x310 low   — default 1 (semantic unverified)
+	 *   u8 Server+0x310 low   — default 0.  Wine kunos pcap
+	 *                          (issue #2, 2026-05-24, Q+R config)
+	 *                          confirmed 0 here.  accd used to send
+	 *                          1 ("semantic unverified" guess from
+	 *                          early decomp) which made the kson
+	 *                          backend silently delist accd from
+	 *                          the public browser whenever the
+	 *                          first configured session was not P;
+	 *                          P+Q+R worked by luck, Q+R / R-only
+	 *                          servers never showed up in the in-
+	 *                          game browser.
 	 * accd previously wrote `u32 max + 8 magic + u8 weather.randomness`
 	 * which happens to produce identical bytes on wine+defaults but
 	 * diverges for any non-default rating, carGroup or randomness.
@@ -505,7 +515,7 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 		if (wr_u8(&bb, 0) < 0) goto err;
 		if (wr_u8(&bb, 0) < 0) goto err;
 		if (wr_u8(&bb, 0) < 0) goto err;
-		if (wr_u8(&bb, 1) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;
 	}
 
 	/*
