@@ -2105,10 +2105,19 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 * the field.  When all thresholds are 0 the gate is a
 		 * no-op for open servers.
 		 */
+		/*
+		 * "Unset" sentinel for each requirement is 0xff (kunos
+		 * wire convention, what cfg/settings.json -1 casts to).
+		 * The gate must skip 0xff or it would silently reject
+		 * every joiner as "rating < 255 required" — the regression
+		 * shipped in 0.3.69 before this guard was added.
+		 */
+#define ACC_RATING_UNSET	0xffu
+#define ACC_RATING_REQUIRED(v)	((v) > 0 && (v) != ACC_RATING_UNSET)
 		if (!c->is_spectator &&
-		    (s->track_medals_required > 0 ||
-		     s->safety_rating_required > 0 ||
-		     s->racecraft_rating_required > 0)) {
+		    (ACC_RATING_REQUIRED(s->track_medals_required) ||
+		     ACC_RATING_REQUIRED(s->safety_rating_required) ||
+		     ACC_RATING_REQUIRED(s->racecraft_rating_required))) {
 			uint16_t sa = 0, tr = 0;
 
 			ratings_get(s, steam_buf, &sa, &tr);
@@ -2117,11 +2126,11 @@ handshake_handle(struct Server *s, struct Conn *c,
 			 * handbook thresholds are integer 0..99.  No
 			 * server-side track medals tracking yet, so the
 			 * trackMedalsRequirement gate is satisfied if
-			 * the operator left it at 0; non-zero medal
+			 * the operator left it at 0 / -1; non-zero medal
 			 * floors will need a separate ledger when we
 			 * wire that up.
 			 */
-			if (s->safety_rating_required > 0 &&
+			if (ACC_RATING_REQUIRED(s->safety_rating_required) &&
 			    sa / 100 < s->safety_rating_required) {
 				log_info("rejecting %s: SA %u < required %u",
 				    steam_buf, (unsigned)(sa / 100),
@@ -2141,7 +2150,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 				free(steam); free(team);
 				goto reply;
 			}
-			if (s->racecraft_rating_required > 0 &&
+			if (ACC_RATING_REQUIRED(s->racecraft_rating_required) &&
 			    tr / 100 < s->racecraft_rating_required) {
 				log_info("rejecting %s: RC %u < required %u",
 				    steam_buf, (unsigned)(tr / 100),
@@ -2155,6 +2164,8 @@ handshake_handle(struct Server *s, struct Conn *c,
 				goto reply;
 			}
 		}
+#undef ACC_RATING_REQUIRED
+#undef ACC_RATING_UNSET
 
 		/*
 		 * Quick-reconnect detection (FUN_140025690 in accServer.exe,
