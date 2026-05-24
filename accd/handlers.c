@@ -316,7 +316,21 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->formation_lap_done = 1;
 
 		race->lap_count++;
-		if (!invalid)
+		/*
+		 * last_lap_ms is updated unconditionally — the kunos AC2
+		 * client's in-race timetable shows the LAST lap completed
+		 * regardless of validity (a cut / out-lap is still
+		 * displayed, with the INVALID badge driven separately by
+		 * the lapstates bits the client receives on 0x3b).
+		 * Previously gating this on !invalid left the entire
+		 * "last lap" / "previous lap" / "predicted" column blank
+		 * for any driver who cut every consecutive lap (which is
+		 * common on Monza GT3 in pickup sessions).  best_lap_ms
+		 * stays gated on !invalid — a cut lap must not become the
+		 * personal best.  Negative lap_ms guarded above remains
+		 * the only rejection.
+		 */
+		if (lap_ms > 0)
 			race->last_lap_ms = lap_ms;
 		if (!invalid && (race->best_lap_ms == 0 ||
 		    lap_ms < race->best_lap_ms))
