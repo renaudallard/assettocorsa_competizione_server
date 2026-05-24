@@ -98,6 +98,17 @@ mono_ms(void)
 #define ACC_RATINGS_MAX		256
 
 /*
+ * Rating-requirement sentinel.  settings.json maps -1 (or missing key)
+ * to uint8_t 0xff = "unset" / no filter; 0 and positive values are
+ * thresholds.  Any gate that reads track_medals_required, safety_
+ * rating_required or racecraft_rating_required must use this macro
+ * instead of bare `< N` comparisons — otherwise the 0xff sentinel
+ * compares as "minimum 255 required" and the wrong arm runs.
+ */
+#define ACC_RATING_UNSET	0xffu
+#define ACC_RATING_REQUIRED(v)	((v) > 0 && (v) != ACC_RATING_UNSET)
+
+/*
  * Session phase machine.
  *
  * Matches the accServer.exe internal 7-level phase model
@@ -775,8 +786,9 @@ struct Server {
 	int		ignore_premature_disconnects;
 	/*
 	 * Rating thresholds from settings.json (handbook III.2.2).
-	 * 0 = no requirement.  Drivers below the configured floor get
-	 * the handshake rejected before they reach a car slot.
+	 * Use ACC_RATING_REQUIRED() to test — 0xff is the unset sentinel
+	 * (default since 0.3.70).  Drivers below the configured floor
+	 * get the handshake rejected before they reach a car slot.
 	 *   trackMedalsRequirement      0..3
 	 *   safetyRatingRequirement     0..99 (×100 stored on the wire)
 	 *   racecraftRatingRequirement  0..99 (×100 stored on the wire)

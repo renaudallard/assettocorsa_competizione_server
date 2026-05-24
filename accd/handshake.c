@@ -2106,14 +2106,11 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 * no-op for open servers.
 		 */
 		/*
-		 * "Unset" sentinel for each requirement is 0xff (kunos
-		 * wire convention, what cfg/settings.json -1 casts to).
-		 * The gate must skip 0xff or it would silently reject
-		 * every joiner as "rating < 255 required" — the regression
+		 * 0xff = unset per ACC_RATING_REQUIRED in state.h.  The
+		 * gate must use the macro or every joiner would get
+		 * rejected as "rating < 255 required" — the regression
 		 * shipped in 0.3.69 before this guard was added.
 		 */
-#define ACC_RATING_UNSET	0xffu
-#define ACC_RATING_REQUIRED(v)	((v) > 0 && (v) != ACC_RATING_UNSET)
 		if (!c->is_spectator &&
 		    (ACC_RATING_REQUIRED(s->track_medals_required) ||
 		     ACC_RATING_REQUIRED(s->safety_rating_required) ||
@@ -2164,8 +2161,6 @@ handshake_handle(struct Server *s, struct Conn *c,
 				goto reply;
 			}
 		}
-#undef ACC_RATING_REQUIRED
-#undef ACC_RATING_UNSET
 
 		/*
 		 * Quick-reconnect detection (FUN_140025690 in accServer.exe,

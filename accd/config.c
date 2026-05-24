@@ -400,8 +400,8 @@ config_load(struct Server *s, const char *cfg_dir)
 		 */
 		if (s->register_to_lobby &&
 		    s->max_car_slots > 10 &&
-		    s->track_medals_required < 3 &&
-		    s->safety_rating_required < 70)
+		    !ACC_RATING_REQUIRED(s->track_medals_required) &&
+		    !ACC_RATING_REQUIRED(s->safety_rating_required))
 			s->max_car_slots = 10;
 		json_free(settings);
 	}
