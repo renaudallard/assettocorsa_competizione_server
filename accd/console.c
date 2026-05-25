@@ -102,6 +102,7 @@ cmd_help(void)
 	reply("  restrictor <n> %%  assign restrictor");
 	reply("  track [name]     show or change track");
 	reply("  connections      list connections (also broadcasts)");
+	reply("  say <message>    chat as 'SERVER' in the player chat panel");
 	reply("  debug            toggle debug tracing");
 	reply("  quit             shut down the server");
 }
@@ -386,6 +387,16 @@ console_dispatch(struct Server *s, const char *line)
 		}
 	} else if (chat_prefix(p, "connections")) {
 		cmd_connections(s);
+	} else if (chat_prefix(p, "say")) {
+		const char *arg = p + 3;
+		while (*arg == ' ')
+			arg++;
+		if (*arg == '\0') {
+			reply("usage: say <message>");
+		} else {
+			chat_broadcast_as(s, "SERVER", arg);
+			reply("said: %s", arg);
+		}
 	} else if (chat_prefix(p, "debug")) {
 		g_debug = !g_debug;
 		reply("debug tracing %s", g_debug ? "enabled" : "disabled");

@@ -72,6 +72,15 @@ int	chat_car_by_racenum(struct Server *s, int num);
 void	chat_broadcast(struct Server *s, const char *text, uint8_t type);
 
 /*
+ * Build and broadcast a 0x2b chat message in the player lane
+ * (chat_type=0) under a custom sender name.  Used by the `say`
+ * admin-console command so the message lands in the AC2 client's
+ * chat panel rather than the Race-Control overlay.
+ */
+void	chat_broadcast_as(struct Server *s, const char *sender,
+	    const char *text);
+
+/*
  * Action helpers.  Each performs the mutation, broadcasts to
  * in-game clients, and writes a human-readable reply to
  * reply[replysz] if non-NULL.
