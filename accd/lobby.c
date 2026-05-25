@@ -718,12 +718,15 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 	case PHASE_WAITING:
 	case PHASE_FORMATION:
 	case PHASE_PRE_SESSION:
-		if (s->session.session_index < s->session_count)
-			trem_ms = (int32_t)
-			    s->sessions[s->session.session_index].duration_min
-			    * 60000;
-		else
+		if (s->session.session_index < s->session_count) {
+			uint64_t dur_ms = (uint64_t)
+			    s->sessions[s->session.session_index]
+				.duration_min * 60000ull;
+			trem_ms = dur_ms > INT32_MAX
+			    ? INT32_MAX : (int32_t)dur_ms;
+		} else {
 			trem_ms = 0;
+		}
 		break;
 	case PHASE_SESSION:
 		trem_ms = s->session.time_remaining_ms;
