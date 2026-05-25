@@ -481,11 +481,25 @@ write_session_result_header(struct ByteBuf *bb,
 	uint8_t dow_minus_one = def->day_of_weekend > 0
 	    ? (uint8_t)(def->day_of_weekend - 1) : 0;
 
+	/*
+	 * type_code mapping verified by pcap diff against kunos
+	 * accServer.exe (zolder Q5+R10, 2026-05-25):
+	 *   - Q: kunos emits u16=3   (was 4)
+	 *   - R: kunos emits u16=80  (was 5)
+	 *   - P: kunos emits u16=2   (inferred, not pcap-verified)
+	 *
+	 * Cross-check: write_session_mgr_state (the 0x28 header builder)
+	 * already emits type_code=3 for Q at offset +0x29 of the 0x28
+	 * payload — same session_type, different value here was a real
+	 * inconsistency.  The mis-mapped type_code caused the AC2 client
+	 * to drift in its 0x3e per-record parser and crash on drill-down
+	 * into the post-session results table.
+	 */
 	switch (def->session_type) {
-	case 0:		type_code = 3;	break;	/* P */
-	case 4:		type_code = 4;	break;	/* Q */
-	case 10:	type_code = 5;	break;	/* R */
-	default:	type_code = 3;	break;	/* default to P */
+	case 0:		type_code = 2;	break;	/* P */
+	case 4:		type_code = 3;	break;	/* Q (pcap verified) */
+	case 10:	type_code = 80;	break;	/* R (pcap verified) */
+	default:	type_code = 2;	break;	/* default to P */
 	}
 	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
