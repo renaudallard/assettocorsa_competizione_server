@@ -93,6 +93,16 @@
 #define CADENCE_WEATHER_MS		5000	/* 0x37 every 5 s */
 #define CADENCE_LEADERBOARD_MS		75000	/* 0x36 async-coalesce */
 #define CADENCE_RATINGS_MS		81000	/* 0x4e debounce (.rdata) */
+/*
+ * Per-(car, peer) UDP fan-out throttle for 0x1e / 0x39.  Pcap diff
+ * against kunos accServer.exe (zolder, 2026-05-25) shows Wine fans
+ * out at ~31 packets/sec/car ≈ 18 Hz / car, i.e. ~55 ms per peer.
+ * accd's previous untrottled path emitted on EVERY server tick
+ * (~171 Hz) which generated 4243 packets/sec on a 10-driver server,
+ * overwhelming AC2 clients and producing visible lag (+517s
+ * intervals in the in-race timetable).
+ */
+#define CADENCE_PERCAR_MS		55
 
 /*
  * Write the 63-byte per-car body used by both 0x1e and each
@@ -224,6 +234,7 @@ broadcast_percar_dirty(struct Server *s)
 	uint8_t pkt[ACC_MAX_CARS][PEER_BODY_MAX];
 	size_t pkt_len[ACC_MAX_CARS];
 	struct sockaddr_in pkt_to[ACC_MAX_CARS];
+	struct Conn *pkt_peer[ACC_MAX_CARS];	/* for post-emit throttle update */
 #if ACCD_HAVE_SENDMMSG
 	struct mmsghdr msgs[ACC_MAX_CARS];
 	struct iovec iovs[ACC_MAX_CARS];
@@ -232,9 +243,11 @@ broadcast_percar_dirty(struct Server *s)
 	int i, j, n;
 	uint8_t msg_id = s->legacy_netcode
 	    ? SRV_PERCAR_SLOW_RATE : SRV_PERCAR_FAST_RATE;
+	uint64_t now_ms;
 
 	if (s->udp_fd < 0)
 		return;
+	now_ms = mono_ms();
 
 	bb_init(&bb);
 	for (i = 0; i < ACC_MAX_CARS; i++) {
@@ -262,6 +275,17 @@ broadcast_percar_dirty(struct Server *s)
 			if (peer->is_smpr)
 				continue;
 			if (peer->car_id == i)
+				continue;
+			/*
+			 * Per-peer cadence throttle.  Without this gate the
+			 * server emits at its full tick rate (~171 Hz),
+			 * which drowns the AC2 client and produces visible
+			 * lag (gaps of 500+s in the in-race timetable).
+			 * Kunos accServer.exe pcap shows ~31 packets/sec/car
+			 * = ~18 Hz per peer = ~55 ms between emits.
+			 */
+			if (now_ms - peer->last_percar_emit_ms <
+			    CADENCE_PERCAR_MS)
 				continue;
 			/*
 			 * Per-peer client-timestamp delta.  Same pivot as
@@ -292,6 +316,7 @@ broadcast_percar_dirty(struct Server *s)
 			memcpy(pkt[n], bb.data, bb.wpos);
 			pkt_len[n] = bb.wpos;
 			pkt_to[n] = peer->peer;
+			pkt_peer[n] = peer;
 			n++;
 		}
 
@@ -333,6 +358,16 @@ broadcast_percar_dirty(struct Server *s)
 			    (const struct sockaddr *)&pkt_to[j],
 			    sizeof(pkt_to[j]));
 #endif
+
+		/*
+		 * Record the emit timestamp on each peer we just fanned
+		 * out to, regardless of sendmmsg vs sendto path (the
+		 * payload reached the kernel either way; updating after
+		 * the kernel handoff matches what kunos would observe).
+		 */
+		for (j = 0; j < n; j++)
+			if (pkt_peer[j] != NULL)
+				pkt_peer[j]->last_percar_emit_ms = now_ms;
 
 		car->rt.dirty = 0;
 	}

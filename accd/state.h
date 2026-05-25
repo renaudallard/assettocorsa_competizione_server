@@ -716,6 +716,17 @@ struct Conn {
 						 * at ~18 Hz so the pivot is never
 						 * more than ~55 ms stale). */
 	uint32_t	last_udp_server_ms;
+	uint64_t	last_percar_emit_ms;	/* per-peer throttle for the
+						 * 0x1e/0x39 per-car fan-out;
+						 * compare against now_ms in
+						 * broadcast_percar_dirty so
+						 * each peer only receives
+						 * ~CADENCE_PERCAR_MS apart
+						 * regardless of how fast the
+						 * inbound 0x1e arrives.
+						 * Initialised to 0 so the
+						 * first emit per (car, peer)
+						 * always passes the gate. */
 	uint32_t	welcome_bytes;		/* size of last 0x0b welcome
 						 * trailer sent on this
 						 * conn — reported on the
