@@ -177,8 +177,15 @@ out:
  * when sector_index wraps back to 0 (i.e. the car crossed
  * the start/finish line after completing all 3 sectors).
  *
- * The exe never relays 0x3a (bulk); it only sends 0x3b
- * (single split relay) from the 0x21 handler.
+ * Per notebook-b §5.6 (binary reverse of FUN_140126450), the
+ * kunos exe DOES relay each inbound 0x20 as a transformed
+ * SRV_SECTOR_SPLITS_RELAY (0x3a) broadcast to every other
+ * client.  Without the relay, remote drivers' per-sector
+ * splits never reach the AC2 client's in-race timetable for
+ * any car the local driver isn't currently sitting in — the
+ * timetable's "last split" column stays empty for all peers.
+ * The earlier "exe never relays 0x3a" note in this file was
+ * an unverified hypothesis that the pcap evidence contradicts.
  */
 
 int
@@ -228,10 +235,35 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	if (sector_index < 3)
 		race->sector_ms[sector_index] = sector_time_ms;
 	race->race_time_ms = clock_ms;
-	(void)car_field;	/* per-split client flag bits unused here */
 	log_info("sector split: car=%d sector=%u time=%dms clock=%d",
 	    c->car_id, (unsigned)sector_index, (int)sector_time_ms,
 	    (int)clock_ms);
+
+	/*
+	 * 0x3a relay to every OTHER client (notebook-b §5.6.4: kunos
+	 * exe queued-broadcast tier sends to all peers except the
+	 * sender, since the sender already has the split locally).
+	 * Body: u8 0x3a + u16 car_id + u8 split_count (=1 per
+	 * inbound 0x20) + u32 split_time + i32 clock_ms + u16
+	 * car_field.  Per-split flags in car_field are forwarded as-
+	 * is — the AC2 client honors them for the live timetable
+	 * (e.g. cut bit to grey out an in-progress split).
+	 */
+	{
+		struct ByteBuf out;
+		uint32_t split_wire = sector_time_ms < 0
+		    ? LAP_TIME_INVALID : (uint32_t)sector_time_ms;
+
+		bb_init(&out);
+		if (wr_u8(&out, SRV_SECTOR_SPLITS_RELAY) == 0 &&
+		    wr_u16(&out, s->cars[c->car_id].car_id) == 0 &&
+		    wr_u8(&out, 1) == 0 &&
+		    wr_u32(&out, split_wire) == 0 &&
+		    wr_i32(&out, clock_ms) == 0 &&
+		    wr_u16(&out, car_field) == 0)
+			(void)bcast_all(s, out.data, out.wpos, c->conn_id);
+		bb_free(&out);
+	}
 	return 0;
 }
 
