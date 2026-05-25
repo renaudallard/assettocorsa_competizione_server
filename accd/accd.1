@@ -294,6 +294,17 @@ Set restrictor (0\(en99%).
 Change track for next session.
 .It /connections
 List connected drivers.
+.It Cm say Ar message
+Broadcast
+.Ar message
+to every connected client in the player chat panel under the
+sender label
+.Dq SERVER
+(chat type 0).  Console-only; the in-game
+.Dq /say
+alias is a synonym for
+.Dq /broadcast
+and emits a Race Control banner (chat type 4) instead.
 .It /hellban Ar car#
 Shadow-ban: drop inbound traffic and hide the car from peers,
 session-scoped.
