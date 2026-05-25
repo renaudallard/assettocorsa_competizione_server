@@ -500,12 +500,31 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 
 	/*
 	 * 17 × f32 body.  See reference_weather_wire_format.md slot table.
+	 *
+	 * Slot [0] grip-now: dynamic per kunos formula
+	 * `1 - clouds*0.3`, clamped down by `wet` when wetness shows
+	 * up.  The previous binary form (0.89 if wet >= 0.05 else 1.0)
+	 * left in-game grip stuck at 1.0 for dry sessions and never
+	 * progressed with cloud cover changes — verified via pcap
+	 * diff against kunos accServer.exe (zolder Q5+R10,
+	 * 2026-05-25) which emits dynamic grip values like 0.9876
+	 * matching `1 - clouds * 0.3` for the configured cloud level.
+	 *
+	 * Slot [1] grip-green: per notebook-b §5.6.4c, constant
+	 * persisted from randomize_green_trigger().  The previous
+	 * hardcoded 0.96 was close to the typical range but never
+	 * carried the per-session random value.
 	 */
 	{
-		float grip = wet >= 0.05f ? 0.89f : 1.0f;
+		float grip = 1.0f - clouds * 0.3f;
+		if (wet > 0.0f && wet < grip)
+			grip = 1.0f - wet * 0.3f;
+		if (grip < 0.0f) grip = 0.0f;
+		if (grip > 1.0f) grip = 1.0f;
 		if (wr_f32(bb, grip) < 0) return -1;
 	}
-	if (wr_f32(bb, 0.96f) < 0) return -1;	/* DAT_14014bcd8 */
+	if (wr_f32(bb, s->session.green_trigger > 0.0f
+	    ? s->session.green_trigger : 0.96f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
