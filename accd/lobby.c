@@ -692,18 +692,46 @@ lobby_send_drivers_update(struct LobbyClient *l, const struct Server *s)
  * before sending 0xcb so the wire reflects the live phase.  Kunos
  * code: FUN_1400482b0 reads sessionManager+0x268 (sessionType), calls
  * computeCurrentPhase, and takes time_remaining as a double in ms
- * then divides by DAT_14014bd20 (= 1000.0 — ms to seconds) and casts
- * to i16.  We use the same scaling from s->session.time_remaining_ms.
+ * then divides by DAT_14014bd20 (= 1000.0, ms to seconds) and casts
+ * to i16.
+ *
+ * Kunos's FUN_14012e8e0 is the time-remaining source the 0xcb caller
+ * passes in.  For phase < SESSION (WAITING / FORMATION / PRE-1 /
+ * PRE-2) it returns session_duration_sec * 1000 (the countdown
+ * hasn't started), at SESSION it returns end_ms - now, and at
+ * OVERTIME / COMPLETED it returns 0.  Mirror that here.  Without
+ * this, the first 0xcb after register-ack for a non-Practice first
+ * session went out as (type=Q/R, phase=WAITING, trem=0) and the
+ * kson backend silently delisted the server.  Issue #2 follow-up,
+ * verified against decomp 14012e8e0 + 140044c10:263.
  */
 static void
 lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 {
-	int32_t trem_ms = s->session.time_remaining_ms;
+	int32_t trem_ms;
 	int32_t trem_s;
 	uint8_t stype = 0;
 
 	if (s->session.session_index < s->session_count)
 		stype = s->sessions[s->session.session_index].session_type;
+	switch (s->session.phase) {
+	case PHASE_WAITING:
+	case PHASE_FORMATION:
+	case PHASE_PRE_SESSION:
+		if (s->session.session_index < s->session_count)
+			trem_ms = (int32_t)
+			    s->sessions[s->session.session_index].duration_min
+			    * 60000;
+		else
+			trem_ms = 0;
+		break;
+	case PHASE_SESSION:
+		trem_ms = s->session.time_remaining_ms;
+		break;
+	default:
+		trem_ms = 0;
+		break;
+	}
 	if (trem_ms < 0)
 		trem_ms = 0;
 	trem_s = trem_ms / 1000;
