@@ -217,6 +217,14 @@ struct CarRaceState {
 	int32_t		last_lap_ms;
 	int32_t		current_lap_ms;
 	int32_t		sector_ms[3];
+	/*
+	 * Snapshot of sector_ms[] taken at lap-completion just before
+	 * the per-lap reset, so results.c's "lastSplits" field reflects
+	 * the splits of the most recently completed lap (matches kunos
+	 * exe semantics) instead of always reading 0 after the reset.
+	 * Captures both valid and invalid (cut / out-lap) completions.
+	 */
+	int32_t		last_lap_splits_ms[3];
 	int32_t		best_sectors_ms[3];
 	int32_t		race_time_ms;
 	int32_t		lap_history_ms[ACC_LAP_HISTORY];

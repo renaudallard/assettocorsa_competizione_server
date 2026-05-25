@@ -258,9 +258,19 @@ results_write(struct Server *s)
 		fprintf(f, "        \"timing\": {\n");
 		fprintf(f, "          \"lastLap\": %d,\n",
 		    car->race.last_lap_ms);
+		/*
+		 * lastSplits must reflect the splits of the most recently
+		 * completed lap.  Read from last_lap_splits_ms (snapshot
+		 * taken in h_sector_split_single before the per-lap
+		 * sector_ms reset) — reading sector_ms directly would
+		 * yield [0,0,0] right after a lap completion, or the
+		 * in-progress partial splits of the lap currently being
+		 * driven (e.g. [s0, s1, 0]) if dumped mid-lap.
+		 */
 		fprintf(f, "          \"lastSplits\": [%d, %d, %d],\n",
-		    car->race.sector_ms[0], car->race.sector_ms[1],
-		    car->race.sector_ms[2]);
+		    car->race.last_lap_splits_ms[0],
+		    car->race.last_lap_splits_ms[1],
+		    car->race.last_lap_splits_ms[2]);
 		fprintf(f, "          \"bestLap\": %d,\n",
 		    car->race.best_lap_ms);
 		fprintf(f, "          \"bestSplits\": [%d, %d, %d],\n",

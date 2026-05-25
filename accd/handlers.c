@@ -401,6 +401,18 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->out_of_track_latched = 0;
 			race->cuts_this_lap = 0;
 			race->last_cut_ms = 0;
+			/*
+			 * Snapshot the just-completed lap's splits BEFORE the
+			 * per-lap sector_ms reset, so results.c can emit them
+			 * in the per-car "lastSplits" field (which would
+			 * otherwise read back as [0,0,0]).  Captures both
+			 * valid and cut completions — matches kunos semantics
+			 * (the last lap shown in the live timetable is the
+			 * last lap completed, regardless of validity).
+			 */
+			race->last_lap_splits_ms[0] = race->sector_ms[0];
+			race->last_lap_splits_ms[1] = race->sector_ms[1];
+			race->last_lap_splits_ms[2] = race->sector_ms[2];
 			race->sector_ms[0] = 0;
 			race->sector_ms[1] = 0;
 			race->sector_ms[2] = 0;
@@ -514,9 +526,18 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			int is_inlap = (cf & 0x0008) != 0;
 			int session_over = (cf & 0x0400) != 0;
 			int lm = lap_ms < 0 ? 0 : lap_ms;
-			int s1 = race->sector_ms[0] < 0 ? 0 : race->sector_ms[0];
-			int s2 = race->sector_ms[1] < 0 ? 0 : race->sector_ms[1];
-			int s3 = race->sector_ms[2] < 0 ? 0 : race->sector_ms[2];
+			/*
+			 * sector_ms[] was reset above (per-lap reset).  Read
+			 * the splits from the freshly-taken last_lap_splits_ms
+			 * snapshot so the Kunos "Lap" log line carries the
+			 * real S1/S2/S3 times for accweb-style scrapers.
+			 */
+			int s1 = race->last_lap_splits_ms[0] < 0
+			    ? 0 : race->last_lap_splits_ms[0];
+			int s2 = race->last_lap_splits_ms[1] < 0
+			    ? 0 : race->last_lap_splits_ms[1];
+			int s3 = race->last_lap_splits_ms[2] < 0
+			    ? 0 : race->last_lap_splits_ms[2];
 			uint8_t didx = s->cars[c->car_id].current_driver_index;
 			char tail[64];
 
