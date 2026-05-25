@@ -1022,10 +1022,32 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		int l2_n;
 		uint8_t wide_flag = 0;
 		int32_t l2_buf[ACC_LAP_HISTORY];
+		const int32_t *l1_src;
 
 		for (si = 0; si < 3; si++)
 			if (race->sector_ms[si] > 0)
 				l1_n = si + 1;
+		l1_src = race->sector_ms;
+		/*
+		 * Fallback when no sector of the current lap is set yet
+		 * (i.e. we just dispatched a lap completion and the per-
+		 * lap reset wiped sector_ms[]).  Without the fallback the
+		 * AC2 client's in-race timetable shows blank split cells
+		 * between lap completions — until the driver crosses S1
+		 * of the next lap.  Read from the last_lap_splits_ms
+		 * snapshot (populated by h_sector_split_single before
+		 * the per-lap reset) so the column shows the previous
+		 * lap's splits until new ones come in.  Captures both
+		 * valid and cut completions (kunos timetable does the
+		 * same — the column is "last lap shown", not "last valid
+		 * lap shown").
+		 */
+		if (l1_n == 0) {
+			for (si = 0; si < 3; si++)
+				if (race->last_lap_splits_ms[si] > 0)
+					l1_n = si + 1;
+			l1_src = race->last_lap_splits_ms;
+		}
 
 		/*
 		 * l2 carries the per-car lap history.  Pcap diff against
@@ -1064,7 +1086,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		 */
 #define LAP_WIDE_PIVOT	0x10000u
 		for (si = 0; si < l1_n; si++)
-			if ((uint32_t)race->sector_ms[si] >= LAP_WIDE_PIVOT)
+			if ((uint32_t)l1_src[si] >= LAP_WIDE_PIVOT)
 				wide_flag = 1;
 		for (si = 0; si < l2_n; si++)
 			if ((uint32_t)l2_buf[si] >= LAP_WIDE_PIVOT)
@@ -1073,7 +1095,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		if (wr_u8(bb, wide_flag) < 0) return -1;
 		if (wr_u8(bb, (uint8_t)l1_n) < 0) return -1;
 		for (si = 0; si < l1_n; si++) {
-			uint32_t v = (uint32_t)race->sector_ms[si];
+			uint32_t v = (uint32_t)l1_src[si];
 			if (wide_flag) {
 				if (wr_u32(bb, v) < 0) return -1;
 			} else {
