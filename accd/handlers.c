@@ -240,26 +240,34 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	    (int)clock_ms);
 
 	/*
-	 * 0x3a relay to every OTHER client (notebook-b §5.6.4: kunos
-	 * exe queued-broadcast tier sends to all peers except the
-	 * sender, since the sender already has the split locally).
-	 * Body: u8 0x3a + u16 car_id + u8 split_count (=1 per
-	 * inbound 0x20) + u32 split_time + i32 clock_ms + u16
-	 * car_field.  Per-split flags in car_field are forwarded as-
-	 * is — the AC2 client honors them for the live timetable
-	 * (e.g. cut bit to grey out an in-progress split).
+	 * 0x3a relay to every OTHER client (kunos exe queued-broadcast
+	 * tier sends to all peers except the sender; sender already has
+	 * the split locally).  Body: u8 0x3a + u16 car_id + u8
+	 * split_count + u32 split_time + i32 session_relative_ts +
+	 * u16 car_field.
+	 *
+	 * The trailing i32 timestamp is the sender's wire clock_ms
+	 * normalised through `c->session_clock_offset_ms` to the
+	 * server-session-relative frame, mirroring kunos's
+	 * FUN_140042000(server, raw_ts) = raw_ts + per_conn_offset
+	 * (case 0x20 dispatcher in FUN_1400142f0:308).  Without the
+	 * normalisation, the peer's AC2 client interprets the timestamp
+	 * in the sender's boot/session domain and the live timetable
+	 * sees splits drifting by the per-conn offset each lap.
 	 */
 	{
 		struct ByteBuf out;
 		uint32_t split_wire = sector_time_ms < 0
 		    ? LAP_TIME_INVALID : (uint32_t)sector_time_ms;
+		int32_t clock_relayed = (int32_t)((int64_t)clock_ms
+		    + c->session_clock_offset_ms);
 
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SECTOR_SPLITS_RELAY) == 0 &&
 		    wr_u16(&out, s->cars[c->car_id].car_id) == 0 &&
 		    wr_u8(&out, 1) == 0 &&
 		    wr_u32(&out, split_wire) == 0 &&
-		    wr_i32(&out, clock_ms) == 0 &&
+		    wr_i32(&out, clock_relayed) == 0 &&
 		    wr_u16(&out, car_field) == 0)
 			(void)bcast_all(s, out.data, out.wpos, c->conn_id);
 		bb_free(&out);
