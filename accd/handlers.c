@@ -655,7 +655,7 @@ h_chat(struct Server *s, struct Conn *c,
 		    wr_i32(&out, 0) == 0 &&
 		    wr_u8(&out, 0) == 0)
 			(void)bcast_all(s, out.data, out.wpos,
-			    c->conn_id);
+			    BCAST_EXCEPT_NONE);
 		bb_free(&out);
 	}
 out:
