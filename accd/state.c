@@ -160,7 +160,19 @@ server_init(struct Server *s)
 	s->allow_auto_dq = 1;
 	s->use_async_leaderboard = 0;
 	s->unsafe_rejoin = 1;
-	s->legacy_netcode = 1;
+	/*
+	 * legacy_netcode default to 0 (modern fast_rate 0x1e per-car
+	 * broadcast).  Pcap diff against kunos accServer.exe
+	 * (zolder Q5+R10, 2026-05-25) shows Wine NEVER emits 0x39
+	 * SRV_PERCAR_SLOW_RATE — only 0x1e SRV_PERCAR_FAST_RATE.
+	 *
+	 * The previous default of 1 forced every server to emit the
+	 * legacy 0x39 form (slow_rate sibling, kept for compatibility
+	 * with very old ACC clients) which the AC2 client still
+	 * accepts but isn't the natural format.  The /mp admin command
+	 * remains available to toggle back to legacy on demand.
+	 */
+	s->legacy_netcode = 0;
 	s->formation_trigger_start = 0.80f;
 	s->green_trigger_start = 0.89f;
 	s->green_trigger_end = 0.96f;
