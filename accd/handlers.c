@@ -1974,7 +1974,18 @@ h_load_setup(struct Server *s, struct Conn *c,
 				int idx = (start + k) % ACC_LAP_HISTORY;
 				int si;
 
-				if (wr_str_a(&out, s->track) < 0) goto done;
+				/*
+				 * kunos's 0x56 lap-history entry layout does
+				 * NOT include the track name string per lap.
+				 * Pcap diff against kunos accServer.exe
+				 * (zolder Q5+R10, 2026-05-25) shows each lap
+				 * entry as: u32 lap_ms + u8(3) + 3*u32 splits
+				 * + u16 carId + u8 0 + u16 lap_num.  Emitting
+				 * wr_str_a(s->track) here bloated the payload
+				 * by ~26 bytes per lap AND broke the per-lap
+				 * alignment expected by the AC2 client's
+				 * setup-data parser.
+				 */
 				if (wr_u32(&out,
 				    (uint32_t)src->lap_history_ms[idx]) < 0)
 					goto done;
