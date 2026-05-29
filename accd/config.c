@@ -367,6 +367,23 @@ config_load(struct Server *s, const char *cfg_dir)
 		s->racecraft_rating_required = (uint8_t)json_obj_get_int(
 		    settings, "racecraftRatingRequirement", -1);
 		/*
+		 * FUN_140106300 line 666 rejects an out-of-range
+		 * trackMedalsRequirement (valid 0..3) and defaults it to "no
+		 * requirement".  Without this an operator typo like 5 is
+		 * advertised verbatim and, because it makes
+		 * ACC_RATING_REQUIRED() true, also suppresses the maxCarSlots
+		 * clamp below.  accd's "no requirement" sentinel is
+		 * ACC_RATING_UNSET (the open-server value) rather than the
+		 * exe's 0, so reset to that.
+		 */
+		if (s->track_medals_required != ACC_RATING_UNSET &&
+		    s->track_medals_required > 3) {
+			log_warn("trackMedalsRequirement %u out of range "
+			    "(0..3), ignoring",
+			    (unsigned)s->track_medals_required);
+			s->track_medals_required = ACC_RATING_UNSET;
+		}
+		/*
 		 * isRaceLocked (handbook III.2.2): default 1.  Inverse
 		 * of unsafe_rejoin which already controls the same
 		 * mid-race-join gate.  Reading both keeps backwards
