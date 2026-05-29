@@ -997,7 +997,9 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 * the HUD's last-lap / predicted-lap timers blank because the
 	 * client got 0 for last_lap and computed no delta.
 	 *
-	 *   +0x180  u16   reserved
+	 *   +0x180  u16   current-driver-index (which driver of a
+	 *                 multi-driver entry the client shows as active;
+	 *                 FUN_14000a7c0 copies it from the runtime car)
 	 *   +0x1d4  u32   best-lap-ms
 	 *   +0x1b0  u32   last-lap-ms (client semantic — drives HUD
 	 *                 last-lap + predicted-lap delta)
@@ -1005,7 +1007,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 *   +0x1f0  u32   race-time-ms
 	 *   +0x1f8  u8    ELO, clamped
 	 */
-	if (wr_u16(bb, 0) < 0) return -1;
+	if (wr_u16(bb, ec->current_driver_index) < 0) return -1;
 	if (wr_u32(bb, race->best_lap_ms > 0
 	    ? (uint32_t)race->best_lap_ms : LAP_TIME_INVALID) < 0) return -1;
 	if (wr_u32(bb, race->last_lap_ms > 0
