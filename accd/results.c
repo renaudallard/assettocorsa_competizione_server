@@ -82,6 +82,31 @@ session_type_str(uint8_t t)
 	}
 }
 
+/*
+ * Map accd's internal penalty_reason to the kunos results.json reason
+ * string.  The exe stores the AC2 category name (FUN_140117330) as a
+ * wstring on each penalty entry and the results writer (FUN_14010f470)
+ * emits it as a string, not an integer.  Reasons with no kunos
+ * category equivalent fall back to "None", matching the exe default.
+ */
+static const char *
+reason_name(uint8_t reason)
+{
+	switch (reason) {
+	case REASON_CUTTING:			return "Cutting";
+	case REASON_PIT_SPEEDING:		return "PitSpeeding";
+	case REASON_IGNORED_MANDATORY_PIT:	return "IgnoredMandatoryPit";
+	case REASON_PIT_ENTRY:			return "PitEntry";
+	case REASON_PIT_EXIT:			return "PitExit";
+	case REASON_WRONG_WAY:			return "WrongWay";
+	case REASON_EXCEEDED_DRIVER_STINT_LIMIT:
+		return "ExceededDriverStintLimit";
+	case REASON_IGNORED_DRIVER_STINT:
+	case REASON_DRIVER_RAN_NO_STINT:	return "DriverRanNoStint";
+	default:				return "None";
+	}
+}
+
 int
 results_write(struct Server *s)
 {
@@ -439,8 +464,9 @@ results_write(struct Server *s)
 				fprintf(f, " \"carId\": %u,", cc->car_id);
 				fprintf(f, " \"driverIndex\": %u,",
 				    (unsigned)cc->current_driver_index);
-				fprintf(f, " \"reason\": %u,",
-				    (unsigned)p->reason);
+				fprintf(f, " \"reason\": ");
+				fprint_json_str(f, reason_name(p->reason));
+				fprintf(f, ",");
 				fprintf(f, " \"penalty\": ");
 				fprint_json_str(f, pname);
 				fprintf(f, ", \"penaltyValue\": %d,",
