@@ -195,8 +195,15 @@ results_write(struct Server *s)
 		fprintf(f, "    \"bestSplits\": [%d, %d, %d],\n",
 		    (int)best_sec[0], (int)best_sec[1], (int)best_sec[2]);
 	}
+	/*
+	 * isWetSession is the declared-wet flag (FUN_14010ec60 reads a
+	 * byte at +0x78); accd has no declared-wet concept (weather is
+	 * dynamic), so it stays 0.  type is the numeric session type
+	 * (+0x48), emitted and read raw, so emit accd's session_type
+	 * rather than 0.
+	 */
 	fprintf(f, "    \"isWetSession\": 0,\n");
-	fprintf(f, "    \"type\": 0,\n");
+	fprintf(f, "    \"type\": %u,\n", (unsigned)st);
 	fprintf(f, "    \"leaderBoardLines\": [");
 
 	first = 1;
