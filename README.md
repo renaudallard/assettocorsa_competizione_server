@@ -354,7 +354,7 @@ the server browser will show 24, not 30.
 | `password` | `""` | Required to join as a driver; empty means open. |
 | `adminPassword` | `""` | Used in-game via `/admin <pw>` to elevate to admin. |
 | `spectatorPassword` | `""` | Admits the client as a spectator. |
-| `allowAutoDQ` | `1` | `0` downgrades failed DT/SG to a 30 s stop&go. |
+| `allowAutoDQ` | `1` | `0` caps auto-DQ at a 30 s stop&go instead of disqualifying: applies both to a failed DT/SG serve and to repeated-cutting escalation.  Pit-speeding is always a DQ regardless (kunos 1.8.11). |
 | `registerToLobby` | `0` | `1` lists the server publicly in the ACC browser. |
 | `useAsyncLeaderboard` | `0` | Leaderboard fan-out is event-driven (every standings change) in both modes; `1` also runs a 75 s heartbeat on top as a defense-in-depth refresh. |
 | `unsafeRejoin` | `1` | `0` refuses fresh mid-race handshakes. |
