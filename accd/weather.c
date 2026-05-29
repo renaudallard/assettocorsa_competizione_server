@@ -215,9 +215,13 @@ weather_generate_fourier(struct Server *s, uint32_t seed)
 	w->wind_speed_base = fabsf(mt_gaussian(&m, 1.5f, 1.0f));
 
 	/*
-	 * Wind direction: random uniform [0, 360) when unset.
+	 * Wind direction: FUN_140116c50 (line 147) regenerates the base
+	 * only when it is a strictly negative sentinel; the configured or
+	 * default 0 is preserved as due North.  The exe draws from libc
+	 * rand(); we draw from the MT stream since accd does not aim for
+	 * byte parity with the kunos coefficient sequence here.
 	 */
-	if (w->wind_direction_base == 0.0f)
+	if (w->wind_direction_base < 0.0f)
 		w->wind_direction_base = (float)(mt_next(&m) % 360u);
 
 	/*
