@@ -104,6 +104,13 @@ static void bb_u32(uint32_t v)
 	bb_buf[bb_n++] = (v >> 24) & 0xff;
 }
 static void bb_f32(float f) { uint32_t u; memcpy(&u, &f, 4); bb_u32(u); }
+static void bb_f64(double d)
+{
+	uint64_t u;
+	memcpy(&u, &d, 8);
+	bb_u32((uint32_t)(u & 0xffffffffu));
+	bb_u32((uint32_t)(u >> 32));
+}
 static void bb_pad(size_t n) { memset(bb_buf + bb_n, 0, n); bb_n += n; }
 
 /* Format-A wstring: u8 count + count * u32 codepoint. */
@@ -511,7 +518,10 @@ static size_t pkt_out_of_track(uint8_t *out, uint8_t force, int32_t ts)
 }
 
 /* 0x5e ACP_TIME_EVENT — UDP, not framed.
- * Body: u8 0x5e + u16 source_conn + u16 target_conn + u64 latency + u8 chat. */
+ * Body: u8 0x5e + u16 source_conn + u16 target_conn + f64 latency_ms + u8 chat.
+ * The latency field is an IEEE-754 double on the wire (the exe reads it
+ * via FUN_14000ae50 and formats (int)double); a real AC2 client sends a
+ * double, so encode it that way rather than as a raw integer. */
 static size_t pkt_time_event(uint8_t *out, uint16_t src, uint16_t dst,
     uint64_t latency_ms, uint8_t enable_chat)
 {
@@ -519,8 +529,7 @@ static size_t pkt_time_event(uint8_t *out, uint16_t src, uint16_t dst,
 	bb_u8(0x5e);
 	bb_u16(src);
 	bb_u16(dst);
-	bb_u32((uint32_t)(latency_ms & 0xffffffffu));
-	bb_u32((uint32_t)(latency_ms >> 32));
+	bb_f64((double)latency_ms);
 	bb_u8(enable_chat);
 	memcpy(out, bb_buf, bb_n);
 	return bb_n;
