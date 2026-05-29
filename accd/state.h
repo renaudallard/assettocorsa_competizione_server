@@ -857,7 +857,7 @@ struct Server {
 
 	/*
 	 * unsafeRejoin from settings.json (default 1 = allow late joins).
-	 * Mirrors the exe's +0x228 byte read in FUN_140117300 and gates
+	 * Mirrors the exe's +0x228 byte read in FUN_140023700 and gates
 	 * the mid-race / late-qualy rejection in FUN_140025690.  When 0,
 	 * 0x09 handshakes that land during a race session (or late qualy,
 	 * or a locked preparation phase) are rejected with 0x0c code 12.
