@@ -107,6 +107,28 @@ reason_name(uint8_t reason)
 	}
 }
 
+/*
+ * Map a penalty_kind to the results.json penalty name and value.
+ * Shared by the penalties[] and post_race_penalties[] writers.
+ */
+static void
+pen_kind_json(uint8_t kind, const char **name, int *value)
+{
+	switch (kind) {
+	case PEN_DT: case PEN_DTC:	*name = "DriveThrough"; *value = 3; break;
+	case PEN_SG10: case PEN_SG10C:	*name = "StopAndGo_10"; *value = 10; break;
+	case PEN_SG20: case PEN_SG20C:	*name = "StopAndGo_20"; *value = 20; break;
+	case PEN_SG30: case PEN_SG30C:	*name = "StopAndGo_30"; *value = 30; break;
+	case PEN_TP5:			*name = "TimePenalty_5"; *value = 5; break;
+	case PEN_TP15:			*name = "TimePenalty_15"; *value = 15; break;
+	case PEN_TP30:			*name = "TimePenalty_30"; *value = 30; break;
+	case PEN_TP40:			*name = "TimePenalty_40"; *value = 40; break;
+	case PEN_TP50:			*name = "TimePenalty_50"; *value = 50; break;
+	case PEN_TP60:			*name = "TimePenalty_60"; *value = 60; break;
+	default:			*name = "Unknown"; *value = 0; break;
+	}
+}
+
 int
 results_write(struct Server *s)
 {
@@ -440,31 +462,10 @@ results_write(struct Server *s)
 			for (pi = 0; pi < cc->race.pen.count; pi++) {
 				const struct PenaltyEntry *p =
 				    &cc->race.pen.slots[pi];
-				const char *pname = "Unknown";
-				int pvalue = 0;
+				const char *pname;
+				int pvalue;
 
-				switch (p->kind) {
-				case PEN_DT: case PEN_DTC:
-					pname = "DriveThrough"; pvalue = 3;
-					break;
-				case PEN_SG10: case PEN_SG10C:
-					pname = "StopAndGo_10"; pvalue = 10;
-					break;
-				case PEN_SG20: case PEN_SG20C:
-					pname = "StopAndGo_20"; pvalue = 20;
-					break;
-				case PEN_SG30: case PEN_SG30C:
-					pname = "StopAndGo_30"; pvalue = 30;
-					break;
-				case PEN_TP5:
-					pname = "TimePenalty_5"; pvalue = 5;
-					break;
-				case PEN_TP15:
-					pname = "TimePenalty_15"; pvalue = 15;
-					break;
-				default:
-					break;
-				}
+				pen_kind_json(p->kind, &pname, &pvalue);
 				if (!pen_first)
 					fprintf(f, ",");
 				fprintf(f, "\n    {");
@@ -484,6 +485,54 @@ results_write(struct Server *s)
 				fprintf(f, " \"clearedInLap\": -1");
 				fprintf(f, " }");
 				pen_first = 0;
+			}
+		}
+	}
+	fprintf(f, "\n  ],\n");
+	/*
+	 * post_race_penalties: the DT/SG penalties converted to a
+	 * post-race time penalty at race end.  FUN_14010ee90 emits this
+	 * as a third top-level array after penalties[].  accd flags the
+	 * conversion on the same queue entry via race_end_tp, so emit
+	 * those entries here with the converted TP kind.
+	 */
+	fprintf(f, "  \"post_race_penalties\": [");
+	{
+		int prp_first = 1, ci, pi;
+
+		for (ci = 0; ci < ACC_MAX_CARS && ci < s->max_connections;
+		    ci++) {
+			struct CarEntry *cc = &s->cars[ci];
+
+			if (cc->driver_count == 0)
+				continue;
+			for (pi = 0; pi < cc->race.pen.count; pi++) {
+				const struct PenaltyEntry *p =
+				    &cc->race.pen.slots[pi];
+				const char *pname;
+				int pvalue;
+
+				if (p->race_end_tp == 0)
+					continue;
+				pen_kind_json(p->race_end_tp, &pname, &pvalue);
+				if (!prp_first)
+					fprintf(f, ",");
+				fprintf(f, "\n    {");
+				fprintf(f, " \"carId\": %u,", cc->car_id);
+				fprintf(f, " \"driverIndex\": %u,",
+				    (unsigned)cc->current_driver_index);
+				fprintf(f, " \"reason\": ");
+				fprint_json_str(f, reason_name(p->reason));
+				fprintf(f, ",");
+				fprintf(f, " \"penalty\": ");
+				fprint_json_str(f, pname);
+				fprintf(f, ", \"penaltyValue\": %d,", pvalue);
+				fprintf(f, " \"served\": %s,",
+				    p->served ? "true" : "false");
+				fprintf(f, " \"violationInLap\": -1,");
+				fprintf(f, " \"clearedInLap\": -1");
+				fprintf(f, " }");
+				prp_first = 0;
 			}
 		}
 	}
