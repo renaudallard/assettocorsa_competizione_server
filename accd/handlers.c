@@ -929,7 +929,13 @@ h_car_location_update(struct Server *s, struct Conn *c,
 				log_info("PITLANE SPEEDING for car #%d "
 				    "speed=%.1f m/s -> DQ",
 				    car->race_number, speed);
-				penalty_enqueue(s, c->car_id, EXE_DQ, 11,
+				/*
+				 * AC2 category 3 = PitSpeeding (matches the
+				 * reason); this is only the pen_cat_severity
+				 * dedup slot, the wire code comes from the
+				 * reason.
+				 */
+				penalty_enqueue(s, c->car_id, EXE_DQ, 3,
 				    3, 1, 0, REASON_PIT_SPEEDING);
 				penalty_format_chat(chat, sizeof(chat),
 				    PEN_DQ, REASON_PIT_SPEEDING, 0,
@@ -1924,7 +1930,15 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 			log_info("Car %d mandatory swap skipped (driver %u) "
 			    "-> DT", c->car_id,
 			    (unsigned)ecar->current_driver_index);
-			(void)penalty_enqueue(s, c->car_id, EXE_DT, 24, 3, 1,
+			/*
+			 * AC2 category 11 = IgnoredDriverStint (the wire
+			 * dispatcher's stint group, matching the reason).
+			 * Was 24 (a wire code, not a category): being >= 18
+			 * it clamped to the cutting slot 0 in penalty_enqueue,
+			 * so a swap-skip made the next genuine cut escalate a
+			 * rung early.
+			 */
+			(void)penalty_enqueue(s, c->car_id, EXE_DT, 11, 3, 1,
 			    0, REASON_IGNORED_DRIVER_STINT);
 			penalty_format_chat(chat, sizeof(chat), PEN_DT,
 			    REASON_IGNORED_DRIVER_STINT, 0,
