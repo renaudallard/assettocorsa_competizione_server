@@ -142,6 +142,17 @@ rd_f32(struct Reader *r, float *out)
 }
 
 int
+rd_f64(struct Reader *r, double *out)
+{
+	uint64_t u;
+
+	if (rd_u64(r, &u) < 0)
+		return -1;
+	memcpy(out, &u, 8);
+	return 0;
+}
+
+int
 rd_skip(struct Reader *r, size_t n)
 {
 	if (rd_remaining(r) < n)

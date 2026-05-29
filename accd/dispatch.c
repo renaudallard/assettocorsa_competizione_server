@@ -560,7 +560,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 *   u8  0x5e
 		 *   u16 source_conn_id
 		 *   u16 target_conn_id
-		 *   u64 latency_raw_ms
+		 *   f64 latency_ms        (IEEE-754 double, printed as int)
 		 *   u8  forward_as_chat   (1 = send 0x2b to target too)
 		 *
 		 * Server looks up both conns.  If forward_as_chat is set
@@ -571,14 +571,14 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		struct Reader r;
 		uint8_t op, enable_chat = 0;
 		uint16_t source_conn = 0, target_conn = 0;
-		uint64_t latency_raw = 0;
+		double latency_ms = 0;
 		struct Conn *src, *dst;
 
 		rd_init(&r, buf, len);
 		if (rd_u8(&r, &op) < 0 ||
 		    rd_u16(&r, &source_conn) < 0 ||
 		    rd_u16(&r, &target_conn) < 0 ||
-		    rd_u64(&r, &latency_raw) < 0 ||
+		    rd_f64(&r, &latency_ms) < 0 ||
 		    rd_u8(&r, &enable_chat) < 0) {
 			log_warn("udp 0x5e short from %s:%u",
 			    inet_ntoa(peer->sin_addr),
@@ -587,9 +587,9 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		}
 		src = server_find_conn(s, source_conn);
 		dst = server_find_conn(s, target_conn);
-		log_info("0x5e latency report: %u -> %u = %u ms (chat=%u)",
+		log_info("0x5e latency report: %u -> %u = %d ms (chat=%u)",
 		    source_conn, target_conn,
-		    (unsigned)latency_raw, (unsigned)enable_chat);
+		    (int)latency_ms, (unsigned)enable_chat);
 		/*
 		 * Refuse the chat relay if the UDP source IP doesn't
 		 * match the source conn's accepted IP -- otherwise any
@@ -599,7 +599,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		if (src != NULL &&
 		    src->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
 			return;
-		if (enable_chat && src != NULL && dst != NULL &&
+		if (enable_chat == 1 && src != NULL && dst != NULL &&
 		    !dst->is_smpr) {
 			char body_txt[96];
 			const char *from = "?";
@@ -612,8 +612,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 					from = car->drivers[0].last_name;
 			}
 			snprintf(body_txt, sizeof(body_txt),
-			    "Latency error: %u ms",
-			    (unsigned)latency_raw);
+			    "Latency error: %d ms",
+			    (int)latency_ms);
 			bb_init(&out);
 			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 			    wr_str_a(&out, from) == 0 &&

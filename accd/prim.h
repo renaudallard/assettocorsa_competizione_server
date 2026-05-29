@@ -67,6 +67,7 @@ int	rd_u64(struct Reader *r, uint64_t *out);
 int	rd_i32(struct Reader *r, int32_t *out);
 int	rd_i16(struct Reader *r, int16_t *out);
 int	rd_f32(struct Reader *r, float *out);
+int	rd_f64(struct Reader *r, double *out);
 
 /*
  * Check whether a complete Format-A string can be read at the
