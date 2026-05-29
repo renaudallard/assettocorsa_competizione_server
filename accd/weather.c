@@ -354,9 +354,20 @@ weather_step(struct Server *s)
 	dryline = -0.2f - cloud_phase;
 	w->dry_line_wetness = dryline;
 
-	/* === Fourier sum into cloud level */
-	accum = w->current_rain;
-	new_cloud = w->clouds;
+	/*
+	 * === Fourier sum into cloud level
+	 *
+	 * FUN_140116830 is stateless: each call seeds the accumulator and
+	 * cloud base from the model's configured base (model+0x38 / +0x3c,
+	 * copied into a fresh output struct by FUN_14000e350) and never
+	 * mutates the base, so cloud = base + FourierSum(absolute dt) is
+	 * recomputed deterministically.  Read the base from the immutable
+	 * base_rain / base_clouds, not from the live (written-back)
+	 * current_rain / clouds, otherwise each tick re-adds the full
+	 * Fourier delta onto the previous output and drifts to saturation.
+	 */
+	accum = w->base_rain;
+	new_cloud = w->base_clouds;
 	if (w->n_harmonics > 0 && w->n_sine > 0) {
 		int k;
 		float cos0 = w->cosine_coeffs[0];
@@ -374,7 +385,7 @@ weather_step(struct Server *s)
 			accum += carrier * w->sine_coeffs[k];
 		}
 		accum += dt * w->sine_coeffs[0] * WX_LIN_DRIFT;
-		new_cloud = clamp01(accum + w->clouds);
+		new_cloud = clamp01(accum + w->base_clouds);
 	}
 	w->clouds = new_cloud;
 
