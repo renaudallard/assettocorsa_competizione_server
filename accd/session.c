@@ -122,10 +122,12 @@ randomize_green_trigger(const struct Server *s)
 
 /*
  * Auto-derive shortFormationLap from the session list.  Matches
- * exe FUN_140029eb0 line 261-270 which sets ServerState+0x230 = 1
- * unless at least one race session has duration > 0x99c (= 2460);
- * with duration in seconds that's a 41-minute threshold, so any
- * race ≥ 41 minutes flips the flag to 0 (standard formation).
+ * exe FUN_140029eb0 line 261 which sets ServerState+0x230 = 1
+ * unless at least one race session has duration_seconds > 0x99c
+ * (= 2460, a strict compare).  41 minutes is exactly 2460 s, so a
+ * race of exactly 41 minutes stays short and only a race longer than
+ * 41 minutes flips the flag to 0 (standard formation).  duration is
+ * whole minutes here, so duration_min > 41 is the exact equivalent.
  *
  * The JSON "shortFormationLap" key in settings.json lands on a
  * different struct (SettingsConfig+0x110 per FUN_140106300 line
@@ -139,7 +141,7 @@ auto_short_formation(const struct Server *s)
 	int i;
 	for (i = 0; i < s->session_count; i++) {
 		const struct SessionDef *def = &s->sessions[i];
-		if (def->session_type == 10 && def->duration_min >= 41)
+		if (def->session_type == 10 && def->duration_min > 41)
 			return 0;	/* long race exists */
 	}
 	return 1;	/* short formation */
