@@ -41,8 +41,10 @@
  *
  * Registration body (preamble type=0xc8, msg id 0x44):
  *   u8  0x44          msg id (REGISTER)
- *   u8  0x01          server-kind = dedicated
- *   u8  0x2b          protocol minor
+ *   u8 + N bytes      protocol version (FUN_14004d490 writeString:
+ *                     u8 length + UTF-8).  The exe sends the single
+ *                     char 0x2b, so this is the two bytes 0x01 0x2b on
+ *                     the wire, not a server-kind plus protocol-minor.
  *   u32 tcp_port
  *   u32 udp_port
  *   u16 + N bytes     serverName  (kson_string: u16 byte-length + UTF-8)
