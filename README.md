@@ -479,8 +479,8 @@ So the practical decision tree:
 | Advertise up to 30 on a **public** server | add `trackMedalsRequirement: 3` + `safetyRatingRequirement: 70` |
 
 `racecraftRatingRequirement` does **not** affect the slot count —
-it only gates which drivers can join.  accd mirrors clamps #1
-and #3 locally (the latter only when `registerToLobby: 1`) so
+it only gates which drivers can join.  accd mirrors clamps #1,
+#2 and #3 locally (#2 and #3 only when `registerToLobby: 1`) so
 the server-side count matches the lobby's advertised number.
 
 ### Starting the server

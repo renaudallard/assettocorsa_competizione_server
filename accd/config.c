@@ -424,20 +424,40 @@ config_load(struct Server *s, const char *cfg_dir)
 			}
 		}
 		/*
-		 * Kunos's exe-side clamp (FUN_1400214b0:47-48) is gated
-		 * on the public-MP flag: private servers are never
-		 * clamped to 10, only public servers behind the lobby
-		 * are.  Mirror that gate here -- a private server with
-		 * registerToLobby=0 and maxCarSlots=30 used to be
-		 * silently reset to 10 because the local clamp ran
-		 * unconditionally.  Operators of Pi-4-class private
-		 * boxes hit this directly.
+		 * FUN_1400214b0 step 2 (lines 47-74) clamps a public-MP,
+		 * non-CP server first to 30 slots and then to the count its
+		 * rating requirements allow:
+		 *
+		 *   rated = 10 + min(3, max(0, TM)) + max(0, SA) * 0.25
+		 *
+		 * i.e. base 10, +1 per track medal capped at +3, and +0.25
+		 * per SA point (reaching 30 needs 3 TM and 70 SA).  With no
+		 * requirements rated is 10, reproducing the old flat clamp.
+		 * The gate is public-MP only: a private registerToLobby=0
+		 * server keeps its operator value, so Pi-4-class private
+		 * boxes are not silently reset to 10.
 		 */
-		if (s->register_to_lobby &&
-		    s->max_car_slots > 10 &&
-		    !ACC_RATING_REQUIRED(s->track_medals_required) &&
-		    !ACC_RATING_REQUIRED(s->safety_rating_required))
-			s->max_car_slots = 10;
+		if (s->register_to_lobby) {
+			double rated = 10.0;
+			int cap;
+
+			if (s->max_car_slots > 30)
+				s->max_car_slots = 30;
+			if (ACC_RATING_REQUIRED(s->track_medals_required)) {
+				int tm = s->track_medals_required;
+
+				rated += tm > 3 ? 3 : tm;
+			}
+			if (ACC_RATING_REQUIRED(s->safety_rating_required))
+				rated += s->safety_rating_required * 0.25;
+			cap = (int)rated;
+			if (s->max_car_slots > cap) {
+				log_warn("maxCarSlots %d exceeds the %d slots "
+				    "allowed by the rating requirements, "
+				    "reducing", s->max_car_slots, cap);
+				s->max_car_slots = cap;
+			}
+		}
 		json_free(settings);
 	}
 
