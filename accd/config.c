@@ -406,6 +406,24 @@ config_load(struct Server *s, const char *cfg_dir)
 		s->randomize_track_when_empty = (uint8_t)json_obj_get_int(
 		    settings, "randomizeTrackWhenEmpty", 0);
 		/*
+		 * FUN_1400214b0 step 1 (lines 19-45): a car slot needs a
+		 * connection, so reduce maxCarSlots to max(1, maxConnections)
+		 * whenever maxConnections is the smaller of the two.  Runs for
+		 * every server kind, before the public-MP rating clamp.
+		 */
+		{
+			int eff_conn = s->max_connections < 1
+			    ? 1 : s->max_connections;
+
+			if (eff_conn < s->max_car_slots) {
+				log_warn("maxConnections %d is smaller than "
+				    "maxCarSlots %d, reducing car slots to %d",
+				    s->max_connections, s->max_car_slots,
+				    eff_conn);
+				s->max_car_slots = eff_conn;
+			}
+		}
+		/*
 		 * Kunos's exe-side clamp (FUN_1400214b0:47-48) is gated
 		 * on the public-MP flag: private servers are never
 		 * clamped to 10, only public servers behind the lobby
