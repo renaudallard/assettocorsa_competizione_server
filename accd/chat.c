@@ -120,6 +120,33 @@ chat_broadcast(struct Server *s, const char *text, uint8_t chat_type)
 }
 
 /*
+ * Unicast a 0x2b Race-Control reply to a single connection, the
+ * requesting admin.  The exe (FUN_140021680) sends diagnostic and
+ * config command replies only to the issuing admin's socket: it
+ * leaves the broadcast flag clear so the reply goes through the
+ * unicast path (FUN_14004cc50), and only /start, /restart, /next and
+ * /clear_all (plus the kick/ban announcement) fan out to everyone.
+ * Broadcasting diagnostics such as /connections would expose every
+ * driver's conn id, car, admin and spectator state to all players.
+ */
+static void
+chat_reply(struct Conn *c, const char *text, uint8_t chat_type)
+{
+	struct ByteBuf out;
+
+	if (c == NULL || text == NULL || text[0] == '\0')
+		return;
+	bb_init(&out);
+	if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
+	    wr_str_a(&out, RC_SENDER) == 0 &&
+	    wr_str_a(&out, text) == 0 &&
+	    wr_i32(&out, 0) == 0 &&
+	    wr_u8(&out, chat_type) == 0)
+		(void)bcast_send_one(c, out.data, out.wpos);
+	bb_free(&out);
+}
+
+/*
  * Same wire as the player-relay path in handlers.c::h_chat (0x2b
  * with chat_type=0) but the sender label is operator-supplied so
  * the message renders in the in-game chat panel under a fake
@@ -766,23 +793,23 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			arg++;
 		if (strcmp(arg, "conditions") == 0) {
 			s->log_conditions = !s->log_conditions;
-			chat_broadcast(s, s->log_conditions
+			chat_reply(c, s->log_conditions
 			    ? "conditions are printed now"
 			    : "conditions stopped printing", 4);
 		} else if (strcmp(arg, "bandwidth") == 0) {
 			s->log_bandwidth = !s->log_bandwidth;
-			chat_broadcast(s, s->log_bandwidth
+			chat_reply(c, s->log_bandwidth
 			    ? "bandwidth stats are printed now"
 			    : "bandwidth stats stopped printing", 4);
 		} else if (strcmp(arg, "qos") == 0) {
 			s->log_qos = !s->log_qos;
-			chat_broadcast(s, s->log_qos
+			chat_reply(c, s->log_qos
 			    ? "netcode stats are printed now"
 			    : "netcode stats stopped printing", 4);
 		} else if (*arg == '\0') {
-			chat_broadcast(s, "missing parameter", 4);
+			chat_reply(c, "missing parameter", 4);
 		} else {
-			chat_broadcast(s, "unknown debug request", 4);
+			chat_reply(c, "unknown debug request", 4);
 		}
 		log_info("admin: /debug %s", arg);
 	} else if (chat_prefix(text, "/wt")) {
@@ -809,7 +836,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    (int)s->session.ambient_temp,
 		    (int)s->session.track_temp);
 		log_info("admin: /wt");
-		chat_broadcast(s, msg, 4);
+		chat_reply(c, msg, 4);
 	} else if (chat_prefix(text, "/broadcast") ||
 	           chat_prefix(text, "/say") ||
 	           chat_prefix(text, "/announce")) {
@@ -987,22 +1014,22 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		 * its curated entrylist.json from a live session.
 		 */
 		if (s->register_to_lobby) {
-			chat_broadcast(s,
+			chat_reply(c,
 			    "Entry list cannot be saved on public servers",
 			    4);
 		} else {
 			if (entrylist_save(s, s->cfg_dir) == 0) {
-				chat_broadcast(s,
+				chat_reply(c,
 				    "Saved entry list to cfg/entrylist.json",
 				    4);
 			} else {
-				chat_broadcast(s,
+				chat_reply(c,
 				    "Failed to save entry list", 4);
 			}
 		}
 		log_info("admin: /manual entrylist");
 	} else if (chat_prefix(text, "/manual start")) {
-		chat_broadcast(s,
+		chat_reply(c,
 		    "This cmd was replaced by the formationLapType setting",
 		    4);
 	} else if (chat_prefix(text, "/controllers")) {
@@ -1030,7 +1057,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			char line[64];
 			snprintf(line, sizeof(line),
 			    "Requesting controllers for %d clients", sent);
-			chat_broadcast(s, line, 4);
+			chat_reply(c, line, 4);
 			log_info("admin: /controllers -> %d probes", sent);
 		}
 	} else if (chat_prefix(text, "/controller")) {
@@ -1054,7 +1081,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(line, sizeof(line),
 				    "Requesting controller for car #%d",
 				    car_num);
-				chat_broadcast(s, line, 4);
+				chat_reply(c, line, 4);
 				log_info("admin: /controller %d -> probe",
 				    car_num);
 			} else {
@@ -1062,12 +1089,12 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(line, sizeof(line),
 				    "Couldn't locate connection for car #%d",
 				    car_num);
-				chat_broadcast(s, line, 4);
+				chat_reply(c, line, 4);
 			}
 		}
 	} else if (chat_prefix(text, "/connections")) {
 		int j;
-		chat_broadcast(s,"Active connections:", 4);
+		chat_reply(c, "Active connections:", 4);
 		for (j = 0; j < ACC_MAX_CARS; j++) {
 			char line[128];
 			struct Conn *cn = s->conns[j];
@@ -1078,7 +1105,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			    (unsigned)cn->conn_id, cn->car_id,
 			    cn->is_admin ? " [admin]" : "",
 			    cn->is_spectator ? " [spectator]" : "");
-			chat_broadcast(s,line, 4);
+			chat_reply(c, line, 4);
 		}
 	} else if (chat_prefix(text, "/hellban")) {
 		if (chat_parse_int(text + 8, &car_num) == 0) {
@@ -1099,7 +1126,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				cn->hellbanned = 1;
 				snprintf(line, sizeof(line),
 				    "Car #%d has been hellbanned", car_num);
-				chat_broadcast(s, line, 4);
+				chat_reply(c, line, 4);
 				log_info("admin: /hellban %d (conn=%u)",
 				    car_num, (unsigned)cn->conn_id);
 			} else {
@@ -1107,7 +1134,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(line, sizeof(line),
 				    "Couldn't locate connection for car #%d",
 				    car_num);
-				chat_broadcast(s, line, 4);
+				chat_reply(c, line, 4);
 			}
 		}
 	} else if (chat_prefix(text, "/latencymode")) {
@@ -1115,16 +1142,16 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		char line[96];
 
 		if (chat_parse_int(text + 12, &mode) < 0) {
-			chat_broadcast(s, "wrong parameters, please use "
+			chat_reply(c, "wrong parameters, please use "
 			    "'latencymode n' (with n between 0 and 1)", 4);
 		} else if (mode >= 2) {
 			snprintf(line, sizeof(line),
 			    "unknown latency mode %d", mode);
-			chat_broadcast(s, line, 4);
+			chat_reply(c, line, 4);
 		} else {
 			s->latency_mode = (uint8_t)mode;
 			snprintf(line, sizeof(line), "Latency mode: %d", mode);
-			chat_broadcast(s, line, 4);
+			chat_reply(c, line, 4);
 			log_info("admin: /latencymode %d", mode);
 		}
 	} else if (chat_prefix(text, "/mp") ||
@@ -1139,7 +1166,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		s->legacy_netcode = !s->legacy_netcode;
 		log_info("admin: /mp -> legacy_netcode=%d",
 		    (int)s->legacy_netcode);
-		chat_broadcast(s, s->legacy_netcode
+		chat_reply(c, s->legacy_netcode
 		    ? "Server now uses legacy netcode"
 		    : "Server is now in regular mode", 4);
 	} else if (chat_prefix(text, "/lockprep")) {
