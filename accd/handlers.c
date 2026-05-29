@@ -1122,11 +1122,12 @@ client_category_to_reason(uint8_t category)
 	 * kunos exe never emits a wire code for these.  Best fallback:
 	 * REASON_RACE_CONTROL (wire 15-19) for those (and other unknowns).
 	 *
-	 * Note: penalty.c:penalty_wire_value substitutes wire 27 (% prefix,
-	 * unrenderable) with 26, and wires 33-35 (! prefix, deleted from
-	 * the AC2 client lookup map) with 30-32 — so REASON_EXCEEDED_*
-	 * and REASON_WRONG_POSITION_ON_START are kept here for
-	 * server-side semantic clarity but emit renderable wire codes.
+	 * Note: penalty.c:penalty_wire_value emits these wire codes
+	 * verbatim, matching the kunos dispatcher FUN_1400f03b0 byte for
+	 * byte, including wire 27 (% prefix) and wires 33-35 (! prefix,
+	 * deleted from the AC2 client lookup map).  There is no
+	 * substitution to a renderable code: the unrenderable ones go out
+	 * exactly as kunos sends them.
 	 */
 	switch (category) {
 	case 0:		return REASON_CUTTING;
