@@ -1269,13 +1269,19 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		int32_t val = value > 0 ? value : 3;
 
 		/*
-		 * force = 1 only when cat == 0 (Cutting), per kunos's
-		 * dispatcher (FUN_1400142f0 case 0x41): cVar10 = (server-
-		 * flag && cat == 0) ? 1 : 0.  For non-cutting categories
-		 * force=0, which is what gates the cat=6 (Ignored
-		 * MandatoryPit) DQ-to-TP130 conversion in penalty_enqueue.
+		 * force = 1 only when cat == 0 (Cutting) AND auto-DQ is
+		 * allowed.  FUN_1400142f0 case 0x41 gates the cutting force
+		 * on a RaceControl byte (+0x100) that defaults to set, so
+		 * kunos auto-DQs repeated cutting out of the box (verified:
+		 * the 4-bot ladder run DQs cutting with a default config).
+		 * allowAutoDQ is the operator control that clears it; with
+		 * allowAutoDQ=0 the ladder caps repeated cutting at SG30
+		 * instead of DQ, consistent with how accd already gates its
+		 * other auto-DQ paths (lap-end serve, pit speeding).
+		 * Non-cutting categories always force=0, which also gates the
+		 * cat=6 (IgnoredMandatoryPit) DQ-to-TP130 conversion.
 		 */
-		int force = (category == 0) ? 1 : 0;
+		int force = (category == 0 && s->allow_auto_dq) ? 1 : 0;
 		log_info("client-reported penalty: car=%d kind=%u "
 		    "category=%u -> reason=%u",
 		    c->car_id, (unsigned)kind, (unsigned)category,
