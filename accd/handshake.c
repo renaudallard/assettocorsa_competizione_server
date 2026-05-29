@@ -1195,8 +1195,11 @@ write_car_leaderboard_record(struct ByteBuf *bb,
  * trailer fan-out and by the periodic broadcast in tick_run; both
  * sites previously inlined this exact build, leading to two-site
  * drift hazard the moment the wire shape changes.  Body per-car
- * matches FUN_14002f710's tail layout: u16 car_id, u8 0, u16 SA,
- * u16 TR, i16 -1, i16 -1, str_a steam_id.
+ * matches FUN_14002f710's tail layout: u16 car_id, u8 0, i16 SA,
+ * i16 TR, i16 -1, i16 -1, str_a steam_id.  Ratings are stored ×100
+ * internally but the 0x4e wire scale is ×10 (the AC2 client divides
+ * each rating slot by 10 at 143526030), so the SA/TR slots are
+ * emitted as the stored value /10.
  */
 int
 build_rating_summary(struct ByteBuf *bb, const struct Server *s)
@@ -1218,8 +1221,8 @@ build_rating_summary(struct ByteBuf *bb, const struct Server *s)
 		ratings_get(s, sid, &sa, &tr);
 		if (wr_u16(bb, s->cars[j].car_id) < 0) return -1;
 		if (wr_u8(bb, 0) < 0) return -1;
-		if (wr_u16(bb, sa) < 0) return -1;
-		if (wr_u16(bb, tr) < 0) return -1;
+		if (wr_u16(bb, (uint16_t)(sa / 10)) < 0) return -1;
+		if (wr_u16(bb, (uint16_t)(tr / 10)) < 0) return -1;
 		if (wr_i16(bb, -1) < 0) return -1;
 		if (wr_i16(bb, -1) < 0) return -1;
 		/*

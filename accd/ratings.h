@@ -33,8 +33,10 @@
  * JSON file keyed by steam_id so ratings survive across sessions
  * for the same driver on this server.
  *
- * Values are stored ×100 to match the 0x4e wire encoding (5000 =
- * 50.00, 9999 = 99.99).  Neutral starting value is 5000.
+ * Values are stored ×100 internally (5000 = 50.00, 9999 = 99.99).
+ * The 0x4e wire encoding is ×10 (the AC2 client divides each rating
+ * slot by 10), so the rating summary emits the stored value /10.
+ * Neutral starting value is 5000.
  */
 #ifndef ACCD_RATINGS_H
 #define ACCD_RATINGS_H
