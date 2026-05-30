@@ -1454,12 +1454,28 @@ h_car_dirt(struct Server *s, struct Conn *c,
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	/*
-	 * Kunos never relays 0x46 (per pcap) but DOES carry the
-	 * latest dirt values in the welcome spawnDef tail, so late
-	 * joiners see accumulated body weathering.  Store per-car;
-	 * write_spawn_def reads this array.
+	 * Store per-car (write_spawn_def reads this array so late joiners
+	 * see accumulated weathering in the welcome spawnDef tail) AND
+	 * relay live to every other client.  The exe (FUN_1400142f0 case
+	 * 0x45) stores the dirt then unconditionally broadcasts a 0x46
+	 * frame = u8 0x46 + u16 car_id + 5 x u8 dirt (FUN_1400327a0) to all
+	 * peers except the sender via FUN_14001ada0.  Without the relay,
+	 * already-connected peers never see dirt accumulate on this car.
 	 */
 	memcpy(s->cars[c->car_id].race.car_dirt, dirt, sizeof(dirt));
+	{
+		struct ByteBuf out;
+		int ok;
+
+		bb_init(&out);
+		ok = wr_u8(&out, SRV_CAR_DIRT_RELAY) == 0 &&
+		    wr_u16(&out, s->cars[c->car_id].car_id) == 0;
+		for (i = 0; ok && i < 5; i++)
+			ok = wr_u8(&out, dirt[i]) == 0;
+		if (ok)
+			(void)bcast_all(s, out.data, out.wpos, c->conn_id);
+		bb_free(&out);
+	}
 	return 0;
 }
 

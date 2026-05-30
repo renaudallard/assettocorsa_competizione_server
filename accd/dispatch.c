@@ -161,11 +161,11 @@ dispatch_one_tcp(struct Server *s, struct Conn *c,
 	case ACP_DAMAGE_ZONES_UPDATE:
 		return h_damage_zones(s, c, body, len);
 	case ACP_CAR_DIRT_UPDATE:
-		/* Test bot sends 0x45; pcap-confirmed (2026-05-19, paul_
-		 * ricard live) that real ACC clients send 0x46.  accd
-		 * stores either as the inbound dirt update — kunos never
-		 * relays it on the wire so the SRV_CAR_DIRT_RELAY opcode
-		 * id is informational only. */
+		/* Test bot sends 0x45; real ACC clients send 0x46 (pcap
+		 * 2026-05-19, paul_ricard live).  Both are the inbound dirt
+		 * update; h_car_dirt stores it AND relays a 0x46 to peers,
+		 * matching exe FUN_1400142f0 case 0x45 (which stores the
+		 * dirt then broadcasts 0x46). */
 	case SRV_CAR_DIRT_RELAY:
 		return h_car_dirt(s, c, body, len);
 	case ACP_UPDATE_DRIVER_SWAP_STATE:
