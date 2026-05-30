@@ -830,15 +830,24 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		if (wr_u8(bb, cup) < 0) return -1;
 	}
 	/*
-	 * Per-car status / lap-states word (exe LeaderboardLine +0x1d0,
-	 * copied from car +0x54).  Decoded by the client FUN_140f8e8d0:
-	 * 0x01 HasCut, 0x02 HasPenalty, 0x04 IsOutLap, 0x08 IsInLap,
-	 * 0x40 IsRetired, 0x80 IsDisqualified, 0x400 IsSessionOver,
-	 * 0x800 NextLapHasCut, etc.  Emit the last-known inbound lap-states
-	 * word instead of a hardcoded 0 so the client lights the leaderboard
-	 * status decorations; was always 0 (no decorations).
+	 * Per-car status / lap-states word (exe LeaderboardLine +0x1d0).
+	 * Emit the last-known lap-states with the TRANSIENT per-lap bits
+	 * masked off: the AC2 client's lap-time-completion gate
+	 * (FUN_141021930:152) SKIPS the best/last/sector advance and the
+	 * timing-tower lap columns whenever the received status word has
+	 * HasCut 0x01 / HasPenalty 0x02 / IsOutLap 0x04 / IsInLap 0x08 /
+	 * 0x1000 set.  Since 0x36 re-emits on lap-complete, the count-bumping
+	 * frame at the race formation/out-lap S/F carries the just-completed
+	 * out-lap's IsOutLap, freezing lap times and the scored lap count for
+	 * the whole race (the bit is sticky between sparse splits).  Quali has
+	 * no formation/out lap so it never tripped.  Mask 0x180F (the gate
+	 * bits + NextLapHasCut) and keep the STANDING decorations the scored
+	 * line should carry: IsRetired 0x40, IsDisqualified 0x80,
+	 * IsSessionOver 0x400, SafetyCar 0x10, FCY 0x20, pit/swap 0x100/0x200.
+	 * The 0x3a/0x3c relays keep the full unmasked word (live lap-states).
 	 */
-	if (wr_u16(bb, race->car_field) < 0) return -1;
+	if (wr_u16(bb, (uint16_t)(race->car_field & ~0x180Fu)) < 0)
+		return -1;
 
 	{
 		/*
