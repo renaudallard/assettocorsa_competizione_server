@@ -855,11 +855,24 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		if (active >= 0) {
 			float remaining =
 			    (float)pq->slots[active].laps_remaining;
-			if (wr_u8(bb, 1) < 0) return -1;
-			if (wr_u16(bb, penalty_wire_value(
+			uint16_t wire = penalty_wire_value(
 			    pq->slots[active].kind,
-			    pq->slots[active].reason)) < 0) return -1;
-			if (wr_f32(bb, remaining) < 0) return -1;
+			    pq->slots[active].reason);
+			/*
+			 * Match FUN_140034210:72's present-gate: when the
+			 * active entry has no renderable wire code AND no
+			 * remaining, emit a single present=0 byte.  Emitting
+			 * present=1 + u16 + f32 for a wire-0 entry adds 6
+			 * phantom bytes and shifts the rest of the 0x36 record
+			 * (cvar8, pq count/codes), so the client mis-parses.
+			 */
+			if (wire != 0 || remaining != 0.0f) {
+				if (wr_u8(bb, 1) < 0) return -1;
+				if (wr_u16(bb, wire) < 0) return -1;
+				if (wr_f32(bb, remaining) < 0) return -1;
+			} else {
+				if (wr_u8(bb, 0) < 0) return -1;
+			}
 		} else {
 			if (wr_u8(bb, 0) < 0) return -1;
 		}
