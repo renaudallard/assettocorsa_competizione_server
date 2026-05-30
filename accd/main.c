@@ -522,7 +522,25 @@ main(int argc, char **argv)
 		{
 			uint64_t now_us = mono_us();
 			if (now_us - last_tick_us >= TICK_INTERVAL_US) {
+				uint64_t work_us;
+				float frac;
+
 				tick_run(&srv);
+				/*
+				 * Sample CPU load = tick_run work / tick interval
+				 * for the 0x14 keepalive bytes 11/12 (avg/max CPU
+				 * percent).  Measure only the tick body, not the
+				 * poll() idle above, mirroring the exe's dedicated
+				 * tick thread (FUN_14002e8d0 sample = (tickEnd -
+				 * tickStart)/targetStep).
+				 */
+				work_us = mono_us() - now_us;
+				frac = (float)work_us / (float)TICK_INTERVAL_US;
+				srv.cpu_ring[srv.cpu_ring_head] = frac;
+				srv.cpu_ring_head =
+				    (uint8_t)((srv.cpu_ring_head + 1) % 41);
+				if (srv.cpu_ring_count < 41)
+					srv.cpu_ring_count++;
 				last_tick_us = now_us;
 			}
 		}

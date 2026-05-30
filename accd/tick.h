@@ -96,10 +96,12 @@ void	compute_server_pings(const struct Server *s,
 /*
  * Pack a 15-byte 0x14 keepalive body into pkt.  Same shape for the
  * periodic broadcast and the per-conn reply on 0x13 — body carries
- * (msg_id, srv_ms, conn_rtt, avg_ping, max_ping, 2/4/100/100).
+ * (msg_id, srv_ms, conn_rtt, avg_ping, max_ping, cpu_avg%, cpu_max%);
+ * bytes 13/14 (QoS) stay 100/100.
  */
 void	build_keepalive_pkt(unsigned char pkt[15], uint8_t msg_id,
 		uint32_t srv_ms, uint16_t conn_rtt,
-		uint16_t avg_ping, uint16_t max_ping);
+		uint16_t avg_ping, uint16_t max_ping,
+		uint8_t cpu_avg, uint8_t cpu_max);
 
 #endif /* ACCD_TICK_H */

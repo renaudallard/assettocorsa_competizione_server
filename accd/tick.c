@@ -350,8 +350,13 @@ broadcast_percar_dirty(struct Server *s)
  *   u16  this conn's avg RTT (ms)            ← per-recipient
  *   u16  server-wide average RTT (ms)
  *   u16  server-wide max RTT (ms)
- *   u8 × 4  cpu/qos hints (2/4/100/100)
- * Total 15 bytes.  The client reads u16 #1 to render its ping
+ *   u8   avg CPU load %   (server main-loop, was hardcoded 2)
+ *   u8   max CPU load %   (server main-loop, was hardcoded 4)
+ *   u8   avg QoS × 100    (100 = perfect link)
+ *   u8   min QoS × 100    (100 = perfect link)
+ * Total 15 bytes.  The exe builds bytes 11/12 from a per-tick CPU-load
+ * ring (FUN_14002e8d0; printf "Avg Cpu %d, Max Cpu %d") and 13/14 from a
+ * QoS fraction (FUN_140042790, 1.0 when no bad packets).  The client reads u16 #1 to render its ping
  * badge; a hardcoded 0 here makes the in-game ping display read
  * 0 ms even with measurable RTT in flight.
  */
@@ -381,7 +386,7 @@ compute_server_pings(const struct Server *s,
 void
 build_keepalive_pkt(unsigned char pkt[15], uint8_t msg_id,
     uint32_t srv_ms, uint16_t conn_rtt, uint16_t avg_ping,
-    uint16_t max_ping)
+    uint16_t max_ping, uint8_t cpu_avg, uint8_t cpu_max)
 {
 	pkt[0]  = msg_id;
 	pkt[1]  = (unsigned char)(srv_ms & 0xff);
@@ -394,8 +399,8 @@ build_keepalive_pkt(unsigned char pkt[15], uint8_t msg_id,
 	pkt[8]  = (unsigned char)((avg_ping >> 8) & 0xff);
 	pkt[9]  = (unsigned char)(max_ping & 0xff);
 	pkt[10] = (unsigned char)((max_ping >> 8) & 0xff);
-	pkt[11] = 2;
-	pkt[12] = 4;
+	pkt[11] = cpu_avg;
+	pkt[12] = cpu_max;
 	pkt[13] = 100;
 	pkt[14] = 100;
 }
@@ -414,6 +419,31 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 	compute_server_pings(s, &avg_ping, &max_ping);
 	srv_ms = (uint32_t)mono_ms();
 
+	/*
+	 * Reduce the per-tick CPU-load ring to avg/max percent for wire
+	 * bytes 11/12, mirroring the exe's ~1 Hz aggregation over its
+	 * per-tick ring (FUN_14002e8d0:218-247).  Clamp to u8 0..255 (the
+	 * exe truncates to signed char and wraps peaks > 127; u8 preserves
+	 * the "around 100, peaks higher" shape without wrapping low).
+	 */
+	{
+		float sum = 0.0f, mx = 0.0f;
+		int k, n = s->cpu_ring_count;
+
+		for (k = 0; k < n; k++) {
+			float f = s->cpu_ring[k];
+			sum += f;
+			if (f > mx)
+				mx = f;
+		}
+		if (n > 0) {
+			int a = (int)(sum / (float)n * 100.0f + 0.5f);
+			int m = (int)(mx * 100.0f + 0.5f);
+			s->cpu_avg_pct = (uint8_t)(a < 0 ? 0 : a > 255 ? 255 : a);
+			s->cpu_max_pct = (uint8_t)(m < 0 ? 0 : m > 255 ? 255 : m);
+		}
+	}
+
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct Conn *c = s->conns[i];
 		uint16_t per_conn_ping;
@@ -427,7 +457,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		per_conn_ping = c->avg_rtt_ms > 65535
 		    ? 65535 : (uint16_t)c->avg_rtt_ms;
 		build_keepalive_pkt(pkt, msg_id, srv_ms, per_conn_ping,
-		    avg_ping, max_ping);
+		    avg_ping, max_ping, s->cpu_avg_pct, s->cpu_max_pct);
 		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
 		    (const struct sockaddr *)&c->peer,
 		    sizeof(c->peer));

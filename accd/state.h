@@ -1012,6 +1012,20 @@ struct Server {
 	uint64_t	tick_count;
 	uint64_t	session_start_ms;
 
+	/*
+	 * Per-tick CPU-load ring for the 0x14 keepalive bytes 11/12
+	 * (avg/max CPU load percent), mirroring the exe's per-tick ring at
+	 * ServerState+0x14185 reduced ~1 Hz into +0xa0c14 (Avg Cpu) and
+	 * +0xa0c18 (Max Cpu).  Each sample = tick_run work_us / tick
+	 * interval; reduced to percent (x100) at keepalive time.  Window is
+	 * the last <=41 ticks like the exe (trimmed to 0x29).
+	 */
+	float		cpu_ring[41];
+	uint8_t		cpu_ring_count;
+	uint8_t		cpu_ring_head;
+	uint8_t		cpu_avg_pct;
+	uint8_t		cpu_max_pct;
+
 	/* Per-steam_id rating ledger (see ratings.c). */
 	struct RatingEntry	ratings[ACC_RATINGS_MAX];
 	uint8_t			ratings_dirty;
