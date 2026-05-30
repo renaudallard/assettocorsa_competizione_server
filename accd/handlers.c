@@ -467,7 +467,8 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			    lap_ms, race->race_time_ms);
 
 		/* DT/SG serve-deadline countdown.  Three racing laps to
-		 * serve, else auto-DQ (or SG30 if allowAutoDQ=0). */
+		 * serve, else auto-DQ.  The exe always DQs a serve miss
+		 * (allowAutoDQ does not soften it). */
 		if (race->pen.count > 0 && !race->disqualified) {
 			int pi = penalty_first_unserved_dtsg(&race->pen);
 			struct PenaltyEntry *front = pi >= 0
@@ -485,56 +486,20 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 				if (front->laps_remaining == 0) {
 					uint8_t inherited = front->reason;
 					char chat[128];
-					if (s->allow_auto_dq) {
-						uint8_t cat;
-						log_info("Car %d failed to "
-						    "serve %s -> DQ",
-						    c->car_id,
-						    penalty_name(front->kind));
-						/*
-						 * `cat` here is the AC2 cat
-						 * enum (0..17) — not the
-						 * dispatcher wire byte.  Use
-						 * 8 (Trolling/RaceControl) so
-						 * the dedup gate in
-						 * penalty_enqueue actually
-						 * fires and repeated auto-
-						 * promotions don't pile.
-						 */
-						cat = 8;
-						/*
-						 * value 0: the exe serve-miss
-						 * (FUN_140125c60:109) passes
-						 * param_7=0, so the 0x36 tail
-						 * value byte is 0, not 3.
-						 */
-						penalty_enqueue(s, c->car_id,
-						    EXE_DQ, cat, 0, 1, 0,
-						    inherited);
-						penalty_format_chat(chat,
-						    sizeof(chat), PEN_DQ,
-						    inherited, 0,
-						    s->cars[c->car_id].race_number);
-						chat_broadcast(s, chat, 4);
-					} else {
-						uint8_t cat;
-						log_info("Car %d failed to "
-						    "serve %s -> SG30 "
-						    "(allowAutoDQ=0)",
-						    c->car_id,
-						    penalty_name(front->kind));
-						/* Same AC2-enum-vs-wire-byte
-						 * issue as the DQ branch. */
-						cat = 8;
-						penalty_enqueue(s, c->car_id,
-						    EXE_SG30, cat, 3, 0, 0,
-						    inherited);
-						penalty_format_chat(chat,
-						    sizeof(chat), PEN_SG30,
-						    inherited, 0,
-						    s->cars[c->car_id].race_number);
-						chat_broadcast(s, chat, 4);
-					}
+					/*
+					 * The exe (FUN_140125c60:109) force-DQs the serve-deadline
+					 * miss unconditionally; allowAutoDQ gates only the fresh
+					 * cutting force, not the serve miss.  cat 8 is the dedup
+					 * slot, value 0 matches the exe (param_7=0).
+					 */
+					log_info("Car %d failed to serve %s -> DQ",
+					    c->car_id, penalty_name(front->kind));
+					penalty_enqueue(s, c->car_id, EXE_DQ, 8, 0, 1, 0,
+					    inherited);
+					penalty_format_chat(chat, sizeof(chat), PEN_DQ,
+					    inherited, 0,
+					    s->cars[c->car_id].race_number);
+					chat_broadcast(s, chat, 4);
 				}
 			}
 		}
