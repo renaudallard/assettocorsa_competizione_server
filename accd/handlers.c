@@ -2042,7 +2042,16 @@ h_load_setup(struct Server *s, struct Conn *c,
 				int idx = (start + k) % ACC_LAP_HISTORY;
 				int si;
 
-				if (wr_str_a(&out, s->track) < 0) goto done;
+				/*
+				 * Per-lap record starts directly with the u32
+				 * lap time, matching FUN_1400328f0 (which copies
+				 * but never serialises the track name) and the
+				 * client parser FUN_143528910 (reads u32 first).
+				 * An earlier leading str_a(track) desynced the
+				 * client: it read the string's length byte as the
+				 * low byte of lap_time and mis-parsed the rest of
+				 * the Previous-Laps panel.
+				 */
 				if (wr_u32(&out,
 				    (uint32_t)src->lap_history_ms[idx]) < 0)
 					goto done;
