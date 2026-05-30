@@ -142,7 +142,7 @@
   in-pit status, mandatory-pit progress, penalty queue, and the
   per-driver swap state on every authenticated connection.  This
   state drives internal logic (penalty serve countdowns,
-  mandatory-pit gating, pit-speeding auto-DQ) and is exposed to
+  mandatory-pit gating) and is exposed to
   external monitoring tools via the ServerMonitor (SMPR) protocol
   below.  Each car_update also carries 8 input bytes whose semantic
   the kunos exe never reveals; we relay them opaquely.  Anything
@@ -182,9 +182,9 @@
   `/broadcast` (aliases `/say`, `/announce`),
   `/debug <conditions|bandwidth|qos>`.
 - **Penalty system** — per-car queue, mandatory pitstop tracking,
-  3-lap deadline countdown for DT/SG with auto-DQ on miss
-  (downgradable via `allowAutoDQ: 0`), pit-speeding auto-DQ from
-  telemetry.
+  3-lap deadline countdown for DT/SG with auto-DQ on miss.
+  Pit-speeding is detected and reported by the AC2 client (the server
+  relays it), matching the dedicated server.
 - **Persistent bans** — `/ban` writes to `cfg/banlist.txt` and
   survives restarts; banned Steam IDs are rejected on reconnect.
 

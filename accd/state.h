@@ -246,7 +246,6 @@ struct CarRaceState {
 	 */
 	uint32_t	lap_history_count;
 	uint8_t		in_pit;
-	uint8_t		pit_crossing_latched;
 	uint8_t		mandatory_pit_served;	/* count of 0x54
 						 * ACP_MANDATORY_PITSTOP_
 						 * SERVED messages received

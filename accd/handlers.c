@@ -915,51 +915,11 @@ h_car_location_update(struct Server *s, struct Conn *c,
 			stint_stop_tracking(s, c->car_id);
 
 		/*
-		 * Pitlane-speeding DQ is gated on s->session.green_fired:
-		 * the penalty is only meaningful once the race is actually
-		 * racing.  During the formation lap the client's own
-		 * routing can briefly report location=Pitlane as the car
-		 * crosses near the pit-exit boundary, and the driver has
-		 * not yet been constrained by the post-green pitlane limit
-		 * — killing the race there before green even fires is a
-		 * false positive.  The check stays live for the whole
-		 * PHASE_SESSION / OVERTIME window.
+		 * No server-side pit-lane speeding penalty.  The exe has no
+		 * server-side cat=3 origination: FUN_1400142f0 only relays
+		 * the client's graduated PitSpeedingDetector 0x41 report
+		 * (DT -> SG30 -> DQ).  Removed for strict wire parity.
 		 */
-		if (location == 2 && car->rt.has_data &&
-		    s->session.green_fired) {
-			float vx = car->rt.vec_c[0];
-			float vy = car->rt.vec_c[1];
-			float vz = car->rt.vec_c[2];
-			float speed = sqrtf(vx * vx + vy * vy + vz * vz);
-
-			/*
-			 * Kunos classifies pit-lane speeding as
-			 * reckless driving and disqualifies the car
-			 * outright; allowAutoDQ does not downgrade
-			 * this since 1.8.11.  Use PEN_DQ, not PEN_DT.
-			 */
-			if (speed > 22.22f && !race->pit_crossing_latched) {
-				char chat[128];
-				log_info("PITLANE SPEEDING for car #%d "
-				    "speed=%.1f m/s -> DQ",
-				    car->race_number, speed);
-				/*
-				 * AC2 category 3 = PitSpeeding (matches the
-				 * reason); this is only the pen_cat_severity
-				 * dedup slot, the wire code comes from the
-				 * reason.
-				 */
-				penalty_enqueue(s, c->car_id, EXE_DQ, 3,
-				    3, 1, 0, REASON_PIT_SPEEDING);
-				penalty_format_chat(chat, sizeof(chat),
-				    PEN_DQ, REASON_PIT_SPEEDING, 0,
-				    car->race_number);
-				chat_broadcast(s, chat, 4);
-				race->pit_crossing_latched = 1;
-			}
-		}
-		if (location == 1)
-			race->pit_crossing_latched = 0;
 
 		/*
 		 * Pit-lane exit: no server-side dwell verification.  Kunos
