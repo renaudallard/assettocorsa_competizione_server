@@ -1088,12 +1088,21 @@ client_category_to_reason(uint8_t category)
 	case 15:	return REASON_LIGHTS_OFF;
 	case 16:	return REASON_SPEEDING_ON_START;
 	case 17:	return REASON_WRONG_POSITION_ON_START;
-	case 1:		/* Collision — no kunos wire path */
-	case 2:		/* IllegalOvertake — no kunos wire path */
-	case 7:		/* UnsafeRejoin — no kunos wire path */
-	case 8:		/* Trolling — no kunos wire path; default to RaceControl */
-	case 9:		/* ReverseInPitlane — no kunos wire path */
-	default:	return REASON_RACE_CONTROL;
+	case 8:		/* Trolling — has cat-8 RaceControl wire paths (15-19) */
+		return REASON_RACE_CONTROL;
+	case 1:		/* Collision */
+	case 2:		/* IllegalOvertake */
+	case 7:		/* UnsafeRejoin */
+	case 9:		/* ReverseInPitlane */
+	default:
+		/*
+		 * FUN_1400f03b0 has no inner-switch case for these cats under
+		 * any kind, so the exe emits wire 0 (No_Penalty).  REASON_NONE
+		 * -> penalty_wire_value 0, which the present-gate surfaces as
+		 * no penalty, matching the exe.  Stock clients never report
+		 * 1/2/7/9; reachable only via a modified client.
+		 */
+		return REASON_NONE;
 	}
 }
 
