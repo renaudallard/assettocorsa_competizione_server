@@ -1536,10 +1536,18 @@ stint_check_violations(struct Server *s)
 			    "served %u) -> DQ", i,
 			    (unsigned)s->mandatory_pit_count,
 			    (unsigned)r->mandatory_pit_served);
-			(void)penalty_enqueue(s, i, EXE_DQ, 13, 3, 1, 0,
+			/*
+			 * force=0 so penalty_enqueue's cat6 rewrite fires:
+			 * the exe (FUN_14012ae10 -> FUN_140125f50:141) turns a
+			 * non-forced IgnoredMandatoryPit DQ into a 130 s post-
+			 * race time penalty, NOT an outright DQ.  value=0 and
+			 * category 6 match the exe call; the rewrite overrides
+			 * both to 130 / cat 8.  One session-end violation per
+			 * car, so continue unconditionally.
+			 */
+			(void)penalty_enqueue(s, i, EXE_DQ, 6, 0, 0, 0,
 			    REASON_IGNORED_MANDATORY_PIT);
-			if (r->disqualified)
-				continue;
+			continue;
 		}
 
 		/*
