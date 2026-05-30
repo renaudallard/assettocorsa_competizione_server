@@ -603,25 +603,29 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	}
 
 	/* Build the transformed 0x3b broadcast. Body:
-	 *   u16 car_id + u32 split_time + u8 flag + u32 lap_time +
-	 *   u16 flags.
+	 *   u16 car_id + u32 lap_time + u8 flag + i32 session_ts + u16 flags.
 	 *
-	 * Negative wire values get rewritten to LAP_TIME_INVALID before
-	 * the relay so an attacker's crafted 0x21 (with lap_time=-1000)
-	 * doesn't sign-extend into a ~4-billion-ms value on every other
-	 * client's 0x3b receiver.  The bookkeeping path above already
-	 * treated negative as invalid; relay does the same. */
+	 * Field 2 (the lap/split time, accd's split_time) keeps the
+	 * negative -> LAP_TIME_INVALID guard so a crafted 0x21 can't
+	 * sign-extend into a ~4-billion-ms time on the client.  Field 4 is
+	 * NOT a lap time: the exe builder FUN_140011f30 emits it as a
+	 * session-relative TIMESTAMP (no clamp, no INVALID sentinel),
+	 * normalised per the receiving frame.  accd's own raw_ts (the
+	 * inbound second u32, named lap_time here) must be mapped through
+	 * c->session_clock_offset_ms exactly as the 0x3a path does, not
+	 * clamped — otherwise a benign raw_ts that is negative-as-i32 would
+	 * relay as 0x7fffffff while the exe relays a real session value. */
 	{
 		uint32_t split_wire = split_time < 0
 		    ? LAP_TIME_INVALID : (uint32_t)split_time;
-		uint32_t lap_wire = lap_time < 0
-		    ? LAP_TIME_INVALID : (uint32_t)lap_time;
+		int32_t ts_relayed = (int32_t)((int64_t)lap_time
+		    + c->session_clock_offset_ms);
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
 		    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
 		    wr_u32(&out, split_wire) < 0 ||
 		    wr_u8(&out, flag_b) < 0 ||
-		    wr_u32(&out, lap_wire) < 0 ||
+		    wr_i32(&out, ts_relayed) < 0 ||
 		    wr_u16(&out, car_field) < 0)
 			goto done;
 	}
