@@ -472,7 +472,15 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			int pi = penalty_first_unserved_dtsg(&race->pen);
 			struct PenaltyEntry *front = pi >= 0
 			    ? &race->pen.slots[pi] : NULL;
-			if (front != NULL && front->laps_remaining > 0) {
+			/*
+			 * Only count laps the driver actually races: the exe
+			 * (FUN_140125c60) decrements the serve countdown only
+			 * when the lap-state in-lap bit (0x08) is clear, so an
+			 * in-lap (including the lap the penalty is served on)
+			 * doesn't burn the deadline and auto-DQ a lap early.
+			 */
+			if (front != NULL && front->laps_remaining > 0 &&
+			    (car_field & 0x0008) == 0) {
 				front->laps_remaining--;
 				if (front->laps_remaining == 0) {
 					uint8_t inherited = front->reason;
