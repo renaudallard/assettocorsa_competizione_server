@@ -119,12 +119,19 @@ pen_kind_json(uint8_t kind, const char **name, int *value)
 	case PEN_SG10: case PEN_SG10C:	*name = "StopAndGo_10"; *value = 10; break;
 	case PEN_SG20: case PEN_SG20C:	*name = "StopAndGo_20"; *value = 20; break;
 	case PEN_SG30: case PEN_SG30C:	*name = "StopAndGo_30"; *value = 30; break;
-	case PEN_TP5:			*name = "TimePenalty_5"; *value = 5; break;
-	case PEN_TP15:			*name = "TimePenalty_15"; *value = 15; break;
-	case PEN_TP30:			*name = "TimePenalty_30"; *value = 30; break;
-	case PEN_TP40:			*name = "TimePenalty_40"; *value = 40; break;
-	case PEN_TP50:			*name = "TimePenalty_50"; *value = 50; break;
-	case PEN_TP60:			*name = "TimePenalty_60"; *value = 60; break;
+	/*
+	 * The exe kind-name table (FUN_1401174a0) maps kind 5 to the
+	 * single name "PostRaceTime" for every time penalty; the seconds
+	 * live in the penaltyValue field, not the name.
+	 */
+	case PEN_TP5:			*name = "PostRaceTime"; *value = 5; break;
+	case PEN_TP15:			*name = "PostRaceTime"; *value = 15; break;
+	case PEN_TP30:			*name = "PostRaceTime"; *value = 30; break;
+	case PEN_TP40:			*name = "PostRaceTime"; *value = 40; break;
+	case PEN_TP50:			*name = "PostRaceTime"; *value = 50; break;
+	case PEN_TP60:			*name = "PostRaceTime"; *value = 60; break;
+	case PEN_DQ:			*name = "Disqualified"; *value = 0; break;
+	case PEN_RBL:			*name = "RemoveBestLaptime"; *value = 0; break;
 	default:			*name = "Unknown"; *value = 0; break;
 	}
 }
