@@ -1241,20 +1241,36 @@ h_report_penalty(struct Server *s, struct Conn *c,
 		    c->car_id, (unsigned)kind, (unsigned)category,
 		    (unsigned)reason);
 		/*
-		 * No pending=1 latch here.  The prior behaviour kept
-		 * client-reported penalties hidden from active_pen forever
-		 * because nothing ever cleared the flag.  The 0x36 builder
-		 * treats pending entries with wire=0 in pq_emit and skips
-		 * them entirely from active_pen, which meant the self-
-		 * reporting driver's own HUD never showed the DT they just
-		 * issued and other peers never knew either.  Real kunos
-		 * pcaps imply a "server confirms" path before exposing the
-		 * penalty, but that path was never implemented here;
-		 * defaulting to "visible immediately" matches the actual
-		 * operator-visible UX better than "invisible indefinitely".
+		 * Mark the freshly-materialised entry pending. A client 0x41
+		 * report surfaces only in the per-car tail bytes (car+0x200/
+		 * +0x201), never in the active_pen prefix (present stays 0) or
+		 * as a wire code in the pq array. VM pcap run_race_end
+		 * (2026-05-30, a forced cutting DT cat=0:1:3 landing mid-race
+		 * in PHASE_SESSION) shows kunos emit present=0 plus pq sentinel
+		 * [0] plus tail 01 03 for the whole live-DT window, never
+		 * present=1, even with force=1. The 0x36 builder's active
+		 * prefix and pq wire loop both skip pending entries, so the
+		 * entry is tail-only in Practice (pq empty) and tail plus pq
+		 * sentinel in Race, byte-matching kunos in both phases. The
+		 * escalation ladder still updates the tail wire code because the
+		 * tail's DQ-priority back-scan keeps pending entries visible
+		 * (handshake.c). Guard on a count delta: register-only ladder
+		 * steps don't materialise a slot, so blindly latching
+		 * slots[count-1] would mark a pre-existing entry pending.
+		 *
+		 * This restores the pre-regression behaviour: the latch was
+		 * dropped earlier for a "visible immediately" UX that diverged
+		 * from the stock server (which is itself tail-only here, so the
+		 * client HUD renders the DT identically from the tail).
 		 */
-		(void)penalty_enqueue(s, c->car_id, kind, category,
-		    val, force, 0, reason);
+		{
+			struct PenaltyQueue *pq = &s->cars[c->car_id].race.pen;
+			int before = pq->count;
+			(void)penalty_enqueue(s, c->car_id, kind, category,
+			    val, force, 0, reason);
+			if (pq->count > before)
+				pq->slots[pq->count - 1].pending = 1;
+		}
 	}
 	return 0;
 }
