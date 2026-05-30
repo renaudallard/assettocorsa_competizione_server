@@ -502,8 +502,14 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 						 * promotions don't pile.
 						 */
 						cat = 8;
+						/*
+						 * value 0: the exe serve-miss
+						 * (FUN_140125c60:109) passes
+						 * param_7=0, so the 0x36 tail
+						 * value byte is 0, not 3.
+						 */
 						penalty_enqueue(s, c->car_id,
-						    EXE_DQ, cat, 3, 1, 0,
+						    EXE_DQ, cat, 0, 1, 0,
 						    inherited);
 						penalty_format_chat(chat,
 						    sizeof(chat), PEN_DQ,
