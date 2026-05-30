@@ -1515,7 +1515,10 @@ stint_check_violations(struct Server *s)
 				}
 			}
 			if (violated) {
-				(void)penalty_enqueue(s, i, EXE_DQ, 27, 3,
+				/* category 12 = ExceededDriverStintLimit, the
+				 * value the exe (FUN_14012ae10) passes for this
+				 * branch and the results label key. */
+				(void)penalty_enqueue(s, i, EXE_DQ, 12, 3,
 				    1, 0,
 				    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
 				continue;	/* already DQ'd */

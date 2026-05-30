@@ -485,16 +485,19 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 				front->laps_remaining--;
 				if (front->laps_remaining == 0) {
 					uint8_t inherited = front->reason;
+					uint8_t inherited_cat = front->category;
 					char chat[128];
 					/*
 					 * The exe (FUN_140125c60:109) force-DQs the serve-deadline
 					 * miss unconditionally; allowAutoDQ gates only the fresh
-					 * cutting force, not the serve miss.  cat 8 is the dedup
-					 * slot, value 0 matches the exe (param_7=0).
+					 * cutting force, not the serve miss.  The DQ inherits the
+					 * unserved entry's category (the exe passes entry+0x58),
+					 * so the results label matches the original violation;
+					 * value 0 matches the exe (param_7=0).
 					 */
 					log_info("Car %d failed to serve %s -> DQ",
 					    c->car_id, penalty_name(front->kind));
-					penalty_enqueue(s, c->car_id, EXE_DQ, 8, 0, 1, 0,
+					penalty_enqueue(s, c->car_id, EXE_DQ, inherited_cat, 0, 1, 0,
 					    inherited);
 					penalty_format_chat(chat, sizeof(chat), PEN_DQ,
 					    inherited, 0,

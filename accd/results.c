@@ -83,27 +83,35 @@ session_type_str(uint8_t t)
 }
 
 /*
- * Map accd's internal penalty_reason to the kunos results.json reason
- * string.  The exe stores the AC2 category name (FUN_140117330) as a
- * wstring on each penalty entry and the results writer (FUN_14010f470)
- * emits it as a string, not an integer.  Reasons with no kunos
- * category equivalent fall back to "None", matching the exe default.
+ * Map a penalty's AC2 category to the kunos results.json reason string.
+ * The exe stores the category on each PenaltySheet entry (+0x58) and the
+ * results writer (FUN_140129b10) renders it through the cat -> name table
+ * FUN_140117330, independent of the wire-code path.  This is a direct
+ * mirror of that table; unknown categories fall back to "None" like the
+ * exe default.  Note cats 11/12/13 differ from the wire dispatcher: the
+ * label table calls 11 IgnoredMandatoryPit, 12 ExceededDriverStintLimit
+ * and 13 DriverRanNoStint, so the category (not accd's wire-semantic
+ * reason) is the correct source for this string.
  */
 static const char *
-reason_name(uint8_t reason)
+penalty_category_label(uint8_t category)
 {
-	switch (reason) {
-	case REASON_CUTTING:			return "Cutting";
-	case REASON_PIT_SPEEDING:		return "PitSpeeding";
-	case REASON_IGNORED_MANDATORY_PIT:	return "IgnoredMandatoryPit";
-	case REASON_PIT_ENTRY:			return "PitEntry";
-	case REASON_PIT_EXIT:			return "PitExit";
-	case REASON_WRONG_WAY:			return "WrongWay";
-	case REASON_EXCEEDED_DRIVER_STINT_LIMIT:
-		return "ExceededDriverStintLimit";
-	case REASON_IGNORED_DRIVER_STINT:
-	case REASON_DRIVER_RAN_NO_STINT:	return "DriverRanNoStint";
-	default:				return "None";
+	switch (category) {
+	case 0:		return "Cutting";
+	case 1:		return "Collision";
+	case 2:		return "IllegalOvertake";
+	case 3:		return "PitSpeeding";
+	case 4:		return "PitEntry";
+	case 5:		return "PitExit";
+	case 6:
+	case 11:	return "IgnoredMandatoryPit";
+	case 7:		return "UnsafeRejoin";
+	case 8:		return "Trolling";
+	case 9:		return "ReverseInPitlane";
+	case 10:	return "WrongWay";
+	case 12:	return "ExceededDriverStintLimit";
+	case 13:	return "DriverRanNoStint";
+	default:	return "None";
 	}
 }
 
@@ -480,7 +488,7 @@ results_write(struct Server *s)
 				fprintf(f, " \"driverIndex\": %u,",
 				    (unsigned)cc->current_driver_index);
 				fprintf(f, " \"reason\": ");
-				fprint_json_str(f, reason_name(p->reason));
+				fprint_json_str(f, penalty_category_label(p->category));
 				fprintf(f, ",");
 				fprintf(f, " \"penalty\": ");
 				fprint_json_str(f, pname);
@@ -529,7 +537,7 @@ results_write(struct Server *s)
 				fprintf(f, " \"driverIndex\": %u,",
 				    (unsigned)cc->current_driver_index);
 				fprintf(f, " \"reason\": ");
-				fprint_json_str(f, reason_name(p->reason));
+				fprint_json_str(f, penalty_category_label(p->category));
 				fprintf(f, ",");
 				fprintf(f, " \"penalty\": ");
 				fprint_json_str(f, pname);

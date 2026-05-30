@@ -112,7 +112,7 @@ penalty_pen_kind_of(uint8_t exe_kind, int collision, int32_t value)
  */
 static void
 penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
-    int collision, int32_t value, uint8_t reason)
+    int collision, int32_t value, uint8_t reason, uint8_t category)
 {
 	struct PenaltyQueue *q;
 	struct PenaltyEntry *e;
@@ -173,6 +173,16 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	memset(e, 0, sizeof(*e));
 	e->kind = pen_kind;
 	e->reason = reason;
+	/*
+	 * AC2 category for the results.json reason label.  Kunos stores
+	 * the caller's category at PenaltySheet entry +0x58 and the
+	 * results writer (FUN_140129b10) renders it through the cat -> name
+	 * table FUN_140117330, independent of the wire-code path.  The
+	 * caller passes the post-rewrite category (e.g. cat 6 mandatory-pit
+	 * becomes 8 Trolling once penalty_enqueue's TP130 rewrite fires),
+	 * matching FUN_140125f50 which overwrites +0x58 to 8 in that case.
+	 */
+	e->category = category;
 	e->collision = collision ? 1 : 0;
 	e->served = 0;
 	/*
@@ -240,7 +250,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 	/* Immediate-effect special case: RBL (RemoveBestLaptime). */
 	if (exe_kind == EXE_RBL) {
 		penalty_materialize(s, car_id, EXE_RBL, collision,
-		    value, reason);
+		    value, reason, category);
 		return 0;
 	}
 
@@ -301,7 +311,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			return 0;
 		}
 		penalty_materialize(s, car_id, EXE_DQ, collision,
-		    value, reason);
+		    value, reason, category);
 		if (category < sizeof(race->pen_cat_severity))
 			race->pen_cat_severity[category] = EXE_DQ;
 		st = &race->pen_state[EXE_DQ];
@@ -334,7 +344,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		 * skip intermediate emits (same bytes after each report).
 		 */
 		penalty_materialize(s, car_id, EXE_TP, collision,
-		    (int32_t)st->counter, reason);
+		    (int32_t)st->counter, reason, category);
 		if (st->counter >= 0x100) {
 			log_info("car %d total TP exceeded 256s -> DQ",
 			    car_id);
@@ -355,8 +365,13 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			 * entry and emits value=0.  Either way the auto-DQ
 			 * materialise itself carries value=0.
 			 */
+			/*
+			 * Category 8 (Trolling) for the results label: the exe
+			 * sets local_res20='\b' on the 256 s threshold cross
+			 * (FUN_140125f50:99) before materialising the DQ.
+			 */
 			penalty_materialize(s, car_id, EXE_DQ, 0, 0,
-			    REASON_RACE_CONTROL);
+			    REASON_RACE_CONTROL, 8);
 			race->pen_state[EXE_DQ].severity = EXE_DQ;
 			race->pen_state[EXE_DQ].issued_ms = now_ms;
 			/*
@@ -410,7 +425,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			st->counter = value;
 			race->pen_cat_severity[category] = exe_kind;
 			penalty_materialize(s, car_id, exe_kind, collision,
-			    value, reason);
+			    value, reason, category);
 			return 0;
 		}
 

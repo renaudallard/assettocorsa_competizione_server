@@ -1189,7 +1189,8 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		}
 		log_info("lobby: 0xf4 remote DQ for car %d (%s): %s",
 		    target, s1, s2);
-		(void)penalty_enqueue(s, target, EXE_DQ, 19, 3, 1, 0,
+		/* category 8 (Trolling): exe tags admin/remote penalties. */
+		(void)penalty_enqueue(s, target, EXE_DQ, 8, 3, 1, 0,
 		    REASON_RACE_CONTROL);
 		if (target_conn != NULL) {
 			struct ByteBuf out;
