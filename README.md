@@ -559,6 +559,7 @@ commands (leading / optional):
   dt <num>            drive-through (dtc)
   sg10 <num>          10s stop-and-go (sg10c..sg30c)
   clear <num>         clear penalties for car
+  cleartp <num>       clear time penalties only
   clear_all           clear all penalties
   ballast <n> <kg>    assign ballast
   restrictor <n> %    assign restrictor

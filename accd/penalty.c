@@ -595,6 +595,47 @@ penalty_clear_all(struct Server *s)
 	leaderboard_request_emit(s);
 }
 
+/*
+ * penalty_clear_tp — drop only the car's time penalties, leaving DT/SG/DQ
+ * intact.  Mirrors the stock server's /cleartp (admin action 7), which is
+ * a time-penalty-only clear distinct from /clear's full PenaltySheet wipe
+ * (verified against FUN_140021680's separate "clear" / "cleartp" arms and
+ * the distinct "post race time penalties" race-control banner).  Targets
+ * admin /tp5 /tp15 entries (PEN_TP5/PEN_TP15) and the race-end DT/SG -> TP
+ * conversions (race_end_tp set, see penalty_convert_race_end).  The per-cat
+ * escalation ladder is left untouched because the DT/SG entries it tracks
+ * survive the clear.
+ */
+void
+penalty_clear_tp(struct Server *s, int car_id)
+{
+	struct PenaltyQueue *q;
+	int i, n = 0;
+
+	if (car_id < 0 || car_id >= ACC_MAX_CARS)
+		return;
+	q = &s->cars[car_id].race.pen;
+	for (i = 0; i < q->count; i++) {
+		const struct PenaltyEntry *p = &q->slots[i];
+		int is_tp = p->race_end_tp != 0 ||
+		    p->kind == PEN_TP5 || p->kind == PEN_TP15 ||
+		    p->kind == PEN_TP30 || p->kind == PEN_TP40 ||
+		    p->kind == PEN_TP50 || p->kind == PEN_TP60;
+		if (is_tp)
+			continue;	/* drop this time penalty */
+		if (n != i)
+			q->slots[n] = q->slots[i];
+		n++;
+	}
+	if (n != q->count) {
+		memset(&q->slots[n], 0,
+		    (size_t)(q->count - n) * sizeof(q->slots[0]));
+		q->count = n;
+		/* Tail bytes change when a TP is removed; re-emit 0x36. */
+		leaderboard_request_emit(s);
+	}
+}
+
 uint32_t
 penalty_total_ms(const struct PenaltyQueue *q)
 {

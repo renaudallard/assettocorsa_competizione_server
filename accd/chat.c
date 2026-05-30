@@ -969,7 +969,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			} else {
 				char chat[128];
 
-				penalty_clear(s, car_id);
+				penalty_clear_tp(s, car_id);
 				snprintf(chat, sizeof(chat),
 				    "Pending post race time penalties for #%d "
 				    "cleared by Race Control", car_num);

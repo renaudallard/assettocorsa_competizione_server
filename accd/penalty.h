@@ -117,6 +117,9 @@ void	penalty_serve_front(struct Server *s, int car_id);
 /* Clear all pending penalties for car_id (for /clear). */
 void	penalty_clear(struct Server *s, int car_id);
 
+/* Clear only time penalties for car_id, leaving DT/SG/DQ (for /cleartp). */
+void	penalty_clear_tp(struct Server *s, int car_id);
+
 /* Clear all pending penalties for every car (for /clear_all). */
 void	penalty_clear_all(struct Server *s);
 

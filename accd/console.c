@@ -240,7 +240,7 @@ cmd_cleartp(struct Server *s, const char *args)
 		reply("unknown car #%d", car_num);
 		return;
 	}
-	penalty_clear(s, car_id);
+	penalty_clear_tp(s, car_id);
 	snprintf(msg, sizeof(msg),
 	    "Pending post race time penalties for #%d "
 	    "cleared by Race Control", car_num);
