@@ -219,6 +219,16 @@ struct CarRaceState {
 	int32_t		current_lap_ms;
 	int32_t		sector_ms[3];
 	/*
+	 * Arrival-ordered splits accumulated this lap, mirroring the exe's
+	 * per-lap split vector (car+0x1d0..+0x1d8).  Appended on each
+	 * recorded 0x20 split and reset at lap-complete, so the 0x3a relay
+	 * count matches the exe even on the formation lap where the first
+	 * split was dropped (sector_ms[] is sector-indexed and would carry
+	 * a stale leading 0 there).
+	 */
+	int32_t		lap_split_buf[3];
+	uint8_t		lap_split_n;
+	/*
 	 * Snapshot of sector_ms[] taken at lap-completion just before
 	 * the per-lap reset, so results.c's "lastSplits" field reflects
 	 * the splits of the most recently completed lap (matches kunos

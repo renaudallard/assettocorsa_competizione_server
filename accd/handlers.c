@@ -250,6 +250,10 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 */
 	if (sector_index < 3)
 		race->sector_ms[sector_index] = sector_time_ms;
+	/* Append to the arrival-ordered per-lap split buffer (exe car+0x1d0
+	 * vector) for the 0x3a relay below. */
+	if (race->lap_split_n < 3)
+		race->lap_split_buf[race->lap_split_n++] = sector_time_ms;
 	race->race_time_ms = clock_ms;
 	log_info("sector split: car=%d sector=%u time=%dms clock=%d",
 	    c->car_id, (unsigned)sector_index, (int)sector_time_ms,
@@ -258,9 +262,15 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	/*
 	 * 0x3a relay to every OTHER client (kunos exe queued-broadcast
 	 * tier sends to all peers except the sender; sender already has
-	 * the split locally).  Body: u8 0x3a + u16 car_id + u8
-	 * split_count + u32 split_time + i32 session_relative_ts +
+	 * the split locally).  Body: u8 0x3a + u16 car_id + u8 split_count
+	 * + split_count x u32 split_time + i32 session_relative_ts +
 	 * u16 car_field.
+	 *
+	 * The exe builder FUN_140011590 emits ALL cumulative splits of the
+	 * open lap (count = vector size at car+0x1d0..+0x1d8), not just the
+	 * latest one; accd previously hardcoded count=1 and the peer's live
+	 * timetable only ever saw sector 0.  Emit the arrival-ordered
+	 * per-lap buffer.
 	 *
 	 * The trailing i32 timestamp is the sender's wire clock_ms
 	 * normalised through `c->session_clock_offset_ms` to the
@@ -269,22 +279,29 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 * (case 0x20 dispatcher in FUN_1400142f0:308).  Without the
 	 * normalisation, the peer's AC2 client interprets the timestamp
 	 * in the sender's boot/session domain and the live timetable
-	 * sees splits drifting by the per-conn offset each lap.
+	 * sees splits drifting by the per-conn offset each lap.  The
+	 * trailing u16 is the lap-states/car_field word (exe car+0x1e8).
 	 */
 	{
 		struct ByteBuf out;
-		uint32_t split_wire = sector_time_ms < 0
-		    ? LAP_TIME_INVALID : (uint32_t)sector_time_ms;
 		int32_t clock_relayed = (int32_t)((int64_t)clock_ms
 		    + c->session_clock_offset_ms);
+		uint8_t n = race->lap_split_n;
+		int ok, si;
 
 		bb_init(&out);
-		if (wr_u8(&out, SRV_SECTOR_SPLITS_RELAY) == 0 &&
+		ok = wr_u8(&out, SRV_SECTOR_SPLITS_RELAY) == 0 &&
 		    wr_u16(&out, s->cars[c->car_id].car_id) == 0 &&
-		    wr_u8(&out, 1) == 0 &&
-		    wr_u32(&out, split_wire) == 0 &&
-		    wr_i32(&out, clock_relayed) == 0 &&
-		    wr_u16(&out, car_field) == 0)
+		    wr_u8(&out, n) == 0;
+		for (si = 0; ok && si < n; si++) {
+			uint32_t sw = race->lap_split_buf[si] < 0
+			    ? LAP_TIME_INVALID
+			    : (uint32_t)race->lap_split_buf[si];
+			ok = wr_u32(&out, sw) == 0;
+		}
+		ok = ok && wr_i32(&out, clock_relayed) == 0 &&
+		    wr_u16(&out, car_field) == 0;
+		if (ok)
 			(void)bcast_all(s, out.data, out.wpos, c->conn_id);
 		bb_free(&out);
 	}
@@ -437,6 +454,9 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->sector_ms[0] = 0;
 			race->sector_ms[1] = 0;
 			race->sector_ms[2] = 0;
+			/* Reset the 0x3a arrival-ordered split buffer for the
+			 * new lap (mirrors the exe vector reset at lap-end). */
+			race->lap_split_n = 0;
 			if (had_cuts > 0) {
 				struct ByteBuf reset;
 				bb_init(&reset);
