@@ -229,6 +229,15 @@ struct CarRaceState {
 	int32_t		lap_split_buf[3];
 	uint8_t		lap_split_n;
 	/*
+	 * Last-known inbound lap-states / car_field word from the client's
+	 * 0x20/0x21 splits (exe car+0x54, copied to LeaderboardLine +0x1d0
+	 * for the 0x36 status word, and car+0x1e8 for the 0x3a/0x3c trailing
+	 * field).  Bits per FUN_140f8e8d0: 0x01 HasCut, 0x02 HasPenalty,
+	 * 0x04 IsOutLap, 0x08 IsInLap, 0x40 IsRetired, 0x80 IsDisqualified,
+	 * 0x400 IsSessionOver, 0x800 NextLapHasCut, etc.
+	 */
+	uint16_t	car_field;
+	/*
 	 * Snapshot of sector_ms[] taken at lap-completion just before
 	 * the per-lap reset, so results.c's "lastSplits" field reflects
 	 * the splits of the most recently completed lap (matches kunos

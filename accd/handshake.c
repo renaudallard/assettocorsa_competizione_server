@@ -829,7 +829,16 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		}
 		if (wr_u8(bb, cup) < 0) return -1;
 	}
-	if (wr_u16(bb, 0) < 0) return -1;
+	/*
+	 * Per-car status / lap-states word (exe LeaderboardLine +0x1d0,
+	 * copied from car +0x54).  Decoded by the client FUN_140f8e8d0:
+	 * 0x01 HasCut, 0x02 HasPenalty, 0x04 IsOutLap, 0x08 IsInLap,
+	 * 0x40 IsRetired, 0x80 IsDisqualified, 0x400 IsSessionOver,
+	 * 0x800 NextLapHasCut, etc.  Emit the last-known inbound lap-states
+	 * word instead of a hardcoded 0 so the client lights the leaderboard
+	 * status decorations; was always 0 (no decorations).
+	 */
+	if (wr_u16(bb, race->car_field) < 0) return -1;
 
 	{
 		/*

@@ -254,6 +254,9 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 * vector) for the 0x3a relay below. */
 	if (race->lap_split_n < 3)
 		race->lap_split_buf[race->lap_split_n++] = sector_time_ms;
+	/* Persist the lap-states word (exe car+0x54 / +0x1e8) for the 0x36
+	 * status field and the 0x3c relay. */
+	race->car_field = car_field;
 	race->race_time_ms = clock_ms;
 	log_info("sector split: car=%d sector=%u time=%dms clock=%d",
 	    c->car_id, (unsigned)sector_index, (int)sector_time_ms,
@@ -384,6 +387,10 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 */
 		if (lap_ms < 0)
 			invalid = 1;
+
+		/* Persist the lap-states word (exe car+0x54) for the 0x36
+		 * status field and the 0x3c relay. */
+		race->car_field = car_field;
 
 		race->lap_count++;
 		if (!invalid)
