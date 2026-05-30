@@ -1889,36 +1889,12 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 		 * coalesce DT/SG service into the mandatory-pit completion.
 		 */
 		/*
-		 * Mandatory driver-swap check: if eventRules demands a
-		 * swap during the mandatory pit (isMandatoryPitstopSwap
-		 * DriverRequired=1) and the pit entry + pit served came
-		 * from the same driver, enqueue a DT so the HUD flags it
-		 * as an IgnoredDriverStint.  Skipped when the car has
-		 * only one registered driver (no swap target exists).
+		 * No server-side mandatory-swap-skip penalty.  The exe's
+		 * 0x54 path (FUN_1400142f0:1265) only decrements the
+		 * mandatory-pit counter; the IgnoredDriverStint penalty is
+		 * originated by the client (0x41 cat=11), not the server.
+		 * Removed for strict wire parity.
 		 */
-		if (s->mandatory_swap_required &&
-		    ecar->driver_count > 1 &&
-		    race->pit_entry_driver_index ==
-			ecar->current_driver_index) {
-			char chat[128];
-			log_info("Car %d mandatory swap skipped (driver %u) "
-			    "-> DT", c->car_id,
-			    (unsigned)ecar->current_driver_index);
-			/*
-			 * AC2 category 11 = IgnoredDriverStint (the wire
-			 * dispatcher's stint group, matching the reason).
-			 * Was 24 (a wire code, not a category): being >= 18
-			 * it clamped to the cutting slot 0 in penalty_enqueue,
-			 * so a swap-skip made the next genuine cut escalate a
-			 * rung early.
-			 */
-			(void)penalty_enqueue(s, c->car_id, EXE_DT, 11, 3, 1,
-			    0, REASON_IGNORED_DRIVER_STINT);
-			penalty_format_chat(chat, sizeof(chat), PEN_DT,
-			    REASON_IGNORED_DRIVER_STINT, 0,
-			    ecar->race_number);
-			chat_broadcast(s, chat, 4);
-		}
 	}
 	log_info("Served Mandatory Pitstop: %u", (unsigned)car_id);
 	return 0;
