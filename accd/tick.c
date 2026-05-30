@@ -1040,19 +1040,28 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * Leaderboard rebroadcast — event-driven.  The previous model
-	 * called broadcast_leaderboard_if_changed every tick and relied
-	 * on the cache compare inside to suppress no-op fan-outs; this
-	 * over-emitted on lap_count++ from formation crossings and on
-	 * sector-fill mid-lap, neither of which kunos emits 0x36 for.
+	 * Leaderboard rebroadcast — event-driven.  State mutations that
+	 * change the wire leaderboard call leaderboard_request_emit()
+	 * (handshake fan-out, conn_drop, penalty materialise, phase
+	 * boundary, weekend wrap, and lap completion).  The tick loop
+	 * drains the pending flag and runs the gated broadcast; the
+	 * memcmp cache inside broadcast_leaderboard_if_changed suppresses
+	 * a fan-out when the rebuilt payload is byte-identical.
 	 *
-	 * Now: state mutations that kunos pcap-emits for call
-	 * leaderboard_request_emit() (handshake fan-out, conn_drop,
-	 * penalty materialise, phase boundary, weekend wrap).  The
-	 * tick loop drains the pending flag and runs the gated
-	 * broadcast.  The 75 s async-mode heartbeat stays as a
-	 * defense-in-depth probe for any missed trigger site — only
-	 * fires when use_async_leaderboard=1 (opt-in).
+	 * Lap completion IS a trigger (handlers.c h_sector_split_single):
+	 * the per-car lap count rides only in the 0x36 record (+0x1f4), so
+	 * the HUD timing tower freezes without a re-emit on each lap.  The
+	 * stock server re-emits 0x36 every tick whenever its leaderboard
+	 * deep-compare (FUN_14002f710 -> FUN_140115f60 -> FUN_140126f10,
+	 * offset 0x1f4) detects a per-car lap-count change.  An earlier
+	 * comment here claimed kunos does not emit on lap-complete, citing
+	 * a 2-bot pcap — that capture was corrupted by wine-CPU-starvation
+	 * reconnect churn and closed zero laps, so it could not show the
+	 * per-lap re-emit; the static decomp is authoritative.  Sector
+	 * splits (0x20) still do NOT trigger (they don't change +0x1f4).
+	 * The 75 s async-mode heartbeat stays as a defense-in-depth probe
+	 * for any missed trigger site — only fires when
+	 * use_async_leaderboard=1 (opt-in).
 	 */
 	if (s->session.leaderboard_pending) {
 		s->session.leaderboard_pending = 0;

@@ -576,6 +576,26 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 
 		session_recompute_standings(s);
 
+		/*
+		 * Re-broadcast the leaderboard: a lap completion bumped
+		 * race->lap_count (handlers.c above), which is carried to the
+		 * client ONLY in the 0x36 record (+0x1f4, handshake.c) and
+		 * stored client-side only by the 0x36 receiver (FUN_14352c0c0
+		 * +0x1f4); no realtime message (0x28/0x39/0x3b) carries it.
+		 * Without this trigger the HUD timing-tower lap column freezes
+		 * at its last-emitted value until an unrelated event (penalty,
+		 * join/leave, phase change) fires a 0x36.  The stock server
+		 * re-emits 0x36 every tick whenever its per-car leaderboard
+		 * deep-compare detects a change (FUN_14002f710 -> FUN_140115f60
+		 * -> FUN_140126f10 compares offset 0x1f4 = lap count); this is
+		 * the minimal event-scoped equivalent.  The memcmp gate inside
+		 * broadcast_leaderboard_if_changed keeps it a once-per-real-
+		 * change emit, and the per-server leaderboard_pending boolean
+		 * coalesces simultaneous lap completions into one 0x36 per tick,
+		 * so it cannot flood even a 30-car pack crossing the line.
+		 */
+		leaderboard_request_emit(s);
+
 		if (s->session.phase == PHASE_OVERTIME) {
 			session_overtime_car_finished(s);
 			session_quali_drop_eligibility(s, c->car_id);
