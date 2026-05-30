@@ -1051,11 +1051,18 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		}
 	}
 
+	/*
+	 * 2nd u16 is the per-car lap-states / car_field word (exe builder
+	 * FUN_140018210 emits car+0x1e8, the same value carried in the 0x3a
+	 * trailing field), NOT a cut counter.  accd previously sent the
+	 * internal cuts_this_lap counter here; emit the persisted lap-states
+	 * word so the client's out-of-track widget reads the same flags it
+	 * gets from 0x3a/0x3b.
+	 */
 	bb_init(&out);
 	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
 	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
-	    wr_u16(&out, (uint16_t)s->cars[c->car_id]
-		.race.cuts_this_lap) < 0 ||
+	    wr_u16(&out, s->cars[c->car_id].race.car_field) < 0 ||
 	    wr_u32(&out, (uint32_t)ts_raw) < 0)
 		goto out;
 	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
