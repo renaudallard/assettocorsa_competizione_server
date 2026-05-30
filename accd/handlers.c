@@ -1191,15 +1191,14 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	 */
 	/*
 	 * Only accept client penalty self-reports during the live race
-	 * (PHASE_SESSION / OVERTIME).  The ACC client fires a 0x41 right
-	 * after green with a pseudo-DT / pseudo-DQ that is a formation-
-	 * transition marker, not a real violation — materialising it
-	 * leaves the car with a pending penalty and the client keeps the
-	 * 70 km/h limiter engaged.  Kunos's reference capture shows the
-	 * same marker getting sent (kind=DQ value=0 there) and the stock
-	 * server silently drops it.  Formation-lap / pre-race transitions
-	 * do their own reporting via 0x3d / 0x19 / 0x20 — 0x41 is only
-	 * meaningful once cars are actually racing.
+	 * (PHASE_SESSION / OVERTIME).  Real client-detected violations
+	 * (cuts, start violations, wrong-way, lights-off) only occur once
+	 * cars are racing; formation / pre-race transitions report via
+	 * 0x3d / 0x19 / 0x20, not 0x41.  The stock server does NOT phase-
+	 * gate 0x41 (FUN_1400142f0 case 0x41 forwards straight to
+	 * FUN_140125f50), but accd drops out-of-race reports defensively so
+	 * a stray pre-green 0x41 can't materialise a penalty before the race
+	 * has started.  This loses no real in-race violation.
 	 */
 	if (s->session.phase != PHASE_SESSION &&
 	    s->session.phase != PHASE_OVERTIME)
@@ -1209,21 +1208,32 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	 * tick with value=0 as a register-severity heads-up; the exe's
 	 * FUN_140125f50 fresh-branch (140125f50:147-153) stores the kind
 	 * in the per-car-per-kind PenaltySheet without pushing a Penalty
-	 * onto the sheet's inner vector, so primers never paint anything
-	 * on the HUD there.  Our penalty_enqueue materialises on fresh for
-	 * admin /dt UX, so we filter primers here.  Drop every value<=0
-	 * call regardless of kind: kind=DQ value=0 from a real client
-	 * (e.g. cat=10 PIT_ENTRY) used to slip through and materialise a
-	 * phantom DQ.  Real DQ events for the four categories the server
-	 * can't infer (wrong-way, lights-off, speeding-on-start, wrong
-	 * grid) are handled by server-side detection elsewhere; we don't
-	 * trust the client's self-DQ here.
+	 * onto the sheet's inner vector, so a value=0 DT/SG primer paints
+	 * nothing.  Our penalty_enqueue materialises on fresh, so drop those
+	 * primers here.
+	 *
+	 * EXCEPTION: a client DQ self-report arrives as kind=EXE_DQ with
+	 * value=0 (the value field is meaningless for a DQ; every internal
+	 * exe DQ passes 0 too).  The exe MATERIALISES it — FUN_140125f50
+	 * sets the +0x59=6 DQ scalar consumed by the results/standings
+	 * builder FUN_140129b10, it does not drop it.  These are exactly the
+	 * four categories the server has no telemetry to infer: wrong-way
+	 * (10), lights-off (15), speeding-on-start (16), wrong-grid (17),
+	 * all already mapped in client_category_to_reason.  Let kind=EXE_DQ
+	 * through so accd applies them; the pending latch below keeps the DQ
+	 * tail-only on the wire like every other client report.
 	 */
-	if (value <= 0)
+	if (value <= 0 && kind != EXE_DQ)
 		return 0;
 	{
 		uint8_t reason = client_category_to_reason(category);
-		int32_t val = value > 0 ? value : 3;
+		/*
+		 * DT/SG value is the report's lap/cut count (always > 0 after
+		 * the primer drop).  A DQ carries value 0 (the exe ignores it),
+		 * so pass it verbatim — clamping negatives to 0 — to keep the
+		 * 0x36 tail b1 at 0 like the exe.
+		 */
+		int32_t val = value > 0 ? value : 0;
 
 		/*
 		 * force = 1 only when cat == 0 (Cutting) AND auto-DQ is
