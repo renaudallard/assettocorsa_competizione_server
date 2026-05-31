@@ -835,9 +835,14 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 * stock server: the exe copies the inbound word (src+0x54) straight
 	 * into the leaderboard line (140128a80.c:441 / 140127d80.c:304) and
 	 * the 0x36 builder FUN_140034210:72 writes it with no mask.  The
-	 * cut/penalty/out/in bits ride through unchanged; the only bit the
-	 * exe edits server-side is FCY/SC (word 0x2000), which accd does not
-	 * yet synthesize here.
+	 * cut/penalty/out/in bits ride through unchanged.  FCY (word 0x20)
+	 * and SafetyCar (0x10) are client-decoded bits that already ride
+	 * through this verbatim echo from the inbound word, so they need no
+	 * server synthesis.  The one bit the exe edits server-side is word
+	 * 0x2000, set only in the results phase for cars carrying a
+	 * PostRaceTime penalty (140128a80.c:460); the AC2 client never decodes
+	 * it (decoder FUN_140f8e8d0 stops at 0x800), so it has no client-
+	 * visible effect and accd deliberately does not emit it.
 	 *
 	 * The AC2 client's lap-time-completion gate (FUN_141021930:152) skips
 	 * the lap-time/best/sector commit and the timing-tower lap advance
