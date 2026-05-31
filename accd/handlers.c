@@ -1692,13 +1692,20 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	    car->drivers[swap_code].last_name);
 	result = 0;
 
-	/* Broadcast 0x58 driver swap notification to all clients. */
-	bb_init(&out);
-	if (wr_u8(&out, SRV_DRIVER_SWAP_NOTIFY) == 0 &&
-	    wr_u16(&out, car_id) == 0 &&
-	    wr_u8(&out, swap_code) == 0)
-		(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
-	bb_free(&out);
+	/*
+	 * Broadcast 0x58 driver swap notification.  exe FUN_1400142f0:1063
+	 * gates this on the doDriverSwapBroadcast config flag (the same flag
+	 * that gates the 0x47 state broadcast), so suppress it when disabled.
+	 */
+	if (s->do_driver_swap_broadcast) {
+		bb_init(&out);
+		if (wr_u8(&out, SRV_DRIVER_SWAP_NOTIFY) == 0 &&
+		    wr_u16(&out, car_id) == 0 &&
+		    wr_u8(&out, swap_code) == 0)
+			(void)bcast_all(s, out.data, out.wpos,
+			    BCAST_EXCEPT_NONE);
+		bb_free(&out);
+	}
 
 	/* Broadcast reset swap state. */
 	broadcast_swap_state(s, car);
