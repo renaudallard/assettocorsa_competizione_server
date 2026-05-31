@@ -831,22 +831,26 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	}
 	/*
 	 * Per-car status / lap-states word (exe LeaderboardLine +0x1d0).
-	 * Emit the last-known lap-states with the TRANSIENT per-lap bits
-	 * masked off: the AC2 client's lap-time-completion gate
-	 * (FUN_141021930:152) SKIPS the best/last/sector advance and the
-	 * timing-tower lap columns whenever the received status word has
-	 * HasCut 0x01 / HasPenalty 0x02 / IsOutLap 0x04 / IsInLap 0x08 /
-	 * 0x1000 set.  Since 0x36 re-emits on lap-complete, the count-bumping
-	 * frame at the race formation/out-lap S/F carries the just-completed
-	 * out-lap's IsOutLap, freezing lap times and the scored lap count for
-	 * the whole race (the bit is sticky between sparse splits).  Quali has
-	 * no formation/out lap so it never tripped.  Mask 0x180F (the gate
-	 * bits + NextLapHasCut) and keep the STANDING decorations the scored
-	 * line should carry: IsRetired 0x40, IsDisqualified 0x80,
-	 * IsSessionOver 0x400, SafetyCar 0x10, FCY 0x20, pit/swap 0x100/0x200.
-	 * The 0x3a/0x3c relays keep the full unmasked word (live lap-states).
+	 * Emit the last-known client lap-states word verbatim, matching the
+	 * stock server: the exe copies the inbound word (src+0x54) straight
+	 * into the leaderboard line (140128a80.c:441 / 140127d80.c:304) and
+	 * the 0x36 builder FUN_140034210:72 writes it with no mask.  The
+	 * cut/penalty/out/in bits ride through unchanged; the only bit the
+	 * exe edits server-side is FCY/SC (word 0x2000), which accd does not
+	 * yet synthesize here.
+	 *
+	 * The AC2 client's lap-time-completion gate (FUN_141021930:152) skips
+	 * the lap-time/best/sector commit and the timing-tower lap advance
+	 * whenever the word carries HasCut 0x01 / HasPenalty 0x02 /
+	 * IsOutLap 0x04 / IsInLap 0x08 / gate-bit 0x1000.  That freeze is
+	 * entirely client-side and is how the stock client behaves: a lap the
+	 * client itself flagged as cut shows no valid time, and a player who
+	 * cuts every lap sees the tower lap number stall; a clean lap (word
+	 * 0x0000) clears it.  v0.3.87 masked 0x180F here, which made accd more
+	 * lenient than the stock server; reverted to the verbatim echo.
+	 * The 0x3a/0x3c relays already carry the full word (live lap-states).
 	 */
-	if (wr_u16(bb, (uint16_t)(race->car_field & ~0x180Fu)) < 0)
+	if (wr_u16(bb, race->car_field) < 0)
 		return -1;
 
 	{
