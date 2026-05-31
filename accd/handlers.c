@@ -1671,12 +1671,13 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 		goto reply;
 	}
 
-	/* Validate: car must be in pit. */
-	if (!car->race.in_pit) {
-		log_warn("driver swap: car %u not in pit", (unsigned)car_id);
-		result = 1;
-		goto reply;
-	}
+	/*
+	 * No in-pit gate: the exe's 0x48 EXECUTE path (FUN_1400142f0 case
+	 * 0x48) has no pit or session-phase check — that gate lives only in
+	 * the chat %swap path (FUN_140027990).  accd previously rejected a
+	 * not-in-pit 0x48 the exe would have accepted, so the gate is dropped
+	 * here to match.  The chat &swap path (chat.c) keeps its own pit gate.
+	 */
 
 	/* Commit the swap.  Flush the outgoing driver's stint time
 	 * into driver_stint_ms before reassigning current_driver_index
