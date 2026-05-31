@@ -604,8 +604,11 @@ write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 	uint8_t cur_type = s->session_count > 0
 	    ? s->sessions[s->session.session_index].session_type : 0;
 	/* Default emit (0x36 / welcome trailer) — current session.
-	 * is_archived=0, session_idx=-1 (live state). */
-	return write_session_leaderboard_section(bb, s, cur_type, 0, -1);
+	 * is_archived=0, session_idx=-1 (live state).  results_ctx=0: the
+	 * exe builds the welcome trailer with the TP gate off (140033980.c
+	 * passes 0) and accd does not emit a live 0x36 in the results
+	 * window, so neither path applies the post-race time penalty. */
+	return write_session_leaderboard_section(bb, s, cur_type, 0, -1, 0);
 }
 
 /* Resolve the per-car race-state source for the given session_idx.
@@ -631,7 +634,7 @@ race_src_for(const struct CarEntry *ec, int session_idx)
 
 int
 write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
-    uint8_t session_type, int is_archived, int session_idx)
+    uint8_t session_type, int is_archived, int session_idx, int results_ctx)
 {
 	int j, d, nc = 0;
 	/*
@@ -649,6 +652,14 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 	 */
 	int in_race = (session_type == 10);
 	uint8_t cvar8 = (s->mandatory_pit_count > 0 || in_race) ? 1 : 0;
+	/*
+	 * results_ctx is the exe's FUN_140128a80 param_6 analog: true only
+	 * for the 0x3e race-results broadcast, where the exe folds each
+	 * car's PostRaceTime penalty into the wire finishing time and sets
+	 * status bit 0x2000.  ANDed with in_race so P/Q sections inside a
+	 * results frame never get a time penalty applied.
+	 */
+	int apply_tp = results_ctx && in_race;
 	int32_t sess_best_lap = INT32_MAX;
 	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
 
@@ -726,7 +737,7 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 					continue;
 				if (write_car_leaderboard_record(bb, s,
 				    &s->cars[j], cvar8, is_archived,
-				    src) < 0)
+				    src, apply_tp) < 0)
 					return -1;
 				emitted++;
 			}
@@ -744,7 +755,7 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 			if (p >= 1 && p <= ACC_MAX_CARS)
 				continue;
 			if (write_car_leaderboard_record(bb, s,
-			    &s->cars[j], cvar8, is_archived, src) < 0)
+			    &s->cars[j], cvar8, is_archived, src, apply_tp) < 0)
 				return -1;
 			emitted++;
 		}
@@ -777,11 +788,22 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 int
 write_car_leaderboard_record(struct ByteBuf *bb,
     const struct Server *s, const struct CarEntry *ec, uint8_t cvar8,
-    int is_archived, const struct CarRaceState *race_src)
+    int is_archived, const struct CarRaceState *race_src, int apply_results_tp)
 {
 	const struct CarRaceState *race = race_src != NULL
 	    ? race_src : &ec->race;
 	const struct PenaltyQueue *pq = &race->pen;
+	/*
+	 * Results-phase post-race time penalty fold (exe FUN_140128a80:
+	 * 460-467).  In the 0x3e race-results context the exe adds the car's
+	 * PostRaceTime (wire 0x0e) penalty milliseconds onto the +0x1f0
+	 * finishing-time field and sets status-word bit 0x2000.  apply_
+	 * results_tp is the caller's param_6 analog (set only for that
+	 * context, never the welcome trailer or live 0x36).  penalty_total_ms
+	 * mirrors the value accd's standings sort already uses (session.c) so
+	 * the displayed finishing time stays consistent with the order.
+	 */
+	uint32_t tp_ms = apply_results_tp ? penalty_total_ms(pq) : 0;
 	/*
 	 * Derive in_race from cvar8 — the leaderboard caller passed it
 	 * down with the per-session decision (race-bit = 1 for race
@@ -841,8 +863,9 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 * server synthesis.  The one bit the exe edits server-side is word
 	 * 0x2000, set only in the results phase for cars carrying a
 	 * PostRaceTime penalty (140128a80.c:460); the AC2 client never decodes
-	 * it (decoder FUN_140f8e8d0 stops at 0x800), so it has no client-
-	 * visible effect and accd deliberately does not emit it.
+	 * it (decoder FUN_140f8e8d0 stops at 0x800), so it is byte-parity only
+	 * with no client-visible effect.  accd sets it below when a results-
+	 * phase time penalty applies (tp_ms > 0), mirroring the exe.
 	 *
 	 * The AC2 client's lap-time-completion gate (FUN_141021930:152) skips
 	 * the lap-time/best/sector commit and the timing-tower lap advance
@@ -855,8 +878,13 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 * lenient than the stock server; reverted to the verbatim echo.
 	 * The 0x3a/0x3c relays already carry the full word (live lap-states).
 	 */
-	if (wr_u16(bb, race->car_field) < 0)
-		return -1;
+	{
+		uint16_t status = race->car_field;
+		if (tp_ms > 0)
+			status |= 0x2000;	/* PostRaceTime marker */
+		if (wr_u16(bb, status) < 0)
+			return -1;
+	}
 
 	{
 		/*
@@ -1053,8 +1081,20 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	if (wr_u32(bb, race->last_lap_ms > 0
 	    ? (uint32_t)race->last_lap_ms : LAP_TIME_INVALID) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)race->lap_count) < 0) return -1;
-	if (wr_u32(bb, race->race_time_ms > 0
-	    ? (uint32_t)race->race_time_ms : LAP_TIME_INVALID) < 0) return -1;
+	{
+		uint32_t rt = race->race_time_ms > 0
+		    ? (uint32_t)race->race_time_ms : 0;
+		/*
+		 * Add the results-phase TP only onto a valid time; the exe
+		 * keeps the no-time sentinel for cars with no lap (it never
+		 * adds onto 0x7fffffff, 140128a80.c skips to keep the
+		 * sentinel when the base time is invalid).
+		 */
+		if (rt > 0)
+			rt += tp_ms;
+		if (wr_u32(bb, rt > 0 ? rt : LAP_TIME_INVALID) < 0)
+			return -1;
+	}
 	if (wr_u8(bb, ec->last_elo < 0xff
 	    ? (uint8_t)ec->last_elo : 0xff) < 0) return -1;
 

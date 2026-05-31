@@ -110,7 +110,7 @@ int	write_session_result_header(struct ByteBuf *bb,
  */
 int	write_session_leaderboard_section(struct ByteBuf *bb,
 		struct Server *s, uint8_t session_type, int is_archived,
-		int session_idx);
+		int session_idx, int results_ctx);
 
 /*
  * Emit the assist_rules + leaderboard section from FUN_140034a40
@@ -137,7 +137,7 @@ int	write_leaderboard_section(struct ByteBuf *bb, struct Server *s);
 int	write_car_leaderboard_record(struct ByteBuf *bb,
 		const struct Server *s, const struct CarEntry *ec,
 		uint8_t cvar8, int is_archived,
-		const struct CarRaceState *race_src);
+		const struct CarRaceState *race_src, int apply_results_tp);
 
 /*
  * Build the 0x4e SRV_RATING_SUMMARY body for every used car

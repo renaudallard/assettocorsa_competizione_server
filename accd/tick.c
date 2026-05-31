@@ -746,7 +746,7 @@ broadcast_session_results(struct Server *s)
 		ok = ok && write_session_leaderboard_section(&bb, s,
 		    sd->session_type,
 		    n != cur,
-		    n != cur ? n : -1) == 0;
+		    n != cur ? n : -1, 1) == 0;	/* results_ctx=1: fold TP */
 	}
 	if (ok) {
 		for (i = 0; i < ACC_MAX_CARS; i++) {
