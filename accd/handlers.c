@@ -1729,19 +1729,29 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
-	uint8_t msg_id, sub_state, conn_state;
+	uint8_t msg_id, wire_b2, state;
 	uint16_t car_id;
 	struct CarEntry *car;
 	int i;
 
+	/*
+	 * Wire body = u16 car_id + u8 + u8.  Per exe FUN_1400142f0:1107-1110
+	 * the SECOND data byte is read but ignored for dispatch, and the
+	 * THIRD byte is the swap state that drives the switch and is stored.
+	 * accd previously dispatched on the second byte (the ignored one),
+	 * so a real client's request fell through to "not implemented" and
+	 * the state was never applied.  Read the ignored byte into wire_b2
+	 * and dispatch/store on state (the third byte).
+	 */
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
 	    rd_u16(&r, &car_id) < 0 ||
-	    rd_u8(&r, &sub_state) < 0 ||
-	    rd_u8(&r, &conn_state) < 0) {
+	    rd_u8(&r, &wire_b2) < 0 ||
+	    rd_u8(&r, &state) < 0) {
 		log_warn("h_driver_swap_state_request: short body");
 		return 0;
 	}
+	(void)wire_b2;
 	if (check_car_owner(c, car_id) < 0) {
 		log_warn("ACP_DRIVER_SWAP_STATE_REQUEST for the wrong "
 		    "carId: %u (Connection owns %d)",
@@ -1750,20 +1760,20 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 	}
 	car = &s->cars[c->car_id];
 
-	switch (sub_state) {
+	switch (state) {
 	case 2:
 		/*
 		 * Initiate: set the requesting driver's swap state
 		 * to the value the client sent.
 		 */
 		if (car->current_driver_index < car->driver_count)
-			car->swap_state[car->current_driver_index] = conn_state;
+			car->swap_state[car->current_driver_index] = state;
 		break;
 	case 3:
 		/*
 		 * Confirm: kunos's FUN_1400142f0:1105-1194 resets every
 		 * team mate's swap_state[i] in {3,4} back to 2 (per
-		 * `(state - 3) < 2`), then applies the new conn_state
+		 * `(state - 3) < 2`), then applies the new state
 		 * on the requesting driver.  For non-team cars (team_
 		 * entry_id == -1) the team-mate scan collapses to just
 		 * this car.
@@ -1782,11 +1792,12 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 			}
 		} else {
 			for (i = 0; i < car->driver_count; i++)
-				if (car->swap_state[i] == 3)
+				if (car->swap_state[i] == 3 ||
+				    car->swap_state[i] == 4)
 					car->swap_state[i] = 2;
 		}
 		if (car->current_driver_index < car->driver_count)
-			car->swap_state[car->current_driver_index] = conn_state;
+			car->swap_state[car->current_driver_index] = state;
 		break;
 	case 4:
 		/* Execute: set requesting driver to EXECUTING. */
@@ -1795,12 +1806,12 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 		break;
 	default:
 		log_warn("DriverSwap Request for type %u is not "
-		    "implemented", (unsigned)sub_state);
+		    "implemented", (unsigned)state);
 		return 0;
 	}
 
-	log_info("driver swap state request: car=%u sub=%u state=%u",
-	    (unsigned)car_id, (unsigned)sub_state, (unsigned)conn_state);
+	log_info("driver swap state request: car=%u b2=%u state=%u",
+	    (unsigned)car_id, (unsigned)wire_b2, (unsigned)state);
 	/*
 	 * Same team-group fan-out as h_update_driver_swap_state: kunos
 	 * emits one 0x47 per car in the group, each carrying its own
