@@ -560,12 +560,28 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	 * empty.  For any other session_index the high byte differs.
 	 */
 	{
-		uint8_t live_type = 0;
-		if (s->session.session_index < s->session_count)
-			live_type = s->sessions[s->session.session_index]
-			    .session_type;
-		if (wr_u8(&bb, live_type) < 0) goto err;
+		/*
+		 * Live-current-session byte: the exe emits the low byte of the
+		 * runtime current-session controller (*(sessionMgr+0x268),
+		 * FUN_140047af0:322), which is the ACTIVELY-RUNNING session's
+		 * type and is 0x00 at idle/registration (no session running yet
+		 * -- the server is WAITING for drivers).  The kson backend uses
+		 * THIS byte to decide listability: a non-zero value silently
+		 * delists the server from the public browser even though the
+		 * register handshake is accepted.
+		 *
+		 * accd previously emitted sessions[session_index].session_type,
+		 * which is 4 (Q) / 10 (R) for a non-Practice-first weekend, so
+		 * those servers registered but were invisible (issue #2); a
+		 * Practice-first config worked only because P=0 coincidentally
+		 * matched the idle value.  Emit 0 to match the exe at idle
+		 * registration (verified byte-0x00 on two kunos Q+R pcaps: the
+		 * per-session loop above carries the real 4/10 types, but this
+		 * live byte is 0).  The per-session loop is the authoritative
+		 * session-type list; this byte is the runtime "current" pointer.
+		 */
 		if (wr_u8(&bb, 0) < 0) goto err;
+		if (wr_u8(&bb, 0) < 0) goto err;	/* empty alt-id */
 	}
 	if (wr_u16(&bb, 64) < 0) goto err;
 	if (bb_append(&bb, l->token_a, 64) < 0) goto err;
@@ -712,10 +728,7 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 {
 	int32_t trem_ms;
 	int32_t trem_s;
-	uint8_t stype = 0;
 
-	if (s->session.session_index < s->session_count)
-		stype = s->sessions[s->session.session_index].session_type;
 	switch (s->session.phase) {
 	case PHASE_WAITING:
 	case PHASE_FORMATION:
@@ -742,7 +755,17 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 	trem_s = trem_ms / 1000;
 	if (trem_s > INT16_MAX)
 		trem_s = INT16_MAX;
-	l->last_session_type = stype;
+	/*
+	 * 0xcb session-type byte = the runtime current/active session type
+	 * (exe register-ack caller reads sessionMgr+0x268, periodic caller
+	 * reads sessionMgr+0x4d); both are 0x00 at idle on the wire (verified
+	 * on the kunos Q+R pcaps at WAITING and at SESSION with no drivers).
+	 * Emit 0 like the registration live-current byte above; the configured
+	 * session type travels in the registration's per-session list.  The
+	 * AC2 client / kson backend track the live session via the phase byte
+	 * (computed below) and that list, not this byte.
+	 */
+	l->last_session_type = 0;
 	/*
 	 * Lobby phase byte == Kunos computeCurrentPhase (FUN_14012e810)
 	 * return value, 1..7:
