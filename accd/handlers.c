@@ -1514,6 +1514,13 @@ broadcast_swap_state(struct Server *s, struct CarEntry *car)
 	 */
 	if (!s->do_driver_swap_broadcast)
 		return;
+	/*
+	 * The exe only builds 0x47 for multi-driver entries (FUN_140011bf0:47
+	 * gates on driver_count > 1); a single-driver car never emits a swap-
+	 * state broadcast.  Match that so single-driver slots stay silent.
+	 */
+	if (car->driver_count <= 1)
+		return;
 	bb_init(&bb);
 	if (wr_u8(&bb, SRV_DRIVER_SWAP_STATE_BCAST) < 0 ||
 	    wr_u16(&bb, car->car_id) < 0 ||
