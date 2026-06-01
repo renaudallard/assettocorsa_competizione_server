@@ -2805,22 +2805,25 @@ reply:
 	session_recompute_standings(s);
 
 	/*
-	 * After a successful accept, fan out 0x2e new-client-
-	 * joined notify to every OTHER already-connected client.
-	 * This lets them add the joining car to their local entry
-	 * list and display it in the lobby.  The binary also emits
-	 * a paired 0x4f sub-opcode 1 message right after; we do
-	 * the same.
+	 * No join notify is broadcast to existing peers here.  The exe's
+	 * post-accept loop (FUN_140025690) sends 0x04 SRV_CAR_ENTRY /
+	 * 0x05 SRV_CONNECTION_ENTRY about the joiner ONLY to monitor/SMPR
+	 * connections (the param_1[6]/[7] list), never to sim clients, and
+	 * the AC2 game client has no TCP dispatch case for 0x04/0x05 (they
+	 * hit its "Unknown TCP paket" default).  Game peers learn the new
+	 * car from the next 0x36 leaderboard alone: the client's 0x36 parser
+	 * resizes its car array to the wire line count and fills every slot,
+	 * so a car appears purely by being listed.  accd routes 0x04/0x05 to
+	 * monitors through its own SMPR path (smpr_notify_conn_changed).  The
+	 * joiner itself is caught up on existing cars by handshake_send_state_
+	 * sync (one 0x2e per car).  Verified: conn-lifecycle parity audit
+	 * 2026-06-01 + the 2026-05-10 2-bot pcap.
+	 *
+	 * Known low-severity gap: during an active race the exe also seeds
+	 * the joiner with a per-car 0x4f sub-opcode 1 (FUN_14002dcb0); accd's
+	 * state-sync emits only the 0x2e.  Mid-race joins only.
 	 */
 	{
-		/*
-		 * Kunos pcap diff (2026-05-10 2-bot test) shows the real
-		 * server does NOT emit a 0x2e/0x4f broadcast about the new
-		 * joiner to existing peers.  The 0x2e fan-out catches the
-		 * joiner up on already-connected cars (handled in the
-		 * write_existing_car_systems_to() path above); existing
-		 * peers learn about the new car via 0x36 alone.
-		 */
 		(void)c;
 
 		/*
