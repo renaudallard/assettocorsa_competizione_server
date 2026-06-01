@@ -1952,6 +1952,19 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 
 	/* Proactive state sync for already-connected cars. */
 	handshake_send_state_sync(c, s);
+
+	/*
+	 * Mid-race joiner: start this driver's stint now, mirroring the exe
+	 * which begins stint timing at take-control/handshake
+	 * (FUN_140025690:1015).  Gated on an active race (green fired) so it
+	 * only counts toward the ExceededDriverStintLimit DQ; cars already
+	 * present when green fires are started by
+	 * session_advance_race_triggers.  Idempotent via the
+	 * stint_start_ms!=0 guard.
+	 */
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
+	    session_is_race(s) && s->session.green_fired)
+		stint_start_tracking(s, c->car_id);
 	return 0;
 fail:
 	bb_free(&bb);

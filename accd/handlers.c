@@ -921,17 +921,17 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		}
 
 		/*
-		 * Driver-stint tracker: accumulate on-track time per
-		 * current_driver_index.  Start when transitioning from
-		 * non-track to Track (location=1); stop on any other
-		 * location (pit-lane traversal paused).
+		 * Driver-stint timing is NOT driven by track location.  The
+		 * exe's 0x32 handler makes no stint call: a stint runs
+		 * continuously from driver take-control (green / handshake /
+		 * swap) through pit stops until a swap, disconnect, or session
+		 * end.  accd previously started the stint on pit-exit and
+		 * paused it on pit-entry, which never counted the grid->first-
+		 * pit stint or pit time and under-enforced the driver-stint
+		 * limit.  Stints now start at green (session.c), at handshake
+		 * for mid-race joiners (below), and on the swap commit; they
+		 * stop on swap, conn_drop, and stint_check_violations.
 		 */
-		if (location == 1 && was_in_pit)
-			stint_start_tracking(s, c->car_id);
-		else if (location != 1 && !was_in_pit && race->in_pit)
-			stint_stop_tracking(s, c->car_id);
-		else if (location == 0)
-			stint_stop_tracking(s, c->car_id);
 
 		/*
 		 * No server-side pit-lane speeding penalty.  The exe has no
@@ -1681,9 +1681,12 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 
 	/* Commit the swap.  Flush the outgoing driver's stint time
 	 * into driver_stint_ms before reassigning current_driver_index
-	 * so the accumulator lands on the correct driver slot. */
+	 * so the accumulator lands on the correct driver slot, then start
+	 * the incoming driver's stint (the exe restarts on swap via
+	 * FUN_14012b230 -> FUN_14011ab60; accd previously only stopped). */
 	stint_stop_tracking(s, c->car_id);
 	car->current_driver_index = swap_code;
+	stint_start_tracking(s, c->car_id);
 	for (i = 0; i < ACC_MAX_DRIVERS_PER_CAR; i++)
 		car->swap_state[i] = 0;
 	log_info("driver swap: car %u -> driver %u (%s %s)",

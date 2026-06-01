@@ -645,6 +645,26 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 
 		green_end = silent ? ss->green_trigger : hi;
 		ss->green_fired = 1;
+		/*
+		 * Start each driver's stint at the green flag.  The exe begins
+		 * per-driver stint timing at driver take-control (connection
+		 * handshake FUN_140025690:1015), which for a grid driver is
+		 * before green; the green crossing is accd's race-scoped
+		 * approximation so the grid->first-pit stint is counted toward
+		 * the ExceededDriverStintLimit DQ (the exe runs the stint
+		 * continuously through pit stops, so we no longer pause on pit
+		 * location and no longer start on pit-exit).  Mid-race joiners
+		 * are started at handshake.  stint_start_tracking's
+		 * stint_start_ms!=0 guard keeps this idempotent; session_start's
+		 * per-car memset already cleared stint_start_ms.
+		 */
+		{
+			int sc;
+			for (sc = 0; sc < ACC_MAX_CARS; sc++)
+				if (s->cars[sc].used &&
+				    s->cars[sc].driver_count > 0)
+					stint_start_tracking(s, sc);
+		}
 		dur_ms = (uint64_t)def->duration_min * 60000ull;
 		/*
 		 * Phase 4 (= pre-race with grid lights) lasts from the
