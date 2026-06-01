@@ -225,20 +225,23 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	}
 
 	/*
-	 * Emit 0x53 MultiplayerBOPUpdate broadcast.  FUN_14011d7d0
-	 * writes (u16 car_id, u16 restrictor_pct, u32 ballast_kg) —
-	 * in that order, with restrictor before ballast and ballast
-	 * as a u32, not a float.  We had the last two fields flipped
-	 * and typed wrong; the client was reading our ballast bytes
-	 * as restrictor (and vice versa) and rendering ballast as a
-	 * float — every admin BoP edit showed a nonsense value.
+	 * Emit 0x53 MultiplayerBOPUpdate broadcast.  Wire body =
+	 * u16 car_id, u16 ballast (signed kg), u32 restrictor as an
+	 * IEEE-754 float fraction (0.0-0.2 = 0-20 %).  Verified against the
+	 * exe serializer FUN_14011d7d0 and client reader FUN_1434f4ba0
+	 * (matching offsets +0x28/+0x2c/+0x30) and a kunos pcap probe: the
+	 * admin handler FUN_14001dae0 writes ballast to CarEntry+0x1fc (wire
+	 * field 2) and the restrictor float to CarEntry+0x200 (wire field 3).
+	 * A prior fix had the two fields swapped and mis-typed (restrictor*100
+	 * as u16, ballast as u32), so the client read ballast as restrictor
+	 * and vice versa.  car->restrictor already holds the fraction, so it
+	 * goes out verbatim as a float.
 	 */
 	bb_init(&out);
 	if (wr_u8(&out, SRV_BOP_UPDATE) == 0 &&
 	    wr_u16(&out, car->car_id) == 0 &&
-	    wr_u16(&out,
-		(uint16_t)(car->restrictor * 100.0f + 0.5f)) == 0 &&
-	    wr_u32(&out, (uint32_t)car->ballast_kg) == 0)
+	    wr_u16(&out, (uint16_t)car->ballast_kg) == 0 &&
+	    wr_f32(&out, car->restrictor) == 0)
 		(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
 	bb_free(&out);
 
