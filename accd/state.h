@@ -627,7 +627,8 @@ struct CarEntry {
 	uint16_t	nationality;
 	char		team_name[ACC_MAX_NAME_LEN];
 	int32_t		default_grid_position;	/* -1 = unset */
-	uint8_t		ballast_kg;		/* clamped 0..100 */
+	int8_t		ballast_kg;		/* kg; /ballast admin clamps
+						 * -40..40 per exe FUN_14001dae0 */
 	float		restrictor;		/* normalized 0..0.20 */
 	char		custom_car[64];		/* entrylist customCar
 						 * filename (handbook §VI.2);

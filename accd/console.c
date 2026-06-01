@@ -128,11 +128,11 @@ cmd_show_cars(struct Server *s)
 		if (!car->used)
 			continue;
 		reply("  car_id=%u  race#=%d  model=%u  drivers=%u  "
-		    "ballast=%ukg  pos=%d  laps=%d  best=%dms",
+		    "ballast=%dkg  pos=%d  laps=%d  best=%dms",
 		    (unsigned)car->car_id, car->race_number,
 		    (unsigned)car->car_model,
 		    (unsigned)car->driver_count,
-		    (unsigned)car->ballast_kg,
+		    (int)car->ballast_kg,
 		    (int)car->race.position,
 		    car->race.lap_count,
 		    car->race.best_lap_ms);

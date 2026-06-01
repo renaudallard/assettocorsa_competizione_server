@@ -211,7 +211,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		    "overrideCarModelForCustomCar", 0);
 		car->default_grid_position = json_obj_get_int(e,
 		    "defaultGridPosition", -1);
-		car->ballast_kg = (uint8_t)json_obj_get_int(e,
+		car->ballast_kg = (int8_t)json_obj_get_int(e,
 		    "ballastKg", 0);
 		car->restrictor = (float)json_obj_get_num(e,
 		    "restrictor", 0.0);
@@ -561,19 +561,19 @@ bop_apply(const struct Server *s, struct CarEntry *car)
 		new_kg = (int)car->ballast_kg + (int)b->ballast_kg;
 		if (new_kg > 100)
 			new_kg = 100;
-		car->ballast_kg = (uint8_t)new_kg;
+		car->ballast_kg = (int8_t)new_kg;
 		new_restrictor = car->restrictor +
 		    (float)b->restrictor_pct / 100.0f;
 		if (new_restrictor > 0.20f)
 			new_restrictor = 0.20f;
 		car->restrictor = new_restrictor;
 		log_info("bop applied: car=%u model=%u track=%s "
-		    "+%ukg +%u%% -> %ukg / %.2f",
+		    "+%ukg +%u%% -> %dkg / %.2f",
 		    (unsigned)car->car_id, (unsigned)car->car_model,
 		    s->track,
 		    (unsigned)b->ballast_kg,
 		    (unsigned)b->restrictor_pct,
-		    (unsigned)car->ballast_kg, (double)car->restrictor);
+		    (int)car->ballast_kg, (double)car->restrictor);
 		return;	/* one match per car */
 	}
 }

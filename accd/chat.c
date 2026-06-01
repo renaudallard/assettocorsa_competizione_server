@@ -209,10 +209,11 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	}
 	car = &s->cars[car_id];
 	if (is_ballast) {
-		/* Handbook V: ballast 0..100 kg. */
-		if (value > 100) value = 100;
-		if (value < 0) value = 0;
-		car->ballast_kg = (uint8_t)value;
+		/* The exe clamps ballast to -40..40 kg (signed) at
+		 * FUN_14001dae0:452-459 (value >= 41 -> 40, < -40 -> -40). */
+		if (value > 40) value = 40;
+		if (value < -40) value = -40;
+		car->ballast_kg = (int8_t)value;
 		snprintf(chat, sizeof(chat),
 		    "Assigned %d kg to car #%d", value, car_num);
 	} else {
