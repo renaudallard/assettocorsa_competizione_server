@@ -993,7 +993,7 @@ h_out_of_track(struct Server *s, struct Conn *c,
 {
 	struct Reader r;
 	uint8_t msg_id, force;
-	int32_t ts_raw;
+	int32_t ts_raw, ts_relayed;
 	struct ByteBuf out;
 	int rc;
 
@@ -1080,12 +1080,21 @@ h_out_of_track(struct Server *s, struct Conn *c,
 	 * internal cuts_this_lap counter here; emit the persisted lap-states
 	 * word so the client's out-of-track widget reads the same flags it
 	 * gets from 0x3a/0x3b.
+	 *
+	 * The timestamp is normalised through the sender's
+	 * session_clock_offset_ms to the server-session-relative frame, the
+	 * same as the 0x19/0x3a/0x3b/0x4f relays (the exe normalises it per
+	 * recipient via FUN_140042030 / FUN_140041fc0).  A real-client misano
+	 * pcap shows the 0x3c timestamps in session-relative ms, confirming
+	 * the frame; relaying the raw client clock put a wrong-frame value in
+	 * the receiving out-of-track widget.
 	 */
+	ts_relayed = (int32_t)((int64_t)ts_raw + c->session_clock_offset_ms);
 	bb_init(&out);
 	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
 	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
 	    wr_u16(&out, s->cars[c->car_id].race.car_field) < 0 ||
-	    wr_u32(&out, (uint32_t)ts_raw) < 0)
+	    wr_i32(&out, ts_relayed) < 0)
 		goto out;
 	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
 	(void)rc;
