@@ -91,8 +91,7 @@ check_car_owner(struct Conn *c, uint16_t wire_car_id)
  *                             on AC2 client)
  *   u16 target_car_id        (the other car involved, or 0xffff for a
  *                             wall hit)
- *   i32 timestamp            (raw client clock; exe normalises via
- *                             FUN_140042030)
+ *   i32 timestamp            (client clock; see normalisation note below)
  *   u8  quality              (signed: <0 -> -1.0f "invalid contact",
  *                             non-negative -> byte/10.0f rating quality)
  *
@@ -100,8 +99,23 @@ check_car_owner(struct Conn *c, uint16_t wire_car_id)
  * contact) and 140e3f9c0.c:960 (SA-contact handler with the
  * "SA contact: %f obwp" log).  Server case 0x19 at exe
  * 1400142f0.c:174-205 builds a queued-broadcast lambda.  The 0x1b
- * wire builder at 1400179b0.c reads u16 carA + u16 carB + double +
- * float quality, preserving order.
+ * wire builder FUN_1400179b0 emits the SAME 9-byte body we do:
+ * u16 carA + u16 carB + i32 timestamp + u8 quality.  The double and
+ * float seen in the decomp are only in-memory promotions; the builder
+ * truncates them to i32/u8 (cvttsd2si at 1400179b0.c:69 / *10 then
+ * cvttsd2si for the byte), and the AC2 client receiver 143526030.c
+ * reads them back as i32(+4) + u8(+1).  So our i32+u8 relay is
+ * wire-width correct.  Two value notes:
+ *   - timestamp: the exe normalises it PER RECIPIENT in the fan-out
+ *     (FUN_140041fc0 = raw - that conn's session base).  bcast_all
+ *     cannot carry a per-recipient value, so we apply the sender's
+ *     session_clock_offset_ms to reach the shared server-session frame
+ *     (the same simplification our 0x3a/0x3b/0x4f relays use).
+ *   - quality: the exe round-trips the byte (i8 -> float byte/10 or
+ *     -1.0, then float -> u8 >=0 ? (u8)(val*10) : 0xff), we pass the
+ *     raw byte through.  Client-visible identical: both receivers
+ *     re-divide by 10 and read the byte signed, so a >127 byte is
+ *     "invalid" either way.
  *
  * Pre-2026-05-08 this handler treated the body as
  * (cup_position, track_position, lap_time_ms, quality) and stored
@@ -116,7 +130,7 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	struct Reader r;
 	uint8_t msg_id;
 	uint16_t reporter_car_id, target_car_id;
-	int32_t timestamp;
+	int32_t timestamp, ts_relayed;
 	uint8_t quality;
 	struct ByteBuf out;
 	int rc;
@@ -148,12 +162,20 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	 * ratings.c if/when implemented).  Exe relays unconditionally
 	 * (no isSessionOver guard at case 0x19) and sends to ALL
 	 * including the sender.
+	 *
+	 * The contact timestamp is the reporter's wire clock; normalise
+	 * it through the sender's `c->session_clock_offset_ms` to the
+	 * server-session-relative frame, exactly as the 0x3a/0x3b/0x4f
+	 * relays do.  The exe does this per recipient (FUN_140041fc0),
+	 * which bcast_all cannot carry, but the session-relative frame
+	 * is shared so this is the closest single-value match.
 	 */
+	ts_relayed = (int32_t)((int64_t)timestamp + c->session_clock_offset_ms);
 	bb_init(&out);
 	if (wr_u8(&out, SRV_LAP_BROADCAST) < 0 ||
 	    wr_u16(&out, reporter_car_id) < 0 ||
 	    wr_u16(&out, target_car_id) < 0 ||
-	    wr_i32(&out, timestamp) < 0 ||
+	    wr_i32(&out, ts_relayed) < 0 ||
 	    wr_u8(&out, quality) < 0)
 		goto out;
 	rc = bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
