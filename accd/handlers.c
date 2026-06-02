@@ -1469,7 +1469,7 @@ out:
 	return 0;
 }
 
-/* ----- 0x45 ACP_CAR_DIRT_UPDATE (store only, no relay) ---------- */
+/* ----- 0x45 ACP_CAR_DIRT_UPDATE -> store + relay 0x46 (TCP) ----- */
 
 int
 h_car_dirt(struct Server *s, struct Conn *c,
