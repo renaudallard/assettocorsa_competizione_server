@@ -459,11 +459,12 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			}
 		}
 
-		/* Per-lap state reset + optional cut-counter clear
-		 * broadcast.  Matches the kunos pcap (zero 0x3c emits on
-		 * lap-boundaries for clean laps; one on a cut clear). */
+		/* Per-lap state reset.  The exe emits NO 0x3c on a lap
+		 * boundary: a real-client misano pcap shows 0 clear frames
+		 * (car_field=0) across 81 inbound off-track reports and 9
+		 * relays.  The only 0x3c emit site is the 0x3d handler, gated
+		 * by the car+0x1e8 latch. */
 		{
-			uint8_t had_cuts = race->cuts_this_lap;
 			race->current_lap_ms = 0;
 			race->out_of_track_latched = 0;
 			race->cuts_this_lap = 0;
@@ -486,18 +487,6 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			/* Reset the 0x3a arrival-ordered split buffer for the
 			 * new lap (mirrors the exe vector reset at lap-end). */
 			race->lap_split_n = 0;
-			if (had_cuts > 0) {
-				struct ByteBuf reset;
-				bb_init(&reset);
-				if (wr_u8(&reset, SRV_OUT_OF_TRACK_RELAY) == 0 &&
-				    wr_u16(&reset,
-					s->cars[c->car_id].car_id) == 0 &&
-				    wr_u16(&reset, 0) == 0 &&
-				    wr_u32(&reset, 0) == 0)
-					(void)bcast_all(s, reset.data,
-					    reset.wpos, BCAST_EXCEPT_NONE);
-				bb_free(&reset);
-			}
 		}
 
 		/* Local rating EWMA: clean lap +5 SA, cut -25, out-lap

@@ -292,7 +292,8 @@ struct CarRaceState {
 	uint8_t		damage[5];		/* last 0x43 zone payload
 						 * — same rationale */
 	uint8_t		out_of_track_latched;
-	uint8_t		cuts_this_lap;		/* 0x3c force=1 count */
+	uint8_t		cuts_this_lap;		/* per-lap counted cuts;
+						 * log only, no wire effect */
 	uint64_t	last_cut_ms;		/* mono_ms of last counted
 						 * cut — debounce window
 						 * so a sustained off-track
