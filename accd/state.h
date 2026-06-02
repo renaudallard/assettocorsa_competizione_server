@@ -302,6 +302,16 @@ struct CarRaceState {
 	uint8_t		formation_lap_done;	/* exe car+0x200 flag */
 	uint8_t		out_lap_done;		/* first lap from pits */
 	uint8_t		disqualified;		/* PEN_DQ terminal flag */
+	uint8_t		race_end_short_circuit;	/* set when stint_check_
+						 * violations applied a stint /
+						 * mandatory-pit / no-stint
+						 * penalty; tells the race-end
+						 * DT/SG->TP conversion to skip
+						 * this car, mirroring the exe's
+						 * FUN_14012ae10-returns-1 ->
+						 * skip FUN_140127440 short-
+						 * circuit (one race-end penalty
+						 * per car) */
 	uint8_t		on_track;		/* mirrors exe car+0x153:
 						 * last ACP_CAR_LOCATION_UPDATE
 						 * (0x32) had location==Track.

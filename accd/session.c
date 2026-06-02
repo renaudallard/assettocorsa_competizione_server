@@ -1541,6 +1541,7 @@ stint_check_violations(struct Server *s)
 				(void)penalty_enqueue(s, i, EXE_DQ, 12, 3,
 				    1, 0,
 				    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
+				r->race_end_short_circuit = 1;
 				continue;	/* already DQ'd */
 			}
 		}
@@ -1570,6 +1571,7 @@ stint_check_violations(struct Server *s)
 			 */
 			(void)penalty_enqueue(s, i, EXE_DQ, 6, 0, 0, 0,
 			    REASON_IGNORED_MANDATORY_PIT);
+			r->race_end_short_circuit = 1;
 			continue;
 		}
 
@@ -1595,6 +1597,7 @@ stint_check_violations(struct Server *s)
 				    "stint -> DQ", i, skipped);
 				(void)penalty_enqueue(s, i, EXE_DQ, 28, 3, 1, 0,
 				    REASON_DRIVER_RAN_NO_STINT);
+				r->race_end_short_circuit = 1;
 			}
 		}
 	}

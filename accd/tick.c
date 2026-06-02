@@ -1244,9 +1244,22 @@ tick_run(struct Server *s)
 			    s->sessions[s->session.session_index]
 				.session_type == 10) {
 				int j;
-				for (j = 0; j < ACC_MAX_CARS; j++)
+				for (j = 0; j < ACC_MAX_CARS; j++) {
+					/*
+					 * Skip cars stint_check_violations
+					 * already penalized (stint / mandatory-
+					 * pit / no-stint): the exe applies one
+					 * race-end penalty per car
+					 * (FUN_14012b380 skips the DT/SG->TP
+					 * conversion FUN_140127440 when the
+					 * FUN_14012ae10 check fired), so don't
+					 * stack a converted DT/SG on top.
+					 */
+					if (s->cars[j].race.race_end_short_circuit)
+						continue;
 					penalty_convert_race_end(
 					    &s->cars[j].race.pen);
+				}
 				/*
 				 * The converted entries are consumed by
 				 * broadcast_session_results (0x3e) and
