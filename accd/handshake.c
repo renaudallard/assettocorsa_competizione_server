@@ -2702,7 +2702,7 @@ post_slot_assignment:
 		 * (server_find_grid_slot).
 		 */
 		if (car->race.grid_position < 0) {
-			if (car->default_grid_position > 0) {
+			if (car->default_grid_position >= 0) {
 				car->race.grid_position =
 				    (int16_t)car->default_grid_position;
 			} else {

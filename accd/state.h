@@ -636,10 +636,17 @@ struct CarEntry {
 						 * handshake to reject when
 						 * the joiners wire cmodel
 						 * != this value. */
-	uint8_t		cup_category;
+	uint8_t		cup_category;		/* derived from the current
+						 * driver's driver_category, like
+						 * the 0x36 leaderboard cup byte */
+	uint8_t		override_car_model_custom; /* entrylist
+						 * overrideCarModelForCustomCar
+						 * boolean; round-trip only,
+						 * unused on the wire */
 	uint16_t	nationality;
 	char		team_name[ACC_MAX_NAME_LEN];
-	int32_t		default_grid_position;	/* -1 = unset */
+	int32_t		default_grid_position;	/* 0-based; -1 = unset
+						 * (JSON value-1 at load) */
 	int8_t		ballast_kg;		/* kg; /ballast admin clamps
 						 * -40..40 per exe FUN_14001dae0 */
 	float		restrictor;		/* normalized 0..0.20 */

@@ -326,8 +326,8 @@ session_reset(struct Server *s, uint8_t session_index)
 					g = p - 1;	/* 0-based slot */
 			}
 			if (g < 0 && prior < 0 &&
-			    car->default_grid_position > 0)
-				g = (int16_t)(car->default_grid_position - 1);
+			    car->default_grid_position >= 0)
+				g = (int16_t)car->default_grid_position;
 			if (g < 0) {
 				int slot = server_find_grid_slot(s);
 				if (slot >= 0)

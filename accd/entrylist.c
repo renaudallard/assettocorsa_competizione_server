@@ -207,14 +207,30 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		car->forced_car_model = car->car_model;
 		if (car->car_model == 0xff)
 			car->car_model = 0;
-		car->cup_category = (uint8_t)json_obj_get_int(e,
-		    "overrideCarModelForCustomCar", 0);
-		car->default_grid_position = json_obj_get_int(e,
-		    "defaultGridPosition", -1);
+		car->override_car_model_custom = (uint8_t)
+		    (json_obj_get_int(e, "overrideCarModelForCustomCar", 0)
+		    != 0);
+		{
+			/*
+			 * Normalise defaultGridPosition to 0-based, matching
+			 * the exe (FUN_140104340:299-306): store JSON value-1,
+			 * with JSON 0 / absent / negative meaning unset (-1).
+			 * Both consumers (session.c, handshake.c) then read it
+			 * directly as a 0-based slot.
+			 */
+			int gp = json_obj_get_int(e, "defaultGridPosition", 0);
+			car->default_grid_position = (gp < 1) ? -1 : gp - 1;
+		}
 		car->ballast_kg = (int8_t)json_obj_get_int(e,
 		    "ballastKg", 0);
-		car->restrictor = (float)json_obj_get_num(e,
-		    "restrictor", 0.0);
+		/*
+		 * restrictor is an integer PERCENT in the JSON (exe
+		 * FUN_140104340:460-477 reads it as int, stores *0.01);
+		 * keep the normalised 0..0.20 fraction the wire / BoP path
+		 * expects.
+		 */
+		car->restrictor = (float)json_obj_get_int(e,
+		    "restrictor", 0) * 0.01f;
 		{
 			int ddi = json_obj_get_int(e, "defaultDriverIndex", 0);
 			/*
@@ -261,6 +277,31 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 			d->nationality = (uint16_t)json_obj_get_int(
 			    dnode, "nationality", 0);
 		}
+		/*
+		 * Derive cup_category from the default driver's category,
+		 * matching the 0x36 leaderboard cup byte: Bronze->Am,
+		 * Silver->ProAm, Gold/Platinum->Pro, else 4.  The exe has no
+		 * cupCategory entrylist key; it derives the same way.
+		 */
+		switch (car->drivers[car->current_driver_index].driver_category) {
+		case 0:	 car->cup_category = 2; break;	/* Bronze -> Am */
+		case 1:	 car->cup_category = 3; break;	/* Silver -> ProAm */
+		case 2:
+		case 3:	 car->cup_category = 0; break;	/* Gold/Plat -> Pro */
+		default: car->cup_category = 4; break;
+		}
+		/*
+		 * Team-entry sanity, mirroring the exe (FUN_140023700:
+		 * 362-366): a multi-driver entry with overrideDriverInfo:0
+		 * fails to populate co-driver names in the exe.  accd reads
+		 * names from the entrylist regardless, so this is advisory,
+		 * but surface the same operator hint.
+		 */
+		if (dn > 1 &&
+		    json_obj_get_int(e, "overrideDriverInfo", 0) == 0)
+			log_warn("entrylist: entry %zu has %zu drivers but "
+			    "overrideDriverInfo:0 - fill out driver names "
+			    "for teams", i, dn);
 		loaded++;
 	}
 
@@ -433,15 +474,17 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 		fprintf(fp, "      \"raceNumber\": %d,\n",
 		    (int)car->race_number);
 		fprintf(fp, "      \"forcedCarModel\": %d,\n",
-		    (int)car->car_model);
+		    car->forced_car_model == 0xff ? -1
+		    : (int)car->forced_car_model);
 		fprintf(fp, "      \"overrideCarModelForCustomCar\": %d,\n",
-		    (int)car->cup_category);
+		    (int)car->override_car_model_custom);
 		fprintf(fp, "      \"defaultGridPosition\": %d,\n",
-		    (int)car->default_grid_position);
+		    car->default_grid_position < 0 ? 0
+		    : car->default_grid_position + 1);
 		fprintf(fp, "      \"ballastKg\": %d,\n",
 		    (int)car->ballast_kg);
-		fprintf(fp, "      \"restrictor\": %.2f,\n",
-		    (double)car->restrictor);
+		fprintf(fp, "      \"restrictor\": %d,\n",
+		    (int)(car->restrictor * 100.0f + 0.5f));
 		fprintf(fp, "      \"defaultDriverIndex\": %d,\n",
 		    (int)car->current_driver_index);
 		json_escape(buf, sizeof(buf), car->team_name);
