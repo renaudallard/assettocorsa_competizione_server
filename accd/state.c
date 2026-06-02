@@ -269,6 +269,12 @@ conn_new(struct Server *s, int fd, const struct sockaddr_in *peer)
 	c->state = CONN_UNAUTH;
 	c->conn_id = (uint16_t)slot;
 	c->car_id = -1;
+	{
+		int k;
+		for (k = 0; k < RTT_RING_SLOTS; k++)
+			c->rtt_ring[k] = -1;	/* -1 = empty slot */
+	}
+	c->rtt_ring_idx = -1;
 	c->hs_echo = NULL;
 	c->hs_echo_len = 0;
 	bb_init(&c->rx);

@@ -383,6 +383,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		uint32_t pong_srv_ts = 0, pong_client_ts = 0;
 		struct Conn *pc;
 		uint32_t now_ms, rtt;
+		int new_min;
 
 		rd_init(&pr, buf, len);
 		(void)rd_skip(&pr, 1);		/* msg_id */
@@ -424,62 +425,25 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 
 		now_ms = (uint32_t)mono_ms();
 		rtt = now_ms - pong_srv_ts;
-		if (rtt > 5000)
-			rtt = 5000;
-
-		if (pc->avg_rtt_ms == 0) {
-			pc->avg_rtt_ms = rtt;
-			log_info("pong: first sample conn=%u rtt=%u ms",
-			    (unsigned)pong_conn, (unsigned)rtt);
-		} else {
-			/*
-			 * Spike clamp: cap a single bad sample at 3x the
-			 * running average so the EMA can't be dragged by
-			 * an outlier (a real network glitch is fine; a
-			 * 5-second hiccup shouldn't permanently inflate
-			 * the leaderboard ping column).  Mirrors kunos's
-			 * FUN_1400420e0 (line 40-44 in
-			 * notebook-a/decomp/full/1400420e0.c):
-			 *   if (avg != 0 && avg*3 < rtt) {
-			 *       log("Received Ping spike ...");
-			 *       rtt = avg * 3;
-			 *   }
-			 */
-			if (pc->avg_rtt_ms * 3 < rtt) {
-				uint32_t cap = pc->avg_rtt_ms * 3;
-
-				log_kunos("Received Ping spike from connectionId %u; %u vs. avg %u ms, is capped to %u",
-				    (unsigned)pong_conn,
-				    (unsigned)rtt,
-				    (unsigned)pc->avg_rtt_ms,
-				    (unsigned)cap);
-				rtt = cap;
-			}
-			pc->avg_rtt_ms = (pc->avg_rtt_ms * 7 + rtt) / 8;
-		}
 		/*
-		 * Clock offset — exe's FUN_1400420e0 stores
-		 *   param_1[0x2802a] = server_now - (rtt/2 + client_ts)
-		 * as the fixed offset between server and client clocks.
-		 * Updated on every pong.  Used only by our latency CSV
-		 * dump today (no wire consumer), but tracking it here
-		 * means the dump matches the exe's semantics and a future
-		 * FUN_140042030-style projection helper can read it.
+		 * No 5000 ms cap: kunos's FUN_1400420e0 uses the raw
+		 * (now - srv_ts) sample; only the avg*3 spike clamp below
+		 * bounds an outlier, and the windowed mean dilutes it.
+		 *
+		 * First-pong / new-minimum-RTT gate, mirroring
+		 * FUN_1400420e0:23-37.  The session-relative clock offset
+		 * (the exe's D_base, 0x280c4) is latched here from the RAW
+		 * rtt before the spike clamp - a new minimum is never a
+		 * spike.  This is the offset every relay timestamp
+		 * (0x19/0x1b/0x3a/0x3b/0x3c/0x4f) projects through, and the
+		 * same condition drives the fresh 0x28 re-emit at the end.
+		 * Anchor to session-start mono_ms so the value stays bounded
+		 * regardless of host uptime.  (The exe also folds in a slow
+		 * per-conn drift integrator, 0x280d0, that we do not track;
+		 * it matters only over a long stint.)
 		 */
-		pc->clock_offset_ms = (int32_t)(now_ms -
-		    (pc->avg_rtt_ms / 2 + pong_client_ts));
-		pc->last_udp_client_ts = pong_client_ts;
-		pc->last_udp_server_ms = now_ms;
-		/*
-		 * Session-relative clock offset for the 0x4f force=1
-		 * relay's IEEE-754 ts.  Anchor to the session-start
-		 * mono_ms so the value stays bounded regardless of host
-		 * uptime, matching kunos's FUN_140042030 output range.
-		 * Latch on the FIRST pong, then refresh only when a
-		 * lower RTT (sharper estimate) arrives — same gate as
-		 * kunos's FUN_1400420e0:23.
-		 */
-		if (!pc->session_clock_seen || rtt < pc->best_rtt_ms) {
+		new_min = (!pc->session_clock_seen || rtt < pc->best_rtt_ms);
+		if (new_min) {
 			uint64_t session_now =
 			    mono_ms() - s->session.phase_started_ms;
 			pc->session_clock_offset_ms =
@@ -491,14 +455,61 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		}
 
 		/*
-		 * On the FIRST pong, send a fresh 0x28 with the
-		 * now-correct client time base.  The welcome
-		 * sequence 0x28 had client_ts=0 (no pong yet),
-		 * giving the client a ~1min timer offset from
-		 * menu/loading time.
+		 * Spike clamp on the windowed mean as of the previous pong,
+		 * then push the (clamped) sample into the 50-slot ring and
+		 * recompute the arithmetic mean over the filled slots - the
+		 * exe's RTT estimator (FUN_1400420e0:39-71: 50-entry ring,
+		 * avg = sum(non-negative)/count).
 		 */
-		if (pc->last_pong_client_ts == 0 &&
-		    s->session.ts_valid) {
+		if (pc->avg_rtt_ms == 0)
+			log_info("pong: first sample conn=%u rtt=%u ms",
+			    (unsigned)pong_conn, (unsigned)rtt);
+		else if (pc->avg_rtt_ms * 3 < rtt) {
+			uint32_t cap = pc->avg_rtt_ms * 3;
+
+			log_kunos("Received Ping spike from connectionId %u; %u vs. avg %u ms, is capped to %u",
+			    (unsigned)pong_conn, (unsigned)rtt,
+			    (unsigned)pc->avg_rtt_ms, (unsigned)cap);
+			rtt = cap;
+		}
+		pc->rtt_ring_idx =
+		    (pc->rtt_ring_idx + 1 > RTT_RING_SLOTS - 1)
+		    ? 0 : pc->rtt_ring_idx + 1;
+		pc->rtt_ring[pc->rtt_ring_idx] = (int32_t)rtt;
+		{
+			uint64_t sum = 0;
+			int cnt = 0, k;
+
+			for (k = 0; k < RTT_RING_SLOTS; k++) {
+				if (pc->rtt_ring[k] < 0)
+					continue;
+				sum += (uint32_t)pc->rtt_ring[k];
+				cnt++;
+			}
+			if (cnt > 0)
+				pc->avg_rtt_ms =
+				    (uint32_t)(sum / (unsigned)cnt);
+		}
+		/*
+		 * Averaged-rtt/2 clock offset - the exe's FUN_1400420e0:82
+		 * stat field (param_1[0x2802a]).  Stat/CSV only, no wire
+		 * consumer (the relays use session_clock_offset_ms above).
+		 */
+		pc->clock_offset_ms = (int32_t)(now_ms -
+		    (pc->avg_rtt_ms / 2 + pong_client_ts));
+		pc->last_udp_client_ts = pong_client_ts;
+		pc->last_udp_server_ms = now_ms;
+
+		/*
+		 * Send a fresh 0x28 with the now-correct client time base
+		 * on the first pong AND on any later new-minimum-RTT pong.
+		 * The exe rebuilds the 0x28 whenever the pong handler
+		 * returns 1 (FUN_1400420e0:24 -> FUN_140027f80:268), which
+		 * is exactly the new_min gate above; emitting only on the
+		 * literal first pong left the client's timer slightly stale
+		 * after a sharper RTT estimate arrived.
+		 */
+		if (new_min && s->session.ts_valid) {
 			struct ByteBuf bb;
 
 			bb_init(&bb);

@@ -94,6 +94,8 @@ mono_ms(void)
 #define ACC_TRACK_NAME_LEN	48
 #define ACC_MAX_SESSIONS	16
 #define ACC_MAX_PENALTIES	8
+#define RTT_RING_SLOTS		50	/* pong RTT sliding-window size
+					 * (exe FUN_1400420e0 ring) */
 #define ACC_LAP_HISTORY		16
 #define ACC_RATINGS_MAX		256
 
@@ -723,8 +725,16 @@ struct Conn {
 						 * conns past CONN_UNAUTH_TIMEOUT_MS
 						 * are reaped so port scanners don't
 						 * pin the session-start gate */
-	uint32_t	avg_rtt_ms;		/* exponential avg round-trip (from 0x16 pong) */
-	int32_t		clock_offset_ms;	/* server_now - (rtt/2 + client_ts) */
+	uint32_t	avg_rtt_ms;		/* windowed mean round-trip from
+						 * 0x16 pong: arithmetic mean of
+						 * the rtt_ring, mirroring exe
+						 * FUN_1400420e0's 50-slot mean */
+	int32_t		rtt_ring[RTT_RING_SLOTS]; /* RTT samples; -1 = empty */
+	int32_t		rtt_ring_idx;		/* last-written slot (init -1) */
+	int32_t		clock_offset_ms;	/* server_now - (avg_rtt/2 +
+						 * client_ts); stat/CSV only, no
+						 * wire consumer (exe's dead
+						 * field 0x2802a) */
 	int64_t		session_clock_offset_ms;	/* session-relative clock
 							 * offset: session_now -
 							 * rtt/2 - pong_client_ts.
