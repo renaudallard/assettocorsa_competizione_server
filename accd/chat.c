@@ -1083,7 +1083,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 
 				(void)conn_send_framed(cn, &probe, 1);
 				snprintf(line, sizeof(line),
-				    "Requesting controller for car #%d",
+				    "Requested controller info for car #%d",
 				    car_num);
 				chat_reply(c, line, 4);
 				log_info("admin: /controller %d -> probe",
