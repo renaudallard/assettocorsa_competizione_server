@@ -31,7 +31,7 @@
  * probe is framed as: u8(0xbf) + u8(0x48) + u32(nonce).  The
  * server replies with: u8(0xc0) + str_a(server_name) + u8(clients)
  * + u8(has_password) + u16(tcp_port) + u32(echo_nonce) +
- * u8(session_type).
+ * u8(carGroup).
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -198,7 +198,7 @@ lan_handle(struct Server *s, int fd)
 	/*
 	 * Response: u8(0xc0) + str_a(server_name) + u8(clients) +
 	 * u8(has_password) + u16(tcp_port) + u32(echo_nonce) +
-	 * u8(session_type).
+	 * u8(carGroup).
 	 */
 	bb_init(&reply);
 	/*
