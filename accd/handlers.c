@@ -1001,10 +1001,12 @@ h_out_of_track(struct Server *s, struct Conn *c,
 	}
 	/*
 	 * accServer.exe FUN_1400142f0 case 0x3d bails on `force != 0`
-	 * and gates on a per-car off-track latch (car+0x1a8 bit 0).
-	 * Only the first force=0 event per latched cycle is relayed;
-	 * everything else (force=1 events AND force=0 repeats within
-	 * the same physical excursion) is silently dropped.
+	 * and gates on a per-car off-track latch: bit 0 of the lap-states
+	 * word at car+0x1e8 (the same word relayed as the 0x3c car_field;
+	 * the struct path 0x180+0x40+0x28 resolves to 0x1e8).  Only the
+	 * first force=0 event per latched cycle is relayed; everything else
+	 * (force=1 events AND force=0 repeats within the same physical
+	 * excursion) is silently dropped.
 	 *
 	 * Previously we filtered force=1 (opposite of exe!) and
 	 * counted every one as a distinct cut — so the ACC client's
@@ -1030,12 +1032,13 @@ h_out_of_track(struct Server *s, struct Conn *c,
 
 		/*
 		 * Latch gate: skip if we've already counted a cut within
-		 * the last 2 s (approximation of the exe's +0x1a8 bit 0
-		 * "off-track latch" cleared at sector boundaries — we
-		 * don't have a stable sector-boundary signal to mirror
-		 * that precisely).  Keeps a single physical excursion
-		 * counting as one cut for best_lap invalidation while
-		 * not firing spurious penalties.
+		 * the last 2 s.  Coarse approximation of the exe's car+0x1e8
+		 * bit 0 latch, which is set on the first cut, persists across
+		 * sector splits (the 0x20 handler overwrites car+0x1e8 with
+		 * the client-reported lap-states word, whose bit 0 stays set
+		 * for the rest of a dirty lap) and clears only at lap-complete
+		 * (0x21 zeroes the word).  Keeps a single physical excursion
+		 * counting as one cut while not firing spurious relays.
 		 */
 		if (now_ms - race->last_cut_ms >= 2000) {
 			race->out_of_track_latched = 1;
@@ -1043,13 +1046,14 @@ h_out_of_track(struct Server *s, struct Conn *c,
 				race->cuts_this_lap++;
 			race->last_cut_ms = now_ms;
 			/*
-			 * Quali "Instant Drop": invalidating the flying
-			 * lap during Quali overtime ends the car's
-			 * session immediately.  No-op outside Quali
-			 * overtime or for a car that wasn't eligible.
+			 * No quali instant-drop here: the exe 0x3d handler
+			 * has no phase check and no eligibility mutation - it
+			 * only sets the +0x1e8 latch and relays 0x3c.  Quali
+			 * lap validity is decided by the client lap-states
+			 * word at lap completion (h_sector_split_single ->
+			 * session_quali_drop_eligibility during overtime),
+			 * matching how the exe drives it.
 			 */
-			if (s->session.phase == PHASE_OVERTIME)
-				session_quali_drop_eligibility(s, c->car_id);
 			log_info("out-of-track: car=%d ts=%d cuts=%u",
 			    c->car_id, (int)ts_raw,
 			    (unsigned)race->cuts_this_lap);
