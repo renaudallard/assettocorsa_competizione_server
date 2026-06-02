@@ -1701,11 +1701,15 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		}
 	}
 
-	/* spawnDef tail: active, u64 ts, 2 u8, 5 dirt, 5 damage,
-	 * u16 elo, u32 stability.  Active driver index = the current
-	 * driver at welcome time; elo carries the ACP_ELO_UPDATE value
-	 * for the slot so late joiners see the rated driver, not a
-	 * blank.  Dirt and damage carry the latest 0x46 / 0x43 values
+	/* spawnDef tail: active driver index, u64 ts, 2 u8, 5 dirt, 5
+	 * damage, then the per-car BoP: u16 ballast + u32 restrictor-as-
+	 * float.  The exe welcome serializer FUN_140032c90 emits
+	 * CarEntry+0x1fc (ballast, signed) and +0x200 (restrictor float) -
+	 * the same BoP the 0x53 SRV_BOP_UPDATE carries.  This is NOT the
+	 * 0x51 elo: the exe keeps that at +0x1f8 and never puts it in the
+	 * welcome record (a prior accd version mislabeled the slot 'elo'
+	 * and emitted last_elo + 0, so a late joiner saw existing cars'
+	 * BoP wrong).  Dirt and damage carry the latest 0x46 / 0x43 values
 	 * so the newcomer renders the car with the same weathering
 	 * everyone else already sees. */
 	if (wr_u8(bb, ec->current_driver_index) < 0) return -1;
@@ -1717,8 +1721,8 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		if (wr_u8(bb, ec->race.car_dirt[k]) < 0) return -1;
 	for (k = 0; k < 5; k++)
 		if (wr_u8(bb, ec->race.damage[k]) < 0) return -1;
-	if (wr_u16(bb, (uint16_t)ec->last_elo) < 0) return -1;
-	if (wr_u32(bb, 0) < 0) return -1;
+	if (wr_u16(bb, (uint16_t)ec->ballast_kg) < 0) return -1;
+	if (wr_f32(bb, ec->restrictor) < 0) return -1;
 	return 0;
 }
 
