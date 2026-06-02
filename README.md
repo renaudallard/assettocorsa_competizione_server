@@ -341,6 +341,7 @@ the server browser will show 24, not 30.
     "maxCarSlots": 30,
     "allowAutoDQ": 1,
     "registerToLobby": 1,
+    "lanDiscovery": 1,
     "useAsyncLeaderboard": 0,
     "unsafeRejoin": 1,
     "ignorePrematureDisconnects": 0,
@@ -356,6 +357,7 @@ the server browser will show 24, not 30.
 | `spectatorPassword` | `""` | Admits the client as a spectator. |
 | `allowAutoDQ` | `1` | `0` caps repeated-cutting escalation at a 30 s stop&go instead of disqualifying.  A failed DT/SG serve still disqualifies, matching the dedicated server (allowAutoDQ gates only the cutting force). |
 | `registerToLobby` | `0` | `1` lists the server publicly in the ACC browser. |
+| `lanDiscovery` | `1` | `0` closes the UDP 8999 discovery responder, so the server is invisible to the client's LAN and direct-IP find; it stays reachable via lobby registration or a known address and port. |
 | `useAsyncLeaderboard` | `0` | Leaderboard fan-out is event-driven (every standings change) in both modes; `1` also runs a 75 s heartbeat on top as a defense-in-depth refresh. |
 | `unsafeRejoin` | `1` | `0` refuses fresh mid-race handshakes. |
 | `formationLapType` | `3` | Race-start variant (matches exe ctor default). `3` / `5` = silent path (`FUN_14012f300`, 1000 ms phase-4 window, no chat — public-server default). `1` / `4` = verbose path (`FUN_14012f4a0`, random 3000-5500 ms window, "Race start initialized" chat — private servers only; the exe force-downgrades `1` to `3` on public). `2` is rejected and snapped to `3` by both the exe and accd. |

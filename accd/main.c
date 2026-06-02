@@ -338,11 +338,15 @@ main(int argc, char **argv)
 		return 1;
 
 	/*
-	 * Always open UDP 8999 for discovery.  The ACC client sends a
-	 * discovery probe to this port before connecting via TCP, even
-	 * for remote servers listed in serverList.json.
+	 * Open UDP 8999 for discovery when configuration.json lanDiscovery
+	 * is set (the default).  The ACC client probes this port before
+	 * connecting via TCP, even for remote servers in serverList.json.
+	 * The exe gates its responder the same way (ServerConfiguration
+	 * cfg+0x23); with lanDiscovery=0, lan_fd stays -1 and every poll
+	 * and close guard below skips the socket.
 	 */
-	(void)lan_open(&srv.lan_fd);
+	if (srv.lan_discovery)
+		(void)lan_open(&srv.lan_fd);
 
 	sandbox_apply(srv.cfg_dir, "results");
 

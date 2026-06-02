@@ -77,7 +77,9 @@ Network settings: TCP and UDP ports, and maximum connections.
 }
 .Ed
 .Pp
-The server always listens on UDP 8999 for client discovery probes.
+The server listens on UDP 8999 for client discovery probes when
+.Va lanDiscovery
+is set (the default).
 The ACC client sends a discovery probe to this port before connecting,
 even for remote servers.
 Ensure TCP 9232, UDP 9231, and UDP 8999 are all open in the firewall.
@@ -96,6 +98,7 @@ Server identity, access control, and policy toggles.
     "maxCarSlots": 30,
     "allowAutoDQ": 1,
     "registerToLobby": 1,
+    "lanDiscovery": 1,
     "useAsyncLeaderboard": 0,
     "unsafeRejoin": 1,
     "formationLapType": 3,
@@ -120,6 +123,11 @@ instead of auto-DQ.
 Default 0.
 When 1, registers with the Kunos lobby so the server is listed
 publicly in-game.
+.It Va lanDiscovery
+Default 1.
+When 0, the server does not open UDP 8999 and is invisible to the
+client's LAN and direct-IP discovery probe; it remains reachable via
+lobby registration or a known address and port.
 .It Va useAsyncLeaderboard
 Default 0.
 When 0, the server fires 0x36 on every standings change (matching
