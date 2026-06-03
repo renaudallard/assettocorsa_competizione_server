@@ -752,7 +752,22 @@ struct Conn {
 							 * relay to mirror kunos's
 							 * FUN_140042030 transform
 							 * into a session-relative
-							 * IEEE-754 double. */
+							 * IEEE-754 double.
+							 * This is the exe Mode-A
+							 * base D_base (conn+0xa0310);
+							 * Mode A is latency_mode
+							 * != 0. */
+	int64_t		session_avg_offset_ms;	/* session-relative average-RTT
+						 * offset (exe I_avg): the slew
+						 * target for i_fb_ms.  Recomputed
+						 * every pong. */
+	int64_t		i_fb_ms;		/* Mode-B relay-ts offset (exe
+						 * I_fb conn+0xa00ac): slewed
+						 * +-3 ms / 50 ms toward
+						 * session_avg_offset_ms.  The
+						 * default (latency_mode == 0)
+						 * relay projection uses this. */
+	uint8_t		i_fb_valid;		/* 1 after i_fb seeded (first pong) */
 	uint32_t	best_rtt_ms;		/* lowest pong RTT seen so far */
 	uint8_t		session_clock_seen;	/* 1 after first pong */
 	uint32_t	last_pong_client_ts;	/* client_ts from most recent 0x16 pong;
@@ -1094,6 +1109,7 @@ void	server_free(struct Server *s);
  */
 void	track_zones_apply(struct Server *s);
 void	track_random_pick(struct Server *s);
+int64_t	conn_clock_offset(const struct Server *s, const struct Conn *c);
 
 /* Allocate a new Conn for an accepted fd.  Returns NULL on full. */
 struct Conn *

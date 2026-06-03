@@ -884,6 +884,7 @@ tick_run(struct Server *s)
 	 * tick-modulo behavior that always fires at tick 0).
 	 */
 	static uint64_t last_keepalive_ms = 0;
+	static uint64_t last_ifb_slew_ms = 0;
 	uint64_t *last_leaderboard_ms = &s->session.last_leaderboard_ms;
 	static uint64_t last_weather_ms = 0;
 	static uint64_t last_state28_ms = 0;
@@ -1091,6 +1092,35 @@ tick_run(struct Server *s)
 			fflush(fp);
 		}
 		last_keepalive_ms = now_ms;
+	}
+
+	/*
+	 * Mode-B relay-ts offset slew (exe FUN_140041e00): every ~50 ms,
+	 * step each conn's i_fb_ms +-3 ms toward its session_avg_offset_ms,
+	 * snapping when within 3 ms or more than 999 ms off.  Only the
+	 * default latency_mode == 0 (Mode B) consumes i_fb_ms, but the slew
+	 * is cheap so it runs regardless of mode.
+	 */
+	if (now_ms - last_ifb_slew_ms >= 50) {
+		int i;
+
+		last_ifb_slew_ms = now_ms;
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct Conn *c = s->conns[i];
+			int64_t diff;
+
+			if (c == NULL || c->state != CONN_AUTH ||
+			    !c->i_fb_valid)
+				continue;
+			diff = c->session_avg_offset_ms - c->i_fb_ms;
+			if (diff > 999 || diff < -999 ||
+			    (diff < 3 && diff > -3))
+				c->i_fb_ms = c->session_avg_offset_ms;
+			else if (diff > 0)
+				c->i_fb_ms += 3;
+			else
+				c->i_fb_ms -= 3;
+		}
 	}
 
 	/*

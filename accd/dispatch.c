@@ -246,6 +246,28 @@ find_conn_by_peer(struct Server *s, const struct sockaddr_in *peer)
 	return NULL;
 }
 
+/*
+ * The relay-timestamp projection offset for conn c, selected by
+ * latencyStrategy, mirroring the exe projector FUN_140042030:
+ *   Mode A (latency_mode != 0): the min-RTT session base
+ *     session_clock_offset_ms (D_base; the field-proven path).
+ *   Mode B (latency_mode == 0, the EXE DEFAULT): the slewed
+ *     average-RTT offset i_fb_ms (I_fb).
+ * The exe also folds a per-conn drift integrator (D_drift) into Mode A;
+ * accd's Mode A omits it (a long-stint-only refinement), so Mode A is
+ * D_base only.  Used by every relay-ts site (0x19/0x1b/0x3a/0x3b/0x3c)
+ * and the 0x4f force=1 double.
+ */
+int64_t
+conn_clock_offset(const struct Server *s, const struct Conn *c)
+{
+	if (s->latency_mode != 0)
+		return c->session_clock_offset_ms;	/* Mode A */
+	if (!c->i_fb_valid)
+		return c->session_clock_offset_ms;	/* pre-first-pong */
+	return c->i_fb_ms;				/* Mode B (default) */
+}
+
 void
 dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
     const unsigned char *buf, size_t len)
@@ -499,6 +521,27 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		    (pc->avg_rtt_ms / 2 + pong_client_ts));
 		pc->last_udp_client_ts = pong_client_ts;
 		pc->last_udp_server_ms = now_ms;
+		/*
+		 * Session-relative average-RTT offset (the exe I_avg in the
+		 * session frame, recomputed every pong): the slew target for
+		 * the Mode-B relay-ts offset i_fb_ms.  clock_offset_ms above
+		 * is the boot-relative twin and is stat-only, so the session
+		 * frame is computed separately here.  Seed i_fb on the first
+		 * pong so the default Mode-B projection has a valid offset
+		 * before the first slew tick.
+		 */
+		{
+			uint64_t session_now =
+			    mono_ms() - s->session.phase_started_ms;
+
+			pc->session_avg_offset_ms = (int64_t)session_now -
+			    (int64_t)(pc->avg_rtt_ms / 2) -
+			    (int64_t)pong_client_ts;
+			if (!pc->i_fb_valid) {
+				pc->i_fb_ms = pc->session_avg_offset_ms;
+				pc->i_fb_valid = 1;
+			}
+		}
 
 		/*
 		 * Send a fresh 0x28 with the now-correct client time base

@@ -366,7 +366,7 @@ the server browser will show 24, not 30.
 | `isPrepPhaseLocked` | `0` | `1` freezes the preparation phase; returning drivers still pass (same knob as the `/lockprep` admin command). |
 | `shortFormationLap` | `0` | `1` shortens the formation lap (parsed and passed through; exe forces `1` on public servers). |
 | `writeLatencyFileDumps` | `0` | `1` writes `results/latency_<timestamp>_<P|Q|R>.csv` — per-keepalive row per authenticated conn with `mono_ms,conn_id,steam_id,avg_rtt_ms,clock_offset_ms`.  Rotates at each session boundary. |
-| `latencyStrategy` | `0` | Initial value for the `/latencymode` runtime toggle. |
+| `latencyStrategy` | `0` | Relay-timestamp projection mode: `0` = slewed average-RTT (Mode B, the dedicated-server default), non-zero = min-RTT (Mode A).  Runtime-togglable via `/latencymode`. |
 | `doDriverSwapBroadcast` | `1` | `0` suppresses the 0x47 driver-swap-state fan-out; swap progress stays on the swapping car. |
 | `ignorePrematureDisconnects` | `0` | `1` tolerates client-side premature drops. |
 | `dumpLeaderboards` | `0` | `1` writes snapshots to `results/` on every update. |

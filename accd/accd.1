@@ -175,9 +175,12 @@ The Kunos exe parses but never consumes this flag; accd wires it to
 the CSV the config key implies.
 .It Va latencyStrategy
 Default 0.
-Initial value for the
-.Ic /latencymode
-runtime toggle.
+Selects the relay-timestamp projection mode, mirroring the dedicated
+server.
+0 (the default) uses Mode B, a slewed average-RTT clock offset; any
+non-zero value uses Mode A, the min-RTT offset.
+Changeable at runtime with
+.Ic /latencymode .
 .It Va doDriverSwapBroadcast
 Default 1.
 When 0, suppresses the 0x47 driver-swap-state fan-out.
@@ -330,7 +333,8 @@ Manually start the session when the schedule has not yet triggered.
 .It /controllers , /controller Ar car#
 List controllers / show one driver's controller fingerprint.
 .It /latencymode Ar n
-Toggle latency-diagnostics mode (0 or 1).
+Set the relay-timestamp projection mode: 0 = slewed average-RTT
+(Mode B, default), non-zero = min-RTT (Mode A).
 .It /mp
 Toggle legacy vs regular netcode.
 .It /wt

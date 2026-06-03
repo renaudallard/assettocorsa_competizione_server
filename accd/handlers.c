@@ -170,7 +170,7 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	 * which bcast_all cannot carry, but the session-relative frame
 	 * is shared so this is the closest single-value match.
 	 */
-	ts_relayed = (int32_t)((int64_t)timestamp + c->session_clock_offset_ms);
+	ts_relayed = (int32_t)((int64_t)timestamp + conn_clock_offset(s, c));
 	bb_init(&out);
 	if (wr_u8(&out, SRV_LAP_BROADCAST) < 0 ||
 	    wr_u16(&out, reporter_car_id) < 0 ||
@@ -310,7 +310,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	{
 		struct ByteBuf out;
 		int32_t clock_relayed = (int32_t)((int64_t)clock_ms
-		    + c->session_clock_offset_ms);
+		    + conn_clock_offset(s, c));
 		uint8_t n = race->lap_split_n;
 		int ok, si;
 
@@ -657,7 +657,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		uint32_t split_wire = split_time < 0
 		    ? LAP_TIME_INVALID : (uint32_t)split_time;
 		int32_t ts_relayed = (int32_t)((int64_t)lap_time
-		    + c->session_clock_offset_ms);
+		    + conn_clock_offset(s, c));
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
 		    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
@@ -1082,7 +1082,7 @@ h_out_of_track(struct Server *s, struct Conn *c,
 	 * the frame; relaying the raw client clock put a wrong-frame value in
 	 * the receiving out-of-track widget.
 	 */
-	ts_relayed = (int32_t)((int64_t)ts_raw + c->session_clock_offset_ms);
+	ts_relayed = (int32_t)((int64_t)ts_raw + conn_clock_offset(s, c));
 	bb_init(&out);
 	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
 	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
@@ -1932,7 +1932,7 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 			if (force) {
 				double ts_d =
 				    (double)(int64_t)ts_raw +
-				    (double)c->session_clock_offset_ms;
+				    (double)conn_clock_offset(s, c);
 				uint8_t bytes[8];
 				memcpy(bytes, &ts_d, sizeof(bytes));
 				(void)bb_append(&out, bytes,
