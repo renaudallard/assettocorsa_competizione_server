@@ -520,6 +520,29 @@ main(int argc, char **argv)
 				    inet_ntoa(cn->peer.sin_addr),
 				    ntohs(cn->peer.sin_port));
 				conn_drop(&srv, cn);
+				continue;
+			}
+			/*
+			 * Force-drop an authenticated driver who has gone
+			 * UDP-silent for more than 5s, mirroring the exe's
+			 * ignorePrematureDisconnects=0 timer (FUN_14002f180):
+			 * a live client streams pongs and car updates at
+			 * >=1 Hz, so a 5s gap means it is gone.  When the
+			 * setting is 1 the exe tolerates the silence and so
+			 * do we.  Gated on last_udp_server_ms != 0 so a conn
+			 * that has not opened its UDP channel yet, and an
+			 * SMPR TCP-only monitor, are never reaped here.
+			 */
+			if (cn->state == CONN_AUTH && !cn->is_smpr &&
+			    !srv.ignore_premature_disconnects &&
+			    cn->last_udp_server_ms != 0 &&
+			    (uint32_t)mono_ms() - cn->last_udp_server_ms >
+			    5000) {
+				log_kunos("Disconnecting connId %u after 5s "
+				    "due to setting ignorePrematureDisconnects"
+				    "=false", (unsigned)cn->conn_id);
+				conn_drop(&srv, cn);
+				continue;
 			}
 		}
 

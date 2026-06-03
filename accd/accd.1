@@ -186,8 +186,8 @@ Default 1.
 When 0, suppresses the 0x47 driver-swap-state fan-out.
 .It Va ignorePrematureDisconnects
 Default 0.
-When 1, socket errors during the handshake are not treated as a
-hard drop.
+When 0, an authenticated client that stops sending UDP for more than
+5 seconds is force-disconnected; when 1 the silence is tolerated.
 .It Va dumpLeaderboards
 Default 0.
 When 1, every leaderboard update is snapshot-written to

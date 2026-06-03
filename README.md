@@ -368,7 +368,7 @@ the server browser will show 24, not 30.
 | `writeLatencyFileDumps` | `0` | `1` writes `results/latency_<timestamp>_<P|Q|R>.csv` — per-keepalive row per authenticated conn with `mono_ms,conn_id,steam_id,avg_rtt_ms,clock_offset_ms`.  Rotates at each session boundary. |
 | `latencyStrategy` | `0` | Relay-timestamp projection mode: `0` = slewed average-RTT (Mode B, the dedicated-server default), non-zero = min-RTT (Mode A).  Runtime-togglable via `/latencymode`. |
 | `doDriverSwapBroadcast` | `1` | `0` suppresses the 0x47 driver-swap-state fan-out; swap progress stays on the swapping car. |
-| `ignorePrematureDisconnects` | `0` | `1` tolerates client-side premature drops. |
+| `ignorePrematureDisconnects` | `0` | `0` force-drops an authenticated client that goes UDP-silent for over 5s; `1` tolerates the silence (no force-drop). |
 | `dumpLeaderboards` | `0` | `1` writes snapshots to `results/` on every update. |
 | `maxCarSlots` | `10` | Advertised car capacity.  See [How many car slots can the server advertise?](#how-many-car-slots-can-the-server-advertise) for the full chain of clamps: `maxConnections`, the public-MP 30-cap, the rating-gate formula, and the per-track pit count. |
 | `trackMedalsRequirement` | `-1` | Minimum track-medals (0..5) to join, or `-1` to leave the server open to unrated players.  On public servers, each medal also adds 1 to the advertised slot cap, up to a maximum of +3.  No effect on private servers.  Set `0` only if you specifically want a ranked-only server (the ACC browser then refuses unrated joiners). |
