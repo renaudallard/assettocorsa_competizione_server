@@ -424,8 +424,13 @@ conn_drop(struct Server *s, struct Conn *c)
 		 */
 		s->cars[c->car_id].used = 0;
 		car_runtime_reset_gate(&s->cars[c->car_id].rt);
-		/* accweb regex: ^Purging car_id (\d+)$ */
-		log_kunos("Purging car_id %d", ACC_CAR_ID_BASE + c->car_id);
+		/*
+		 * Kunos's per-disconnect car-reap line (FUN_14001c300);
+		 * "Purging car_id" is reserved in the exe for weekend-
+		 * reset entry-list reconciliation, not a single leaver.
+		 */
+		log_kunos("car %d has no driving connection anymore, "
+		    "will remove it", ACC_CAR_ID_BASE + c->car_id);
 		/*
 		 * Team-entry 0x47 fan-out at conn_drop: if the leaving
 		 * driver was part of a multi-car team, kunos pcap shows
