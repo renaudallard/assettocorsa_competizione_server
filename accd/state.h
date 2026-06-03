@@ -341,20 +341,6 @@ struct CarRaceState {
 						 * even before
 						 * sessionOverTimeSeconds
 						 * elapses. */
-	uint8_t		in_tow;			/* Race "Tow Penalty" (ESC
-						 * to garage).  Client
-						 * teleports the car to its
-						 * pit box and cuts the
-						 * engine; server preserves
-						 * lap_count / race_time_ms
-						 * (driver stays classified)
-						 * and tracks the mandatory
-						 * wait window.  No DSQ. */
-	uint64_t	tow_until_ms;		/* Monotonic ms after which
-						 * the tow wait expires.
-						 * No server-side enforcement
-						 * — used only for log /
-						 * results visibility. */
 	struct PenaltyQueue	pen;
 	struct PenaltySheetState	pen_state[7];	/* exe kind 1..6 */
 	/*

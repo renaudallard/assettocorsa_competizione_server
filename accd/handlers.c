@@ -1878,34 +1878,15 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	    c->car_id, (unsigned)force);
 
 	/*
-	 * Race "Tow Penalty" (ESC to garage during the race).  The
-	 * voluntary stint reset (force == 0) arriving during a race
-	 * session is the protocol signal that the driver chose to
-	 * return to the pit box; the client teleports the car and
-	 * cuts the engine.  Per spec the server does NOT DSQ the
-	 * driver — they remain classified by laps completed before
-	 * the ESC — but a mandatory wait timer is enforced before the
-	 * driver can rejoin (simulated tow + repair).  We track the
-	 * wait window in CarRaceState so results.json reflects
-	 * which cars went through it; no server-side block on
-	 * subsequent inputs since the client is the authority on
-	 * "engine cut" / "wait until timer" rendering.
-	 *
-	 * Skip outside race phases (P/Q stint resets are routine
-	 * driver swaps, not tow penalties).
+	 * Stint accounting, matching the exe 0x4f case (FUN_1400142f0):
+	 * force == 0 ends the current driver's stint (FUN_140126eb0),
+	 * force != 0 restarts it (FUN_14012b230).  accd previously did
+	 * neither here and instead invented a 30s "tow penalty" with no
+	 * exe analogue, whose in_tow/tow_until_ms state was write-only.
 	 */
-	if (force == 0 && session_is_race(s) &&
-	    (s->session.phase == PHASE_SESSION ||
-	     s->session.phase == PHASE_OVERTIME)) {
-		struct CarRaceState *r = &s->cars[c->car_id].race;
-		const uint64_t TOW_WAIT_MS = 30000ull;
-		r->in_tow = 1;
-		r->tow_until_ms = mono_ms() + TOW_WAIT_MS;
-		log_info("tow penalty: car=%d, wait %llums "
-		    "(lap=%d, race_time=%dms preserved)",
-		    c->car_id, (unsigned long long)TOW_WAIT_MS,
-		    r->lap_count, r->race_time_ms);
-	}
+	stint_stop_tracking(s, c->car_id);
+	if (force != 0)
+		stint_start_tracking(s, c->car_id);
 
 	/*
 	 * Relay 0x4f to all other clients.  Two variants:
