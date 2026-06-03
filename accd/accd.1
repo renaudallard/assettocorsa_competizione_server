@@ -345,6 +345,13 @@ Release a held countdown and start racing.
 Driver-issued: append a free-text report to
 .Pa cfg/reports.txt .
 The only slash command available without admin elevation.
+.It &delta Ar mode
+Driver-issued: set the netcar latency display mode (default, error or
+diff).  Stored for parity with the original server; accd has no netcar
+latency display, so it only acknowledges the change.
+.It &formation
+Driver-issued: print each car's formation start state (lead, Track or
+!Track).
 .It /debug
 Toggle debug logging.
 .El

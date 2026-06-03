@@ -721,6 +721,12 @@ struct Conn {
 	int		is_spectator;
 	int		hellbanned;	/* /hellban: drop inbound, skip in
 					 * broadcasts.  Per-session only. */
+	uint8_t		netcar_delta_mode;	/* &delta: netcar latency
+						 * display mode (0 default,
+						 * 1 error, 2 diff).  Stored
+						 * for exe user-visible parity;
+						 * accd has no netcar latency
+						 * display, so it is inert. */
 	struct ByteBuf	rx;		/* incoming TCP byte stream */
 	struct ByteBuf	tx;		/* outbound queue, drained on POLLOUT */
 	size_t		tx_peak_bytes;	/* max queue depth ever observed */

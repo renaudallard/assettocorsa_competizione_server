@@ -801,6 +801,75 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		return 1;
 	}
 
+	/*
+	 * &delta <default|error|diff>: netcar latency display mode, matching
+	 * the exe (FUN_140021680).  Driver-open and conn-local; accd stores
+	 * the mode but has no netcar latency display that consumes it, so the
+	 * effect is the confirmation reply only.
+	 */
+	if (chat_prefix(text, "&delta")) {
+		const char *arg = text + 6;
+
+		while (*arg == ' ')
+			arg++;
+		if (strcmp(arg, "default") == 0) {
+			c->netcar_delta_mode = 0;
+			chat_reply(c, "Showing regular laptime delta for "
+			    "netcars", 4);
+		} else if (strcmp(arg, "error") == 0) {
+			c->netcar_delta_mode = 1;
+			chat_reply(c, "Showing (corrected) latency errors "
+			    "for netcars", 4);
+		} else if (strcmp(arg, "diff") == 0) {
+			c->netcar_delta_mode = 2;
+			chat_reply(c, "Showing difference between legacy "
+			    "and logstep latency", 4);
+		} else {
+			chat_reply(c, "please set the mode to use: default, "
+			    "error or diff", 4);
+		}
+		return 1;
+	}
+
+	/*
+	 * &formation: per-car formation state dump (diagnostic), matching the
+	 * exe (FUN_14001be10).  Driver-open.  Reports each car's start state:
+	 * lead (race leader), Track (on the racing surface) or !Track.
+	 */
+	if (chat_prefix(text, "&formation")) {
+		char line[256];
+		size_t off;
+		int i, wrote;
+
+		wrote = snprintf(line, sizeof(line), "Starts:");
+		off = (wrote > 0) ? (size_t)wrote : 0;
+		for (i = 0; i < ACC_MAX_CARS && off < sizeof(line) - 1; i++) {
+			struct CarEntry *car = &s->cars[i];
+			const char *st;
+
+			if (!car->used)
+				continue;
+			if (car->race.position == 1)
+				st = "lead";
+			else if (car->race.on_track)
+				st = "Track";
+			else
+				st = "!Track";
+			wrote = snprintf(line + off, sizeof(line) - off,
+			    " #%d%s:%s", ACC_CAR_ID_BASE + i,
+			    (i == c->car_id) ? "(you)" : "", st);
+			if (wrote < 0)
+				break;
+			off += (size_t)wrote;
+			if (off >= sizeof(line)) {
+				off = sizeof(line) - 1;
+				break;
+			}
+		}
+		chat_reply(c, line, 4);
+		return 1;
+	}
+
 	if (!c->is_admin) {
 		log_info("admin command rejected (not admin) from conn=%u",
 		    (unsigned)c->conn_id);
