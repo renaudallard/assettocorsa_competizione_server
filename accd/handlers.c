@@ -1723,6 +1723,19 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	/* Broadcast reset swap state. */
 	broadcast_swap_state(s, car);
 
+	/*
+	 * Re-sync this car's BoP to the swapping connection.  The exe swap
+	 * commit (FUN_140012830) re-sends 0x53 to the swap conns even though
+	 * a swap leaves ballast / restrictor unchanged; mirror it.
+	 */
+	bb_init(&out);
+	if (wr_u8(&out, SRV_BOP_UPDATE) == 0 &&
+	    wr_u16(&out, car->car_id) == 0 &&
+	    wr_u16(&out, (uint16_t)car->ballast_kg) == 0 &&
+	    wr_f32(&out, car->restrictor) == 0)
+		bcast_send_one(c, out.data, out.wpos);
+	bb_free(&out);
+
 reply:
 	/* Send 0x49 reply to the requester. */
 	bb_init(&out);
