@@ -312,6 +312,12 @@ struct CarRaceState {
 						 * last ACP_CAR_LOCATION_UPDATE
 						 * (0x32) had location==Track.
 						 * Gates race-start leader pick. */
+	uint8_t		car_location;		/* raw 0x32 location enum
+						 * (NONE=0 Track=1 Pitlane=2
+						 * PitEntry=3 PitExit=4); exe
+						 * car+0x153, emitted in the
+						 * spawnDef so a late joiner
+						 * sees where each car is */
 	uint8_t		formation_mid_passed;	/* exe car+0x204 latch:
 						 * one-shot set when rt position
 						 * passes through [0.6, 0.7]

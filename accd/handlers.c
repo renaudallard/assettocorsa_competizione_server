@@ -916,6 +916,7 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		race->in_pit = (location == 2 || location == 3 ||
 		    location == 4) ? 1 : 0;
 		race->on_track = (location == 1) ? 1 : 0;
+		race->car_location = location;
 
 		/*
 		 * Driver-stint timing is NOT driven by track location.  The

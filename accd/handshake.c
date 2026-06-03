@@ -1702,7 +1702,7 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	}
 
 	/* spawnDef tail: active driver index, u64 ts, the car-location
-	 * byte (+0x153, stubbed) and the tyre compound (+0x152), 5 dirt, 5
+	 * byte (+0x153) and the tyre compound (+0x152), 5 dirt, 5
 	 * damage, then the per-car BoP: u16 ballast + u32 restrictor-as-
 	 * float.  The exe welcome serializer FUN_140032c90 emits
 	 * CarEntry+0x1fc (ballast, signed) and +0x200 (restrictor float) -
@@ -1716,7 +1716,7 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	if (wr_u8(bb, ec->current_driver_index) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, ec->race.car_location) < 0) return -1;
 	if (wr_u8(bb, ec->race.current_tyres) < 0) return -1;
 	for (k = 0; k < 5; k++)
 		if (wr_u8(bb, ec->race.car_dirt[k]) < 0) return -1;
