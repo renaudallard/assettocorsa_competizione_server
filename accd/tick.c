@@ -198,27 +198,28 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 }
 
 /*
- * Periodic per-car fan-out.  Walks every car with rt.dirty set,
- * emits one 0x1e (or 0x39 count=1 in legacy-netcode mode) per
- * dirty car to every other authenticated peer, then clears the
- * dirty flag.  Matches FUN_14001a170 / FUN_14001a6a0 in the exe,
- * which are gated by the legacy_netcode toggle at srv+0x22 and
- * called once per scheduler tick from FUN_14002e8d0.
+ * Periodic per-car fan-out, called once per scheduler tick.  Mirrors
+ * FUN_14001a170 (0x1e fast-rate) / FUN_14001a6a0 (0x39 slow-rate) in
+ * the exe, selected by the legacy_netcode toggle at srv+0x22.
  *
- * Replaces the prior event-driven relay (h_udp_car_update ->
- * per-peer sendto per incoming update).  At ~18 Hz × peer_count
- * that flooded the client's UDP queue with ~520 pps per peer and
- * surfaced as position jitter + visual blinking on real clients.
+ * Replaces the prior event-driven relay (h_udp_car_update -> per-peer
+ * sendto per incoming update).  At ~18 Hz x peer_count that flooded
+ * the client's UDP queue with ~520 pps per peer and surfaced as
+ * position jitter + visual blinking on real clients.
+ *
+ * The two wire modes use different loop structures, matching the exe:
+ *   - non-legacy 0x1e (FUN_14001a170): car-outer, one car body per
+ *     datagram, one datagram per (dirty car, peer).
+ *   - legacy 0x39 (FUN_14001a6a0): peer-outer, up to 8 car bodies
+ *     packed per datagram (count byte), draining in chunks of 8.
  */
 static void
-broadcast_percar_dirty(struct Server *s)
+broadcast_percar_dirty_fast(struct Server *s)
 {
 	/*
-	 * Per-peer body buffer.  76 B per packet for the 0x1e fast-rate
-	 * relay, plus a few bytes of headroom for the legacy 0x39 wire
-	 * (msg_id + count=1 prefix).  ACC_MAX_CARS = 64, so the worst-
-	 * case stack budget is 64 x 96 = 6 KB, well under typical
-	 * 8 MB pthread stack defaults.
+	 * Per-peer body buffer.  ACC_MAX_CARS = 64, so the worst-case
+	 * stack budget is 64 x 96 = 6 KB, well under typical 8 MB
+	 * pthread stack defaults.
 	 */
 	enum { PEER_BODY_MAX = 96 };
 	uint8_t pkt[ACC_MAX_CARS][PEER_BODY_MAX];
@@ -230,11 +231,6 @@ broadcast_percar_dirty(struct Server *s)
 #endif
 	struct ByteBuf bb;
 	int i, j, n;
-	uint8_t msg_id = s->legacy_netcode
-	    ? SRV_PERCAR_SLOW_RATE : SRV_PERCAR_FAST_RATE;
-
-	if (s->udp_fd < 0)
-		return;
 
 	bb_init(&bb);
 	for (i = 0; i < ACC_MAX_CARS; i++) {
@@ -267,7 +263,7 @@ broadcast_percar_dirty(struct Server *s)
 			 * Per-peer client-timestamp delta.  Same pivot as
 			 * write_session_mgr_state (refreshed on every UDP
 			 * packet, so both endpoints are typically within
-				 ~55 ms of each other at 18 Hz car updates).
+			 * ~55 ms of each other at 18 Hz car updates).
 			 * Before either endpoint has sent any UDP packet
 			 * the pivot is 0, so leave delta at 0 rather than
 			 * emit a huge synthetic offset into the client's
@@ -280,10 +276,7 @@ broadcast_percar_dirty(struct Server *s)
 				    peer->last_udp_client_ts);
 
 			bb_clear(&bb);
-			if (wr_u8(&bb, msg_id) < 0)
-				continue;
-			if (s->legacy_netcode &&
-			    wr_u8(&bb, 1) < 0)
+			if (wr_u8(&bb, SRV_PERCAR_FAST_RATE) < 0)
 				continue;
 			if (build_percar_body(&bb, car, s, delta) < 0)
 				continue;
@@ -337,6 +330,106 @@ broadcast_percar_dirty(struct Server *s)
 		car->rt.dirty = 0;
 	}
 	bb_free(&bb);
+}
+
+/*
+ * Legacy 0x39 slow-rate relay (FUN_14001a6a0): peer-outer.  For each
+ * eligible recipient, pack every OTHER dirty car into 0x39 datagrams
+ * carrying up to 8 car bodies each (count = min(remaining, 8)), then
+ * clear every dirty flag in one final pass.  Per-car bodies are the
+ * same 63-byte layout as the 0x1e path; the per-recipient timestamp
+ * delta is computed per (source car, recipient).
+ */
+static void
+broadcast_percar_dirty_legacy(struct Server *s)
+{
+	enum { BATCH_MAX = 8 };
+	struct Conn *car_sender[ACC_MAX_CARS];
+	int dirty_cars[ACC_MAX_CARS];
+	struct ByteBuf bb;
+	int i, j, d, ndirty = 0;
+
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct CarEntry *car = &s->cars[i];
+
+		if (!car->used || !car->rt.dirty || !car->rt.has_data)
+			continue;
+		car_sender[i] = NULL;
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			if (s->conns[j] != NULL &&
+			    s->conns[j]->car_id == i) {
+				car_sender[i] = s->conns[j];
+				break;
+			}
+		}
+		dirty_cars[ndirty++] = i;
+	}
+	if (ndirty == 0)
+		return;
+
+	bb_init(&bb);
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct Conn *peer = s->conns[j];
+		int send_list[ACC_MAX_CARS];
+		int off, ns = 0;
+
+		if (peer == NULL || peer->state != CONN_AUTH ||
+		    peer->is_smpr)
+			continue;
+		/* Recipient sees every dirty car except its own. */
+		for (d = 0; d < ndirty; d++)
+			if (dirty_cars[d] != peer->car_id)
+				send_list[ns++] = dirty_cars[d];
+
+		for (off = 0; off < ns; off += BATCH_MAX) {
+			int count = ns - off;
+			int c, ok = 1;
+
+			if (count > BATCH_MAX)
+				count = BATCH_MAX;
+			bb_clear(&bb);
+			if (wr_u8(&bb, SRV_PERCAR_SLOW_RATE) < 0)
+				continue;
+			if (wr_u8(&bb, (uint8_t)count) < 0)
+				continue;
+			for (c = 0; c < count && ok; c++) {
+				int ci = send_list[off + c];
+				struct Conn *snd = car_sender[ci];
+				int32_t delta = 0;
+
+				if (snd != NULL &&
+				    snd->last_udp_server_ms != 0 &&
+				    peer->last_udp_server_ms != 0)
+					delta = (int32_t)
+					    (snd->last_udp_client_ts -
+					    peer->last_udp_client_ts);
+				if (build_percar_body(&bb, &s->cars[ci],
+				    s, delta) < 0)
+					ok = 0;
+			}
+			if (!ok)
+				continue;
+			(void)sendto(s->udp_fd, bb.data, bb.wpos, 0,
+			    (const struct sockaddr *)&peer->peer,
+			    sizeof(peer->peer));
+		}
+	}
+	bb_free(&bb);
+
+	/* One terminal clear pass, matching FUN_14001a6a0:65-78. */
+	for (d = 0; d < ndirty; d++)
+		s->cars[dirty_cars[d]].rt.dirty = 0;
+}
+
+static void
+broadcast_percar_dirty(struct Server *s)
+{
+	if (s->udp_fd < 0)
+		return;
+	if (s->legacy_netcode)
+		broadcast_percar_dirty_legacy(s);
+	else
+		broadcast_percar_dirty_fast(s);
 }
 
 /*
