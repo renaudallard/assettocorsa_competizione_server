@@ -278,16 +278,6 @@ struct CarRaceState {
 						 * this session; compared to
 						 * Server.mandatory_pit_count
 						 * at session end */
-	uint64_t	pit_entry_ms;		/* mono_ms of most recent
-						 * pit entry; used to
-						 * enforce SG stop time */
-	uint8_t		pit_entry_driver_index;	/* current_driver_index at
-						 * most recent pit entry —
-						 * compared at 0x54
-						 * (MANDATORY_PITSTOP_SERVED)
-						 * against the live index to
-						 * detect a skipped mandatory
-						 * driver swap */
 	uint8_t		current_tyres;
 	uint8_t		car_dirt[5];		/* last 0x46 payload per
 						 * zone — emitted in the
@@ -307,7 +297,6 @@ struct CarRaceState {
 						 * events from the client)
 						 * counts as a single cut */
 	uint8_t		formation_lap_done;	/* exe car+0x200 flag */
-	uint8_t		out_lap_done;		/* first lap from pits */
 	uint8_t		disqualified;		/* PEN_DQ terminal flag */
 	uint8_t		race_end_short_circuit;	/* set when stint_check_
 						 * violations applied a stint /

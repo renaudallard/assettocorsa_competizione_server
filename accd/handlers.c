@@ -912,24 +912,10 @@ h_car_location_update(struct Server *s, struct Conn *c,
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
 		struct CarEntry *car = &s->cars[c->car_id];
 		struct CarRaceState *race = &car->race;
-		uint8_t was_in_pit = race->in_pit;
 
 		race->in_pit = (location == 2 || location == 3 ||
 		    location == 4) ? 1 : 0;
 		race->on_track = (location == 1) ? 1 : 0;
-
-		/*
-		 * Pit-entry timestamp for stop-and-go validation.
-		 * Latch the monotonic clock the first time we see
-		 * in_pit=1 after a non-pit location so the pit-exit
-		 * check below can compute the dwell time the driver
-		 * actually spent in the pit box.
-		 */
-		if (!was_in_pit && race->in_pit) {
-			race->pit_entry_ms = mono_ms();
-			race->pit_entry_driver_index =
-			    car->current_driver_index;
-		}
 
 		/*
 		 * Driver-stint timing is NOT driven by track location.  The
@@ -959,7 +945,6 @@ h_car_location_update(struct Server *s, struct Conn *c,
 		 * FUN_140126b50 (h_penalty_cleared on our side).  We
 		 * mirror that.
 		 */
-		(void)was_in_pit;
 	}
 
 	bb_init(&out);
