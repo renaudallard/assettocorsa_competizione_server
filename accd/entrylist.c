@@ -523,6 +523,12 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 	return 0;
 }
 
+/*
+ * Load + range-clamp + log cfg/bop.json.  The table is NOT applied to
+ * any car: the original server likewise only loads, clamps, and logs
+ * its BoP vector and never writes it to a CarEntry (the applier was
+ * never wired up).  Kept for forward-compat and operator visibility.
+ */
 int
 bop_load(struct Server *s, const char *cfg_dir)
 {
@@ -584,39 +590,4 @@ bop_load(struct Server *s, const char *cfg_dir)
 	json_free(root);
 	log_info("bop.json: %d entries loaded", s->bop_count);
 	return s->bop_count;
-}
-
-void
-bop_apply(const struct Server *s, struct CarEntry *car)
-{
-	int i;
-	int new_kg;
-	float new_restrictor;
-
-	if (car == NULL || s->bop_count == 0 || s->track[0] == '\0')
-		return;
-	for (i = 0; i < s->bop_count; i++) {
-		const struct BoPEntry *b = &s->bop[i];
-		if (b->car_model != car->car_model)
-			continue;
-		if (strcmp(b->track, s->track) != 0)
-			continue;
-		new_kg = (int)car->ballast_kg + (int)b->ballast_kg;
-		if (new_kg > 100)
-			new_kg = 100;
-		car->ballast_kg = (int8_t)new_kg;
-		new_restrictor = car->restrictor +
-		    (float)b->restrictor_pct / 100.0f;
-		if (new_restrictor > 0.20f)
-			new_restrictor = 0.20f;
-		car->restrictor = new_restrictor;
-		log_info("bop applied: car=%u model=%u track=%s "
-		    "+%ukg +%u%% -> %dkg / %.2f",
-		    (unsigned)car->car_id, (unsigned)car->car_model,
-		    s->track,
-		    (unsigned)b->ballast_kg,
-		    (unsigned)b->restrictor_pct,
-		    (int)car->ballast_kg, (double)car->restrictor);
-		return;	/* one match per car */
-	}
 }

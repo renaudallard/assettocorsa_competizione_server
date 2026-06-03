@@ -2683,14 +2683,6 @@ post_slot_assignment:
 			car->car_model = cmodel;
 		}
 		/*
-		 * bop.json (handbook §VI.3) adds (track, carModel)-keyed
-		 * ballast / restrictor on top of whatever the entrylist
-		 * already supplied.  Skipped when bop_count == 0 or no
-		 * entry matches the current track + this car's model.
-		 */
-		bop_apply(s, car);
-
-		/*
 		 * Grid-position assignment.  Only assigned when the slot
 		 * has no grid position yet — a reclaim (zombie reconnect)
 		 * or a race session that inherited its grid from a prior

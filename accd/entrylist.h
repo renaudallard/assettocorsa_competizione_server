@@ -53,21 +53,12 @@ int	entrylist_load(struct Server *s, const char *cfg_dir);
 int	entrylist_save(const struct Server *s, const char *cfg_dir);
 
 /*
- * Read cfg_dir/bop.json (handbook §VI.3) into s->bop[].  File is
- * optional; missing or unparseable yields bop_count = 0 and the
- * apply step becomes a no-op.  Returns the number of entries
- * loaded, or -1 on I/O error.
+ * Read cfg_dir/bop.json (handbook §VI.3) into s->bop[], range-clamp,
+ * and log it.  File is optional; missing or unparseable yields
+ * bop_count = 0.  The table is loaded and logged only, never applied
+ * to a car (mirrors the original server, which ships its BoP vector
+ * inert).  Returns the number of entries loaded, or -1 on I/O error.
  */
 int	bop_load(struct Server *s, const char *cfg_dir);
-
-/*
- * Apply the loaded BoP table to a single car.  Looks up the
- * (s->track, car->car_model) pair and adds the matching
- * ballast / restrictor on top of whatever the car already
- * carries from entrylist + admin overrides.  Idempotent only if
- * the car was reset first; otherwise consecutive calls would
- * stack the additive.  Call exactly once per car-join.
- */
-void	bop_apply(const struct Server *s, struct CarEntry *car);
 
 #endif /* ACCD_ENTRYLIST_H */
