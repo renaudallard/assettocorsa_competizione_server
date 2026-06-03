@@ -185,6 +185,10 @@ struct PenaltyEntry {
 	uint8_t		pending;	/* 1 = client-reported, awaits server validation */
 	uint8_t		admin;		/* 1 = admin chat-issued, hidden from 0x36 wire */
 	uint8_t		race_end_tp;	/* race-end DT/SG->TP30..TP60 conversion target */
+	int16_t		violation_lap;	/* 1-based lap the penalty was incurred
+					 * on; -1 if unknown */
+	int16_t		cleared_lap;	/* 1-based lap it was served/cleared on;
+					 * -1 while still open */
 };
 
 struct PenaltyQueue {

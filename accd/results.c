@@ -260,10 +260,6 @@ results_write(struct Server *s)
 		if (!first)
 			fprintf(f, ",");
 		fprintf(f, "\n      {\n");
-		fprintf(f, "        \"position\": %d,\n",
-		    (int)car->race.position);
-		fprintf(f, "        \"disqualified\": %s,\n",
-		    car->race.disqualified ? "true" : "false");
 		fprintf(f, "        \"car\": {\n");
 		fprintf(f, "          \"carId\": %u,\n", car->car_id);
 		fprintf(f, "          \"raceNumber\": %d,\n",
@@ -348,8 +344,6 @@ results_write(struct Server *s)
 		    car->race.best_sectors_ms[2]);
 		fprintf(f, "          \"totalTime\": %d,\n",
 		    car->race.race_time_ms);
-		fprintf(f, "          \"totalPenaltyMs\": %u,\n",
-		    (unsigned)penalty_total_ms(&car->race.pen));
 		fprintf(f, "          \"lapCount\": %d,\n",
 		    car->race.lap_count);
 		fprintf(f, "          \"lastSplitId\": 0\n");
@@ -365,8 +359,6 @@ results_write(struct Server *s)
 		    (st == 10 && s->mandatory_pit_count > 0 &&
 			car->race.mandatory_pit_served <
 			    s->mandatory_pit_count) ? 1 : 0);
-		fprintf(f, "        \"towPenalty\": %d,\n",
-		    (int)car->race.in_tow);
 		/*
 		 * driverTotalTimes[] per handbook §VIII.1 — per-driver
 		 * accumulated stint time (ms) for endurance / driver-
@@ -459,10 +451,9 @@ results_write(struct Server *s)
 	/*
 	 * Top-level penalties[] per handbook §VIII.1.  carId +
 	 * driverIndex name the receiver, reason / penalty / penaltyValue
-	 * describe the kind, served / violationInLap / clearedInLap
-	 * track its lifecycle.  We don't yet track which lap each
-	 * penalty was issued on or served on, so violationInLap and
-	 * clearedInLap default to -1 (unknown).
+	 * describe the kind, violationInLap / clearedInLap track its
+	 * lifecycle (clearedInLap >= 0 means served, the way the original
+	 * server signals it; -1 while the penalty is still open).
 	 */
 	fprintf(f, "  \"penalties\": [");
 	{
@@ -494,10 +485,10 @@ results_write(struct Server *s)
 				fprint_json_str(f, pname);
 				fprintf(f, ", \"penaltyValue\": %d,",
 				    pvalue);
-				fprintf(f, " \"served\": %s,",
-				    p->served ? "true" : "false");
-				fprintf(f, " \"violationInLap\": -1,");
-				fprintf(f, " \"clearedInLap\": -1");
+				fprintf(f, " \"violationInLap\": %d,",
+				    p->violation_lap);
+				fprintf(f, " \"clearedInLap\": %d",
+				    p->cleared_lap);
 				fprintf(f, " }");
 				pen_first = 0;
 			}
@@ -542,10 +533,10 @@ results_write(struct Server *s)
 				fprintf(f, " \"penalty\": ");
 				fprint_json_str(f, pname);
 				fprintf(f, ", \"penaltyValue\": %d,", pvalue);
-				fprintf(f, " \"served\": %s,",
-				    p->served ? "true" : "false");
-				fprintf(f, " \"violationInLap\": -1,");
-				fprintf(f, " \"clearedInLap\": -1");
+				fprintf(f, " \"violationInLap\": %d,",
+				    p->violation_lap);
+				fprintf(f, " \"clearedInLap\": %d",
+				    p->cleared_lap);
 				fprintf(f, " }");
 				prp_first = 0;
 			}

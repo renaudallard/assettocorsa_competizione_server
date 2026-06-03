@@ -186,6 +186,13 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	e->collision = collision ? 1 : 0;
 	e->served = 0;
 	/*
+	 * Record the lap the violation landed on (1-based) so results.json
+	 * can report violationInLap; cleared_lap stays open until the
+	 * penalty is served.  memset above zeroed both, so set them here.
+	 */
+	e->violation_lap = (int16_t)(s->cars[car_id].race.lap_count + 1);
+	e->cleared_lap = -1;
+	/*
 	 * laps_remaining: caller-supplied value verbatim.  For DT/SG
 	 * it's the lap countdown; for TP it's the time penalty in
 	 * seconds; in either case kunos's pcap shows the original
@@ -555,14 +562,15 @@ penalty_serve_front(struct Server *s, int car_id)
 	if (idx < 0)
 		return;
 	/*
-	 * Mark the entry served instead of dropping it from the queue.
-	 * Keeping the served record around lets results.json report
-	 * "served": true for the penalties the driver actually paid
-	 * off — without this, all entries that survive to session end
-	 * are unserved (the served ones were silently removed) so the
-	 * served field always reported false.
+	 * Mark the entry served instead of dropping it from the queue, and
+	 * stamp the lap it was cleared on.  Keeping the served record lets
+	 * results.json report clearedInLap (>= 0 means served, the way the
+	 * original server signals it) — without this the entry would be
+	 * silently removed and the penalty would look perpetually open.
 	 */
 	q->slots[idx].served = 1;
+	q->slots[idx].cleared_lap =
+	    (int16_t)(s->cars[car_id].race.lap_count + 1);
 	q->slots[idx].laps_remaining = 0;
 }
 
