@@ -226,7 +226,10 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	}
 
 	/*
-	 * Emit 0x53 MultiplayerBOPUpdate broadcast.  Wire body =
+	 * Emit 0x53 MultiplayerBOPUpdate to the affected car's own
+	 * connection (the exe unicasts it via a single socket send in
+	 * FUN_14001dae0, not a broadcast; other clients pick up the new
+	 * BoP from the welcome spawnDef on their next join).  Wire body =
 	 * u16 car_id, u16 ballast (signed kg), u32 restrictor as an
 	 * IEEE-754 float fraction (0.0-0.2 = 0-20 %).  Verified against the
 	 * exe serializer FUN_14011d7d0 and client reader FUN_1434f4ba0
@@ -242,8 +245,17 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	if (wr_u8(&out, SRV_BOP_UPDATE) == 0 &&
 	    wr_u16(&out, car->car_id) == 0 &&
 	    wr_u16(&out, (uint16_t)car->ballast_kg) == 0 &&
-	    wr_f32(&out, car->restrictor) == 0)
-		(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
+	    wr_f32(&out, car->restrictor) == 0) {
+		int j;
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			struct Conn *cc = s->conns[j];
+			if (cc != NULL && cc->state == CONN_AUTH &&
+			    cc->car_id == car_id) {
+				bcast_send_one(cc, out.data, out.wpos);
+				break;
+			}
+		}
+	}
 	bb_free(&out);
 
 	chat_broadcast(s, chat, 4);

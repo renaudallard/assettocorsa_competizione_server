@@ -197,7 +197,7 @@
   server browser.  Set `0` for direct-IP-only private servers.
 - **Entry list** — `entrylist.json` populates slots; with
   `forceEntryList: 1`, only listed Steam IDs are accepted.
-- **BoP** — `0x53` broadcast on ballast/restrictor changes.
+- **BoP** — `0x53` sent to the affected car on ballast/restrictor changes.
 - **Debug tracing** — `-d` flag or `debug` console command enables
   full wire hexdump of every message.
 - **OpenBSD support** — builds on OpenBSD 7.9 arm64 (celeborn deploy
