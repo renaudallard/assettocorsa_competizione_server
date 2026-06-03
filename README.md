@@ -226,11 +226,13 @@
   client is accepted.
 - The CP-server stack in `settings.json` is parsed and stored but
   never acted on (`isCPServer`, `isCPInvServer`, `competitionRating
-  Min/Max`, `region`, `randomizeTrackWhenEmpty`, etc.) — CP servers
-  require the Kunos ranked backend we can't reach from a third-party
-  deployment.  Same goes for the DLC-gating keys
-  (`useIgtDlcTracks`, `useBgtDlcTracks`, `useGt2Tracks`, `useN24`)
-  and `centralEntryListPath` / `dumpEntryList`.
+  Min/Max`, `region`, etc.) — CP servers require the Kunos ranked
+  backend we can't reach from a third-party deployment.  Same goes for
+  `useGt2Tracks` / `useN24` and `centralEntryListPath`.
+- `randomizeTrackWhenEmpty` picks a new random track each time the last
+  driver leaves a running session, matching the dedicated server.
+  `useIgtDlcTracks` and `useBgtDlcTracks` add the respective GT3 DLC
+  tracks to that random pool (oval and the GT4 layout are never picked).
 
 ---
 

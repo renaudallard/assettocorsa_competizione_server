@@ -405,6 +405,14 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 		s->randomize_track_when_empty = (uint8_t)json_obj_get_int(
 		    settings, "randomizeTrackWhenEmpty", 0);
+		s->use_igt_dlc_tracks = (uint8_t)json_obj_get_int(
+		    settings, "useIgtDlcTracks", 0);
+		s->use_bgt_dlc_tracks = (uint8_t)json_obj_get_int(
+		    settings, "useBgtDlcTracks", 0);
+		log_info("settings.json: randomizeTrackWhenEmpty=%d "
+		    "useIgtDlcTracks=%d useBgtDlcTracks=%d",
+		    s->randomize_track_when_empty, s->use_igt_dlc_tracks,
+		    s->use_bgt_dlc_tracks);
 		/*
 		 * FUN_1400214b0 step 1 (lines 19-45): a car slot needs a
 		 * connection, so reduce maxCarSlots to max(1, maxConnections)

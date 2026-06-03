@@ -860,13 +860,20 @@ struct Server {
 	uint8_t		randomize_track_when_empty;
 						/* settings.json
 						 * randomizeTrackWhenEmpty:
-						 * when 1 and the server is
-						 * idle long enough, the
-						 * track resets to a random
-						 * pick from the per-track
-						 * table.  Currently logs
-						 * only; track switching is
-						 * left for the operator. */
+						 * when 1, the track resets to
+						 * a random pool pick each time
+						 * the server empties (mirrors
+						 * exe FUN_14002f710). */
+	uint8_t		use_igt_dlc_tracks;	/* settings.json
+						 * useIgtDlcTracks: include
+						 * kyalami / mount_panorama /
+						 * suzuka / laguna_seca in the
+						 * random pool */
+	uint8_t		use_bgt_dlc_tracks;	/* settings.json
+						 * useBgtDlcTracks: include
+						 * oulton_park / snetterton /
+						 * donington in the random
+						 * pool */
 	char		meta_data[256];		/* event.json metaData,
 						 * passed through to
 						 * results.json header. */
@@ -1086,6 +1093,7 @@ void	server_free(struct Server *s);
  * event.json's formation/green override block runs so JSON still wins.
  */
 void	track_zones_apply(struct Server *s);
+void	track_random_pick(struct Server *s);
 
 /* Allocate a new Conn for an accepted fd.  Returns NULL on full. */
 struct Conn *

@@ -150,6 +150,50 @@ track_zones_apply(struct Server *s)
 	    (double)s->green_trigger_end);
 }
 
+/* <stdlib.h> hides the prototype under _POSIX_C_SOURCE; libc has it. */
+uint32_t arc4random_uniform(uint32_t);
+
+/*
+ * Pick a random track into s->track from the exe's random pool
+ * (FUN_14012e710 -> FUN_14012c510): the GT3 base + red_bull_ring +
+ * nurburgring_24h + spa always; the IGT / BGT DLC sets gated by the
+ * use_*_dlc_tracks flags; oval and paul_ricard_gt4 are never in the
+ * pool.  The exe uses a biased rand()-based pick that can fall back to
+ * monza; we use a clean uniform arc4random_uniform over the pool.
+ */
+void
+track_random_pick(struct Server *s)
+{
+	/* indices into track_zones[]; oval(15) + paul_ricard_gt4(16) omitted */
+	static const int base[] = {
+		0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, /* GT3 */
+		24, 25, 26				/* rbr, n24h, spa */
+	};
+	int pool[27];
+	int n = 0;
+	size_t i;
+	uint32_t idx;
+
+	for (i = 0; i < sizeof(base) / sizeof(base[0]); i++)
+		pool[n++] = base[i];
+	if (s->use_igt_dlc_tracks) {
+		pool[n++] = 17;	/* kyalami */
+		pool[n++] = 18;	/* mount_panorama */
+		pool[n++] = 19;	/* suzuka */
+		pool[n++] = 20;	/* laguna_seca */
+	}
+	if (s->use_bgt_dlc_tracks) {
+		pool[n++] = 21;	/* oulton_park */
+		pool[n++] = 22;	/* snetterton */
+		pool[n++] = 23;	/* donington */
+	}
+	idx = arc4random_uniform((uint32_t)n);
+	snprintf(s->track, sizeof(s->track), "%s",
+	    track_zones[pool[idx]].name);
+	log_info("randomize: empty server -> random track %s (pool %d)",
+	    s->track, n);
+}
+
 void
 server_init(struct Server *s)
 {

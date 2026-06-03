@@ -911,6 +911,30 @@ tick_run(struct Server *s)
 		tickprobe_start_count = s->tick_count;
 	}
 
+	/*
+	 * randomizeTrackWhenEmpty: when the last driver leaves a running
+	 * session, pick a new random track and reset, mirroring the exe
+	 * (FUN_14002f710 "No drivers around, resetting session").  The
+	 * phase != WAITING guard self-quiesces after the reset (which sets
+	 * PHASE_WAITING), so it fires once per emptying, not every tick.
+	 */
+	if (s->randomize_track_when_empty &&
+	    s->session.phase != PHASE_WAITING) {
+		int i, drivers = 0;
+
+		for (i = 0; i < ACC_MAX_CARS; i++)
+			if (s->cars[i].used)
+				drivers++;
+		if (drivers == 0) {
+			log_info("randomize: no drivers around, resetting "
+			    "session with a new track");
+			track_random_pick(s);
+			track_zones_apply(s);
+			session_reset(s, 0);
+			chat_weekend_reset_broadcast(s);
+		}
+	}
+
 	/* Drive the session phase machine. */
 	session_tick(s);
 
