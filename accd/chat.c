@@ -570,9 +570,22 @@ int
 chat_process(struct Server *s, struct Conn *c, const char *text)
 {
 	int car_num;
+	char norm[512];
 
 	if (text == NULL || *text == '\0')
 		return 1;
+
+	/*
+	 * Accept § (U+00A7) as an alias for the & command prefix, matching
+	 * the exe gate at FUN_140021680:156.  rd_str_a UTF-8-encodes § as
+	 * 0xC2 0xA7; rewrite a leading § to '&' into a local copy so the &
+	 * matchers below fire.  h_chat keeps the original text for relay and
+	 * logging, so a plain § chat message is still relayed verbatim.
+	 */
+	if ((unsigned char)text[0] == 0xC2 && (unsigned char)text[1] == 0xA7) {
+		snprintf(norm, sizeof(norm), "&%s", text + 2);
+		text = norm;
+	}
 
 	log_info("CHAT conn=%u: %s", (unsigned)c->conn_id, text);
 
