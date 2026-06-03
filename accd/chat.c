@@ -585,6 +585,8 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			arg++;
 		if (*arg == '\0') {
 			log_info("admin: missing password");
+			chat_reply(c, "wrong amount of parameters; "
+			    "please use /admin pw", 4);
 			return 1;
 		}
 		/*
@@ -652,6 +654,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		} else {
 			log_info("admin: wrong password from conn=%u",
 			    (unsigned)c->conn_id);
+			chat_reply(c, "Wrong password", 4);
 		}
 		return 1;
 	}
