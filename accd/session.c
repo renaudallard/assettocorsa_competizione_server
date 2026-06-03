@@ -1485,11 +1485,12 @@ stint_check_violations(struct Server *s)
 	int is_race = session_is_race(s);
 
 	/*
-	 * No global early-return: each per-check gate below handles its
-	 * own "not configured" case.  The driver-ran-no-stint branch
-	 * (line below) runs even when driverStintTime and
-	 * mandatoryPitstopCount are both unset, since multi-driver
-	 * entries always carry an implied swap obligation.
+	 * Each per-check gate handles its own "not configured" case.
+	 * The exe (FUN_14012ae10) checks the mandatory pit first, then
+	 * DriverRanNoStint, then ExceededDriverStintLimit, and gates both
+	 * stint checks on a configured driver-stint limit.  Mirror that
+	 * order and gating (the config cascade keeps driver_stint_time_s
+	 * non-zero for any race with a duration).
 	 */
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
@@ -1513,45 +1514,9 @@ stint_check_violations(struct Server *s)
 			continue;	/* already DQ'd, skip */
 
 		/*
-		 * Per-driver stint-time violation (FUN_14012ae10 third
-		 * DQ branch, ExceededDriverStintLimit).  Only runs when
-		 * eventRules.driverStintTime is set.
-		 */
-		if (s->driver_stint_time_s != 0) {
-			int violated = 0;
-			uint32_t limit_s = s->driver_stint_time_s;
-
-			for (d = 0; d < car->driver_count &&
-			    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
-				uint32_t stint_s = (uint32_t)(
-				    r->driver_stint_ms[d] / 1000);
-				if (stint_s > limit_s) {
-					log_info("Car %d driver %d stint "
-					    "%us > limit %us -> DQ", i, d,
-					    (unsigned)stint_s,
-					    (unsigned)limit_s);
-					violated = 1;
-					break;
-				}
-			}
-			if (violated) {
-				/* category 12 = ExceededDriverStintLimit, the
-				 * value the exe (FUN_14012ae10) passes for this
-				 * branch and the results label key. */
-				(void)penalty_enqueue(s, i, EXE_DQ, 12, 3,
-				    1, 0,
-				    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
-				r->race_end_short_circuit = 1;
-				continue;	/* already DQ'd */
-			}
-		}
-
-		/*
-		 * Mandatory-pitstop violation at race end.  Only runs
-		 * in race sessions where the car actually raced.  The
-		 * exe uses Disqualified_IgnoredMandatoryPit (Server
-		 * MonitorPenaltyShortcut 13, our REASON_IGNORED_
-		 * MANDATORY_PIT).
+		 * Mandatory-pitstop violation (FUN_14012ae10 first DQ
+		 * branch, Disqualified_IgnoredMandatoryPit, category 6).
+		 * Only runs in race sessions where the car actually raced.
 		 */
 		if (is_race && s->mandatory_pit_count > 0 &&
 		    r->lap_count > 0 &&
@@ -1576,15 +1541,17 @@ stint_check_violations(struct Server *s)
 		}
 
 		/*
-		 * Driver-ran-no-stint violation (endurance races): if
-		 * the car has multiple registered drivers (driver_count
-		 * > 1) and at least one never took a turn on track,
-		 * DQ with Disqualified_DriverRanNoStint (ServerMonitor
-		 * PenaltyShortcut 28).  Single-driver entries are
-		 * exempt — there's no implied swap obligation.
+		 * Driver-ran-no-stint violation (FUN_14012ae10 second DQ
+		 * branch, Disqualified_DriverRanNoStint, category 13): a
+		 * multi-driver car where at least one registered driver
+		 * never took a turn.  Gated on a configured driver-stint
+		 * limit, same as the stint-limit check below; single-driver
+		 * entries are exempt.
 		 */
-		if (is_race && car->driver_count > 1 && r->lap_count > 0) {
-			int d, skipped = -1;
+		if (is_race && s->driver_stint_time_s != 0 &&
+		    car->driver_count > 1 && r->lap_count > 0) {
+			int skipped = -1;
+
 			for (d = 0; d < car->driver_count &&
 			    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
 				if (r->driver_stint_ms[d] == 0) {
@@ -1595,9 +1562,41 @@ stint_check_violations(struct Server *s)
 			if (skipped >= 0) {
 				log_info("Car %d driver %d never took a "
 				    "stint -> DQ", i, skipped);
-				(void)penalty_enqueue(s, i, EXE_DQ, 28, 3, 1, 0,
-				    REASON_DRIVER_RAN_NO_STINT);
+				(void)penalty_enqueue(s, i, EXE_DQ, 13, 0, 1,
+				    0, REASON_DRIVER_RAN_NO_STINT);
 				r->race_end_short_circuit = 1;
+				continue;
+			}
+		}
+
+		/*
+		 * Per-driver stint-time violation (FUN_14012ae10 third DQ
+		 * branch, ExceededDriverStintLimit, category 12).  Only runs
+		 * when the driver-stint limit is configured.
+		 */
+		if (s->driver_stint_time_s != 0) {
+			int violated = 0;
+			uint32_t limit_s = s->driver_stint_time_s;
+
+			for (d = 0; d < car->driver_count &&
+			    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
+				uint32_t stint_s = (uint32_t)(
+				    r->driver_stint_ms[d] / 1000);
+				if (stint_s > limit_s) {
+					log_info("Car %d driver %d stint "
+					    "%us > limit %us -> DQ", i, d,
+					    (unsigned)stint_s,
+					    (unsigned)limit_s);
+					violated = 1;
+					break;
+				}
+			}
+			if (violated) {
+				(void)penalty_enqueue(s, i, EXE_DQ, 12, 0,
+				    1, 0,
+				    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
+				r->race_end_short_circuit = 1;
+				continue;	/* already DQ'd */
 			}
 		}
 	}
