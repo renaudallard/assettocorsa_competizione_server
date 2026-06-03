@@ -2015,8 +2015,25 @@ int main(int argc, char **argv)
 				uint32_t srv_ts =
 				    rxbuf[1] | (rxbuf[2] << 8) |
 				    (rxbuf[3] << 16) | (rxbuf[4] << 24);
-				size_t n = pkt_pong(pkt, conn_id, srv_ts,
-				    client_ts);
+				size_t n;
+				/* TEST: BOT_PONG_JITTER_MS delays the pong by
+				 * a random 0..N ms so the server's measured RTT
+				 * (now - srv_ts) varies, making avg_rtt diverge
+				 * from min_rtt and exercising the Mode-B slew. */
+				static int jit = -1;
+				if (jit < 0) {
+					const char *e =
+					    getenv("BOT_PONG_JITTER_MS");
+					jit = e ? atoi(e) : 0;
+				}
+				if (jit > 0) {
+					struct timespec js;
+					js.tv_sec = 0;
+					js.tv_nsec =
+					    (long)(rand() % jit) * 1000000L;
+					nanosleep(&js, NULL);
+				}
+				n = pkt_pong(pkt, conn_id, srv_ts, client_ts);
 				sendto(udp_fd, pkt, n, 0,
 				    (struct sockaddr *)&udp_peer,
 				    sizeof udp_peer);
