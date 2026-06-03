@@ -1701,7 +1701,8 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		}
 	}
 
-	/* spawnDef tail: active driver index, u64 ts, 2 u8, 5 dirt, 5
+	/* spawnDef tail: active driver index, u64 ts, the car-location
+	 * byte (+0x153, stubbed) and the tyre compound (+0x152), 5 dirt, 5
 	 * damage, then the per-car BoP: u16 ballast + u32 restrictor-as-
 	 * float.  The exe welcome serializer FUN_140032c90 emits
 	 * CarEntry+0x1fc (ballast, signed) and +0x200 (restrictor float) -
@@ -1709,14 +1710,14 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	 * 0x51 elo: the exe keeps that at +0x1f8 and never puts it in the
 	 * welcome record (a prior accd version mislabeled the slot 'elo'
 	 * and emitted last_elo + 0, so a late joiner saw existing cars'
-	 * BoP wrong).  Dirt and damage carry the latest 0x46 / 0x43 values
-	 * so the newcomer renders the car with the same weathering
-	 * everyone else already sees. */
+	 * BoP wrong).  Dirt, damage and the tyre compound carry the latest
+	 * 0x46 / 0x43 / 0x2f values so the newcomer renders the car with
+	 * the same weathering and tyres everyone else already sees. */
 	if (wr_u8(bb, ec->current_driver_index) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, ec->race.current_tyres) < 0) return -1;
 	for (k = 0; k < 5; k++)
 		if (wr_u8(bb, ec->race.car_dirt[k]) < 0) return -1;
 	for (k = 0; k < 5; k++)
