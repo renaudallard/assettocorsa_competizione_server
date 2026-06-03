@@ -95,7 +95,7 @@ cmd_help(void)
 	reply("  tp5 <num>        5s time penalty (tp5c = collision)");
 	reply("  tp15 <num>       15s time penalty (tp15c)");
 	reply("  dt <num>         drive-through (dtc)");
-	reply("  sg10 <num>       10s stop-and-go (sg10c..sg30c)");
+	reply("  sg10 <num>       10s stop-and-go (sg20, sg30 too)");
 	reply("  clear <num>      clear penalties for car");
 	reply("  clear_all        clear all penalties");
 	reply("  ballast <n> <kg> assign ballast");
@@ -345,23 +345,15 @@ console_dispatch(struct Server *s, const char *line)
 	} else if (chat_prefix(p, "dt")) {
 		chat_do_penalty(s, "dt", p + 2, 0, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
-	} else if (chat_prefix(p, "sg10c")) {
-		chat_do_penalty(s, "sg10c", p + 5, 1, rbuf, sizeof(rbuf));
-		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "sg10")) {
-		chat_do_penalty(s, "sg10", p + 4, 0, rbuf, sizeof(rbuf));
-		cmd_with_reply(rbuf);
-	} else if (chat_prefix(p, "sg20c")) {
-		chat_do_penalty(s, "sg20c", p + 5, 1, rbuf, sizeof(rbuf));
+		/* SG is always collision (exe parity); see chat.c. */
+		chat_do_penalty(s, "sg10c", p + 4, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "sg20")) {
-		chat_do_penalty(s, "sg20", p + 4, 0, rbuf, sizeof(rbuf));
-		cmd_with_reply(rbuf);
-	} else if (chat_prefix(p, "sg30c")) {
-		chat_do_penalty(s, "sg30c", p + 5, 1, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, "sg20c", p + 4, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "sg30")) {
-		chat_do_penalty(s, "sg30", p + 4, 0, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, "sg30c", p + 4, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "ballast")) {
 		chat_do_bop(s, p + 7, 1, rbuf, sizeof(rbuf));

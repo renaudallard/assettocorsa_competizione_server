@@ -1004,18 +1004,19 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		chat_do_penalty(s, "dtc", text + 4, 1, NULL, 0);
 	} else if (chat_prefix(text, "/dt")) {
 		chat_do_penalty(s, "dt", text + 3, 0, NULL, 0);
-	} else if (chat_prefix(text, "/sg10c")) {
-		chat_do_penalty(s, "sg10c", text + 6, 1, NULL, 0);
 	} else if (chat_prefix(text, "/sg10")) {
-		chat_do_penalty(s, "sg10", text + 5, 0, NULL, 0);
-	} else if (chat_prefix(text, "/sg20c")) {
-		chat_do_penalty(s, "sg20c", text + 6, 1, NULL, 0);
+		/*
+		 * SG is always the collision variant, matching the exe admin
+		 * command (FUN_14001dae0: bare /sg10,/sg20,/sg30 unconditionally
+		 * append "causing a collision").  There is no non-collision
+		 * /sgNN or accd-only /sgNNc token; the collision PEN_SG*C kinds
+		 * still serve client 0x41 reports and the penalty ladder.
+		 */
+		chat_do_penalty(s, "sg10c", text + 5, 1, NULL, 0);
 	} else if (chat_prefix(text, "/sg20")) {
-		chat_do_penalty(s, "sg20", text + 5, 0, NULL, 0);
-	} else if (chat_prefix(text, "/sg30c")) {
-		chat_do_penalty(s, "sg30c", text + 6, 1, NULL, 0);
+		chat_do_penalty(s, "sg20c", text + 5, 1, NULL, 0);
 	} else if (chat_prefix(text, "/sg30")) {
-		chat_do_penalty(s, "sg30", text + 5, 0, NULL, 0);
+		chat_do_penalty(s, "sg30c", text + 5, 1, NULL, 0);
 	} else if (chat_prefix(text, "/ballast")) {
 		chat_do_bop(s, text + 8, 1, NULL, 0);
 	} else if (chat_prefix(text, "/restrictor")) {

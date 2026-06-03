@@ -174,7 +174,7 @@
 
 - **Chat / console commands**: `/admin`, `/next`, `/restart`,
   `/resetWeekend`, `/kick`, `/ban`, `/dq`, `/tp5`, `/tp15`, `/dt`,
-  `/sg10..30` (all with collision variants), `/clear`, `/cleartp`,
+  `/sg10..30` (stop-and-go, always collision), `/clear`, `/cleartp`,
   `/clear_all`, `/ballast`, `/restrictor`, `/track`, `/tracks`,
   `/connections`, `/hellban`, `/lockprep`, `/unlockprep`,
   `/latencymode`, `/manual entrylist`, `/manual start`, `/wt`,
