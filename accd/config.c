@@ -600,8 +600,12 @@ config_load(struct Server *s, const char *cfg_dir)
 		struct json_node *rules =
 		    load_json(cfg_dir, "eventRules.json");
 		if (rules != NULL) {
-			int stint_min = json_obj_get_int(rules,
-			    "driverStintTime", 0);
+			int stint_sec = json_obj_get_int(rules,
+			    "driverStintTimeSec", -1);
+			int stint_legacy_min = json_obj_get_int(rules,
+			    "driverStintTime", -1);
+			int race_dur_s = 0;
+			int si;
 			int pit_count = json_obj_get_int(rules,
 			    "mandatoryPitstopCount", 0);
 			int swap_req = json_obj_get_int(rules,
@@ -630,13 +634,41 @@ config_load(struct Server *s, const char *cfg_dir)
 			int tyre_sets = json_obj_get_int(rules,
 			    "tyreSetCount", s->tyre_set_count);
 
-			if (stint_min < 0)
-				stint_min = 0;
-			/* (uint32_t)stint_min * 60u wraps silently above
-			 * INT_MAX/60.  Cap at 24h (= 1440 min) which already
-			 * dwarfs any realistic stint config. */
-			if (stint_min > 1440)
-				stint_min = 1440;
+			/*
+			 * driverStintTimeSec (seconds) is the original
+			 * server's key.  Fall back to the legacy accd
+			 * driverStintTime (minutes) when it is absent so
+			 * older accd configs keep working.
+			 */
+			if (stint_sec < 0 && stint_legacy_min > 0) {
+				log_info("eventRules.json: driverStintTime "
+				    "(minutes) is deprecated; use "
+				    "driverStintTimeSec (seconds)");
+				stint_sec = stint_legacy_min * 60;
+			}
+			if (stint_sec < 0)
+				stint_sec = 0;
+			/*
+			 * Fallback cascade matching FUN_14002aca0:
+			 * maxTotalDrivingTime defaults to the race session
+			 * duration + 10 min, then driverStintTimeSec falls
+			 * back to maxTotalDrivingTime when unset, so the
+			 * original server never silently disables stint
+			 * enforcement.
+			 */
+			for (si = 0; si < s->session_count &&
+			    si < ACC_MAX_SESSIONS; si++)
+				if (s->sessions[si].session_type == 10) {
+					race_dur_s = (int)
+					    s->sessions[si].duration_min * 60;
+					break;
+				}
+			if (max_drv_time < 1 && race_dur_s > 0)
+				max_drv_time = race_dur_s + 600;
+			if (stint_sec < 1 && max_drv_time > 0)
+				stint_sec = max_drv_time;
+			if (stint_sec > 86400)	/* cap at 24h */
+				stint_sec = 86400;
 			if (pit_count < 0)
 				pit_count = 0;
 			if (pit_count > 255)
@@ -649,7 +681,7 @@ config_load(struct Server *s, const char *cfg_dir)
 				tyre_sets = 1;
 			if (tyre_sets > 255)
 				tyre_sets = 255;
-			s->driver_stint_time_s = (uint32_t)stint_min * 60u;
+			s->driver_stint_time_s = (uint32_t)stint_sec;
 			s->mandatory_pit_count = (uint8_t)pit_count;
 			s->mandatory_swap_required = swap_req ? 1 : 0;
 			s->qualify_standing_type = (uint8_t)

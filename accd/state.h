@@ -1031,7 +1031,7 @@ struct Server {
 	uint16_t		session_overtime_s; /* sessionOverTimeSeconds */
 	uint16_t		post_qualy_s;	    /* postQualySeconds (EventConfig+0x90) */
 	uint16_t		post_race_s;	    /* postRaceSeconds  (EventConfig+0x94) */
-	uint32_t		driver_stint_time_s; /* eventRules.driverStintTime*60 (0 = no limit) */
+	uint32_t		driver_stint_time_s; /* eventRules.driverStintTimeSec, with the maxTotalDrivingTime fallback (0 = no limit) */
 	uint8_t			mandatory_pit_count; /* eventRules.mandatoryPitstopCount (0 = none) */
 	uint8_t			mandatory_swap_required; /* eventRules.isMandatoryPitstopSwapDriverRequired */
 	/*
