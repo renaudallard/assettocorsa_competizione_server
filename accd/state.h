@@ -858,6 +858,11 @@ struct Server {
 	uint8_t		track_medals_required;
 	uint8_t		safety_rating_required;
 	uint8_t		racecraft_rating_required;
+	uint8_t		is_cp_server;		/* settings.isCPServer: gate on
+						 * the competition-rating window
+						 * and restrict joins to FP */
+	int32_t		competition_rating_min;	/* settings.competitionRatingMin */
+	int32_t		competition_rating_max;	/* settings.competitionRatingMax */
 	uint8_t		is_race_locked;		/* settings.json
 						 * isRaceLocked: 1 (default)
 						 * blocks mid-race joins,

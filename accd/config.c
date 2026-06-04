@@ -384,6 +384,19 @@ config_load(struct Server *s, const char *cfg_dir)
 			s->track_medals_required = ACC_RATING_UNSET;
 		}
 		/*
+		 * isCPServer + the competition-rating window (FUN_140106300
+		 * + FUN_140025690): on a CP server the join gate restricts
+		 * connections to Free Practice and gates on the wire-declared
+		 * competition rating against [min, max].  Default min 0 / max
+		 * INT32_MAX = no window when unset.
+		 */
+		s->is_cp_server = json_obj_get_int(settings,
+		    "isCPServer", 0) ? 1 : 0;
+		s->competition_rating_min = json_obj_get_int(settings,
+		    "competitionRatingMin", 0);
+		s->competition_rating_max = json_obj_get_int(settings,
+		    "competitionRatingMax", INT32_MAX);
+		/*
 		 * isRaceLocked (handbook III.2.2): default 1.  Inverse
 		 * of unsafe_rejoin which already controls the same
 		 * mid-race-join gate.  Reading both keeps backwards

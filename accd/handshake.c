@@ -1988,6 +1988,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 	enum reject_reason reason = REJECT_OK;
 	uint32_t reject_sub = 0, reject_a = 0, reject_b = 0;
 	int is_reconnect = 0;
+	uint8_t wire_medals = 0, wire_sa = 0, wire_rc = 0, wire_cp = 0;
 
 	rd_init(&r, body, len);
 
@@ -2136,9 +2137,18 @@ handshake_handle(struct Server *s, struct Conn *c,
 			if (rd_can_str_a(&r))
 				(void)rd_str_a(&r, &sname);
 
-			/* 41-byte numeric block. */
+			/*
+			 * 41-byte numeric block.  The first 4 bytes are the
+			 * client-declared ratings the join gate trusts
+			 * (FUN_140025690:462): trackMedals, SA, RC,
+			 * competition; driver_category is at offset 16.
+			 */
 			if (rd_remaining(&r) >= 41) {
-				(void)rd_skip(&r, 16);
+				(void)rd_u8(&r, &wire_medals);
+				(void)rd_u8(&r, &wire_sa);
+				(void)rd_u8(&r, &wire_rc);
+				(void)rd_u8(&r, &wire_cp);
+				(void)rd_skip(&r, 12);
 				(void)rd_u8(&r, &cat);
 				(void)rd_skip(&r, 24);
 			}
@@ -2225,70 +2235,98 @@ handshake_handle(struct Server *s, struct Conn *c,
 		}
 
 		/*
-		 * Rating thresholds (handbook III.2.2).  Drivers below
-		 * the configured trackMedalsRequirement /
-		 * safetyRatingRequirement / racecraftRatingRequirement
-		 * floor are rejected with REJECT_CP_RATING (= reject
-		 * code 10) before they reach a car slot.  Skip
-		 * spectators — they don't take a slot and can't disrupt
-		 * the field.  When all thresholds are 0 the gate is a
-		 * no-op for open servers.
+		 * Join rating / competition gate (FUN_140025690).  The
+		 * trackMedals / SA / RC / competition values are the client-
+		 * declared ratings read off the wire numeric block above; the
+		 * original server trusts them like the steam_id.  accd's local
+		 * ratings.c ledger is an accd-only feature and is NOT the gate
+		 * source.  Carless spectators have already branched away, so
+		 * no spectator guard is needed here.
+		 *
+		 * A CP server (isCPServer) accepts connections only during
+		 * Free Practice (session_type 0) and gates on the competition-
+		 * rating window [competitionRatingMin, competitionRatingMax];
+		 * passing that, and every normal server, then gates on the
+		 * medals / SA / RC floors.  ACC_RATING_REQUIRED skips an unset
+		 * (0xff) floor; reject_b carries the floor, reject_a the wire-
+		 * declared rating (FUN_14002db30).
 		 */
-		/*
-		 * 0xff = unset per ACC_RATING_REQUIRED in state.h.  The
-		 * gate must use the macro or every joiner would get
-		 * rejected as "rating < 255 required" — the regression
-		 * shipped in 0.3.69 before this guard was added.
-		 */
-		if (!c->is_spectator &&
-		    (ACC_RATING_REQUIRED(s->track_medals_required) ||
-		     ACC_RATING_REQUIRED(s->safety_rating_required) ||
-		     ACC_RATING_REQUIRED(s->racecraft_rating_required))) {
-			uint16_t sa = 0, tr = 0;
+		if (s->is_cp_server) {
+			const struct SessionDef *cur =
+			    &s->sessions[s->session.session_index];
 
-			ratings_get(s, steam_buf, &sa, &tr);
-			/*
-			 * Stored ratings are ×100 (5000 = 50.00).  The
-			 * handbook thresholds are integer 0..99.  No
-			 * server-side track medals tracking yet, so the
-			 * trackMedalsRequirement gate is satisfied if
-			 * the operator left it at 0 / -1; non-zero medal
-			 * floors will need a separate ledger when we
-			 * wire that up.
-			 */
-			if (ACC_RATING_REQUIRED(s->safety_rating_required) &&
-			    sa / 100 < s->safety_rating_required) {
-				log_info("rejecting %s: SA %u < required %u",
-				    steam_buf, (unsigned)(sa / 100),
-				    (unsigned)s->safety_rating_required);
-				/*
-				 * Kunos wire: u8 0x0c + u8 10 + u32 sub=1
-				 * (safety) + u32 a=0 + u32 b=required.  Kunos
-				 * always sends a=0 in the rating slot; the
-				 * AC2 client looks the actual rating up from
-				 * its own profile, not from this packet.
-				 */
-				reason = REJECT_CP_RATING;
-				reject_sub = 1;
-				reject_a = 0;
-				reject_b = s->safety_rating_required;
+			if (cur->session_type != 0) {
+				log_info("rejecting %s: CP server accepts "
+				    "connections only in Free Practice",
+				    steam_buf);
+				reason = REJECT_BAD_SESSION;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;
 			}
-			if (ACC_RATING_REQUIRED(s->racecraft_rating_required) &&
-			    tr / 100 < s->racecraft_rating_required) {
-				log_info("rejecting %s: RC %u < required %u",
-				    steam_buf, (unsigned)(tr / 100),
-				    (unsigned)s->racecraft_rating_required);
+			if ((int)wire_cp < s->competition_rating_min) {
+				log_info("rejecting %s: competition %u < "
+				    "min %d", steam_buf, (unsigned)wire_cp,
+				    s->competition_rating_min);
 				reason = REJECT_CP_RATING;
-				reject_sub = 2;
-				reject_a = 0;
-				reject_b = s->racecraft_rating_required;
+				reject_sub = 3;
+				reject_a = wire_cp;
+				reject_b = (uint32_t)s->competition_rating_min;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;
 			}
+			if ((int)wire_cp > s->competition_rating_max) {
+				log_info("rejecting %s: competition %u > "
+				    "max %d", steam_buf, (unsigned)wire_cp,
+				    s->competition_rating_max);
+				reason = REJECT_CP_RATING;
+				reject_sub = 4;
+				reject_a = wire_cp;
+				reject_b = (uint32_t)s->competition_rating_max;
+				free(first); free(last); free(sname);
+				free(steam); free(team);
+				goto reply;
+			}
+		}
+		if (ACC_RATING_REQUIRED(s->track_medals_required) &&
+		    wire_medals < s->track_medals_required) {
+			log_info("rejecting %s: track medals %u < required %u",
+			    steam_buf, (unsigned)wire_medals,
+			    (unsigned)s->track_medals_required);
+			reason = REJECT_CP_RATING;
+			reject_sub = 0;
+			reject_a = wire_medals;
+			reject_b = s->track_medals_required;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
+		}
+		if (ACC_RATING_REQUIRED(s->safety_rating_required) &&
+		    wire_sa < s->safety_rating_required) {
+			log_info("rejecting %s: SA %u < required %u",
+			    steam_buf, (unsigned)wire_sa,
+			    (unsigned)s->safety_rating_required);
+			reason = REJECT_CP_RATING;
+			reject_sub = 1;
+			reject_a = wire_sa;
+			reject_b = s->safety_rating_required;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
+		}
+		if (ACC_RATING_REQUIRED(s->racecraft_rating_required) &&
+		    wire_rc < s->racecraft_rating_required) {
+			log_info("rejecting %s: RC %u < required %u",
+			    steam_buf, (unsigned)wire_rc,
+			    (unsigned)s->racecraft_rating_required);
+			reason = REJECT_CP_RATING;
+			reject_sub = 2;
+			reject_a = wire_rc;
+			reject_b = s->racecraft_rating_required;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
 		}
 
 		/*

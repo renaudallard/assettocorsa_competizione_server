@@ -225,9 +225,11 @@
   blocks in `poll()` for up to 100 ms so the daemon idles near
   0 % CPU; the 333 Hz busy-wait resumes the instant the first
   client is accepted.
-- The CP-server stack in `settings.json` is parsed and stored but
-  never acted on (`isCPServer`, `isCPInvServer`, `competitionRating
-  Min/Max`, `region`, etc.) — CP servers require the Kunos ranked
+- `isCPServer` + `competitionRatingMin/Max` gate joins: a CP server
+  accepts connections only during Free Practice and rejects a player
+  whose wire-declared competition rating falls outside the window.  The
+  rest of the CP-server stack (`isCPInvServer`, `region`, etc.) is still
+  parsed and stored but never acted on — those require the Kunos ranked
   backend we can't reach from a third-party deployment.  Same goes for
   `useGt2Tracks` / `useN24` and `centralEntryListPath`.
 - `randomizeTrackWhenEmpty` picks a new random track each time the last
@@ -375,6 +377,8 @@ the server browser will show 24, not 30.
 | `trackMedalsRequirement` | `-1` | Minimum track-medals (0..5) to join, or `-1` to leave the server open to unrated players.  On public servers, each medal also adds 1 to the advertised slot cap, up to a maximum of +3.  No effect on private servers.  Set `0` only if you specifically want a ranked-only server (the ACC browser then refuses unrated joiners). |
 | `safetyRatingRequirement` | `-1` | Minimum SA rating (0..99) to join, or `-1` to leave open.  On public servers, adds `SA × 0.25` to the advertised slot cap (SA 70 → +17.5, SA 99 → +24.75, bounded by the 30-slot ceiling).  No effect on private servers. |
 | `racecraftRatingRequirement` | `-1` | Minimum RC rating (0..99) to join, or `-1` to leave open.  Does NOT affect the advertised slot cap. |
+| `isCPServer` | `0` | `1` restricts joins to Free Practice and gates on the competition-rating window below. |
+| `competitionRatingMin` / `competitionRatingMax` | `0` / unbounded | On a CP server, the client-declared competition rating must fall within `[min, max]` to join. |
 | `maxMonitors` | `max_connections / 4` (min 2) | Cap on simultaneous SMPR observer connections so monitors can't starve sim drivers out of the shared slot pool.  `0` disables observers entirely. |
 | `maxMonitorsPerIp` | `2` | Per-source-IP observer cap.  Stops a single host from filling the global observer quota. |
 
