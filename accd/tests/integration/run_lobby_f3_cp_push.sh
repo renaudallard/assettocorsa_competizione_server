@@ -1,14 +1,19 @@
 #!/bin/sh
-# Lobby 0xf3 CP_PUSH parse-robustness regression.
+# Lobby 0xf3 CP (Competition) event push: parse + apply regression.
 #
-# accd is non-CP: it parses the leading kson_string event_id, logs
-# "0xf3 CP data push for event %s", and drops the rest.  This test
-# fires three flavours of body at the dispatcher and asserts accd
-# does not crash AND logs the expected branch for each:
-#   - well-formed: kson_str("test_event") + trailing junk
-#   - truncated:   just the 0xf3 byte (no string)
-#   - oversize:    kson_str of 1000 'X' bytes (exceeds 128 B event_id
-#                  buffer in lobby.c)
+# A CP-enrolled server receives 0xf3 to switch to its next scheduled
+# event: the stock server (FUN_140029eb0) parses a full event descriptor,
+# disconnects all players, swaps in the new track + session list, and runs
+# the weekend reset.  accd mirrors this in lobby_apply_cp_event, parsing
+# every field defensively so a desync aborts before touching state.
+#
+# This test fires bodies at the dispatcher and asserts:
+#   - well-formed full CP event: logs "0xf3 CP event ... applying" AND the
+#     apply reaches the weekend reset (track/sessions swapped).
+#   - truncated (just 0xf3): logs "prefix parse failed", no apply.
+#   - oversize cp_id: parse aborts, no apply.
+#   - mid-session truncation: logs "session N parse failed", no apply.
+#   - the dispatcher survives every malformed body (0xf1 -> 0xd1).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
@@ -47,28 +52,53 @@ lobby.wait_for_type(0xc8, timeout=8.0)
 lobby.send(b"\\xef\\x00")
 time.sleep(1)
 
-# 1) well-formed
-body = bytearray([0xf3])
-write_kson_str(body, "test_event")
-body.extend(b"\\x00\\x01trailing junk")
-lobby.send(bytes(body))
-print("  sent well-formed 0xf3", flush=True)
-time.sleep(0.5)
+def cp_event(cp_id, track, sessions):
+    """Full 0xf3 body in accd's CP wire layout."""
+    body = bytearray([0xf3])
+    write_kson_str(body, cp_id)
+    body.extend(b"\\x01\\x01")              # flag_a, flag_b
+    write_kson_str(body, track)
+    body.extend(bytes(12))                  # 12 B scalar config
+    body.append(len(sessions))              # session count
+    for stype, name, dur in sessions:
+        body.extend(bytes([stype, 0, 0]))   # type, cat, rules
+        write_kson_str(body, name)
+        body.extend(struct.pack("<H", dur)) # duration_min
+    body.extend(bytes(20))                  # EventRules (20 B)
+    body.extend(b"\\x00\\x00")              # entrylist flag + count
+    return bytes(body)
 
-# 2) truncated (just the cmd byte)
+# 1) well-formed full CP event -> apply
+lobby.send(cp_event("test_cup", "spa",
+                    [(0, "Practice", 20), (4, "Qualy", 15)]))
+print("  sent well-formed 0xf3 CP event", flush=True)
+time.sleep(0.8)
+
+# 2) truncated (just the cmd byte) -> prefix parse fails
 lobby.send(b"\\xf3")
 print("  sent truncated 0xf3", flush=True)
-time.sleep(0.5)
+time.sleep(0.4)
 
-# 3) oversize event_id (1000 'X')
+# 3) oversize cp_id (1000 'X') -> kson read aborts
 body = bytearray([0xf3])
 write_kson_str(body, "X" * 1000)
 lobby.send(bytes(body))
 print("  sent oversize 0xf3", flush=True)
-time.sleep(0.5)
+time.sleep(0.4)
 
-# 4) Verify accd is still alive + responsive: send 0xf1 and wait for
-# 0xd1, proving the dispatcher loop survived all three bodies.
+# 4) valid prefix but truncated mid-session -> session parse fails
+body = bytearray([0xf3])
+write_kson_str(body, "cup")
+body.extend(b"\\x01\\x01")
+write_kson_str(body, "monza")
+body.extend(bytes(12))
+body.append(3)                              # claims 3 sessions
+body.extend(bytes([0, 0, 0]))               # session 0 header, then cut
+lobby.send(bytes(body))
+print("  sent mid-session-truncated 0xf3", flush=True)
+time.sleep(0.4)
+
+# 5) dispatcher still alive: 0xf1 must still yield a 0xd1
 pre = lobby.count(0xd1)
 lobby.send(b"\\xf1")
 time.sleep(1.5)
@@ -91,32 +121,40 @@ ACCD_PID=$!
 wait "$FAKE_PID"
 FRC=$?
 
-# Snapshot before tearing accd down so the log is stable
 sleep 0.3
 kill -TERM "$ACCD_PID" 2>/dev/null || true
 wait "$ACCD_PID" 2>/dev/null || true
 
-# Verify the log branches accd took
 if [ $FRC -ne 0 ]; then exit $FRC; fi
-if ! grep -q '0xf3 CP data push for event "test_event"' accd.log; then
-    echo "FAIL: no log for well-formed 0xf3"
-    grep "0xf3" accd.log
+
+# Well-formed event must be applied (parsed + weekend reset).
+if ! grep -q '0xf3 CP event "test_cup" @ "spa": 2 sessions' accd.log; then
+    echo "FAIL: well-formed 0xf3 not applied"
+    grep "0xf3" accd.log || true
     exit 1
 fi
-echo "  PASS: well-formed body logged with event_id"
-if ! grep -q "0xf3 CP data push.*short parse" accd.log; then
-    echo "FAIL: no 'short parse' log for truncated 0xf3"
-    grep "0xf3" accd.log
+echo "  PASS: well-formed CP event parsed and applied"
+# The apply reaches the two-phase weekend reset.
+if ! grep -q "resetting weekend to friday night" accd.log; then
+    echo "FAIL: apply did not reach the weekend reset"
     exit 1
 fi
-echo "  PASS: truncated body took short-parse branch"
-# The oversize body should take the short-parse branch because the
-# read_kson_string sees (size_t)slen + 1 > outsz (128) and returns -1.
-# Count how many "short parse" appearances there are.
-n_short=$(grep -c "short parse" accd.log || true)
-if [ "${n_short:-0}" -lt 2 ]; then
-    echo "FAIL: expected >= 2 'short parse' logs (truncated + oversize), got $n_short"
+echo "  PASS: apply ran the weekend reset"
+
+# Truncated + oversize + mid-session must all abort without applying.
+n_fail=$(grep -c "0xf3.*parse failed.*dropped" accd.log || true)
+if [ "${n_fail:-0}" -lt 3 ]; then
+    echo "FAIL: expected >= 3 'parse failed - dropped' logs, got $n_fail"
+    grep "0xf3" accd.log || true
     exit 1
 fi
-echo "  PASS: oversize body also took short-parse branch (${n_short} total)"
-echo "RESULT: PASS (0xf3 parse robust + dispatcher survives malformed bodies)"
+echo "  PASS: malformed bodies aborted without applying (${n_fail} drops)"
+
+# Only ONE apply should have happened (the well-formed one).
+n_apply=$(grep -c "0xf3 CP event.*applying" accd.log || true)
+if [ "${n_apply:-0}" -ne 1 ]; then
+    echo "FAIL: expected exactly 1 apply, got $n_apply"
+    exit 1
+fi
+echo "  PASS: exactly one apply (malformed bodies left state untouched)"
+echo "RESULT: PASS (0xf3 CP push parses + applies; malformed bodies abort safely)"

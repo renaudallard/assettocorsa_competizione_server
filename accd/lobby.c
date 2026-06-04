@@ -1058,6 +1058,177 @@ lobby_reject_reason(uint8_t code)
 	}
 }
 
+/* Bounds-checked little-endian scalar readers for the 0xf3 CP push. */
+static int
+lobby_read_u8(const unsigned char *b, size_t len, size_t *p, unsigned *out)
+{
+	if (*p >= len)
+		return -1;
+	*out = b[*p];
+	*p += 1;
+	return 0;
+}
+
+static int
+lobby_read_u16(const unsigned char *b, size_t len, size_t *p, unsigned *out)
+{
+	if (*p + 2 > len)
+		return -1;
+	*out = (unsigned)b[*p] | ((unsigned)b[*p + 1] << 8);
+	*p += 2;
+	return 0;
+}
+
+static int
+lobby_skip(size_t len, size_t *p, size_t n)
+{
+	if (*p + n > len)
+		return -1;
+	*p += n;
+	return 0;
+}
+
+/*
+ * 0xf3 CP (Competition) event push: the Kunos lobby tells a CP-enrolled
+ * server to switch to its next scheduled event.  The stock server parses
+ * a full event descriptor (FUN_140044c10 case 0xf3) and applies it via
+ * FUN_140029eb0, which disconnects every player ("Server is starting the
+ * next event, you will be disconnected"), overwrites the track / session
+ * list / event rules / entry list, and runs the weekend reset
+ * (FUN_14002c740, the two-phase reset accd mirrors).
+ *
+ * accd is not Kunos-CP-enrolled, so this path is exercised only by a CP
+ * push that we will never receive from the real lobby; the wire layout is
+ * therefore RE-derived from the decomp with no capture to validate it
+ * against.  Two safety properties follow:
+ *   - Every read is bounds-checked; any desync aborts BEFORE touching
+ *     server state, so a malformed or spoofed 0xf3 can never crash or
+ *     half-apply.
+ *   - Only the confidently-resolved event config (track + session list)
+ *     is applied.  The per-entry / per-driver layout of the entry list is
+ *     not resolvable with confidence, so its roster is logged but NOT
+ *     swapped into the forced entry list.
+ *
+ * Body layout (after the 0xf3 cmd byte):
+ *   kson_string cp_id
+ *   u8 flag_a, u8 flag_b
+ *   kson_string event_name (the track, exe transforms via FUN_14012e4f0)
+ *   12 B scalar config (4 u8 + 4 u16: weather / ports / temps)
+ *   u8 session_count, then per session:
+ *     u8 type, u8 cat, u8 rules, kson_string name, u16 duration_min
+ *   20 B EventRules (u8 + u32 + u32 + 4 u8 + u32 + 3 u8)
+ *   u8 entrylist_flag, u8 entry_count, then per-entry blocks (not parsed)
+ */
+static void
+lobby_apply_cp_event(struct LobbyClient *l, struct Server *s,
+    const unsigned char *body, size_t len)
+{
+	char cp_id[128], event_name[ACC_TRACK_NAME_LEN], sname[64];
+	struct SessionDef parsed[ACC_MAX_SESSIONS];
+	size_t p = 1;
+	unsigned flag_a, flag_b, n_sessions, i;
+	unsigned ent_flag = 0, ent_count = 0;
+	int j;
+
+	(void)l;
+
+	if (lobby_read_kson_string(body, len, &p, cp_id, sizeof(cp_id)) < 0 ||
+	    lobby_read_u8(body, len, &p, &flag_a) < 0 ||
+	    lobby_read_u8(body, len, &p, &flag_b) < 0 ||
+	    lobby_read_kson_string(body, len, &p, event_name,
+	    sizeof(event_name)) < 0 ||
+	    lobby_skip(len, &p, 12) < 0 ||
+	    lobby_read_u8(body, len, &p, &n_sessions) < 0) {
+		log_warn("lobby: 0xf3 CP push prefix parse failed (%zu B) — "
+		    "dropped, no change", len);
+		return;
+	}
+	if (n_sessions > ACC_MAX_SESSIONS) {
+		log_warn("lobby: 0xf3 CP push has %u sessions (max %d) — "
+		    "dropped", n_sessions, ACC_MAX_SESSIONS);
+		return;
+	}
+	for (i = 0; i < n_sessions; i++) {
+		unsigned stype, scat, srules, sdur;
+
+		if (lobby_read_u8(body, len, &p, &stype) < 0 ||
+		    lobby_read_u8(body, len, &p, &scat) < 0 ||
+		    lobby_read_u8(body, len, &p, &srules) < 0 ||
+		    lobby_read_kson_string(body, len, &p, sname,
+		    sizeof(sname)) < 0 ||
+		    lobby_read_u16(body, len, &p, &sdur) < 0) {
+			log_warn("lobby: 0xf3 session %u parse failed — "
+			    "dropped, no change", i);
+			return;
+		}
+		(void)scat;
+		(void)srules;
+		parsed[i].session_type = (uint8_t)stype;
+		parsed[i].duration_min = (uint16_t)sdur;
+		/*
+		 * hour / day / multiplier are not carried in the CP session
+		 * wire; inherit the current session 0 (or sane defaults).
+		 */
+		parsed[i].hour_of_day = s->session_count > 0 ?
+		    s->sessions[0].hour_of_day : 12;
+		parsed[i].day_of_weekend = s->session_count > 0 ?
+		    s->sessions[0].day_of_weekend : 1;
+		parsed[i].time_multiplier = s->session_count > 0 ?
+		    s->sessions[0].time_multiplier : 1;
+	}
+	/* EventRules block (fixed 20 B) + entry-list header. */
+	if (lobby_skip(len, &p, 20) < 0) {
+		log_warn("lobby: 0xf3 EventRules parse failed — dropped, "
+		    "no change");
+		return;
+	}
+	(void)lobby_read_u8(body, len, &p, &ent_flag);
+	(void)lobby_read_u8(body, len, &p, &ent_count);
+	(void)flag_a;
+	(void)flag_b;
+
+	log_info("lobby: 0xf3 CP event \"%s\" @ \"%s\": %u sessions, %u "
+	    "entries — applying (entry roster not swapped)", cp_id, event_name,
+	    n_sessions, ent_count);
+
+	/*
+	 * Apply (FUN_140029eb0).  Notify then disconnect every player, swap
+	 * in the new track + session list, and run the weekend reset.  The
+	 * lobby connection (l) lives outside s->conns[], so the disconnect
+	 * loop never touches it.
+	 */
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		struct Conn *cn = s->conns[j];
+		struct ByteBuf out;
+
+		if (cn == NULL || cn->state != CONN_AUTH || cn->is_smpr)
+			continue;
+		bb_init(&out);
+		if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
+		    wr_str_a(&out, "Server") == 0 &&
+		    wr_str_a(&out, "Server is starting the next event, you "
+		    "will be disconnected") == 0 &&
+		    wr_i32(&out, 0) == 0 &&
+		    wr_u8(&out, 3) == 0)
+			(void)bcast_send_one(cn, out.data, out.wpos);
+		bb_free(&out);
+	}
+	for (j = 0; j < ACC_MAX_CARS; j++)
+		if (s->conns[j] != NULL)
+			conn_drop(s, s->conns[j]);
+
+	if (event_name[0] != '\0')
+		snprintf(s->track, sizeof(s->track), "%s", event_name);
+	if (n_sessions > 0) {
+		s->session_count = (uint8_t)n_sessions;
+		for (i = 0; i < n_sessions; i++)
+			s->sessions[i] = parsed[i];
+	}
+
+	session_reset(s, 0);
+	chat_weekend_reset_broadcast(s);
+}
+
 /*
  * Dispatch one framed message from the kson backend.  `body` points
  * at the first command byte, `len` is the body length (excluding the
@@ -1114,33 +1285,16 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		 * re-invokes its 0xd1 sender. */
 		(void)lobby_send_drivers_update(l, s);
 		break;
-	case 0xf3: {
+	case 0xf3:
 		/*
-		 * CP (Championship Points) data push from kson.  Body:
-		 *   kson_string event_id        (e.g. "monza")
-		 *   u8  flag_a
-		 *   u8  flag_b
-		 *   kson_string event_qualifier (e.g. "E_6h")
-		 *   ServerEventConfig blob (consumed by exe's
-		 *      FUN_14012e4f0 — stored for CP stats integration)
-		 * We're not a CP-enabled server, so just log the
-		 * event identifier for operator visibility and drop
-		 * the rest.  Avoids the "unhandled cmd 0xf3" debug
-		 * spam without pulling in CP storage.
+		 * CP (Competition) event push: switch to the lobby's next
+		 * scheduled event.  Parsed and applied defensively by
+		 * lobby_apply_cp_event (reconfigure + disconnect all +
+		 * weekend reset, mirroring FUN_140029eb0); a desync aborts
+		 * without touching server state.
 		 */
-		char event_id[128];
-		size_t p = 1;
-
-		if (lobby_read_kson_string(body, len, &p, event_id,
-		    sizeof(event_id)) == 0)
-			log_info("lobby: 0xf3 CP data push for event \"%s\" "
-			    "(%zu B body, dropped — CP not enabled)",
-			    event_id, len);
-		else
-			log_info("lobby: 0xf3 CP data push (%zu B body, "
-			    "short parse — dropped)", len);
+		lobby_apply_cp_event(l, s, body, len);
 		break;
-	}
 	case 0xf4: {
 		/*
 		 * Lobby-initiated remote ban.  kson sends two kson_strings

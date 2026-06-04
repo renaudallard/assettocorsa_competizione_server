@@ -235,6 +235,15 @@
   parsed and stored but never acted on — those require the Kunos ranked
   backend we can't reach from a third-party deployment.  Same goes for
   `useGt2Tracks` / `useN24` and `centralEntryListPath`.
+- The lobby's `0xf3` CP-event push (the backend telling a CP-enrolled
+  server to switch to its next scheduled event) is parsed and applied
+  defensively — new track + session list, all players disconnected, then a
+  weekend reset, mirroring the stock server.  Because accd is never
+  CP-enrolled it will not receive this from the real lobby, so its wire
+  layout is reverse-engineered with no capture to validate against: every
+  field is bounds-checked and any desync aborts before touching state, and
+  the entry roster is logged but not swapped (the per-entry layout is not
+  resolvable with confidence).
 - `randomizeTrackWhenEmpty` picks a new random track each time the last
   driver leaves a running session, matching the dedicated server.
   `useIgtDlcTracks` and `useBgtDlcTracks` add the respective GT3 DLC
