@@ -136,7 +136,8 @@ main.o: main.c bans.h state.h io.h lobby.h msg.h ratings.h config.h \
 bans.o: bans.c bans.h state.h io.h lobby.h msg.h log.h
 bcast.o: bcast.c bcast.h state.h io.h lobby.h msg.h log.h
 chat.o: chat.c bans.h state.h io.h lobby.h msg.h bcast.h chat.h \
- entrylist.h handlers.h handshake.h log.h penalty.h prim.h session.h
+ entrylist.h handlers.h handshake.h log.h penalty.h prim.h session.h \
+ weather.h
 config.o: config.c config.h state.h io.h lobby.h msg.h entrylist.h \
  json.h log.h weather.h
 console.o: console.c chat.h state.h io.h lobby.h msg.h console.h log.h \
