@@ -1010,7 +1010,8 @@ session_tick(struct Server *s)
 	 * race green trigger / nudge ts[0]/ts[1] by a few ms.  Matches the
 	 * same guard in handshake.c:2035.
 	 */
-	if (s->session.phase == PHASE_WAITING && s->nconns > 0 &&
+	if (s->session.phase == PHASE_WAITING &&
+	    server_used_car_count(s) > 0 &&
 	    !s->session.ts_valid) {
 		session_start(s);
 	}
@@ -1025,7 +1026,7 @@ session_tick(struct Server *s)
 	 * instead of cycling through OVERTIME / COMPLETED where the
 	 * server disappears from the public server list.
 	 */
-	if (s->nconns == 0 &&
+	if (server_used_car_count(s) == 0 &&
 	    (s->session.session_index != 0 ||
 	     s->session.phase != PHASE_WAITING)) {
 		log_info("no drivers, resetting to first session");

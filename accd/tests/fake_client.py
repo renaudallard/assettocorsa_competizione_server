@@ -190,13 +190,13 @@ def build_car_info(car_model=35, cup=0, race_number=99):
     return buf
 
 
-def build_handshake():
+def build_handshake(password=""):
     """Assemble a real-format ACP_REQUEST_CONNECTION so the server
     routes it through the >200-byte real-path parser and echoes
     proper DriverInfo + CarInfo bytes in the welcome trailer."""
     body = bytes([0x09])
     body += struct.pack("<H", ACCD_PROTOCOL_VERSION)
-    body += wstr_a("")                # password (empty)
+    body += wstr_a(password)          # empty = driver, else spectator pw
     body += build_driver_info()
     body += bytes(8)                  # separator between DriverInfo and CarInfo
     body += build_car_info()
@@ -632,7 +632,7 @@ def write_cfg(tmp, tcp, udp):
                 f'"maxConnections": 4, "lanDiscovery": 0}}\n')
     with open(os.path.join(tmp, "settings.json"), "w") as f:
         f.write('{"serverName": "fake", "password": "", '
-                '"adminPassword": "", "spectatorPassword": ""}\n')
+                '"adminPassword": "", "spectatorPassword": "spec"}\n')
     with open(os.path.join(tmp, "event.json"), "w") as f:
         f.write('{"track": "misano", "ambientTemp": 22, '
                 '"cloudLevel": 0.1, "rain": 0.0, "weatherRandomness": 0, '
@@ -648,6 +648,9 @@ def main():
     ap.add_argument("--host", help="host:port of a live accd")
     ap.add_argument("--accd", help="path to accd binary (spawns a test "
                     "instance if --host is not given)")
+    ap.add_argument("--spectator", action="store_true",
+                    help="join with the spectator password; expect a "
+                    "carless welcome (car_index == 0xffffffff)")
     args = ap.parse_args()
 
     proc = None
@@ -683,7 +686,7 @@ def main():
     try:
         sock = socket.socket()
         sock.connect((host, port))
-        sock.sendall(build_handshake())
+        sock.sendall(build_handshake("spec" if args.spectator else ""))
         body, trailing = recv_framed(sock)
 
         print(f"Received 0x0b welcome: {len(body)} B")
@@ -710,6 +713,13 @@ def main():
                   "section layout diverged or server emits extra bytes")
             sock.close()
             return 3
+        if args.spectator:
+            if info["car_index"] != 0xffffffff:
+                print(f"FAIL: spectator car_index = "
+                      f"0x{info['car_index']:08x}, expected 0xffffffff")
+                sock.close()
+                return 4
+            print("PASS: spectator welcome (car_index=0xffffffff, no car)")
 
         # Consume the post-accept state-sync burst: 0x28 session_mgr,
         # 0x36 leaderboard, 0x37 weather, 0x4e rating summary (plus

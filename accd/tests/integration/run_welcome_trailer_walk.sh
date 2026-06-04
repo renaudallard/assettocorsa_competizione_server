@@ -17,17 +17,31 @@ set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE/.."/..
 
-echo "==> running fake_client.py against a transient accd"
+echo "==> running fake_client.py (driver) against a transient accd"
 out=$(python3 tests/fake_client.py 2>&1)
 echo "$out" | tail -25
 
-if echo "$out" | grep -q "PASS: welcome parses cleanly to EOF"; then
-    if echo "$out" | grep -qE "^FAIL|leftover [1-9]"; then
-        echo "RESULT: FAIL (PASS line present but unexpected FAIL/leftover above)"
-        exit 1
-    fi
-    echo "RESULT: PASS (welcome trailer + follow-up burst walk cleanly)"
-    exit 0
+if ! echo "$out" | grep -q "PASS: welcome parses cleanly to EOF"; then
+    echo "RESULT: FAIL (driver fake_client.py did not emit PASS)"
+    exit 2
 fi
-echo "RESULT: FAIL (fake_client.py did not emit PASS)"
-exit 2
+if echo "$out" | grep -qE "^FAIL|leftover [1-9]"; then
+    echo "RESULT: FAIL (driver PASS present but unexpected FAIL/leftover)"
+    exit 1
+fi
+
+echo "==> running fake_client.py --spectator (carless welcome)"
+sout=$(python3 tests/fake_client.py --spectator 2>&1)
+echo "$sout" | tail -25
+
+if ! echo "$sout" | grep -q "PASS: spectator welcome"; then
+    echo "RESULT: FAIL (spectator: car_index != 0xffffffff or welcome bad)"
+    exit 3
+fi
+if echo "$sout" | grep -qE "^FAIL|leftover [1-9]"; then
+    echo "RESULT: FAIL (spectator PASS present but unexpected FAIL/leftover)"
+    exit 1
+fi
+
+echo "RESULT: PASS (driver + spectator welcome trailers walk cleanly)"
+exit 0

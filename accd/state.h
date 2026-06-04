@@ -1126,6 +1126,8 @@ void	car_runtime_reset_gate(struct CarRuntime *rt);
  * the entry list is full.  car_id matches the index by design.
  */
 int	server_alloc_car(struct Server *s);
+/* Count used car slots = "drivers present" (excludes carless spectators). */
+int	server_used_car_count(const struct Server *s);
 
 /*
  * Pick the next grid slot for a joining car: max existing +1 if

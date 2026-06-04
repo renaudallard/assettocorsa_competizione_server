@@ -491,6 +491,24 @@ server_alloc_car(struct Server *s)
 }
 
 /*
+ * Count cars with a driver in them (used slots).  This is the
+ * "drivers present" basis for the session phase machine, matching the
+ * exe which counts its car-entry vector (FUN_14002f710), not the raw
+ * connection count: a carless spectator (car_id = -1) is in s->nconns
+ * but owns no car, so it must not start or hold a session.
+ */
+int
+server_used_car_count(const struct Server *s)
+{
+	int i, n = 0;
+
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+		if (s->cars[i].used)
+			n++;
+	return n;
+}
+
+/*
  * Active grid-position assignment per FUN_140021090.  Scan every
  * used car, find the maximum assigned grid number, and return
  * max+1 if it still fits under max_connections.  Otherwise walk

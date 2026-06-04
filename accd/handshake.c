@@ -1939,7 +1939,9 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 	    wr_u16(&bb, (uint16_t)s->udp_port) < 0 ||
 	    wr_u8(&bb, 0x12) < 0 ||
 	    wr_u16(&bb, c->conn_id) < 0 ||
-	    wr_u32(&bb, (uint32_t)s->cars[c->car_id].car_id) < 0)
+	    wr_u32(&bb, (c->car_id >= 0 && c->car_id < ACC_MAX_CARS)
+		? (uint32_t)s->cars[c->car_id].car_id
+		: 0xffffffffu) < 0)
 		goto fail;
 
 	if (build_welcome_trailer(&bb, s, c) < 0)
@@ -2037,8 +2039,33 @@ handshake_handle(struct Server *s, struct Conn *c,
 	if (s->nconns > s->max_connections) {
 		log_info("rejecting connection: server full");
 		reason = REJECT_FULL;
+		/*
+		 * sub=1 marks a spectator-full reject (connection-list
+		 * capacity), matching the exe FUN_14002db30(9, 1, ...);
+		 * drivers keep sub=0.  a/b are the connection count and
+		 * max_connections.
+		 */
+		reject_sub = c->is_spectator ? 1 : 0;
 		reject_a = (uint32_t)s->nconns;
 		reject_b = (uint32_t)s->max_connections;
+		goto reply;
+	}
+
+	/*
+	 * Carless observer (exe FUN_140033980): a spectatorPassword
+	 * connection takes no car slot.  Skip the driver-info parse, the
+	 * car allocation, and all driver-only session gates; reach the
+	 * welcome with car_id = -1 so its own-car field is emitted as
+	 * 0xffffffff and the AC2 client renders a free camera.  The
+	 * spectator stays in the connection table and receives every
+	 * broadcast (0x36 / 0x28 / 0x37 / 0x39) fanned over the conn list.
+	 */
+	if (c->is_spectator) {
+		c->car_id = -1;
+		c->state = CONN_AUTH;
+		log_kunos("Sending initData with -1 carIndex, meaning "
+		    "connectionId %u enters as spectator",
+		    (unsigned)c->conn_id);
 		goto reply;
 	}
 
@@ -2845,7 +2872,8 @@ reply:
 		 * session_start until the NEXT iteration, leaving
 		 * the welcome 0x28 with all 7 slots invalid).
 		 */
-		if (s->session.phase == PHASE_WAITING && s->nconns > 0 &&
+		if (s->session.phase == PHASE_WAITING &&
+		    server_used_car_count(s) > 0 &&
 		    !s->session.ts_valid)
 			session_start(s);
 		{
@@ -2903,7 +2931,8 @@ reply:
 			 * == -1) skip this fan-out — kunos doesn't emit
 			 * 0x47 at join for them either.
 			 */
-			if (s->cars[c->car_id].team_entry_id >= 0) {
+			if (c->car_id >= 0 &&
+			    s->cars[c->car_id].team_entry_id >= 0) {
 				int8_t group = s->cars[c->car_id].team_entry_id;
 				int g;
 				for (g = 0; g < ACC_MAX_CARS; g++) {
