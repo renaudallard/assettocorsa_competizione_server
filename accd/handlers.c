@@ -232,8 +232,15 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	if (s->session.phase >= PHASE_COMPLETED) {
-		log_info("sector split ignored: session over (car=%d)",
+	/*
+	 * Ignore a split the CLIENT flags as IsSessionOver (lap-states bit
+	 * 0x0400), mirroring the exe's wire-bit guard (FUN_1400142f0 case
+	 * 0x20: `(word >> 8 & 4)` -> "Received split with isSessionOver
+	 * flag; will ignore it").  The exe trusts the client's per-message
+	 * bit, not the server phase.
+	 */
+	if ((car_field & 0x0400) != 0) {
+		log_info("sector split ignored: isSessionOver (car=%d)",
 		    c->car_id);
 		return 0;
 	}
@@ -358,9 +365,15 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
-	/* Skip bookkeeping past session end — match the exe's
-	 * isSessionOver guard. */
-	if (s->session.phase >= PHASE_COMPLETED)
+	/*
+	 * Ignore a lap the CLIENT flags as IsSessionOver (lap-states bit
+	 * 0x0400), mirroring the exe's wire-bit guard (FUN_1400142f0 case
+	 * 0x21: `word & 0x400` -> "Received lap with isSessionOver flag;
+	 * will ignore it").  The exe trusts the client's per-lap bit, not
+	 * the server phase, so a final lap completing as the server crosses
+	 * into its end-detection phase is still scored.
+	 */
+	if ((car_field & 0x0400) != 0)
 		return 0;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
