@@ -2014,102 +2014,100 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
 
 /*
  * Despite the enum name, 0x55 is not a car-setup-file load — it's
- * the in-game garage's "load lap history for this car from session
- * N" request.  Wire layout (case 0x55 in FUN_1400142f0):
+ * the in-game garage's "load lap history for this car from session N"
+ * request.  Wire layout (case 0x55 in FUN_1400142f0):
  *
  *     u8  0x55
- *     u8  session_index   (0 P, 4 Q, 10 R — NOT the msg.h
- *                          session_index which is slot 0/1/2)
+ *     u8  session_index   (0-based: 0 P, 1 Q, 2 R.  The exe compares
+ *                          it to the session position at +0x268 and
+ *                          uses it as a raw archive-vector index, NOT
+ *                          the session type 0/4/10.)
  *     u16 car_id
- *     u32 revision        (client's cached revision — ignored here;
- *                          exe uses it for cache invalidation)
+ *     u32 revision        (read and discarded in both the exe and accd)
  *
- * Reply 0x56 body (see notebook-b §5.6.4a 0x56):
+ * Reply 0x56 body (FUN_1400328f0):
  *
  *     u8  0x56
  *     u8  session_index    (echoed from request)
  *     u16 car_id
  *     i16 lap_count
  *     lap_count × Lap_record:
- *         str_a track_name
- *         u32   lap_time_ms
+ *         u32   lap_time_ms       (NO leading track name — the exe
+ *                                  copies but never serialises it)
  *         u8    split_count
  *         split_count × u32 split_time_ms
  *         u16   car_id
- *         u8    lap_quality  (0 = clean)
- *         u16   lap_number   (1-based)
+ *         u8    lap_quality       (0 = clean)
+ *         u16   lap_number        (1-based)
+ *     then a trailing single-car leaderboard record (FUN_140034210)
+ *     with the cvar8 byte forced to 0.
  *
- * Clients tolerate the absence of the trailing full-leaderboard
- * record that the exe appends; we skip it.  We also don't
- * archive past-session histories (we only have current-session
- * data), so a request for a completed session returns count=0.
+ * The source race state is the live car->race for the current session
+ * index, else the car's archived snapshot race_archive[session_index].
+ * An unknown car or an out-of-range index gets no reply (the exe
+ * returns silently); a valid-but-empty session replies lap_count 0.
  */
 int
 h_load_setup(struct Server *s, struct Conn *c,
     const unsigned char *body, size_t len)
 {
 	struct Reader r;
-	uint8_t msg_id, sess_type;
+	uint8_t msg_id, sess_index;
 	uint16_t car_id;
 	uint32_t revision;
 	struct ByteBuf out;
-	struct CarEntry *car = NULL;
-	int slot, my_sess_type = 0, laps_emitted = 0;
+	struct CarEntry *car;
+	int slot, laps_emitted = 0;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
-	    rd_u8(&r, &sess_type) < 0 ||
+	    rd_u8(&r, &sess_index) < 0 ||
 	    rd_u16(&r, &car_id) < 0 ||
 	    rd_u32(&r, &revision) < 0) {
 		log_warn("h_load_setup: short body");
 		return 0;
 	}
 
+	/*
+	 * An unknown car or an out-of-range session index gets no reply,
+	 * matching the exe (FUN_1400142f0 cleans up and returns without
+	 * sending 0x56).
+	 */
 	slot = (int)car_id - ACC_CAR_ID_BASE;
-	if (slot >= 0 && slot < ACC_MAX_CARS && s->cars[slot].used)
-		car = &s->cars[slot];
-	{
-		uint8_t cur = session_cur_type(s);
-		if (cur != 0xff)
-			my_sess_type = cur;
+	if (slot < 0 || slot >= ACC_MAX_CARS || !s->cars[slot].used) {
+		log_info("load setup: unknown car %u, no reply",
+		    (unsigned)car_id);
+		return 0;
+	}
+	car = &s->cars[slot];
+	if (sess_index >= s->session_count ||
+	    sess_index >= ACC_MAX_SESSIONS) {
+		log_info("load setup: session index %u out of range "
+		    "(have %u), no reply", (unsigned)sess_index,
+		    (unsigned)s->session_count);
+		return 0;
 	}
 
 	/*
-	 * Pick the race state to serve:
-	 *  - sess_type == current session's type  -> live car->race
-	 *  - else, find a session in s->sessions[] with that type and
-	 *    look up the car's archived snapshot from that session's
-	 *    index.  archive slot == NULL means that session was never
-	 *    completed for this car; reply with lap_count=0.
+	 * Pick the race state to serve: the live car->race for the
+	 * current session index, else the car's archived snapshot for
+	 * that 0-based session index.  A NULL archive slot means the
+	 * session was never completed for this car -> lap_count 0.
 	 */
 	{
-		const struct CarRaceState *src = NULL;
+		const struct CarRaceState *src =
+		    (sess_index == s->session.session_index)
+		    ? &car->race : car->race_archive[sess_index];
 
-		if (car != NULL && sess_type == my_sess_type) {
-			src = &car->race;
-		} else if (car != NULL) {
-			int k;
-			for (k = 0; k < s->session_count &&
-			    k < ACC_MAX_SESSIONS; k++) {
-				if (s->sessions[k].session_type == sess_type
-				    && car->race_archive[k] != NULL) {
-					src = car->race_archive[k];
-					break;
-				}
-			}
-		}
-
-		log_info("load setup: conn=%u car=%u sess_type=%u "
-		    "cur_sess_type=%d rev=%u src=%s",
-		    (unsigned)c->conn_id, (unsigned)car_id,
-		    (unsigned)sess_type, my_sess_type,
-		    (unsigned)revision,
+		log_info("load setup: conn=%u car=%u sess_index=%u rev=%u "
+		    "src=%s", (unsigned)c->conn_id, (unsigned)car_id,
+		    (unsigned)sess_index, (unsigned)revision,
 		    src == NULL ? "none"
 			: (src == &car->race ? "current" : "archive"));
 
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SETUP_DATA_RESPONSE) < 0 ||
-		    wr_u8(&out, sess_type) < 0 ||
+		    wr_u8(&out, sess_index) < 0 ||
 		    wr_u16(&out, car_id) < 0)
 			goto done;
 
@@ -2171,12 +2169,11 @@ h_load_setup(struct Server *s, struct Conn *c,
 	 * and could change how the client rendered the trailing
 	 * record's session-active label.
 	 */
-	if (car != NULL)
-		(void)write_car_leaderboard_record(&out, s, car, 0, 0, NULL, 0);
+	(void)write_car_leaderboard_record(&out, s, car, 0, 0, NULL, 0);
 	(void)bcast_send_one(c, out.data, out.wpos);
-	log_debug("0x56 reply: conn=%u car=%u sess_type=%u laps=%d "
+	log_debug("0x56 reply: conn=%u car=%u sess_index=%u laps=%d "
 	    "(%zu bytes)", (unsigned)c->conn_id, (unsigned)car_id,
-	    (unsigned)sess_type, laps_emitted, out.wpos);
+	    (unsigned)sess_index, laps_emitted, out.wpos);
 done:
 	bb_free(&out);
 	return 0;
