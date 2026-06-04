@@ -727,6 +727,72 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 	}
 
+	{
+		/*
+		 * weatherRules.json — optional weekend-weather constraints.
+		 * When isActive is set, the server re-draws the weekend
+		 * forecast on every reset until it satisfies every set bound
+		 * or abortSimulationsAfterMs elapses (FUN_140133770 driven
+		 * by FUN_14002c740).  All bounds default to -1 (ignore);
+		 * keys and defaults mirror the exe deserializer FUN_1400fd9d0.
+		 */
+		struct WeatherRules *wr = &s->weather_rules;
+		struct json_node *wrules =
+		    load_json(cfg_dir, "weatherRules.json");
+
+		wr->active = 0;
+		wr->verbose = 0;
+		wr->abort_after_ms = 300;
+		wr->temp_min = -1;
+		wr->temp_max = -1;
+		wr->temp_max_diff = -1;
+		wr->rain_min = -1.0f;
+		wr->rain_max = -1.0f;
+		wr->rain_min_diff = -1.0f;
+		wr->rain_max_diff = -1.0f;
+		wr->cloud_min = -1.0f;
+		wr->cloud_max = -1.0f;
+		wr->rain_changes = -1;
+
+		if (wrules != NULL) {
+			wr->active = (uint8_t)json_obj_get_bool(wrules,
+			    "isActive", 0);
+			wr->verbose = (uint8_t)json_obj_get_bool(wrules,
+			    "withLogging", 0);
+			wr->abort_after_ms = json_obj_get_int(wrules,
+			    "abortSimulationsAfterMs", 300);
+			wr->temp_min = json_obj_get_int(wrules,
+			    "raceTempMin", -1);
+			wr->temp_max = json_obj_get_int(wrules,
+			    "raceTempMax", -1);
+			wr->temp_max_diff = json_obj_get_int(wrules,
+			    "maxTempDifference", -1);
+			wr->rain_min = (float)json_obj_get_num(wrules,
+			    "raceRainMin", -1.0);
+			wr->rain_max = (float)json_obj_get_num(wrules,
+			    "raceRainMax", -1.0);
+			wr->rain_min_diff = (float)json_obj_get_num(wrules,
+			    "minRainDifference", -1.0);
+			wr->rain_max_diff = (float)json_obj_get_num(wrules,
+			    "maxRainDifference", -1.0);
+			wr->cloud_min = (float)json_obj_get_num(wrules,
+			    "minCloudLevel", -1.0);
+			wr->cloud_max = (float)json_obj_get_num(wrules,
+			    "maxCloudLevel", -1.0);
+			wr->rain_changes = json_obj_get_int(wrules,
+			    "raceRainChanges", -1);
+			if (wr->active)
+				log_info("weatherRules.json: active (temp "
+				    "%d..%d, cloud %.2f..%.2f, rain %.2f..%.2f, "
+				    "abort after %d ms)",
+				    wr->temp_min, wr->temp_max,
+				    (double)wr->cloud_min, (double)wr->cloud_max,
+				    (double)wr->rain_min, (double)wr->rain_max,
+				    wr->abort_after_ms);
+			json_free(wrules);
+		}
+	}
+
 	if (s->max_connections < 1 || s->max_connections > ACC_MAX_CARS)
 		s->max_connections = ACC_MAX_CARS;
 

@@ -35,6 +35,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include <math.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -329,34 +330,28 @@ weather_init(struct Server *s, float base_clouds, float base_rain,
 }
 
 /* ================================================================== */
-/* FUN_140116830 port: per-tick weather evolution.                     */
+/* FUN_140116830 core: instantaneous cloud / rain / temperature at an  */
+/* arbitrary weekend time, with no mutation of the live WeatherStatus.  */
+/* weather_step uses it for the live tick; weather_validate samples it  */
+/* across the session window.  Excludes the wind and track-wetness lag, */
+/* which are stateful live-only fields the rule validator never reads.  */
 /* ================================================================== */
 
-int
-weather_step(struct Server *s)
+static void
+weather_eval(const struct WeatherStatus *w, uint32_t time_s,
+    float *out_cloud, float *out_rain, float *out_ambient,
+    float *out_road, float *out_dryline)
 {
-	struct WeatherStatus *w = &s->weather;
-	float t, dt;
+	float t = (float)time_s;
+	float dt = (float)((double)time_s - (double)w->start_time_s);
 	float cloud_phase;	/* fVar7 in decomp: cos(t·ω - π/6) */
 	float dryline;		/* fVar12 = -0.2 - cloud_phase */
 	float accum, new_cloud, new_rain;
 	float ambient_factor, ambient, road, sun;
-	float prev_cloud = w->clouds;
-	float prev_rain = w->current_rain;
-
-	if (w->randomness == 0) {
-		/* Static weather: hold all fields at init values. */
-		return 0;
-	}
-
-	t = (float)s->session.weekend_time_s;
-	dt = (float)((double)s->session.weekend_time_s -
-	    (double)w->start_time_s);
 
 	/* === Cloud baseline cycle (24h) */
 	cloud_phase = cosf(t * WX_OMEGA_CLOUD - WX_PHASE_CLOUD);
 	dryline = -0.2f - cloud_phase;
-	w->dry_line_wetness = dryline;
 
 	/*
 	 * === Fourier sum into cloud level
@@ -391,7 +386,6 @@ weather_step(struct Server *s)
 		accum += dt * w->sine_coeffs[0] * WX_LIN_DRIFT;
 		new_cloud = clamp01(accum + w->base_clouds);
 	}
-	w->clouds = new_cloud;
 
 	/* === Cloud → rain mapping */
 	if (new_cloud <= 0.6f || !w->is_dynamic) {
@@ -403,10 +397,69 @@ weather_step(struct Server *s)
 		else if (accum <= new_rain)
 			new_rain = accum;
 	}
-	w->current_rain = new_rain;
-	w->target_rain = new_rain;
 
-	/* === Wind speed / direction */
+	/* === Ambient temperature */
+	ambient_factor = w->ambient_mean * 0.04f;
+	ambient = (w->ambient_mean -
+	    (new_rain * 4.0f + new_cloud) * ambient_factor) +
+	    (6.0f - new_cloud * 3.0f) * dryline;
+
+	/* Cold-night dry-rain suppression: don't surprise-rain the
+	 * driver in the dark when it's cold and currently dry. */
+	if (dryline <= 0.0f && ambient < 15.0f && new_rain == 0.0f)
+		new_rain = 0.0f;
+
+	/* === Road temperature */
+	sun = clamp01(dryline);
+	road = ((ambient * 0.25f + 5.0f) -
+	    (ambient * (new_cloud + new_rain) * 0.125f +
+	    (new_cloud + new_rain) * 2.5f) * ambient_factor) * sun + ambient;
+
+	/* === Snow / cold-cloudy tiny-rain path */
+	if (cloud_phase >= 0.6f && ambient < 12.0f && new_rain == 0.0f) {
+		float fade = clamp01((12.0f - ambient) * 0.14285715f);
+		float cloud_extra = clamp01((0.3f - cloud_phase) * -2.0f);
+		new_rain = fade * cloud_extra * 0.0002f;
+	}
+
+	*out_cloud = new_cloud;
+	*out_rain = new_rain;
+	*out_ambient = ambient;
+	*out_road = road;
+	*out_dryline = dryline;
+}
+
+/* ================================================================== */
+/* FUN_140116830 port: per-tick weather evolution.                     */
+/* ================================================================== */
+
+int
+weather_step(struct Server *s)
+{
+	struct WeatherStatus *w = &s->weather;
+	float dt;
+	float cloud, rain, ambient, road, dryline;
+	float prev_cloud = w->clouds;
+	float prev_rain = w->current_rain;
+
+	if (w->randomness == 0) {
+		/* Static weather: hold all fields at init values. */
+		return 0;
+	}
+
+	weather_eval(w, s->session.weekend_time_s,
+	    &cloud, &rain, &ambient, &road, &dryline);
+
+	w->clouds = cloud;
+	w->current_rain = rain;
+	w->target_rain = rain;
+	w->dry_line_wetness = dryline;
+	w->ambient_current = ambient;
+	w->road_current = road;
+
+	/* === Wind speed / direction (live-only, not part of validation) */
+	dt = (float)((double)s->session.weekend_time_s -
+	    (double)w->start_time_s);
 	{
 		float wind_factor = cosf((float)w->wind_harmonic *
 		    WX_OMEGA_CLOUD * dt);
@@ -427,50 +480,140 @@ weather_step(struct Server *s)
 			w->wind_direction = 0.0f;
 	}
 
-	/* === Ambient temperature */
-	ambient_factor = w->ambient_mean * 0.04f;
-	ambient = (w->ambient_mean -
-	    (new_rain * 4.0f + new_cloud) * ambient_factor) +
-	    (6.0f - new_cloud * 3.0f) * dryline;
-
-	/* Cold-night dry-rain suppression: don't surprise-rain the
-	 * driver in the dark when it's cold and currently dry. */
-	if (dryline <= 0.0f && ambient < 15.0f && new_rain == 0.0f) {
-		w->current_rain = 0.0f;
-		new_rain = 0.0f;
-	}
-	w->ambient_current = ambient;
-
-	/* === Road temperature */
-	sun = clamp01(dryline);
-	road = ((ambient * 0.25f + 5.0f) -
-	    (ambient * (new_cloud + new_rain) * 0.125f +
-	    (new_cloud + new_rain) * 2.5f) * ambient_factor) * sun + ambient;
-	w->road_current = road;
-
-	/* === Snow / cold-cloudy tiny-rain path */
-	if (cloud_phase >= 0.6f && ambient < 12.0f && new_rain == 0.0f) {
-		float fade = clamp01((12.0f - ambient) * 0.14285715f);
-		float cloud_extra = clamp01((0.3f - cloud_phase) * -2.0f);
-		w->current_rain = fade * cloud_extra * 0.0002f;
-	}
-
 	/* Track wetness lags rain. */
 	w->track_wetness += (w->current_rain - w->track_wetness) * 0.05f;
 	w->track_wetness = clamp01(w->track_wetness);
 
 	{
-		float dc = new_cloud - prev_cloud;
+		float dc = cloud - prev_cloud;
 		float dr = w->current_rain - prev_rain;
 		if (dc * dc > 0.0025f || dr * dr > 0.0025f) {
 			log_debug("weather: clouds=%.3f rain=%.3f wet=%.3f "
 			    "ambient=%.1f road=%.1f t=%.0fs",
-			    new_cloud, w->current_rain, w->track_wetness,
+			    cloud, w->current_rain, w->track_wetness,
 			    ambient, road, (double)s->session.weekend_time_s);
 			return 1;
 		}
 	}
 	return 0;
+}
+
+/* ================================================================== */
+/* FUN_14011ef30 mirror: re-draw the weekend weather coefficients.     */
+/* ================================================================== */
+
+void
+weather_redraw(struct Server *s)
+{
+	struct WeatherStatus *w = &s->weather;
+	uint32_t seed;
+
+	if (w->randomness == 0)
+		return;	/* static weather: nothing to re-pick */
+
+	/*
+	 * Vary the seed per re-draw so each weekend reset (and each retry
+	 * inside weather_validate's loop) produces a fresh forecast, the
+	 * way the exe advances its global Mersenne state on every pick.
+	 */
+	s->weather_draw_seq++;
+	seed = w->start_time_s ^ 0x9e3779b9u ^
+	    ((uint32_t)w->randomness << 16) ^
+	    (s->weather_draw_seq * 0x85ebca6bu);
+	weather_generate_fourier(s, seed);
+}
+
+/* ================================================================== */
+/* FUN_140133770 port: validate the forecast against weatherRules.json. */
+/* ================================================================== */
+
+static int
+weather_reject(const struct WeatherRules *r, const char *fmt, ...)
+{
+	if (r->verbose) {
+		va_list ap;
+		char buf[160];
+
+		va_start(ap, fmt);
+		(void)vsnprintf(buf, sizeof(buf), fmt, ap);
+		va_end(ap);
+		log_info("weather: rules rejected draw: %s", buf);
+	}
+	return 0;
+}
+
+int
+weather_validate(struct Server *s)
+{
+	const struct WeatherRules *r = &s->weather_rules;
+	const struct SessionDef *sd = &s->sessions[0];
+	double start, end, t;
+	float factor;
+	float max_temp = 0.0f, min_temp = 99.0f;
+	float max_rain = 0.0f, min_rain = 1.0f;
+
+	if (!r->active)
+		return 1;	/* no validation configured */
+
+	/*
+	 * Scan the first session's window (from 4 h before its start to
+	 * its simulated end, every 10 min), sampling the forecast and
+	 * checking each set bound, mirroring FUN_140133770's loop.
+	 */
+	factor = sd->time_multiplier > 0 ? (float)sd->time_multiplier : 1.0f;
+	start = (double)sd->hour_of_day * 3600.0;
+	end = start + (double)sd->duration_min * 60.0 * (double)factor;
+
+	for (t = start - 14400.0; t < end; t += 600.0) {
+		float cloud, rain, ambient, road, dryline;
+		uint32_t ts = (uint32_t)(t < 0.0 ? 0.0 : t);
+
+		weather_eval(&s->weather, ts, &cloud, &rain, &ambient,
+		    &road, &dryline);
+
+		if (rain > max_rain) max_rain = rain;
+		if (rain < min_rain) min_rain = rain;
+		if (ambient > max_temp) max_temp = ambient;
+		if (ambient < min_temp) min_temp = ambient;
+
+		if (r->temp_max_diff > -1 &&
+		    (float)r->temp_max_diff < max_temp - min_temp)
+			return weather_reject(r, "temp spread %.0f-%.0f > %d",
+			    (double)max_temp, (double)min_temp, r->temp_max_diff);
+		if (r->rain_max_diff > -1.0f &&
+		    r->rain_max_diff < max_rain - min_rain)
+			return weather_reject(r, "rain spread %.2f-%.2f > %.2f",
+			    (double)max_rain, (double)min_rain,
+			    (double)r->rain_max_diff);
+		if (r->rain_max > -1.0f && r->rain_max < rain)
+			return weather_reject(r, "rain %.2f > %.2f",
+			    (double)rain, (double)r->rain_max);
+		if (r->rain_min > -1.0f && rain < r->rain_min)
+			return weather_reject(r, "rain %.2f < %.2f",
+			    (double)rain, (double)r->rain_min);
+		if (r->temp_max > -1 && (float)r->temp_max < ambient)
+			return weather_reject(r, "temp %.0f > %d",
+			    (double)ambient, r->temp_max);
+		if (r->temp_min > -1 && ambient < (float)r->temp_min)
+			return weather_reject(r, "temp %.0f < %d",
+			    (double)ambient, r->temp_min);
+		if (r->cloud_max > -1.0f && r->cloud_max < cloud)
+			return weather_reject(r, "cloud %.2f > %.2f",
+			    (double)cloud, (double)r->cloud_max);
+		if (r->cloud_min > -1.0f && cloud < r->cloud_min)
+			return weather_reject(r, "cloud %.2f < %.2f",
+			    (double)cloud, (double)r->cloud_min);
+	}
+
+	/* Post-scan rain-variation rules. */
+	if (r->rain_min_diff > -1.0f && max_rain - min_rain < r->rain_min_diff)
+		return weather_reject(r, "rain spread %.2f-%.2f < %.2f",
+		    (double)max_rain, (double)min_rain,
+		    (double)r->rain_min_diff);
+	if (r->rain_changes >= 1 && !(min_rain <= 0.05f && max_rain >= 0.25f))
+		return weather_reject(r, "rain changes %.2f-%.2f need dry+wet",
+		    (double)max_rain, (double)min_rain);
+	return 1;
 }
 
 /* ================================================================== */

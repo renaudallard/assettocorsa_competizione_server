@@ -250,6 +250,22 @@ When present and
 is set in
 .Pa entrylist.json ,
 only listed drivers may connect.
+.It Pa weatherRules.json
+Optional.
+Weekend-weather constraints.
+When
+.Dq isActive
+is set, a weekend reset re-draws the forecast until it satisfies every
+bound or
+.Dq abortSimulationsAfterMs
+elapses.
+Bounds
+.Dq raceTempMin , raceTempMax , maxTempDifference ,
+.Dq raceRainMin , raceRainMax , minRainDifference , maxRainDifference ,
+.Dq minCloudLevel , maxCloudLevel
+and
+.Dq raceRainChanges
+each default to \-1 (ignored).
 .El
 .Sh ADMIN COMMANDS
 When
@@ -265,9 +281,15 @@ Advance to the next session.
 .It /restart
 Restart the current session.
 .It /resetWeekend
-Reset to the first session of the weekend, snapshot
-.Pa cfg/current/*.txt ,
-and redeliver the welcome trailer to every connected client
+Reset to the first session of the weekend.
+Re-draws the weekend weather and broadcasts the two-phase
+.Sy 0x40
+weekend-reset pair (the forecast at friday night, then at the
+first session), optionally re-drawing until it satisfies
+.Pa cfg/weatherRules.json ,
+then snapshots
+.Pa cfg/current/*.txt
+and redelivers the welcome trailer to every connected client
 so the new weather and schedule take effect immediately.
 .It /kick Ar car#
 Kick a car by number.
@@ -365,6 +387,8 @@ Server identity and access control.
 Track, weather, and session schedule.
 .It Pa cfg/entrylist.json
 Optional entry list for pre-assigned slots.
+.It Pa cfg/weatherRules.json
+Optional weekend-weather constraints applied on a weekend reset.
 .It Pa cfg/banlist.txt
 Persistent ban list (one Steam ID per line), managed automatically.
 .It Pa results/

@@ -56,6 +56,21 @@ void	weather_init(struct Server *s, float base_clouds,
  */
 int	weather_step(struct Server *s);
 
+/*
+ * Re-draw the weekend weather (re-run the Fourier generator with a
+ * fresh seed), mirroring the exe's FUN_14011ef30 re-pick on a weekend
+ * reset.  No-op when randomness is 0 (static weather).
+ */
+void	weather_redraw(struct Server *s);
+
+/*
+ * Validate the current weather model against cfg/weatherRules.json
+ * (port of FUN_140133770): scan the session window sampling the
+ * forecast and check every set bound.  Returns 1 when the rules are
+ * satisfied (or inactive), 0 when a rule is violated.
+ */
+int	weather_validate(struct Server *s);
+
 /* Build a 0x37 weather status body in bb.  Wire format:
  * u8 = 0x37 + 7 × u32 weather factors + WeatherStatus inline
  * (9 × u32) + f32 timestamp.  See §5.6.4a row for 0x37. */

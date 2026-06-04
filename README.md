@@ -131,7 +131,10 @@
   clock delta is fresh to within one tick.
 - **Weather & in-game clock** — deterministic sin/cos weather with
   seeded cycles; 5-second `0x37` broadcast carrying `weekend_time_s`
-  driven by `hourOfDay` × `timeMultiplier`.
+  driven by `hourOfDay` × `timeMultiplier`.  A weekend reset
+  (`/resetWeekend` or `/track`) re-draws the forecast and broadcasts
+  the two-phase `0x40` weekend-reset pair (friday night then first
+  session), optionally validated against `weatherRules.json`.
 - **Driver swap** — full endurance-style swap state machine
   (`&swap`, `0x47`/`0x48`/`0x4a`/`0x58`) for multi-driver entries.
 - **Live track change** — `/track <name>` swaps the track
@@ -427,6 +430,39 @@ Pre-assigns car entries with driver info, ballast, restrictor, and
 grid positions.  If absent, the server accepts any client into the
 first available slot.  With `forceEntryList: 1`, only Steam IDs in
 the entry list are accepted.
+
+</details>
+
+<details>
+<summary><b>weatherRules.json — optional weekend-weather constraints</b></summary>
+
+```json
+{
+    "isActive": true,
+    "withLogging": false,
+    "abortSimulationsAfterMs": 300,
+    "raceTempMin": -1,
+    "raceTempMax": -1,
+    "maxTempDifference": -1,
+    "raceRainMin": -1.0,
+    "raceRainMax": -1.0,
+    "minRainDifference": -1.0,
+    "maxRainDifference": -1.0,
+    "minCloudLevel": -1.0,
+    "maxCloudLevel": -1.0,
+    "raceRainChanges": -1
+}
+```
+
+Optional file.  When `isActive` is set, a weekend reset re-draws the
+forecast until it satisfies every bound (or `abortSimulationsAfterMs`
+elapses), matching the stock server.  Each bound is ignored when left
+at `-1` / `-1.0`.  Temperatures are °C, rain and cloud are `0..1`.
+`maxTempDifference` / `minRainDifference` / `maxRainDifference` bound
+the spread across the session window; `raceRainChanges` (`>= 1`)
+requires the forecast to contain both a dry and a wet period.
+`withLogging` logs each rejected draw.  With no file present, weather
+validation is skipped.
 
 </details>
 

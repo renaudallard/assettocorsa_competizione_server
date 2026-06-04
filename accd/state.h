@@ -516,6 +516,30 @@ struct WeatherStatus {
 };
 
 /*
+ * Optional cfg/weatherRules.json constraints.  The stock server
+ * (FUN_140133770) re-draws the weekend weather until a generated
+ * forecast satisfies every set rule (or abortAfterMs elapses).  Each
+ * bound is optional: -1 (or -1.0) means "ignore this rule".  Field
+ * names and defaults mirror the exe deserializer FUN_1400fd9d0 and
+ * initializer FUN_14000d8f0.
+ */
+struct WeatherRules {
+	uint8_t		active;		/* isActive: master enable (default 0) */
+	uint8_t		verbose;	/* withLogging: log rejection reasons */
+	int32_t		abort_after_ms;	/* abortSimulationsAfterMs (default 300) */
+	int32_t		temp_min;	/* raceTempMin   °C, -1 = ignore */
+	int32_t		temp_max;	/* raceTempMax   °C */
+	int32_t		temp_max_diff;	/* maxTempDifference, -1 = ignore */
+	float		rain_min;	/* raceRainMin   0..1, -1 = ignore */
+	float		rain_max;	/* raceRainMax */
+	float		rain_min_diff;	/* minRainDifference */
+	float		rain_max_diff;	/* maxRainDifference */
+	float		cloud_min;	/* minCloudLevel */
+	float		cloud_max;	/* maxCloudLevel */
+	int32_t		rain_changes;	/* raceRainChanges: >=1 require dry+wet */
+};
+
+/*
  * Assist rules from assistRules.json (subset of fields actually
  * carried in the wire protocol; everything else is server-side
  * enforcement only).
@@ -1014,6 +1038,8 @@ struct Server {
 	uint8_t			session_count;
 	struct SessionState	session;
 	struct WeatherStatus	weather;
+	struct WeatherRules	weather_rules;	/* cfg/weatherRules.json (optional) */
+	uint32_t		weather_draw_seq;	/* increments per weekend re-draw to vary the seed */
 	struct AssistRules	assist;
 	struct BanList		bans;
 	struct BanList		kicks;	/* ephemeral; cleared on weekend wrap */

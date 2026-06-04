@@ -56,6 +56,7 @@
 #include "prim.h"
 #include "session.h"
 #include "state.h"
+#include "weather.h"
 
 int
 chat_prefix(const char *s, const char *p)
@@ -495,31 +496,73 @@ snapshot_cfg_current(const struct Server *s)
 }
 
 /*
- * Common post-reset broadcast: cfg snapshot, 0x40 weekend-reset with
- * weather body, and 0x4b welcome-trailer redelivery to every peer.
- * Shared by /track (new event) and /resetWeekend (same event).
+ * Emit one 0x40 weekend-reset broadcast carrying the current weather
+ * snapshot.  FUN_14002c740 writes msg_id 0x40, then appends the
+ * WeatherData serialize body (vtable slot 0x20 on the WeatherData
+ * object, the same call our write_trailer_weather_data mirrors), then
+ * fans out to every peer via FUN_14004cc50.
+ */
+static void
+weekend_emit_weather_reset(struct Server *s)
+{
+	struct ByteBuf wb;
+
+	bb_init(&wb);
+	if (wr_u8(&wb, SRV_RACE_WEEKEND_RESET) == 0 &&
+	    write_trailer_weather_data(&wb, s) == 0)
+		(void)bcast_all(s, wb.data, wb.wpos, BCAST_EXCEPT_NONE);
+	bb_free(&wb);
+}
+
+/*
+ * Common post-reset broadcast, a port of the two-phase weekend reset
+ * FUN_14002c740 (reached from FUN_14002aca0).  Shared by /track (new
+ * event) and /resetWeekend (same event); the caller has already run
+ * session_reset, leaving session.weekend_time_s at the first session.
+ *
+ * The exe re-draws the weekend weather, broadcasts a 0x40 with the
+ * forecast evaluated at "friday night" (weekend time 0), validates it
+ * against cfg/weatherRules.json (re-drawing and re-broadcasting until
+ * the rules pass or abortSimulationsAfterMs elapses), then advances the
+ * clock to the first session and broadcasts a second 0x40.  Finally it
+ * snapshots cfg/current and redelivers the welcome trailer (0x4b) to
+ * every peer.  With no weatherRules.json the loop runs exactly once,
+ * giving the friday-night + first-session pair the stock server sends.
  */
 void
 chat_weekend_reset_broadcast(struct Server *s)
 {
+	uint32_t first_session_time = s->session.weekend_time_s;
+	uint64_t start_ms = mono_ms();
+	int attempt = 0;
 	int j;
 
-	(void)snapshot_cfg_current(s);
+	log_info("weather: resetting weekend to friday night");
 
-	/*
-	 * 0x40 weekend-reset broadcast.  FUN_14002c740 line 242 writes msg_id
-	 * 0x40, then appends the WeatherData serialize body (vtable slot 0x20
-	 * on the WeatherData object — same call our write_trailer_weather_data
-	 * mirrors), then fans out to every peer via FUN_14004cc50.
-	 */
-	{
-		struct ByteBuf wb;
-		bb_init(&wb);
-		if (wr_u8(&wb, SRV_RACE_WEEKEND_RESET) == 0 &&
-		    write_trailer_weather_data(&wb, s) == 0)
-			(void)bcast_all(s, wb.data, wb.wpos, BCAST_EXCEPT_NONE);
-		bb_free(&wb);
+	/* Phase 1: re-draw + friday-night 0x40, with rule retry. */
+	for (;;) {
+		attempt++;
+		weather_redraw(s);
+		s->session.weekend_time_s = 0;
+		(void)weather_step(s);
+		weekend_emit_weather_reset(s);
+
+		if (weather_validate(s))
+			break;
+		if ((int64_t)(mono_ms() - start_ms) >
+		    (int64_t)s->weather_rules.abort_after_ms) {
+			log_info("weather: rules unmet after %d draws, "
+			    "keeping the last forecast", attempt);
+			break;
+		}
 	}
+
+	/* Phase 2: advance to the first session + final 0x40. */
+	s->session.weekend_time_s = first_session_time;
+	(void)weather_step(s);
+	weekend_emit_weather_reset(s);
+
+	(void)snapshot_cfg_current(s);
 
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		struct Conn *cn = s->conns[j];
