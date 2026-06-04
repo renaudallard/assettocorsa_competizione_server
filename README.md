@@ -90,7 +90,11 @@
 ### Session management
 
 - **P / Q / R schedule** with automatic phase transitions, countdown
-  timers, overtime hold, and weekend reset after the final race.
+  timers, overtime hold, and weekend reset after the final race.  The
+  end-detection phase holds a session open while a non-finished car is
+  still moving on track (or, in P/Q, still on track), matching the
+  stock server, so a slow finisher is not cut off; a 5-minute cap stops
+  a stalled car from holding the lobby.
 - **Position-based race start** — the green flag fires when the
   leader's normalised track position crosses a randomised trigger
   inside the configured green range, with no time fallback.

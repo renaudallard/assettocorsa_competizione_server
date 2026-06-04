@@ -312,6 +312,12 @@ struct CarRaceState {
 						 * last ACP_CAR_LOCATION_UPDATE
 						 * (0x32) had location==Track.
 						 * Gates race-start leader pick. */
+	uint8_t		finished;		/* crossed S/F after the race
+						 * clock expired (set in the
+						 * overtime lap-finish path);
+						 * excluded from the phase-6
+						 * end-detection hold, mirroring
+						 * exe car+0x1d1 bit 0x04 */
 	uint8_t		car_location;		/* raw 0x32 location enum
 						 * (NONE=0 Track=1 Pitlane=2
 						 * PitEntry=3 PitExit=4); exe
@@ -425,6 +431,17 @@ struct SessionState {
 	 * the hold is force-released regardless of cars_in_overtime.
 	 */
 	uint64_t	overtime_hold_started_ms;
+
+	/*
+	 * Phase-6 (COMPLETED) end-detection hold: the stock server keeps
+	 * a session in its end-detection phase while any non-finished car
+	 * is still active - moved within the last 5 min in a race
+	 * (FUN_140042890 mode 1) or on track in P/Q (mode 0) - refusing to
+	 * finalise until the field has stopped/left.  Set per tick by
+	 * session_update_completion_hold; gates COMPLETED -> ADVANCE.
+	 */
+	uint8_t		completion_hold;
+	uint64_t	completion_hold_started_ms;
 
 	/*
 	 * Race green-flag position gate (FUN_14012f4a0 in accServer.exe).
@@ -618,6 +635,11 @@ struct CarRuntime {
 	uint32_t	client_timestamp_ms;	/* most recent client ts */
 	uint32_t	last_timestamp_ms;	/* for out-of-order drop */
 	int		has_data;		/* ever received? */
+	uint64_t	last_moved_ms;		/* mono_ms of the last 0x1e
+						 * where |vec_c| > 5 km/h; exe
+						 * car+0x158, gates the phase-6
+						 * "still moving" end-detection
+						 * hold (FUN_140042890) */
 	uint8_t		dirty;			/* set by car_update ingest,
 						 * cleared by periodic
 						 * fan-out.  Matches the

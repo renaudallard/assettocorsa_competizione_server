@@ -635,6 +635,13 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		leaderboard_request_emit(s);
 
 		if (s->session.phase == PHASE_OVERTIME) {
+			/*
+			 * Crossing S/F during overtime is a race finish: mark
+			 * the car so the phase-6 end-detection hold no longer
+			 * waits on it (exe car+0x1d1 bit 0x04).
+			 */
+			if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS)
+				s->cars[c->car_id].race.finished = 1;
 			session_overtime_car_finished(s);
 			session_quali_drop_eligibility(s, c->car_id);
 		}
@@ -2481,6 +2488,23 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 		return 0;
 
 	rt->has_data = 1;
+
+	/*
+	 * Record a "last moved" timestamp whenever the car's confirmed
+	 * velocity (vec_c, m/s) exceeds 5 km/h, mirroring exe FUN_140027f80
+	 * (which writes car+0x158 from FUN_1400427c0's magnitude when
+	 * speed*3.6 > 5).  The phase-6 end-detection hold reads it.  Compare
+	 * squared magnitudes to avoid a sqrt: (5 km/h / 3.6)^2 = 1.929,
+	 * (350 km/h / 3.6)^2 = 9452 is the exe's upper sanity clamp (a
+	 * garbage velocity reads as stationary).
+	 */
+	{
+		float sq = rt->vec_c[0] * rt->vec_c[0] +
+		    rt->vec_c[1] * rt->vec_c[1] +
+		    rt->vec_c[2] * rt->vec_c[2];
+		if (sq > 1.929f && sq <= 9452.0f)
+			rt->last_moved_ms = mono_ms();
+	}
 
 	/*
 	 * Mark the car dirty.  The periodic sweep in tick_run builds
