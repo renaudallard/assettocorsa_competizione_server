@@ -2524,6 +2524,14 @@ handshake_handle(struct Server *s, struct Conn *c,
 				    "%s (phase %s)", steam_buf, why,
 				    session_phase_name(s->session.phase));
 				reason = REJECT_BAD_SESSION;
+				/*
+				 * Mid-race / late-qualy / locked-prep emits
+				 * sub=1 (exe FUN_140025690:835 ->
+				 * FUN_14002db30(0xc, 1, ...)).  The CP-server-
+				 * not-Free-Practice BAD_SESSION above keeps
+				 * sub=0, matching FUN_14002db30(0xc, 0, ...).
+				 */
+				reject_sub = 1;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;
