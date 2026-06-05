@@ -244,10 +244,42 @@ results_write(struct Server *s)
 	fprintf(f, "    \"leaderBoardLines\": [");
 
 	first = 1;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
-		struct CarEntry *car = &s->cars[i];
+	{
+	int order[ACC_MAX_CARS];
+	int ord_n = 0, oi;
+
+	/*
+	 * Emit leaderBoardLines in finishing-classification order, not raw
+	 * slot order: the array order conveys position (there is no explicit
+	 * position field), matching the 0x36/0x3e wire which iterates by
+	 * race.position.  Collect identified cars, then insertion-sort by
+	 * the position the standings sort assigned (unset/0 trails).
+	 */
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+		if (s->cars[i].driver_count > 0)
+			order[ord_n++] = i;
+	for (oi = 1; oi < ord_n; oi++) {
+		int key = order[oi];
+		int kp = s->cars[key].race.position > 0
+		    ? s->cars[key].race.position : ACC_MAX_CARS + 1;
+		int jj = oi - 1;
+		while (jj >= 0) {
+			int pp = s->cars[order[jj]].race.position > 0
+			    ? s->cars[order[jj]].race.position
+			    : ACC_MAX_CARS + 1;
+			if (pp <= kp)
+				break;
+			order[jj + 1] = order[jj];
+			jj--;
+		}
+		order[jj + 1] = key;
+	}
+	for (oi = 0; oi < ord_n; oi++) {
+		struct CarEntry *car;
 		struct DriverInfo *d;
 
+		i = order[oi];
+		car = &s->cars[i];
 		/*
 		 * Emit any slot with an identity (driver_count > 0),
 		 * not just currently-connected ones — a driver who ran
@@ -267,6 +299,13 @@ results_write(struct Server *s)
 		fprintf(f, "          \"carModel\": %u,\n", car->car_model);
 		fprintf(f, "          \"cupCategory\": %u,\n",
 		    car->cup_category);
+		/*
+		 * carGroup: always emitted by the exe (FUN_14010c410) right
+		 * after cupCategory; a server-level setting (settings.json).
+		 */
+		fprintf(f, "          \"carGroup\": ");
+		fprint_json_str(f, s->car_group);
+		fprintf(f, ",\n");
 		fprintf(f, "          \"teamName\": ");
 		fprint_json_str(f, car->team_name);
 		fprintf(f, ",\n");
@@ -300,8 +339,19 @@ results_write(struct Server *s)
 				dfirst = 0;
 			}
 		}
-		fprintf(f, "\n          ]\n");
-		fprintf(f, "        },\n");
+		fprintf(f, "\n          ]");
+		/*
+		 * ballastKg / restrictor: the exe (FUN_14010c410) appends
+		 * these to the car object only when non-zero.  ballast is kg;
+		 * restrictor is the normalized fraction accd stores (0..0.20).
+		 */
+		if (car->ballast_kg != 0)
+			fprintf(f, ",\n          \"ballastKg\": %d",
+			    (int)car->ballast_kg);
+		if (car->restrictor != 0.0f)
+			fprintf(f, ",\n          \"restrictor\": %g",
+			    (double)car->restrictor);
+		fprintf(f, "\n        },\n");
 		fprintf(f, "        \"currentDriver\": {\n");
 		d = &car->drivers[car->current_driver_index <
 		    car->driver_count ? car->current_driver_index : 0];
@@ -374,7 +424,11 @@ results_write(struct Server *s)
 			    dj < ACC_MAX_DRIVERS_PER_CAR; dj++) {
 				if (!dfirst)
 					fprintf(f, ", ");
-				fprintf(f, "%d",
+				/*
+				 * Emit as a JSON float (exe FUN_14010f660 always
+				 * writes a decimal point); value stays in ms.
+				 */
+				fprintf(f, "%d.0",
 				    (int)car->race.driver_stint_ms[dj]);
 				dfirst = 0;
 			}
@@ -382,6 +436,7 @@ results_write(struct Server *s)
 		fprintf(f, "]\n");
 		fprintf(f, "      }");
 		first = 0;
+	}
 	}
 	fprintf(f, "\n    ]\n");
 	fprintf(f, "  },\n");
@@ -433,7 +488,7 @@ results_write(struct Server *s)
 				fprintf(f, "\n    {");
 				fprintf(f, " \"carId\": %u,", cc->car_id);
 				fprintf(f, " \"driverIndex\": %u,",
-				    (unsigned)cc->current_driver_index);
+				    (unsigned)cc->race.lap_history_driver[idx]);
 				fprintf(f, " \"laptime\": %d,",
 				    valid ? lap_ms : 0);
 				fprintf(f, " \"isValidForBest\": %s,",
@@ -490,7 +545,7 @@ results_write(struct Server *s)
 				fprintf(f, "\n    {");
 				fprintf(f, " \"carId\": %u,", cc->car_id);
 				fprintf(f, " \"driverIndex\": %u,",
-				    (unsigned)cc->current_driver_index);
+				    (unsigned)p->driver_index);
 				fprintf(f, " \"reason\": ");
 				fprint_json_str(f, penalty_category_label(p->category));
 				fprintf(f, ",");
@@ -539,7 +594,7 @@ results_write(struct Server *s)
 				fprintf(f, "\n    {");
 				fprintf(f, " \"carId\": %u,", cc->car_id);
 				fprintf(f, " \"driverIndex\": %u,",
-				    (unsigned)cc->current_driver_index);
+				    (unsigned)p->driver_index);
 				fprintf(f, " \"reason\": ");
 				fprint_json_str(f, penalty_category_label(p->category));
 				fprintf(f, ",");

@@ -455,6 +455,8 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			for (si = 0; si < 3; si++)
 				race->lap_splits_ms[slot][si] =
 				    race->sector_ms[si];
+			race->lap_history_driver[slot] =
+			    s->cars[c->car_id].current_driver_index;
 			race->lap_history_count++;
 		}
 

@@ -185,6 +185,8 @@ struct PenaltyEntry {
 	uint8_t		pending;	/* 1 = client-reported, awaits server validation */
 	uint8_t		admin;		/* 1 = admin chat-issued, hidden from 0x36 wire */
 	uint8_t		race_end_tp;	/* race-end DT/SG->TP30..TP60 conversion target */
+	uint8_t		driver_index;	/* driver active when the penalty was
+					 * incurred; for results.json attribution */
 	int16_t		violation_lap;	/* 1-based lap the penalty was incurred
 					 * on; -1 if unknown */
 	int16_t		cleared_lap;	/* 1-based lap it was served/cleared on;
@@ -263,6 +265,13 @@ struct CarRaceState {
 	 * always emitting split_count = 0.
 	 */
 	int32_t		lap_splits_ms[ACC_LAP_HISTORY][3];
+	/*
+	 * Driver index active when each ring lap completed (same slot as
+	 * lap_history_ms), so results.json laps[] attributes a lap to the
+	 * driver who actually set it on a multi-driver entry rather than
+	 * the current driver after a swap.  0 for single-driver cars.
+	 */
+	uint8_t		lap_history_driver[ACC_LAP_HISTORY];
 	/*
 	 * Monotonically increasing lap counter — used by handlers.c to
 	 * pick the ring slot, and by handshake.c / handlers.c / results.c

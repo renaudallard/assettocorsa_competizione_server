@@ -184,6 +184,7 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	 */
 	e->category = category;
 	e->collision = collision ? 1 : 0;
+	e->driver_index = s->cars[car_id].current_driver_index;
 	e->served = 0;
 	/*
 	 * Record the lap the violation landed on (1-based) so results.json
