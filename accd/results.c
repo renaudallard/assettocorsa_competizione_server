@@ -472,6 +472,19 @@ results_write(struct Server *s)
 				int pvalue;
 
 				pen_kind_json(p->kind, &pname, &pvalue);
+				/*
+				 * Live PostRaceTime entries carry their true
+				 * accumulated seconds in laps_remaining (single
+				 * per-car counter, see penalty_set_tp); the
+				 * pen_kind_json bucket only distinguishes 5 / 15.
+				 * Report the real total so an ignored mandatory
+				 * pit shows 130, not 15.  Converted DT/SG TPs are
+				 * reported via post_race_penalties (race_end_tp).
+				 */
+				if (p->race_end_tp == 0 &&
+				    (p->kind == PEN_TP5 || p->kind == PEN_TP15) &&
+				    p->laps_remaining > 0)
+					pvalue = p->laps_remaining;
 				if (!pen_first)
 					fprintf(f, ",");
 				fprintf(f, "\n    {");

@@ -987,10 +987,16 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			 * Practice / Qualifying pq_emit stays 0 across a
 			 * pending-only burst), AND in any archived-session
 			 * emit (e.g. P section of a race-end 0x3e where the
-			 * pending DT was reported in R, not P).
+			 * pending DT was reported in R, not P).  A pending
+			 * PostRaceTime entry is also hidden in race: the exe
+			 * accumulates the TP counter without pushing a Penalty
+			 * below the 256 s threshold, so it never reaches the
+			 * +0x208 array (it rides the per-car tail only).
 			 */
 			if (pq->slots[pi].pending &&
-			    (!in_race || is_archived))
+			    (!in_race || is_archived ||
+			     pq->slots[pi].kind == PEN_TP5 ||
+			     pq->slots[pi].kind == PEN_TP15))
 				continue;
 			pq_emit++;
 		}
@@ -1013,7 +1019,9 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			if (pq->slots[pi].admin)
 				continue;
 			if (pq->slots[pi].pending &&
-			    (!in_race || is_archived))
+			    (!in_race || is_archived ||
+			     pq->slots[pi].kind == PEN_TP5 ||
+			     pq->slots[pi].kind == PEN_TP15))
 				continue;
 			/*
 			 * Pcap-verified (run_race_end.sh, 2026-05-11):

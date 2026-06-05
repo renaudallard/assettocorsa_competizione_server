@@ -219,6 +219,44 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 }
 
 /*
+ * Maintain a SINGLE live PostRaceTime entry per car, mirroring the exe's
+ * PenaltySheet +0x70 counter (FUN_140125f50:97-100 accumulates one
+ * counter and never pushes a Penalty below the 256 s threshold).  Update
+ * the existing entry in place, or create it on the first report, so
+ * laps_remaining always carries the true cumulative seconds and the queue
+ * never grows one slot per report.  Without this, three reports left three
+ * slots each holding the running total, so penalty_total_ms summed the
+ * coarse PEN_TP5/PEN_TP15 buckets instead of the real accumulated time.
+ */
+static void
+penalty_set_tp(struct Server *s, int car_id, int32_t total_sec,
+    uint8_t reason, uint8_t category, int collision)
+{
+	struct PenaltyQueue *q;
+	int i;
+
+	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
+		return;
+	q = &s->cars[car_id].race.pen;
+	for (i = 0; i < q->count; i++) {
+		struct PenaltyEntry *p = &q->slots[i];
+		if (p->served || p->race_end_tp != 0)
+			continue;
+		if (p->kind != PEN_TP5 && p->kind != PEN_TP15)
+			continue;
+		p->kind = penalty_pen_kind_of(EXE_TP, collision, total_sec);
+		p->reason = reason;
+		p->category = category;
+		p->laps_remaining = total_sec;
+		p->issued_ms = mono_ms();
+		leaderboard_request_emit(s);
+		return;
+	}
+	penalty_materialize(s, car_id, EXE_TP, collision, total_sec,
+	    reason, category);
+}
+
+/*
  * penalty_enqueue — behavioral match for FUN_140125f50.  Maintains
  * per-car per-exe_kind PenaltySheet state (counter + severity).
  *
@@ -341,17 +379,16 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		st->counter += value;
 		st->issued_ms = now_ms;
 		/*
-		 * Materialize with the CUMULATIVE counter as the entry's
-		 * laps_remaining so the 0x36 per-car tail b1 reads the
+		 * Update the car's single PostRaceTime entry with the
+		 * CUMULATIVE counter so the 0x36 per-car tail b1 reads the
 		 * running total — kunos pcap (run_tp_accum.sh) shows the
 		 * tail progressing `0e 32 / 0e 64 / 0e 96` (50 / 100 /
 		 * 150) on three successive TP reports of value=50 each.
-		 * accd was passing the per-report value, which left b1
-		 * pinned at 50 forever and made the deep-compare cache
-		 * skip intermediate emits (same bytes after each report).
+		 * penalty_set_tp keeps it to one slot (the exe's +0x70
+		 * counter), so the post-race time fold reads the true total.
 		 */
-		penalty_materialize(s, car_id, EXE_TP, collision,
-		    (int32_t)st->counter, reason, category);
+		penalty_set_tp(s, car_id, (int32_t)st->counter, reason,
+		    category, collision);
 		if (st->counter >= 0x100) {
 			log_info("car %d total TP exceeded 256s -> DQ",
 			    car_id);
@@ -686,8 +723,17 @@ penalty_total_ms(const struct PenaltyQueue *q)
 			continue;
 		}
 		switch (p->kind) {
-		case PEN_TP5:		total += 5000;		break;
-		case PEN_TP15:		total += 15000;		break;
+		case PEN_TP5:
+		case PEN_TP15:
+			/*
+			 * Live PostRaceTime: laps_remaining holds the true
+			 * accumulated seconds (single per-car entry, see
+			 * penalty_set_tp), so charge that rather than the
+			 * coarse PEN_TP5 / PEN_TP15 enum bucket.
+			 */
+			if (p->laps_remaining > 0)
+				total += (uint32_t)p->laps_remaining * 1000u;
+			break;
 		case PEN_TP30:		total += 30000;		break;
 		case PEN_TP40:		total += 40000;		break;
 		case PEN_TP50:		total += 50000;		break;
