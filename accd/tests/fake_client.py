@@ -454,9 +454,9 @@ def parse_leaderboard_record(r, cvar8):
     """FUN_14352ae00 per-car reader."""
     r.u16()                           # car_id
     r.u16()                           # race_number
-    r.u8()                            # cup_category
-    r.u8()                            # current_driver_index
-    r.u16()                           # 0
+    r.u8()                            # car_model (+0x58)
+    r.u8()                            # cup_category (+0x5c, from driver_category)
+    r.u16()                           # lap-states / status word (car_field, +0x1d0)
     if r.u8():                        # penalty flag
         r.u16()                       # penalty code
         r.f32()                       # laps remaining
