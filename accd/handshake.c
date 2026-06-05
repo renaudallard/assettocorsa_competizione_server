@@ -2281,7 +2281,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 				free(steam); free(team);
 				goto reply;
 			}
-			if ((int)wire_cp < s->competition_rating_min) {
+			if ((int)(int8_t)wire_cp < s->competition_rating_min) {
 				log_info("rejecting %s: competition %u < "
 				    "min %d", steam_buf, (unsigned)wire_cp,
 				    s->competition_rating_min);
@@ -2293,7 +2293,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 				free(steam); free(team);
 				goto reply;
 			}
-			if ((int)wire_cp > s->competition_rating_max) {
+			if ((int)(int8_t)wire_cp > s->competition_rating_max) {
 				log_info("rejecting %s: competition %u > "
 				    "max %d", steam_buf, (unsigned)wire_cp,
 				    s->competition_rating_max);
@@ -2320,7 +2320,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 			goto reply;
 		}
 		if (ACC_RATING_REQUIRED(s->safety_rating_required) &&
-		    wire_sa < s->safety_rating_required) {
+		    (int)(int8_t)wire_sa < (int)s->safety_rating_required) {
 			log_info("rejecting %s: SA %u < required %u",
 			    steam_buf, (unsigned)wire_sa,
 			    (unsigned)s->safety_rating_required);
@@ -2333,7 +2333,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 			goto reply;
 		}
 		if (ACC_RATING_REQUIRED(s->racecraft_rating_required) &&
-		    wire_rc < s->racecraft_rating_required) {
+		    (int)(int8_t)wire_rc < (int)s->racecraft_rating_required) {
 			log_info("rejecting %s: RC %u < required %u",
 			    steam_buf, (unsigned)wire_rc,
 			    (unsigned)s->racecraft_rating_required);
