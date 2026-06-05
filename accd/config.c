@@ -543,8 +543,22 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 		s->pre_race_waiting_s = (uint16_t)json_obj_get_int(
 		    event, "preRaceWaitingTimeSeconds", 80);
-		s->session_overtime_s = (uint16_t)json_obj_get_int(
-		    event, "sessionOverTimeSeconds", 120);
+		{
+			/*
+			 * A negative sessionOverTimeSeconds is the exe's
+			 * "disable overtime" sentinel; read it as int first so
+			 * it does not wrap to 65535 s (18 h) through the
+			 * uint16_t cast and hang the session in overtime.
+			 * Clamp negative to 0 (no grace period).
+			 */
+			int ot = json_obj_get_int(event,
+			    "sessionOverTimeSeconds", 120);
+			if (ot < 0)
+				ot = 0;
+			if (ot > 65535)
+				ot = 65535;
+			s->session_overtime_s = (uint16_t)ot;
+		}
 		s->post_qualy_s = (uint16_t)json_obj_get_int(
 		    event, "postQualySeconds", s->post_qualy_s);
 		s->post_race_s = (uint16_t)json_obj_get_int(
