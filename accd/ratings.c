@@ -125,9 +125,17 @@ ratings_load(struct Server *s)
 
 			if (p->val == NULL || p->val->kind != JSON_OBJ)
 				continue;
+			/*
+			 * An empty/NULL key makes lookup() return NULL too;
+			 * skip it rather than aborting the whole load, so one
+			 * malformed entry can't silently drop the rest of the
+			 * ladder.
+			 */
+			if (p->key == NULL || p->key[0] == '\0')
+				continue;
 			e = lookup(s, p->key, 1);
 			if (e == NULL)
-				break;		/* store full */
+				break;		/* rating table full */
 			sa = json_obj_get_int(p->val, "sa",
 			    RATINGS_NEUTRAL);
 			tr = json_obj_get_int(p->val, "tr",
