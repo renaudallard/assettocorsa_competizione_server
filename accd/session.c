@@ -1469,7 +1469,7 @@ session_advance(struct Server *s)
 		 * timestamps come in.
 		 */
 		broadcast_session_mgr_state_all(s);
-		if (s->nconns > 0)
+		if (server_used_car_count(s) > 0)
 			session_start(s);
 		return;
 	}
@@ -1499,7 +1499,7 @@ session_advance(struct Server *s)
 	 */
 	(void)broadcast_leaderboard_force(s);
 	broadcast_session_mgr_state_all(s);
-	if (s->nconns > 0)
+	if (server_used_car_count(s) > 0)
 		session_start(s);
 }
 
