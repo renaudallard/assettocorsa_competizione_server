@@ -702,7 +702,12 @@ done:
 /*
  * Build and emit the SRV_GRID_POSITIONS (0x3f) at the start of
  * the RACE phase.  Body: u8 grid_count + per-car { u16 carId +
- * u8 flag_a + u32 grid_position + u8 flag_b }.
+ * u8 driverIndex + u32 grid_position + u8 = 1 }.  The exe builds each
+ * record in FUN_1401318b0: byte +4 = LeaderboardLine +0x180 (the
+ * current driver index, 0 pre-swap), and a constant 1 at +0xc that
+ * becomes the trailing wire byte.  The client infers each car's
+ * starting position from the record ORDER, so the u32 (exe: the
+ * +0x1d4 best-lap field) is informational; we carry the grid slot.
  */
 static void
 broadcast_grid(struct Server *s)
@@ -734,9 +739,9 @@ broadcast_grid(struct Server *s)
 			if (car->race.grid_position != g)
 				continue;
 			if (wr_u16(&bb, car->car_id) < 0 ||
-			    wr_u8(&bb, 0) < 0 ||
+			    wr_u8(&bb, car->current_driver_index) < 0 ||
 			    wr_u32(&bb, (uint32_t)g) < 0 ||
-			    wr_u8(&bb, 0) < 0)
+			    wr_u8(&bb, 1) < 0)
 				goto done;
 			emitted++;
 		}
@@ -750,9 +755,9 @@ broadcast_grid(struct Server *s)
 		    car->race.grid_position <= ACC_MAX_CARS)
 			continue;
 		if (wr_u16(&bb, car->car_id) < 0 ||
-		    wr_u8(&bb, 0) < 0 ||
+		    wr_u8(&bb, car->current_driver_index) < 0 ||
 		    wr_u32(&bb, (uint32_t)i) < 0 ||
-		    wr_u8(&bb, 0) < 0)
+		    wr_u8(&bb, 1) < 0)
 			goto done;
 		emitted++;
 	}
@@ -1348,11 +1353,15 @@ tick_run(struct Server *s)
 	if (s->session.phase != *last_phase) {
 		/*
 		 * 0x3f grid positions fire once per race, at the
-		 * PRE_SESSION (countdown) transition.  Per
-		 * FUN_14002f710 the exe gates the emit on
-		 * `(iVar11 != 0) && (phase == 0x04)`, i.e. grid
-		 * results ready and phase == PRE_SESSION.  We had been
-		 * firing at FORMATION which is one level too early.
+		 * PRE_SESSION (countdown) transition.  The exe instead
+		 * emits it at the END of a Qualifying session: FUN_14002f710
+		 * gates on `(iVar11 != 0) && (local_5a0 == 0x04)` inside the
+		 * session-over branch, where local_5a0 is the ENDING
+		 * session's TYPE (4 = Qualifying), not a phase.  For the
+		 * standard P->Q->R weekend both deliver the same grid before
+		 * green; the trigger edge differs only for degenerate layouts
+		 * (P->R emits one extra, Q-only one fewer), so we keep the
+		 * Race-start trigger.
 		 */
 		if (s->session.phase == PHASE_PRE_SESSION &&
 		    s->session_count > 0 &&
