@@ -1311,10 +1311,18 @@ build_rating_summary(struct ByteBuf *bb, const struct Server *s)
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		uint16_t sa = 5000, tr = 5000;
 		const char *sid;
+		uint8_t di;
 
 		if (!s->cars[j].used)
 			continue;
-		sid = s->cars[j].drivers[0].steam_id;
+		/*
+		 * Emit the CURRENT driver's rating, matching the driver
+		 * ratings_on_lap evolves (handlers.c).  Using drivers[0]
+		 * would show a stale co-driver's rating after a swap.
+		 */
+		di = s->cars[j].current_driver_index < s->cars[j].driver_count
+		    ? s->cars[j].current_driver_index : 0;
+		sid = s->cars[j].drivers[di].steam_id;
 		ratings_get(s, sid, &sa, &tr);
 		if (wr_u16(bb, s->cars[j].car_id) < 0) return -1;
 		if (wr_u8(bb, 0) < 0) return -1;
@@ -3018,9 +3026,15 @@ reply:
 			 *
 			 * Mark ratings dirty so the next tick.c periodic gate
 			 * (CADENCE_RATINGS_MS) fires once the new joiner's
-			 * record exists in the rating table.
+			 * record exists in the rating table.  Reset the
+			 * debounce anchor to 0 so the refresh fires on the next
+			 * tick instead of waiting out the remainder of the 81 s
+			 * window, mirroring the exe (FUN_140025690 sets the
+			 * emit-time anchor to 0 on a join).  A literal 0 still
+			 * holds off until uptime passes 81 s, matching the exe.
 			 */
 			s->ratings_dirty = 1;
+			s->ratings_last_emit_ms = 0;
 		}
 
 		log_debug("welcome sequence sent: 0x2e+0x4f bcast + "

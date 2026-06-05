@@ -1526,15 +1526,23 @@ tick_run(struct Server *s)
 	 * per-second broadcast cost.  Previously debounced at 10 s
 	 * which was 8× too fast.
 	 */
-	if (ratings_is_dirty(s) &&
-	    now_ms - s->ratings_last_emit_ms >= CADENCE_RATINGS_MS) {
-		struct ByteBuf wb;
-		bb_init(&wb);
-		if (build_rating_summary(&wb, s) == 0)
-			(void)bcast_all(s, wb.data, wb.wpos, BCAST_EXCEPT_NONE);
-		bb_free(&wb);
-		ratings_clear_dirty(s);
+	if (now_ms - s->ratings_last_emit_ms >= CADENCE_RATINGS_MS) {
+		/*
+		 * Advance the anchor whenever the 81 s window elapses, even
+		 * when not dirty, and emit only if dirty — matching the exe
+		 * (FUN_14002f710 advances +0x140a2 via the comma operator
+		 * regardless of the dirty byte, sending 0x4e only when set).
+		 */
 		s->ratings_last_emit_ms = now_ms;
+		if (ratings_is_dirty(s)) {
+			struct ByteBuf wb;
+			bb_init(&wb);
+			if (build_rating_summary(&wb, s) == 0)
+				(void)bcast_all(s, wb.data, wb.wpos,
+				    BCAST_EXCEPT_NONE);
+			bb_free(&wb);
+			ratings_clear_dirty(s);
+		}
 	}
 
 	/*
