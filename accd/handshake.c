@@ -1426,14 +1426,8 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 
-	if (wr_f32(bb, 1.0f - clouds * 0.3f) < 0) return -1;
-	/* Green-flag grip baseline; constant DAT_14014bcd8 = 0.96. */
-	if (wr_f32(bb, 0.96f) < 0) return -1;
-	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, wet) < 0) return -1;
-	if (wr_f32(bb, wet) < 0) return -1;
+	if (weather_write_track_conditions_head(bb, clouds, wet) < 0)
+		return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;

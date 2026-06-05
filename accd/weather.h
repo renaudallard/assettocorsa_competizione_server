@@ -76,4 +76,12 @@ int	weather_validate(struct Server *s);
  * (9 × u32) + f32 timestamp.  See §5.6.4a row for 0x37. */
 int	weather_build_broadcast(struct Server *s, struct ByteBuf *bb);
 
+/*
+ * Emit the 7-float TrackConditions head (FUN_1400330e0).  Shared by
+ * the live 0x37 broadcast and the welcome trailer so the two heads
+ * cannot drift.  clouds and wet are already wx_norm'd by the caller
+ * when the weather is dynamic. */
+int	weather_write_track_conditions_head(struct ByteBuf *bb,
+		float clouds, float wet);
+
 #endif /* ACCD_WEATHER_H */

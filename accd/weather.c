@@ -628,6 +628,31 @@ wx_norm(float x)
 	return tanhf(tanhf(x) * WX_TANH_K);
 }
 
+/*
+ * 7-float TrackConditions head built by FUN_1400330e0.  Pcap-verified
+ * slot layout:
+ *   0 grip = 1 - clouds * 0.3
+ *   1 0.96 (DAT_14014bcd8)
+ *   2..4 0.0
+ *   5..6 track wetness
+ * Shared with the welcome trailer (write_trailer_additional_state) so
+ * the two heads cannot drift; clouds and wet are already wx_norm'd by
+ * the caller when the weather is dynamic.
+ */
+int
+weather_write_track_conditions_head(struct ByteBuf *bb, float clouds,
+    float wet)
+{
+	if (wr_f32(bb, 1.0f - clouds * 0.3f) < 0) return -1;
+	if (wr_f32(bb, 0.96f) < 0) return -1;	/* DAT_14014bcd8 */
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, wet) < 0) return -1;
+	if (wr_f32(bb, wet) < 0) return -1;
+	return 0;
+}
+
 int
 weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 {
@@ -636,6 +661,7 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	int dyn = w->randomness > 0;
 	float rain = dyn ? wx_norm(w->current_rain) : w->current_rain;
 	float clouds = dyn ? wx_norm(w->clouds) : w->clouds;
+	float wet = dyn ? wx_norm(w->track_wetness) : w->track_wetness;
 	float dry = dyn ? wx_norm(w->dry_line_wetness)
 	    : w->dry_line_wetness;
 
@@ -655,37 +681,9 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	else
 		road = ambient + 4.0f;
 
-	/*
-	 * 17 × f32 body.  See reference_weather_wire_format.md slot table.
-	 *
-	 * The leading 7 floats are the TrackConditions head built by
-	 * FUN_1400330e0.  Per the fallback branch the slots derive from
-	 * the cloud level c:
-	 *   0 grip   1.0, or 0.89 when clamp01(c - 0.3) > 0.05
-	 *   1 0.96   (DAT_14014bcd8)
-	 *   2 c      (clouds)
-	 *   3 c      (clouds)
-	 *   4 clamp01(c - 0.3)
-	 *   5 1 - c
-	 *   6 1.0
-	 * The dynamic branch applies tanh(tanh(x) * 0.9) to slots 2/3/4
-	 * and leaves 5/6 raw, so wx_norm the cloud-derived slots when
-	 * dynamic.  The earlier head emitted zeros in slots 2/3/4 and
-	 * wetness in slots 5/6, which matched no decomp branch.
-	 */
-	{
-		float c = clamp01(w->clouds);
-		float c_lo = clamp01(c - 0.3f);
-		float grip = c_lo > 0.05f ? 0.89f : 1.0f;
-
-		if (wr_f32(bb, grip) < 0) return -1;
-		if (wr_f32(bb, 0.96f) < 0) return -1;	/* DAT_14014bcd8 */
-		if (wr_f32(bb, dyn ? wx_norm(c) : c) < 0) return -1;
-		if (wr_f32(bb, dyn ? wx_norm(c) : c) < 0) return -1;
-		if (wr_f32(bb, dyn ? wx_norm(c_lo) : c_lo) < 0) return -1;
-		if (wr_f32(bb, 1.0f - c) < 0) return -1;
-		if (wr_f32(bb, 1.0f) < 0) return -1;
-	}
+	/* 17 × f32 body.  See reference_weather_wire_format.md slot table. */
+	if (weather_write_track_conditions_head(bb, clouds, wet) < 0)
+		return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;
 	if (wr_f32(bb, road) < 0) return -1;
