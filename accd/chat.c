@@ -751,9 +751,17 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			    (unsigned)c->conn_id);
 			return 1;
 		}
+		/*
+		 * The &swap argument is 1-based on the stock server (its
+		 * reject says "use 1, 2, 3"; exe FUN_140027990:99 does
+		 * local_c0 - 1), so decrement to the 0-based internal driver
+		 * index.  --target is only evaluated once chat_parse_int has
+		 * succeeded, so a non-numeric arg still takes the invalid path.
+		 */
 		if (chat_parse_int(arg, &target) < 0 ||
-		    target < 0 || target >= car->driver_count) {
-			log_info("swap: invalid target from conn=%u",
+		    --target < 0 || target >= car->driver_count) {
+			log_info("swap: invalid target from conn=%u "
+			    "(use 1, 2, 3 dependent on your team)",
 			    (unsigned)c->conn_id);
 			return 1;
 		}
@@ -789,9 +797,10 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		 * unicast per teammate.  accd's &swap targets a driver
 		 * in the SAME car (single CarEntry, multi-driver), so
 		 * the team-mate iteration collapses to a single 0x59
-		 * back to the requester; the 4-byte body still carries
-		 * the source car_id and (driver_index - 1) of the
-		 * driver who will take over.  Clients use this to
+		 * back to the requester; the 4-byte body carries the
+		 * source car_id and the 0-based driver index (the 1-based
+		 * &swap argument minus one) of the driver who will take
+		 * over.  Clients use this to
 		 * display the "handover pending" UI until the matching
 		 * 0x48 ACP_EXECUTE_DRIVER_SWAP is received.
 		 */
