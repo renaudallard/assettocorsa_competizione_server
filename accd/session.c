@@ -352,14 +352,16 @@ session_reset(struct Server *s, uint8_t session_index)
 }
 
 /*
- * Populate the 6 schedule timestamps when the first driver
+ * Populate the 7 schedule timestamps when the first driver
  * connects.  Matches FUN_14012e970 (startSession) in the exe:
  *   ts[0] = now - 1
- *   ts[1] = ts[0] + preSessionMs  (3000 non-race, config for race)
- *   ts[2] = ts[1]                 (non-race; race adds formation)
- *   ts[3] = ts[2] + durationMs
- *   ts[4] = ts[3] + overtimeMs    (120000 default)
- *   ts[5] = ts[4] + postSessionMs (5000 default; configurable)
+ *   ts[1] = ts[0] + pre_ms        (3000 non-race; pre_race_waiting_s race)
+ *   ts[2] = ts[1]                 (non-race; race holds ts[2..6] until
+ *                                  the position-triggered formation/green)
+ *   ts[3] = ts[2]                 (non-race; race = green-cross time)
+ *   ts[4] = ts[3] + durationMs
+ *   ts[5] = ts[4] + overtimeMs    (sessionOverTimeSeconds, 120 default)
+ *   ts[6] = ts[5] + postMs        (post_race_s / post_qualy_s seconds)
  */
 
 /*
@@ -914,23 +916,26 @@ session_phase_name(uint8_t p)
 }
 
 /*
- * Kunos-format phase name for stdout `Detected sessionPhase` log
- * line.  Strings match accServer.exe's actual runtime output
- * verbatim (sampled from a kunos run on 2026-05-14: `Detected
- * sessionPhase <waiting for drivers> -> <pre session> (Practice)`).
- * Lowercase with spaces, no underscores.  accweb's regex pattern
- * `[A-Za-z ]+` accepts these too.
+ * Kunos-format phase name for the stdout `Detected sessionPhase` log
+ * line.  Strings map by state-equivalence to the exe's computeCurrentPhase
+ * (FUN_14012e810) level -> name table (FUN_140031e50): level 1 "waiting
+ * for drivers", 2 "pre session", 3 "formation", 5 "session", 6 "session
+ * overtime", 7 "session completed".  accd's FORMATION is the pre-race
+ * countdown (exe level 2 "pre session") and PRE_SESSION is the formation
+ * lap (exe level 3 "formation"), so the two read swapped relative to a
+ * naive name.  Lowercase with spaces, no underscores; accweb's
+ * `[A-Za-z ]+` regex accepts them.
  */
 const char *
 session_phase_kname(uint8_t p)
 {
 	switch (p) {
 	case PHASE_WAITING:	return "waiting for drivers";
-	case PHASE_FORMATION:	return "formation";
-	case PHASE_PRE_SESSION:	return "pre session";
+	case PHASE_FORMATION:	return "pre session";
+	case PHASE_PRE_SESSION:	return "formation";
 	case PHASE_SESSION:	return "session";
-	case PHASE_OVERTIME:	return "overtime";
-	case PHASE_COMPLETED:	return "session over";
+	case PHASE_OVERTIME:	return "session overtime";
+	case PHASE_COMPLETED:	return "session completed";
 	case PHASE_ADVANCE:	return "post session";
 	case PHASE_RESULTS:	return "result ui";
 	default:		return "unknown";
@@ -949,36 +954,6 @@ session_type_kname(uint8_t t)
 	case 4:	return "Qualifying";
 	case 10:return "Race";
 	default:return "Unknown";
-	}
-}
-
-/*
- * Map our internal phase enum (1-8) to the ACC Broadcasting SDK
- * SessionPhase enum used on the wire and expected by clients:
- *
- *   SDK 0 = NONE           (our WAITING)
- *   SDK 1 = Starting
- *   SDK 2 = PreFormation   (our FORMATION)
- *   SDK 3 = FormationLap
- *   SDK 4 = PreSession     (our PRE_SESSION)
- *   SDK 5 = Session        (our SESSION and OVERTIME)
- *   SDK 6 = SessionOver    (our COMPLETED)
- *   SDK 7 = PostSession    (our ADVANCE)
- *   SDK 8 = ResultUI       (our RESULTS)
- */
-uint8_t
-session_phase_to_wire(uint8_t p)
-{
-	switch (p) {
-	case PHASE_WAITING:	return 0;
-	case PHASE_FORMATION:	return 2;
-	case PHASE_PRE_SESSION:	return 4;
-	case PHASE_SESSION:	return 5;
-	case PHASE_OVERTIME:	return 5;
-	case PHASE_COMPLETED:	return 6;
-	case PHASE_ADVANCE:	return 7;
-	case PHASE_RESULTS:	return 8;
-	default:		return 0;
 	}
 }
 

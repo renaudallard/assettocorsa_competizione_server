@@ -110,12 +110,6 @@ void	session_archive_clear(struct Server *s);
 int	session_is_practice_or_qualy(const struct Server *s);
 
 /*
- * Map internal phase enum to the Broadcasting SDK SessionPhase
- * value expected by the client on the wire.
- */
-uint8_t	session_phase_to_wire(uint8_t p);
-
-/*
  * Called from the lap completion handler during overtime.
  * Decrements the cars-still-racing counter; releases the
  * overtime hold when all cars have finished.
