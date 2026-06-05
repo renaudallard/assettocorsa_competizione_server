@@ -1273,9 +1273,12 @@ session_tick(struct Server *s)
 		s->session.time_remaining_ms = 0;
 	}
 
-	/* Phase 7 (ADVANCE) triggers session advance. */
-	if (s->session.phase == PHASE_ADVANCE)
-		session_advance(s);
+	/*
+	 * Phase 7 (ADVANCE) triggers session advance, but the caller
+	 * (tick_run) drives it AFTER the one-shot transition block so the
+	 * end-of-session results emit and the 0x28 ADVANCE phase are
+	 * observed before the next session resets the state.
+	 */
 }
 
 /*

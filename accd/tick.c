@@ -1368,8 +1368,15 @@ tick_run(struct Server *s)
 		    s->sessions[s->session.session_index]
 			.session_type == 10)
 			broadcast_grid(s);
-		if (s->session.phase == PHASE_COMPLETED) {
+		if ((s->session.phase == PHASE_COMPLETED ||
+		    s->session.phase == PHASE_ADVANCE) &&
+		    !s->session.results_written) {
 			/*
+			 * Fire on COMPLETED, or on ADVANCE if the COMPLETED
+			 * window was zero-width (postRace/postQualySeconds = 0
+			 * collapses ts[6]=ts[5] so compute_phase skips phase 6)
+			 * -- the !results_written guard keeps it to one emit.
+			 *
 			 * Flush + check driver-stint violations before
 			 * results serialize so any ExceededDriver
 			 * StintLimit DQ shows up in the result record.
@@ -1518,6 +1525,15 @@ tick_run(struct Server *s)
 		}
 		*last_phase = s->session.phase;
 	}
+
+	/*
+	 * Phase 7 (ADVANCE) triggers session advance -- run it here, after
+	 * the one-shot block above emitted the results/0x3e and the 0x28
+	 * carried the ADVANCE phase, so the next session's reset doesn't
+	 * clobber the end-of-session state before it reaches the client.
+	 */
+	if (s->session.phase == PHASE_ADVANCE)
+		session_advance(s);
 
 	/*
 	 * Periodic 0x4e rating summary.  The exe gates this on
