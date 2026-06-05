@@ -782,12 +782,31 @@ penalty_convert_race_end(struct PenaltyQueue *q)
 {
 	int i;
 	uint8_t new_kind;
+	int car_dq = 0;
 
 	if (q == NULL)
 		return;
+	/*
+	 * An unserved DT/SG with laps_remaining == 0 has two sources.  The
+	 * serve-deadline countdown reaching 0 force-DQs the car (handlers.c),
+	 * so that DT/SG is superseded by the DQ and must NOT convert.  A
+	 * force=0 ladder escalation (DT -> SG30 terminal) also resets the
+	 * value to 0 on the wire but leaves the car classified, and the exe
+	 * FUN_140127440 still converts it -- that converter gates on the
+	 * +0x59 severity byte alone, with no laps-remaining check.  Tell the
+	 * two apart by the presence of a DQ entry: a DQ'd car's standings are
+	 * already terminal, so skip its zero-lap entries; otherwise convert.
+	 */
+	for (i = 0; i < q->count; i++)
+		if (q->slots[i].kind == PEN_DQ) {
+			car_dq = 1;
+			break;
+		}
 	for (i = 0; i < q->count; i++) {
 		struct PenaltyEntry *p = &q->slots[i];
-		if (p->served || p->laps_remaining <= 0)
+		if (p->served)
+			continue;
+		if (p->laps_remaining <= 0 && car_dq)
 			continue;
 		switch (p->kind) {
 		case PEN_DT:	case PEN_DTC:	new_kind = PEN_TP30; break;
