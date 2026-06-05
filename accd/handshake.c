@@ -691,7 +691,14 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 					    r->best_sectors_ms[d];
 		}
 
-		if (!s->cars[j].used)
+		/*
+		 * Current session: skip disconnected/empty slots (their live
+		 * state is stale).  Archived session: race_src_for already
+		 * returned non-NULL only for participants, so keep a driver
+		 * who has since disconnected — the exe re-emits the frozen
+		 * per-session classification regardless of connection state.
+		 */
+		if (session_idx < 0 && !s->cars[j].used)
 			continue;
 		nc++;
 	}
@@ -730,7 +737,7 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 		for (pos = 1; pos <= ACC_MAX_CARS && emitted < nc; pos++) {
 			for (j = 0; j < ACC_MAX_CARS; j++) {
 				const struct CarRaceState *src;
-				if (!s->cars[j].used)
+				if (session_idx < 0 && !s->cars[j].used)
 					continue;
 				src = race_src_for(&s->cars[j], session_idx);
 				if (src == NULL || src->position != pos)
@@ -746,7 +753,7 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 		for (j = 0; j < ACC_MAX_CARS && emitted < nc; j++) {
 			const struct CarRaceState *src;
 			int16_t p;
-			if (!s->cars[j].used)
+			if (session_idx < 0 && !s->cars[j].used)
 				continue;
 			src = race_src_for(&s->cars[j], session_idx);
 			if (src == NULL)
