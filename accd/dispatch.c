@@ -38,6 +38,7 @@
 #include <arpa/inet.h>
 #include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 
@@ -694,20 +695,35 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 
 	case ACP_ADMIN_QUERY: {		/* 0x5f */
 		/*
-		 * Admin / server-identity query.  Client sends a
-		 * Format-B string (the identifier it expects); if it
-		 * matches our configured identifier we reply with a
-		 * Format-A server name.  For phase 2 we just reply
-		 * unconditionally with the server name since we don't
-		 * yet carry a separate query identifier.
+		 * kson lobby identity handshake (exe FUN_140027f80:174-228).
+		 * The caller sends our 10-char token_b -- the random
+		 * per-launch token the lobby registration published (lobby.c,
+		 * exe FUN_1400449c0); we reply with the 64-char token_a.  Reply
+		 * ONLY on a token match: the exe gates the same way, so a UDP
+		 * source that doesn't know token_b gets no reply.  This closes
+		 * the previous unconditional server_name reply, which was both
+		 * a UDP reflection vector and the wrong content.
 		 */
+		struct Reader qr;
+		char *query = NULL;
 		struct ByteBuf reply;
 
-		log_info("udp 0x5f admin query from %s:%u",
+		rd_init(&qr, buf, len);
+		(void)rd_skip(&qr, 1);		/* msg_id */
+		if (rd_str_b(&qr, &query) < 0 || query == NULL)
+			return;
+		if (strcmp(query, s->lobby.token_b) != 0) {
+			log_debug("udp 0x5f: token mismatch from %s:%u",
+			    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port));
+			free(query);
+			return;
+		}
+		free(query);
+		log_info("udp 0x5f identity query (token ok) from %s:%u",
 		    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port));
 		bb_init(&reply);
 		if (wr_u8(&reply, ACP_ADMIN_QUERY) == 0 &&
-		    wr_str_a(&reply, s->server_name) == 0) {
+		    wr_str_a(&reply, s->lobby.token_a) == 0) {
 			(void)sendto(s->udp_fd, reply.data, reply.wpos, 0,
 			    (const struct sockaddr *)peer,
 			    (socklen_t)sizeof(*peer));
