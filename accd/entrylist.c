@@ -202,8 +202,18 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		 */
 		car->race_number = json_obj_get_int(e, "raceNumber",
 		    (int)i);
-		car->car_model = (uint8_t)json_obj_get_int(e,
-		    "forcedCarModel", -1);
+		{
+			/*
+			 * The exe keeps forcedCarModel as a 32-bit value; we
+			 * store uint8, so treat an out-of-range value (negative
+			 * or >= 0xff) as unset rather than truncating it into a
+			 * valid model id (e.g. 256 -> 0 would force model 0).
+			 */
+			int fm = json_obj_get_int(e, "forcedCarModel", -1);
+			if (fm < 0 || fm > 0xfe)
+				fm = 0xff;	/* unset sentinel */
+			car->car_model = (uint8_t)fm;
+		}
 		car->forced_car_model = car->car_model;
 		if (car->car_model == 0xff)
 			car->car_model = 0;
@@ -221,16 +231,32 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 			int gp = json_obj_get_int(e, "defaultGridPosition", 0);
 			car->default_grid_position = (gp < 1) ? -1 : gp - 1;
 		}
-		car->ballast_kg = (int8_t)json_obj_get_int(e,
-		    "ballastKg", 0);
-		/*
-		 * restrictor is an integer PERCENT in the JSON (exe
-		 * FUN_140104340:460-477 reads it as int, stores *0.01);
-		 * keep the normalised 0..0.20 fraction the wire / BoP path
-		 * expects.
-		 */
-		car->restrictor = (float)json_obj_get_int(e,
-		    "restrictor", 0) * 0.01f;
+		{
+			/*
+			 * Clamp ballast to [-40, 40] kg before the int8 cast so
+			 * an out-of-range entrylist value cannot wrap (e.g. 200
+			 * -> -56, flipping a heavy ballast to a negative one),
+			 * matching the exe (FUN_140023700:298-307) and the admin
+			 * /ballast clamp.
+			 */
+			int kg = json_obj_get_int(e, "ballastKg", 0);
+			if (kg < -40) kg = -40;
+			if (kg > 40) kg = 40;
+			car->ballast_kg = (int8_t)kg;
+		}
+		{
+			/*
+			 * restrictor is an integer PERCENT in the JSON (exe
+			 * FUN_140104340:460-477 reads it as int, stores *0.01);
+			 * clamp to [0, 20] % (exe FUN_140023700:308-317) and keep
+			 * the normalised 0..0.20 fraction the wire / BoP path
+			 * expects.
+			 */
+			int rest = json_obj_get_int(e, "restrictor", 0);
+			if (rest < 0) rest = 0;
+			if (rest > 20) rest = 20;
+			car->restrictor = (float)rest * 0.01f;
+		}
 		{
 			int ddi = json_obj_get_int(e, "defaultDriverIndex", 0);
 			/*
@@ -573,10 +599,12 @@ bop_load(struct Server *s, const char *cfg_dir)
 
 		if (tname == NULL || model < 0 || model > 255)
 			continue;
-		if (kg < 0)
-			kg = 0;
-		if (kg > 100)
-			kg = 100;
+		/* Clamp to the exe's BoP range: ballast [-40, 40] kg,
+		 * restrictor [0, 20] % (FUN_140023700). */
+		if (kg < -40)
+			kg = -40;
+		if (kg > 40)
+			kg = 40;
 		if (rest < 0)
 			rest = 0;
 		if (rest > 20)
@@ -584,7 +612,7 @@ bop_load(struct Server *s, const char *cfg_dir)
 		out = &s->bop[s->bop_count++];
 		snprintf(out->track, sizeof(out->track), "%s", tname);
 		out->car_model = (uint8_t)model;
-		out->ballast_kg = (uint8_t)kg;
+		out->ballast_kg = (int8_t)kg;
 		out->restrictor_pct = (uint8_t)rest;
 	}
 	json_free(root);

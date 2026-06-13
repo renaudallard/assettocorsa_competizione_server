@@ -1097,16 +1097,18 @@ struct Server {
 	uint8_t			tyre_set_count;		/* default 1 */
 
 	/*
-	 * Per (track, carModel) BoP additive ballast / restrictor
-	 * loaded from cfg/bop.json (handbook VI.3).  Applied at car
-	 * assignment on top of any entrylist-supplied values.  Up to
-	 * ACC_MAX_BOP entries; unused slots zero-initialised.
+	 * Per (track, carModel) BoP ballast / restrictor loaded from
+	 * cfg/bop.json (handbook VI.3).  Parsed, clamped and logged for
+	 * operator visibility but NOT applied to any car -- this matches
+	 * the exe, which likewise loads bop.json into a vector it never
+	 * reads back onto a car (verified 2026-06-13).  Up to ACC_MAX_BOP
+	 * entries; unused slots zero-initialised.
 	 */
 #define ACC_MAX_BOP 256
 	struct BoPEntry {
 		char		track[ACC_TRACK_NAME_LEN];
 		uint8_t		car_model;
-		uint8_t		ballast_kg;
+		int8_t		ballast_kg;	/* kg, clamped [-40, 40] */
 		uint8_t		restrictor_pct;
 	} bop[ACC_MAX_BOP];
 	int			bop_count;
