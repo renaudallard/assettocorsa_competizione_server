@@ -53,7 +53,7 @@ apply_landlock(const char *cfg_dir, const char *results_dir)
 {
 	struct landlock_ruleset_attr ra;
 	uint64_t mask;
-	int abi, rfd, fd;
+	int abi, rfd, fd, added = 0;
 
 	abi = (int)syscall(__NR_landlock_create_ruleset, NULL, 0,
 	    LANDLOCK_CREATE_RULESET_VERSION);
@@ -93,6 +93,8 @@ apply_landlock(const char *cfg_dir, const char *results_dir)
 		if (landlock_path_beneath_add(rfd, fd, mask) < 0)
 			log_warn("landlock add %s: %s",
 			    cfg_dir, strerror(errno));
+		else
+			added++;
 		close(fd);
 	}
 
@@ -104,7 +106,21 @@ apply_landlock(const char *cfg_dir, const char *results_dir)
 		if (landlock_path_beneath_add(rfd, fd, mask) < 0)
 			log_warn("landlock add %s: %s",
 			    results_dir, strerror(errno));
+		else
+			added++;
 		close(fd);
+	}
+
+	/*
+	 * If neither path could be added the ruleset would deny all
+	 * filesystem access once enforced, locking the server out of its
+	 * own cfg/ and results/.  Skip enforcement (fail open to the
+	 * outer seccomp/unveil layers) rather than self-DoS.
+	 */
+	if (added == 0) {
+		log_warn("landlock: no paths added, skipping enforcement");
+		close(rfd);
+		return -1;
 	}
 
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) < 0) {
@@ -131,9 +147,16 @@ apply_landlock(const char *cfg_dir, const char *results_dir)
 #endif
 
 /*
- * Allowlist mirrors pledge("stdio rpath wpath cpath inet").  Any
- * syscall not on this list terminates the process with SIGSYS.  The
+ * Allowlist grouped to roughly pledge("stdio rpath wpath cpath inet").
+ * Any syscall not on this list terminates the process with SIGSYS.  The
  * socket() narrowing to AF_INET / AF_INET6 is added separately below.
+ *
+ * Note this is coarser than OpenBSD pledge in two spots: ioctl and mmap
+ * are allowed unconditionally (no argument filter), whereas pledge's
+ * "stdio" promise restricts ioctl to a small set.  Arg-filtering ioctl
+ * is impractical (the valid request set depends on the fd type), so the
+ * tradeoff is accepted; the process is still confined to its own
+ * descriptors and address space.
  *
  * libseccomp emits per-arch syscall numbers; SCMP_SYS() of a syscall
  * that doesn't exist on the build target returns __NR_SCMP_UNDEF, in
