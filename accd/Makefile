@@ -147,7 +147,7 @@ dispatch.o: dispatch.c bcast.h state.h io.h lobby.h msg.h dispatch.h \
 entrylist.o: entrylist.c entrylist.h state.h io.h lobby.h msg.h json.h \
  log.h
 handlers.o: handlers.c bcast.h state.h io.h lobby.h msg.h chat.h \
- handlers.h handshake.h log.h penalty.h prim.h ratings.h session.h tick.h
+ handlers.h handshake.h log.h penalty.h prim.h ratings.h results.h session.h tick.h
 handshake.o: handshake.c bcast.h state.h io.h lobby.h msg.h ratings.h \
  bans.h entrylist.h handlers.h handshake.h log.h penalty.h prim.h \
  session.h smpr.h tick.h weather.h
@@ -172,7 +172,7 @@ session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \
 smpr.o: smpr.c bcast.h state.h io.h lobby.h msg.h log.h monitor.h pb.h \
  prim.h smpr.h
 state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h handlers.h \
- log.h prim.h session.h smpr.h tick.h
+ log.h prim.h results.h session.h smpr.h tick.h
 tick.o: tick.c bcast.h state.h io.h lobby.h msg.h chat.h ratings.h \
  handshake.h log.h penalty.h prim.h entrylist.h results.h session.h \
  smpr.h tick.h weather.h
