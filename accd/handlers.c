@@ -777,6 +777,37 @@ h_chat(struct Server *s, struct Conn *c,
 	}
 	handled = chat_process(s, c, text);
 	if (handled == 0) {
+		/*
+		 * Cap the relayed message at 35 code points, matching the
+		 * exe's chat ceiling: FUN_1400142f0 passes 0x23 to
+		 * FUN_140020700, which on overflow keeps the first 32 code
+		 * points and appends "...".  The stock AC2 client already
+		 * limits outbound chat to 35 code points, so this only bites
+		 * a non-conforming client; without it accd would relay up to
+		 * 255.  The exe caps its combined "name: message" string;
+		 * accd's 0x2b carries sender and message as separate fields,
+		 * so the cap lands on the message field.  Done on the relay
+		 * path only, so chat commands (e.g. a long /report) keep
+		 * their full argument.  The rd_str_a buffer holds 4 bytes per
+		 * code point, so the three dots fit within the allocation.
+		 */
+		if (text != NULL) {
+			size_t i, cps = 0, cut = 0;
+
+			for (i = 0; text[i] != '\0'; i++) {
+				if (((unsigned char)text[i] & 0xc0) == 0x80)
+					continue;	/* continuation byte */
+				if (cps == 32)
+					cut = i;	/* 33rd code point */
+				cps++;
+			}
+			if (cps > 35) {
+				text[cut] = '.';
+				text[cut + 1] = '.';
+				text[cut + 2] = '.';
+				text[cut + 3] = '\0';
+			}
+		}
 		bb_init(&out);
 		/*
 		 * chat_type=0 is the regular driver-to-driver lane that
