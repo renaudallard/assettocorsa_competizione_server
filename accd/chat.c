@@ -824,10 +824,6 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		return 1;
 	}
 
-	/* Regular chat broadcast (no slash). */
-	if (text[0] != '/')
-		return 0;
-
 	/*
 	 * /report is the only slash command any driver may issue —
 	 * accServer.exe gates every other slash command on is_admin
@@ -928,6 +924,16 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		chat_reply(c, line, 4);
 		return 1;
 	}
+
+	/*
+	 * Regular chat broadcast: anything that is not a slash command and
+	 * did not match a driver-open '&' command above.  This gate sits
+	 * after the '&' commands (&swap / &delta / &formation) so they
+	 * remain reachable; it must precede the is_admin check so plain
+	 * chat is relayed instead of rejected as a failed admin command.
+	 */
+	if (text[0] != '/')
+		return 0;
 
 	if (!c->is_admin) {
 		log_info("admin command rejected (not admin) from conn=%u",
