@@ -111,12 +111,11 @@ All seven from kunos's `acc_server_protocol.proto v1` schema (and
 
 ## Caveats
 
-- accd's `monitor_build_realtime_update` currently leaves the
-  per-conn and per-car submessages empty inside `0x06` (only the
-  `serverNow` timestamp + `sessionState` sub are filled).  The
-  `cars=0` field in the text output reflects that, not a bug in
-  the inspector.  Filling those is a follow-up in accd's
-  `monitor.c`.
+- accd's `monitor_build_realtime_update` populates the `serverNow`
+  timestamp, the `sessionState` sub, and the per-conn (`ConnectionEntry`)
+  and per-car (`CarEntry`) submessages inside `0x06`; the `cars=N` field
+  in the text output reflects the live car count.  (Earlier builds left
+  the conn/car subs empty and always printed `cars=0`; that is fixed.)
 - The inspector consumes one connection slot from accd's Conn
   pool (shared with sim clients).  On busy servers (many sim
   clients + many monitors), `maxConnections` may need bumping.

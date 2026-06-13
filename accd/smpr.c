@@ -273,6 +273,14 @@ smpr_handle_connect(struct Server *s, struct Conn *c,
 	c->is_smpr = 1;
 	c->smpr_rt_interval_ms = (uint32_t)rt_interval;
 	c->smpr_rt_last_ms = 0;
+	/*
+	 * sendSelfcontainingLeaderboards / sendExtendedLeaderboards are
+	 * negotiated and stored but NOT yet honored: monitor_build_leaderboard
+	 * always emits the full self-contained form, so an observer asking for
+	 * the lighter delta form still receives the heavier one.  This is safe
+	 * (more data, not less) and no current SMPR consumer requests the delta
+	 * form; wiring the flags into the builder is deferred until one does.
+	 */
 	c->smpr_self_contained = self_contained ? 1 : 0;
 	c->smpr_extended = extended ? 1 : 0;
 	(void)register_all;	/* not used yet */
