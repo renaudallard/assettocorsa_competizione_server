@@ -2470,6 +2470,18 @@ handshake_handle(struct Server *s, struct Conn *c,
 					reject_a = cmodel;
 					reject_b = s->cars[reconnect_slot]
 					    .forced_car_model;
+					/*
+					 * The live-reconnect match above
+					 * already detached the prior conn from
+					 * this slot (car_id=-1), so conn_drop
+					 * will not clear cars[].used.  Release
+					 * it here so a rejected reconnect does
+					 * not orphan the slot (used=1 with no
+					 * owner); the driver's preserved data
+					 * still allows a later correct-car
+					 * reclaim via the zombie path.
+					 */
+					s->cars[reconnect_slot].used = 0;
 					free(first); free(last); free(sname);
 					free(steam); free(team);
 					goto reply;
