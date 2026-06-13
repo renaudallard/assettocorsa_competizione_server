@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
-"""Malformed-handshake fuzzer for accd.
+"""Malformed-handshake / SMPR-connect fuzzer for accd.
 
 Opens N TCP connections to accd, sends a random-length random-byte
 TCP frame (with a valid length prefix so the framer doesnt drop us
 immediately), and closes.  The fuzzer doesnt verify replies -- the
-goal is purely to exercise the handshake parser on inputs the bot
-would never produce and watch accd not crash.
+goal is purely to exercise the parsers on inputs the bot would never
+produce and watch accd not crash.  Frames are routed to both the sim
+handshake (msg 0x09) and the SMPR observer CONNECT (msg 0x0a, decoded
+by smpr_handle_connect via the pb_r_* protobuf reader), so the
+untrusted protobuf decode path is fuzzed alongside the handshake.
 """
 import argparse
 import os
@@ -38,10 +41,13 @@ def random_frame(rng):
         hdr = struct.pack("<H", n)
     else:
         hdr = b"\xff\xff" + struct.pack("<I", n)
-    # 50 % of the time set the first body byte to 0x09 so the parser
-    # routes us into the handshake handler proper.
-    if body and rng.random() < 0.5:
-        body = b"\x09" + body[1:]
+    # 60 % of the time pin the first body byte to a real opcode so the
+    # frame routes into a message handler proper: 0x09 (sim handshake)
+    # or 0x0a (SMPR observer CONNECT -> smpr_handle_connect -> the
+    # pb_r_* protobuf reader).  This fuzzes the untrusted protobuf
+    # decode path, not just the handshake.
+    if body and rng.random() < 0.6:
+        body = bytes([rng.choice((0x09, 0x0a))]) + body[1:]
     return hdr + body
 
 
