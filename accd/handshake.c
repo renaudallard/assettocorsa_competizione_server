@@ -848,7 +848,16 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		 * The ec->cup_category field is left set by handshake
 		 * parsing but the wire-emit value is the derived form.
 		 */
-		uint8_t dc = ec->drivers[ec->current_driver_index].driver_category;
+		/*
+		 * current_driver_index is clamped to [0, ACC_MAX_DRIVERS_PER_CAR)
+		 * at the entrylist source (entrylist.c) and on every swap path,
+		 * but clamp locally too so this drivers[] deref can never read
+		 * past the 4-element array even if a future caller seeds an
+		 * out-of-range index.
+		 */
+		uint8_t di = ec->current_driver_index < ACC_MAX_DRIVERS_PER_CAR
+		    ? ec->current_driver_index : 0;
+		uint8_t dc = ec->drivers[di].driver_category;
 		uint8_t cup;
 		switch (dc) {
 		case 0:	cup = 2; break;
