@@ -259,7 +259,14 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	}
 	bb_free(&out);
 
-	chat_broadcast(s, chat, 4);
+	/*
+	 * The exe unicasts the "Assigned N kg/% to car #M" confirmation to
+	 * the issuing admin only (FUN_140021680: the /ballast //restrictor
+	 * reply is routed to the admin's own socket, never broadcast).  We
+	 * hand the banner back through `reply`; the in-game caller
+	 * (chat_process) unicasts it to the issuing conn and the local
+	 * console prints it.  The affected car still gets the 0x53 above.
+	 */
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", chat);
 	log_info("admin: %s", chat);
@@ -1155,9 +1162,13 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/sg30")) {
 		chat_do_penalty(s, "sg30c", text + 5, 1, NULL, 0);
 	} else if (chat_prefix(text, "/ballast")) {
-		chat_do_bop(s, text + 8, 1, NULL, 0);
+		char rb[128] = "";
+		chat_do_bop(s, text + 8, 1, rb, sizeof(rb));
+		chat_reply(c, rb, 4);	/* unicast to the issuing admin */
 	} else if (chat_prefix(text, "/restrictor")) {
-		chat_do_bop(s, text + 11, 0, NULL, 0);
+		char rb[128] = "";
+		chat_do_bop(s, text + 11, 0, rb, sizeof(rb));
+		chat_reply(c, rb, 4);
 	} else if (chat_prefix(text, "/track")) {
 		chat_do_track(s, text + 6, NULL, 0);
 	} else if (chat_prefix(text, "/manual entrylist")) {
