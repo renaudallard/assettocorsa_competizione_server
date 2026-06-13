@@ -928,5 +928,19 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 	}
 
+	/*
+	 * Public-MP servers force formationLapType 1 (manual) to 3, matching
+	 * the exe (FUN_140023700:531-543).  "Public MP" = registered to the
+	 * lobby, not a championship server, and not using a forced entry
+	 * list.  Done here, after entrylist_load has set force_entry_list;
+	 * the unconditional 2 -> 3 remap is applied earlier at the read.
+	 */
+	if (s->formation_lap_type == 1 && s->register_to_lobby &&
+	    !s->is_cp_server && !s->force_entry_list) {
+		log_warn("formationLapType 1 (manual) forced to 3 on "
+		    "public-MP server");
+		s->formation_lap_type = 3;
+	}
+
 	return 0;
 }
