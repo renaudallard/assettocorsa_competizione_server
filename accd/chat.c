@@ -586,7 +586,7 @@ chat_weekend_reset_broadcast(struct Server *s)
 	}
 }
 
-void
+int
 chat_do_track(struct Server *s, const char *args,
     char *reply, size_t replysz)
 {
@@ -601,7 +601,32 @@ chat_do_track(struct Server *s, const char *args,
 			snprintf(reply, replysz,
 			    "current track: %s (type 'tracks' for list)",
 			    s->track);
-		return;
+		return 0;
+	}
+
+	/*
+	 * Reject names that are not in the known-track list, matching the
+	 * exe (which validates before switching).  Without this an admin
+	 * typo would set s->track to an unloadable name and broadcast a
+	 * weekend reset for a track no client can load.
+	 */
+	{
+		int i, found = 0;
+
+		for (i = 0; track_list[i] != NULL; i++)
+			if (strcmp(name, track_list[i]) == 0) {
+				found = 1;
+				break;
+			}
+		if (!found) {
+			log_info("admin: /track rejected unknown track '%s'",
+			    name);
+			if (reply != NULL)
+				snprintf(reply, replysz,
+				    "unknown track: %s (type 'tracks' "
+				    "for list)", name);
+			return 0;
+		}
 	}
 
 	snprintf(s->track, sizeof(s->track), "%s", name);
@@ -614,6 +639,7 @@ chat_do_track(struct Server *s, const char *args,
 
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", msg);
+	return 1;
 }
 
 int
@@ -1201,7 +1227,17 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		chat_do_bop(s, text + 11, 0, rb, sizeof(rb));
 		chat_reply(c, rb, 4);
 	} else if (chat_prefix(text, "/track")) {
-		chat_do_track(s, text + 6, NULL, 0);
+		char rb[128] = "";
+
+		/*
+		 * On a successful change chat_do_track broadcasts "Event
+		 * changed" to everyone (the admin included), so only the
+		 * not-changed paths (unknown track or a bare /track query)
+		 * need a unicast reply back to the issuing admin.
+		 */
+		if (chat_do_track(s, text + 6, rb, sizeof(rb)) == 0 &&
+		    rb[0] != '\0')
+			chat_reply(c, rb, 4);
 	} else if (chat_prefix(text, "/manual entrylist")) {
 		/*
 		 * accServer.exe rejects this on "public servers"

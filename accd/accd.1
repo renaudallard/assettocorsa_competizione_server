@@ -323,7 +323,12 @@ Set ballast (\-40\(en40 kg).
 .It /restrictor Ar car# Ar pct
 Set restrictor (0\(en20%).
 .It /track Ar name
-Change track for next session.
+Change track for next session.  An unknown
+.Ar name
+is rejected with a reply to the issuing admin and the track is left
+unchanged; a bare
+.Dq /track
+reports the current track.
 .It /connections
 List connected drivers with their connection id, car, admin and
 spectator state.  Admin-only; drivers use
