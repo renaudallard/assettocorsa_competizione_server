@@ -819,8 +819,13 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 	}
 
-	if (s->max_connections < 1 || s->max_connections > ACC_MAX_CARS)
+	if (s->max_connections < 1 || s->max_connections > ACC_MAX_CARS) {
+		if (s->max_connections > ACC_MAX_CARS)
+			log_warn("maxConnections %d exceeds the %d-slot "
+			    "build limit, clamping", s->max_connections,
+			    ACC_MAX_CARS);
 		s->max_connections = ACC_MAX_CARS;
+	}
 
 	/*
 	 * Load entrylist.json templates if present.  These are
