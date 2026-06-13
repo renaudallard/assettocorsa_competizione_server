@@ -121,7 +121,11 @@
   completion, `0x36` broadcast in ranked order, `0x3f` grid at race
   start, `0x3e` session results at session end.
 - **Results file writer** — `results/YYMMDD_HHMMSS_<type>.json`
-  matching the stock server schema.
+  matching the stock server schema.  The top-level `laps` array logs
+  every completed lap of the session in completion order, valid and
+  invalid (with `isValidForBest` set from the lap-states word), uncapped
+  — independent of the 16-slot ring that feeds the live leaderboard and
+  the garage Previous-Laps panel.
 
 ### Telemetry & relay
 

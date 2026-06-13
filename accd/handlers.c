@@ -60,6 +60,7 @@
 #include "penalty.h"
 #include "prim.h"
 #include "ratings.h"
+#include "results.h"
 #include "session.h"
 #include "state.h"
 #include "tick.h"
@@ -458,6 +459,25 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->lap_history_driver[slot] =
 			    s->cars[c->car_id].current_driver_index;
 			race->lap_history_count++;
+		}
+
+		/*
+		 * Results-log append: record EVERY completed lap (valid and
+		 * invalid) in global completion order for the results.json
+		 * laps[] array, independent of the valid-only 16-slot ring
+		 * above.  isValidForBest mirrors the exe's results verdict
+		 * (FUN_140129b10): invalid if any lap-states bit in 0x100f is
+		 * set or the laptime is outside [1, 0x7ffffffe].  This is
+		 * stricter than the live best_lap mask (cut + out-lap only),
+		 * which is left untouched so 0x36 byte-parity is preserved.
+		 */
+		{
+			int valid_for_best = (car_field & 0x100f) == 0 &&
+			    lap_ms >= 1 && lap_ms <= 0x7ffffffe;
+
+			results_laps_append(s, s->cars[c->car_id].car_id,
+			    s->cars[c->car_id].current_driver_index,
+			    lap_ms, race->sector_ms, valid_for_best);
 		}
 
 		/* Best-sector tracking from the just-completed lap's

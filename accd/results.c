@@ -37,6 +37,7 @@
 #include <sys/types.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <time.h>
 #include <unistd.h>
@@ -142,6 +143,65 @@ pen_kind_json(uint8_t kind, const char **name, int *value)
 	case PEN_RBL:			*name = "RemoveBestLaptime"; *value = 0; break;
 	default:			*name = "Unknown"; *value = 0; break;
 	}
+}
+
+void
+results_laps_append(struct Server *s, uint16_t car_id, uint8_t driver_index,
+    int32_t lap_time_ms, const int32_t splits_ms[3], int is_valid)
+{
+	struct ResultsLap *rec;
+
+	if (s->results_lap_count >= ACC_RESULTS_LAP_MAX) {
+		if (!s->results_lap_overflow) {
+			s->results_lap_overflow = 1;
+			log_warn("results: per-session lap log hit %u, "
+			    "ignoring further laps",
+			    (unsigned)ACC_RESULTS_LAP_MAX);
+		}
+		return;
+	}
+	if (s->results_lap_count == s->results_lap_cap) {
+		uint32_t ncap = s->results_lap_cap ?
+		    s->results_lap_cap * 2 : 64;
+		struct ResultsLap *n;
+
+		if (ncap > ACC_RESULTS_LAP_MAX)
+			ncap = ACC_RESULTS_LAP_MAX;
+		n = realloc(s->results_laps, (size_t)ncap * sizeof(*n));
+		if (n == NULL) {
+			log_warn("results: lap log realloc(%u) failed",
+			    (unsigned)ncap);
+			return;
+		}
+		s->results_laps = n;
+		s->results_lap_cap = ncap;
+	}
+	rec = &s->results_laps[s->results_lap_count++];
+	rec->car_id = car_id;
+	rec->driver_index = driver_index;
+	rec->is_valid = is_valid ? 1 : 0;
+	rec->lap_time_ms = lap_time_ms;
+	rec->splits_ms[0] = splits_ms[0];
+	rec->splits_ms[1] = splits_ms[1];
+	rec->splits_ms[2] = splits_ms[2];
+}
+
+void
+results_laps_reset(struct Server *s)
+{
+	/* Keep the allocation for reuse across sessions. */
+	s->results_lap_count = 0;
+	s->results_lap_overflow = 0;
+}
+
+void
+results_laps_free(struct Server *s)
+{
+	free(s->results_laps);
+	s->results_laps = NULL;
+	s->results_lap_count = 0;
+	s->results_lap_cap = 0;
+	s->results_lap_overflow = 0;
 }
 
 int
@@ -442,63 +502,37 @@ results_write(struct Server *s)
 	fprintf(f, "  },\n");
 
 	/*
-	 * Top-level laps[] per handbook §VIII.1 — flat list of every
-	 * lap any car completed in this session, in chronological
-	 * order (we approximate by walking each car's ring buffer in
-	 * order).  isValidForBest = 0 ms entry means we recorded the
-	 * sentinel for an invalid lap; treat negative / zero as
-	 * invalid.
+	 * Top-level laps[] per handbook §VIII.1 — every completed lap of
+	 * this session in global completion order, sourced from the
+	 * per-session results log.  This mirrors the exe, whose top-level
+	 * writer (FUN_14010ee90) iterates the whole OfficialTiming
+	 * closed-laps vector: all laps (no 16-lap cap), interleaved across
+	 * cars by completion order, invalid laps included with their real
+	 * laptime and isValidForBest=false.  The 16-slot per-car ring that
+	 * feeds 0x36 / 0x56 is deliberately not used here.
 	 */
 	fprintf(f, "  \"laps\": [");
 	{
-		int lap_first = 1, ci, hi;
+		uint32_t li;
+		int lap_first = 1;
 
-		for (ci = 0; ci < ACC_MAX_CARS && ci < s->max_connections;
-		    ci++) {
-			struct CarEntry *cc = &s->cars[ci];
-			int hcount;
+		for (li = 0; li < s->results_lap_count; li++) {
+			const struct ResultsLap *lp = &s->results_laps[li];
 
-			if (cc->driver_count == 0)
-				continue;
-			hcount = cc->race.lap_history_count > ACC_LAP_HISTORY
-			    ? ACC_LAP_HISTORY
-			    : (int)cc->race.lap_history_count;
-			/*
-			 * Wrap-aware ring walk: once the count exceeds
-			 * ACC_LAP_HISTORY the oldest retained lap is at
-			 * count % ACC_LAP_HISTORY, not at slot 0.  Without
-			 * this the JSON laps[] reorders later laps in front
-			 * of earlier ones for any car with > 16 laps.
-			 */
-			{
-			uint32_t total = cc->race.lap_history_count;
-			int start = total <= (uint32_t)ACC_LAP_HISTORY
-			    ? 0 : (int)(total % ACC_LAP_HISTORY);
-			for (hi = 0; hi < hcount; hi++) {
-				int idx = (start + hi) % ACC_LAP_HISTORY;
-				int lap_ms = cc->race.lap_history_ms[idx];
-				int s0 = cc->race.lap_splits_ms[idx][0];
-				int s1 = cc->race.lap_splits_ms[idx][1];
-				int s2 = cc->race.lap_splits_ms[idx][2];
-				int valid = (lap_ms > 0 &&
-				    lap_ms != 0x7fffffff);
-
-				if (!lap_first)
-					fprintf(f, ",");
-				fprintf(f, "\n    {");
-				fprintf(f, " \"carId\": %u,", cc->car_id);
-				fprintf(f, " \"driverIndex\": %u,",
-				    (unsigned)cc->race.lap_history_driver[idx]);
-				fprintf(f, " \"laptime\": %d,",
-				    valid ? lap_ms : 0);
-				fprintf(f, " \"isValidForBest\": %s,",
-				    valid ? "true" : "false");
-				fprintf(f, " \"splits\": [%d, %d, %d]",
-				    s0, s1, s2);
-				fprintf(f, " }");
-				lap_first = 0;
-			}
-			}
+			if (!lap_first)
+				fprintf(f, ",");
+			fprintf(f, "\n    {");
+			fprintf(f, " \"carId\": %u,", (unsigned)lp->car_id);
+			fprintf(f, " \"driverIndex\": %u,",
+			    (unsigned)lp->driver_index);
+			fprintf(f, " \"laptime\": %d,", lp->lap_time_ms);
+			fprintf(f, " \"isValidForBest\": %s,",
+			    lp->is_valid ? "true" : "false");
+			fprintf(f, " \"splits\": [%d, %d, %d]",
+			    lp->splits_ms[0], lp->splits_ms[1],
+			    lp->splits_ms[2]);
+			fprintf(f, " }");
+			lap_first = 0;
 		}
 	}
 	fprintf(f, "\n  ],\n");

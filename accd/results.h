@@ -42,4 +42,20 @@
  */
 int	results_write(struct Server *s);
 
+/*
+ * Append one completed lap to the per-session results log.  Called at
+ * lap completion for every lap (valid and invalid) in completion order.
+ * is_valid is the exe's results.json isValidForBest verdict.  Grows the
+ * log on demand; drops past ACC_RESULTS_LAP_MAX with a one-shot warning.
+ */
+void	results_laps_append(struct Server *s, uint16_t car_id,
+	    uint8_t driver_index, int32_t lap_time_ms,
+	    const int32_t splits_ms[3], int is_valid);
+
+/* Clear the results log for a new session (keeps the allocation). */
+void	results_laps_reset(struct Server *s);
+
+/* Free the results log (server shutdown). */
+void	results_laps_free(struct Server *s);
+
 #endif /* ACCD_RESULTS_H */

@@ -209,6 +209,14 @@ session_reset(struct Server *s, uint8_t session_index)
 {
 	int i;
 
+	/*
+	 * Clear the per-session results lap log so the next session's
+	 * results.json laps[] starts empty.  results_write() for the
+	 * finishing session always runs before session_advance() reaches
+	 * here, so the log has already been consumed.
+	 */
+	results_laps_reset(s);
+
 	if (session_index >= s->session_count) {
 		s->session.phase = PHASE_RESULTS;
 		s->session.session_index = session_index;

@@ -43,6 +43,7 @@
 #include "log.h"
 #include "msg.h"
 #include "prim.h"
+#include "results.h"
 #include "session.h"
 #include "smpr.h"
 #include "state.h"

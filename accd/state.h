@@ -97,6 +97,13 @@ mono_ms(void)
 #define RTT_RING_SLOTS		50	/* pong RTT sliding-window size
 					 * (exe FUN_1400420e0 ring) */
 #define ACC_LAP_HISTORY		16
+/*
+ * Hard ceiling on the per-session results lap log (results.json laps[]).
+ * Sized well above any real race (24h x 30 cars x ~2 min laps ~= 21600);
+ * beyond it new laps are dropped with a one-shot warning so a client
+ * spamming lap-complete cannot grow the log without bound.
+ */
+#define ACC_RESULTS_LAP_MAX	100000
 #define ACC_RATINGS_MAX		256
 
 /*
@@ -854,6 +861,22 @@ struct Conn {
 };
 
 /*
+ * One completed lap in the per-session results log (results.json laps[]).
+ * Every closed lap is appended in completion order, valid or not, mirroring
+ * the exe's OfficialTiming closed-laps vector (FUN_140125c60).  is_valid is
+ * the exe's results.json isValidForBest verdict (FUN_140129b10), which is
+ * stricter than the live best_lap mask: invalid if any lap-states bit in
+ * 0x100f is set or the laptime is outside [1, 0x7ffffffe].
+ */
+struct ResultsLap {
+	uint16_t	car_id;		/* wire car id (ACC_CAR_ID_BASE + slot) */
+	uint8_t		driver_index;
+	uint8_t		is_valid;	/* isValidForBest */
+	int32_t		lap_time_ms;
+	int32_t		splits_ms[3];
+};
+
+/*
  * Global server state.
  */
 struct Server {
@@ -1149,6 +1172,21 @@ struct Server {
 		uint32_t	ip;	/* network-order, 0 == empty slot */
 		uint64_t	last_ms;
 	} admin_retry[32];
+
+	/*
+	 * Per-session results lap log: every completed lap (valid and
+	 * invalid) in global completion order, the source for the
+	 * results.json top-level laps[] array.  Mirrors the exe's
+	 * OfficialTiming closed-laps vector (FUN_140125c60) -- uncapped and
+	 * chronological, unlike the 16-slot per-car ring (lap_history_ms)
+	 * that drives the 0x36 leaderboard and the 0x56 garage panel.
+	 * Grown on demand up to ACC_RESULTS_LAP_MAX; reset per session,
+	 * freed at shutdown.
+	 */
+	struct ResultsLap	*results_laps;
+	uint32_t		results_lap_count;
+	uint32_t		results_lap_cap;
+	uint8_t			results_lap_overflow;	/* one-shot warn flag */
 };
 
 void	server_init(struct Server *s);
