@@ -325,7 +325,10 @@ Set restrictor (0\(en20%).
 .It /track Ar name
 Change track for next session.
 .It /connections
-List connected drivers.
+List connected drivers with their connection id, car, admin and
+spectator state.  Admin-only; drivers use
+.Dq &connections
+for the restricted list.
 .It Cm say Ar message
 Broadcast
 .Ar message
@@ -374,6 +377,11 @@ latency display, so it only acknowledges the change.
 .It &formation
 Driver-issued: print each car's formation start state (lead, Track or
 !Track).
+.It &connections
+Driver-issued: list connected drivers with connection id and car only.
+The admin
+.Dq /connections
+adds the admin and spectator flags.
 .It /debug
 Toggle debug logging.
 .El

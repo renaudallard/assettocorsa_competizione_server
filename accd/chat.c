@@ -926,11 +926,36 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	}
 
 	/*
+	 * &connections: driver-open connection list, matching the exe
+	 * (FUN_140021680, the '&' / '§' branch).  Unicast to the requester
+	 * via chat_reply.  Restricted to conn id and car so a driver cannot
+	 * see other clients' admin or spectator state; the richer dump that
+	 * includes those flags stays behind the admin-only /connections.
+	 */
+	if (chat_prefix(text, "&connections")) {
+		int j;
+
+		chat_reply(c, "Active connections:", 4);
+		for (j = 0; j < ACC_MAX_CARS; j++) {
+			char line[64];
+			struct Conn *cn = s->conns[j];
+
+			if (cn == NULL || cn->state != CONN_AUTH)
+				continue;
+			snprintf(line, sizeof(line), "  conn=%u car=%d",
+			    (unsigned)cn->conn_id, cn->car_id);
+			chat_reply(c, line, 4);
+		}
+		return 1;
+	}
+
+	/*
 	 * Regular chat broadcast: anything that is not a slash command and
 	 * did not match a driver-open '&' command above.  This gate sits
-	 * after the '&' commands (&swap / &delta / &formation) so they
-	 * remain reachable; it must precede the is_admin check so plain
-	 * chat is relayed instead of rejected as a failed admin command.
+	 * after the '&' commands (&swap / &delta / &formation /
+	 * &connections) so they remain reachable; it must precede the
+	 * is_admin check so plain chat is relayed instead of rejected as a
+	 * failed admin command.
 	 */
 	if (text[0] != '/')
 		return 0;

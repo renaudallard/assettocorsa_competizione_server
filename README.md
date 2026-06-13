@@ -188,7 +188,7 @@
   `/go` / `/start`, `/report`,
   `/broadcast` (aliases `/say`, `/announce`),
   `/debug <conditions|bandwidth|qos>`.  Driver `&` commands: `&swap`,
-  `&delta <default|error|diff>`, `&formation`.
+  `&delta <default|error|diff>`, `&formation`, `&connections`.
 - **Penalty system** — per-car queue, mandatory pitstop tracking,
   3-lap deadline countdown for DT/SG with auto-DQ on miss.
   Pit-speeding is detected and reported by the AC2 client (the server
