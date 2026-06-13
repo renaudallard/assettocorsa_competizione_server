@@ -2443,7 +2443,7 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 		    "(source_conn=%u)", (unsigned)source_conn_id);
 		return 0;
 	}
-	if (c->car_id < 0 ||
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS ||
 	    s->cars[c->car_id].car_id != target_car_id) {
 		log_warn("Received car update for a different car, "
 		    "connectionId %u. Expected: %d Received: %u",
