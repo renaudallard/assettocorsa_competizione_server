@@ -39,6 +39,7 @@
 
 #include <ctype.h>
 #include <limits.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -712,6 +713,13 @@ json_obj_get_num(const struct json_node *obj, const char *key, double def)
 	const struct json_node *n = json_obj_get(obj, key);
 
 	if (n == NULL || n->kind != JSON_NUM)
+		return def;
+	/*
+	 * Reject non-finite values (e.g. 1e400 parses to inf) so they
+	 * cannot propagate into float config fields; mirrors the NaN/range
+	 * guard in json_obj_get_int.
+	 */
+	if (!isfinite(n->u.num))
 		return def;
 	return n->u.num;
 }
