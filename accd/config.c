@@ -563,10 +563,31 @@ config_load(struct Server *s, const char *cfg_dir)
 		    event, "postQualySeconds", s->post_qualy_s);
 		s->post_race_s = (uint16_t)json_obj_get_int(
 		    event, "postRaceSeconds", s->post_race_s);
-		s->session.ambient_temp = (uint8_t)json_obj_get_int(
-		    event, "ambientTemp", 22);
-		s->session.track_temp = (uint8_t)json_obj_get_int(
-		    event, "trackTemp", 0);
+		{
+			/*
+			 * Clamp to the exe's event-config ranges
+			 * (FUN_14011a820): ambient [12,45], track [10,70].
+			 * trackTemp 0 means "unset" -> derive ambient+8 (accd
+			 * convenience) before the track clamp.  Done via int
+			 * intermediates so an out-of-range JSON value is
+			 * clamped, not wrapped by the uint8_t cast.
+			 */
+			int at = json_obj_get_int(event, "ambientTemp", 22);
+			int tt = json_obj_get_int(event, "trackTemp", 0);
+
+			if (at < 12)
+				at = 12;
+			if (at > 45)
+				at = 45;
+			s->session.ambient_temp = (uint8_t)at;
+			if (tt == 0)
+				tt = at + 8;
+			if (tt < 10)
+				tt = 10;
+			if (tt > 70)
+				tt = 70;
+			s->session.track_temp = (uint8_t)tt;
+		}
 		s->event_version = (uint32_t)json_obj_get_int(event,
 		    "configVersion", 0);
 		copy_str(s->meta_data, sizeof(s->meta_data),
@@ -580,15 +601,6 @@ config_load(struct Server *s, const char *cfg_dir)
 		s->green_trigger_end = (float)json_obj_get_num(event,
 		    "greenFlagTriggerNormalizedRangeEnd",
 		    s->green_trigger_end);
-		/*
-		 * Fall back to ambient+8 only when the operator didn't set
-		 * trackTemp (or set it to 0).  Earlier code overwrote the
-		 * JSON value unconditionally, so any non-zero trackTemp in
-		 * event.json was silently ignored.
-		 */
-		if (s->session.track_temp == 0)
-			s->session.track_temp = (uint8_t)(
-			    s->session.ambient_temp + 8);
 
 		{
 			/*
