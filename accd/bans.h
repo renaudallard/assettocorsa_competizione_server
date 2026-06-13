@@ -32,9 +32,10 @@
  *   - kicks: cleared on race weekend restart.  Steam ID match
  *            refuses handshake with REJECT_KICKED.
  *
- * Storage: cfg/banlist.json (one Steam ID per line, plain text;
- * comments with #).  Kicks are in-memory only and lost on
- * server restart.
+ * Storage: cfg/banlist.txt (one Steam ID per line, plain text;
+ * comments with #).  An optional cfg/kicklist.txt seeds the kick
+ * list at startup; kicks are otherwise in-memory only and cleared
+ * on race-weekend restart.
  */
 
 #ifndef ACCD_BANS_H

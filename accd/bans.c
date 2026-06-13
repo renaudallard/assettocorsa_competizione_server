@@ -46,14 +46,19 @@ bans_init(struct BanList *bl)
 	memset(bl, 0, sizeof(*bl));
 }
 
-void
-bans_load(struct BanList *bl, const char *cfg_dir)
+/*
+ * Shared loader for banlist.txt / kicklist.txt: a plain list of Steam64
+ * IDs, one per line, '#' comments allowed.  Each id is routed through
+ * bans_add so the list is both deduplicated and bounded at ACC_MAX_BANS.
+ */
+static void
+bans_load_file(struct BanList *bl, const char *cfg_dir, const char *fname)
 {
 	char path[512];
 	FILE *f;
 	char line[64];
 
-	snprintf(path, sizeof(path), "%s/banlist.txt", cfg_dir);
+	snprintf(path, sizeof(path), "%s/%s", cfg_dir, fname);
 	f = fopen(path, "r");
 	if (f == NULL) {
 		if (errno != ENOENT)
@@ -63,7 +68,22 @@ bans_load(struct BanList *bl, const char *cfg_dir)
 	while (fgets(line, sizeof(line), f) != NULL) {
 		size_t len;
 
-		/* strip whitespace */
+		/*
+		 * Over-length line: fgets filled the buffer without a
+		 * newline, so the rest of the line is still queued.  Discard
+		 * the whole line (consume to the next newline) instead of
+		 * parsing its split tail as a bogus second entry.
+		 */
+		if (strchr(line, '\n') == NULL &&
+		    strlen(line) == sizeof(line) - 1) {
+			int ch;
+
+			log_warn("bans: %s: line too long, skipping", path);
+			while ((ch = fgetc(f)) != '\n' && ch != EOF)
+				;
+			continue;
+		}
+		/* strip leading whitespace */
 		while (line[0] == ' ' || line[0] == '\t')
 			memmove(line, line + 1, strlen(line));
 		if (line[0] == '#' || line[0] == '\n' || line[0] == '\0')
@@ -74,14 +94,16 @@ bans_load(struct BanList *bl, const char *cfg_dir)
 			line[--len] = '\0';
 		if (len == 0)
 			continue;
-		if (bl->count < ACC_MAX_BANS) {
-			snprintf(bl->entries[bl->count],
-			    sizeof(bl->entries[bl->count]), "%s", line);
-			bl->count++;
-		}
+		(void)bans_add(bl, line);
 	}
 	fclose(f);
 	log_info("bans: loaded %d entries from %s", bl->count, path);
+}
+
+void
+bans_load(struct BanList *bl, const char *cfg_dir)
+{
+	bans_load_file(bl, cfg_dir, "banlist.txt");
 }
 
 void
@@ -146,31 +168,7 @@ bans_add(struct BanList *bl, const char *steam_id)
 void
 kicks_load(struct BanList *bl, const char *cfg_dir)
 {
-	char path[512];
-	FILE *f;
-	char line[64];
-
-	snprintf(path, sizeof(path), "%s/kicklist.txt", cfg_dir);
-	f = fopen(path, "r");
-	if (f == NULL)
-		return;	/* kicklist.txt is optional; silent on ENOENT */
-	while (fgets(line, sizeof(line), f) != NULL) {
-		size_t len;
-
-		while (line[0] == ' ' || line[0] == '\t')
-			memmove(line, line + 1, strlen(line));
-		if (line[0] == '#' || line[0] == '\n' || line[0] == '\0')
-			continue;
-		len = strlen(line);
-		while (len > 0 && (line[len - 1] == '\n' ||
-		    line[len - 1] == '\r' || line[len - 1] == ' '))
-			line[--len] = '\0';
-		if (len == 0)
-			continue;
-		(void)bans_add(bl, line);
-	}
-	fclose(f);
-	log_info("kicks: loaded %d entries from %s", bl->count, path);
+	bans_load_file(bl, cfg_dir, "kicklist.txt");
 }
 
 int
