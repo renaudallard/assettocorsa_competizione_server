@@ -737,9 +737,15 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		free(query);
 		log_info("udp 0x5f identity query (token ok) from %s:%u",
 		    inet_ntoa(peer->sin_addr), ntohs(peer->sin_port));
+		/*
+		 * Reply is a bare kson byte-string [u16 64][64 raw bytes]
+		 * of token_a -- NO opcode prefix and NOT Format-A.  The exe
+		 * (FUN_140027f80:211-219 -> writeKsonString FUN_14004d240)
+		 * writes only the kson string; cf the 0x17 branch which DOES
+		 * store its opcode, proving 0x5f deliberately omits it.
+		 */
 		bb_init(&reply);
-		if (wr_u8(&reply, ACP_ADMIN_QUERY) == 0 &&
-		    wr_str_a(&reply, s->lobby.token_a) == 0) {
+		if (wr_str_raw(&reply, s->lobby.token_a) == 0) {
 			(void)sendto(s->udp_fd, reply.data, reply.wpos, 0,
 			    (const struct sockaddr *)peer,
 			    (socklen_t)sizeof(*peer));

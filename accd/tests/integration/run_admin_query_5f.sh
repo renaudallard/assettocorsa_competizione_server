@@ -1,10 +1,20 @@
 #!/bin/sh
-# UDP 0x5f ACP_ADMIN_QUERY regression.  Client sends a Format-B
-# (u16 count + N x u16) string carrying an identifier; accd replies
-# with 0x5f + Format-A (u8 count + N x u32) server_name and logs
-# "udp 0x5f admin query from <ip>:<port>".
+# UDP 0x5f ACP_ADMIN_QUERY regression.
 #
-# We hand-build the UDP probe in Python so this doesn't need a bot.
+# The kson lobby identity handshake: a caller echoes our 10-char
+# token_b as a kson byte-string [0x5f][u16 byte_count][raw bytes];
+# accd replies ONLY on a token match with a bare kson byte-string
+# [u16 64][64 raw token_a bytes] (no opcode prefix, NOT Format-A),
+# mirroring the exe (FUN_140027f80 -> writeKsonString FUN_14004d240).
+#
+# token_b is a random per-launch fingerprint we cannot predict from
+# outside, so this test exercises the reachable-without-the-secret
+# surface: that rd_str_raw parses a well-formed and a truncated query
+# without over-reading, that a non-matching token draws no reply (the
+# exe gates the same way), and that none of it crashes the server.
+# The happy-path reply wire is verified by reverse engineering.
+#
+# We hand-build the UDP probes in Python so this doesn't need a bot.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
@@ -32,52 +42,54 @@ for i in 1 2 3 4 5; do
 done
 
 python3 - <<'PY'
-import socket, struct, sys, time
+import socket, struct, sys
 
-probe_id = 'whoami'
-# Format-B = u16 count + N x u16 chars.
-body = bytes([0x5f]) + struct.pack('<H', len(probe_id))
-for ch in probe_id:
-    body += struct.pack('<H', ord(ch))
-
+ADDR = ('127.0.0.1', 9303)
 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-sock.settimeout(2.0)
-sock.sendto(body, ('127.0.0.1', 9303))
+sock.settimeout(1.0)
 
-try:
-    reply, peer = sock.recvfrom(1024)
-except socket.timeout:
-    print('FAIL: no UDP reply within 2s')
+def expect_no_reply(body, label):
+    sock.sendto(body, ADDR)
+    try:
+        reply, _ = sock.recvfrom(1024)
+    except socket.timeout:
+        print(f'  {label}: no reply (ok)')
+        return
+    print(f'FAIL: {label} drew an unexpected reply {reply.hex()}')
     sys.exit(1)
 
-print(f'reply {len(reply)}B: {reply.hex()}')
-if not reply or reply[0] != 0x5f:
-    print(f'FAIL: reply msg byte was 0x{reply[0]:02x}, expected 0x5f')
+# Well-formed kson byte-string carrying a token that cannot match the
+# random per-launch token_b -> token mismatch -> no reply.
+wrong = b'ZZZZZZZZZZ'
+expect_no_reply(bytes([0x5f]) + struct.pack('<H', len(wrong)) + wrong,
+                'wrong-token')
+
+# Truncated: declared length far exceeds the bytes present.  rd_str_raw
+# must hit its rd_remaining bailout and the handler must drop it.
+expect_no_reply(bytes([0x5f]) + struct.pack('<H', 100) + b'abc',
+                'truncated')
+
+# Header only (no length) and empty string: both must parse-fail / no-op.
+expect_no_reply(bytes([0x5f]), 'header-only')
+expect_no_reply(bytes([0x5f]) + struct.pack('<H', 0), 'empty')
+
+# Liveness: a 7-byte 0x17 keepalive probe must still echo, proving the
+# 0x5f packets did not wedge or crash the server.
+sock.sendto(bytes([0x17]) + struct.pack('<Q', 0x1122334455)[:6], ADDR)
+try:
+    reply, _ = sock.recvfrom(64)
+except socket.timeout:
+    print('FAIL: server unresponsive after 0x5f probes (no 0x17 echo)')
     sys.exit(2)
-
-# Format-A = u8 count + N x u32.
-n = reply[1]
-expected = 2 + 4 * n
-if len(reply) != expected:
-    print(f'FAIL: reply length {len(reply)} != expected {expected}')
+if not reply or reply[0] != 0x17:
+    print(f'FAIL: 0x17 echo malformed: {reply.hex()}')
     sys.exit(3)
-
-name = ''
-for i in range(n):
-    cp = (reply[2 + 4*i]
-         | (reply[3 + 4*i] << 8)
-         | (reply[4 + 4*i] << 16)
-         | (reply[5 + 4*i] << 24))
-    name += chr(cp)
-print(f'server_name in reply: {name!r}')
-if not name:
-    print('FAIL: empty server_name')
-    sys.exit(4)
-print('RESULT: PASS (0x5f UDP probe replies with server name)')
+print('  liveness: 0x17 echo ok')
+print('RESULT: PASS (rd_str_raw parses/bails cleanly, mismatch drops, server alive)')
 PY
 
-if ! grep -q 'udp 0x5f admin query' accd.log; then
-    echo "FAIL: accd.log missing the 0x5f log line"
-    exit 5
+if grep -qiE 'AddressSanitizer|runtime error|Segmentation' accd.log; then
+    echo "FAIL: sanitizer/crash signature in accd.log"
+    exit 4
 fi
-echo "  accd.log carries the 0x5f admin-query line"
+echo "  accd.log clean of crash signatures"
