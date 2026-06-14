@@ -312,21 +312,29 @@ session_reset(struct Server *s, uint8_t session_index)
 				}
 			}
 		}
+		/*
+		 * Two passes, matching the exe's grid builder
+		 * (FUN_140032400).  Pass 1 assigns every car that has an
+		 * entitled position (qualy archive order, or a configured
+		 * defaultGridPosition).  Pass 2 fills the rest from the
+		 * next free slot.  Splitting the passes prevents a
+		 * collision: server_find_grid_slot derives the next free
+		 * slot from already-assigned grid_positions, so a fallback
+		 * car must not run before a higher-slot qualy car has
+		 * claimed its position or both could land on the same grid
+		 * number.
+		 *
+		 * Grid is assigned to every slot with an identity
+		 * (driver_count > 0), not just connected ones, so a driver
+		 * who dropped during qualy keeps their slot for the
+		 * zombie-slot reclaim in handshake_handle; unreclaimed
+		 * zombies stay invisible because broadcast_grid iterates
+		 * only `used` cars.
+		 */
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct CarEntry *car = &s->cars[i];
 			int16_t g = -1;
 
-			/*
-			 * Assign grid to every slot that has an identity
-			 * (driver_count > 0), not just currently-connected
-			 * ones.  A driver who disconnected during qualy
-			 * and reconnects after the race has started still
-			 * gets their rightful grid position when the
-			 * zombie-slot reclaim in handshake_handle re-binds
-			 * them to this slot.  Unreclaimed zombies stay
-			 * invisible because broadcast_grid iterates only
-			 * `used` cars.
-			 */
 			if (car->driver_count == 0)
 				continue;
 			if (prior >= 0 && car->race_archive[prior] != NULL) {
@@ -337,14 +345,21 @@ session_reset(struct Server *s, uint8_t session_index)
 			if (g < 0 && prior < 0 &&
 			    car->default_grid_position >= 0)
 				g = (int16_t)car->default_grid_position;
-			if (g < 0) {
+			car->race.grid_position = g;
+		}
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct CarEntry *car = &s->cars[i];
+
+			if (car->driver_count == 0)
+				continue;
+			if (car->race.grid_position < 0) {
 				int slot = server_find_grid_slot(s);
 				if (slot >= 0)
-					g = (int16_t)slot;
+					car->race.grid_position =
+					    (int16_t)slot;
 			}
-			car->race.grid_position = g;
 			log_info("grid: car %d -> %d (from session %d%s)",
-			    i, (int)g, prior,
+			    i, (int)car->race.grid_position, prior,
 			    car->used ? "" : ", zombie");
 		}
 	}
