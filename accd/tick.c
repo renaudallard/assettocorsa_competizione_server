@@ -1506,9 +1506,15 @@ tick_run(struct Server *s)
 						    &s->cars[ci];
 						if (cc->driver_count == 0)
 							continue;
+						/*
+						 * race.position is 1-based;
+						 * default_grid_position is
+						 * 0-based, so drop one.  The
+						 * guard keeps it non-negative.
+						 */
 						if (cc->race.position >= 1)
 							cc->default_grid_position
-							    = cc->race.position;
+							    = cc->race.position - 1;
 					}
 					(void)entrylist_save(s, s->cfg_dir);
 				}
