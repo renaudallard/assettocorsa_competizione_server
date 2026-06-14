@@ -274,6 +274,15 @@ rd_str_a(struct Reader *r, char **out)
 			return -1;
 		}
 		/*
+		 * Lone UTF-16 surrogates are not valid scalar values;
+		 * utf8_encode would emit the forbidden WTF-8 form (e.g.
+		 * ED A0 80), so a malicious name could plant invalid
+		 * UTF-8 in results / ratings JSON.  Replace with U+FFFD,
+		 * matching rd_str_b.
+		 */
+		if (cp >= 0xD800 && cp <= 0xDFFF)
+			cp = 0xFFFD;
+		/*
 		 * Replace C0 controls + DEL with '?' so a malicious
 		 * name / chat string can't inject newlines into
 		 * log_kunos stdout lines (which downstream log
