@@ -422,7 +422,7 @@ main(int argc, char **argv)
 		 * sched_yield() until the tick deadline — matches the
 		 * exe's dedicated tick thread.
 		 *
-		 * With zero clients we have no 0x1e / 0x28 fan-out
+		 * With no driver in a car we have no 0x1e / 0x28 fan-out
 		 * deadline to honour, so block in poll() for up to 100
 		 * ms.  All tick work is already gated on wall-clock
 		 * cadences (keepalive 1 s, leaderboard 75 s, etc.),
@@ -431,8 +431,13 @@ main(int argc, char **argv)
 		 * the budget.  This drops idle CPU from ~100 % of one
 		 * core to near zero without changing any emission
 		 * cadence.
+		 *
+		 * Key on driven cars, not raw nconns: a carless
+		 * spectator or a long-lived SMPR / accweb monitor holds
+		 * a connection open but generates no UDP fan-out, so it
+		 * must not force the hot path.
 		 */
-		idle = (srv.nconns == 0);
+		idle = (server_used_car_count(&srv) == 0);
 		r = poll(pfds, (nfds_t)npfds, idle ? 100 : 0);
 		if (r < 0) {
 			if (errno == EINTR)

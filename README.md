@@ -220,10 +220,11 @@
   with `SCMP_ACT_KILL_PROCESS` default) and a `Landlock` ruleset
   scoped to `cfg/` and `results/` (matching unveil).  Both fall
   through gracefully when the kernel or `libseccomp` is missing.
-- **Zero idle CPU** — with no clients connected the main loop
+- **Zero idle CPU** — with no driver in a car the main loop
   blocks in `poll()` for up to 100 ms per iteration, so the
-  daemon sits near 0 % CPU until the first client is accepted
-  and the 333 Hz tick resumes.
+  daemon sits near 0 % CPU until the first driver joins and
+  the 333 Hz tick resumes.  Carless spectators and monitor
+  connections do not force the busy-wait.
 
 ### Known limitations
 
@@ -232,10 +233,10 @@
   accd matches the 333 Hz cadence with one non-blocking `poll()`
   loop and a 256-packet UDP drain burst, intentionally different
   from the exe's concurrency model but emitting on the same
-  wall-clock schedule.  With zero clients connected the loop
+  wall-clock schedule.  With no driver in a car the loop
   blocks in `poll()` for up to 100 ms so the daemon idles near
   0 % CPU; the 333 Hz busy-wait resumes the instant the first
-  client is accepted.
+  driver joins.
 - `isCPServer` + `competitionRatingMin/Max` gate joins: a CP server
   accepts connections only during Free Practice and rejects a player
   whose wire-declared competition rating falls outside the window.  The
