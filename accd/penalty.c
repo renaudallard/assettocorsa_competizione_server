@@ -630,6 +630,14 @@ penalty_clear(struct Server *s, int car_id)
 	memset(s->cars[car_id].race.pen_cat_severity, 0,
 	    sizeof(s->cars[car_id].race.pen_cat_severity));
 	/*
+	 * Reset the accumulators too, mirroring the exe's full
+	 * PenaltySheet destroy.  Without this the EXE_TP counter keeps
+	 * its old total, so the next time penalty re-materialises the
+	 * whole cleared amount instead of starting fresh.
+	 */
+	memset(s->cars[car_id].race.pen_state, 0,
+	    sizeof(s->cars[car_id].race.pen_state));
+	/*
 	 * 0x36 per-car tail bytes change when the queue is wiped — the
 	 * memcmp-cache must re-emit so AC2 stops rendering the cleared
 	 * penalty.  Same family as the chat.c:236 post-eviction fix.
@@ -651,6 +659,8 @@ penalty_clear_all(struct Server *s)
 		memset(q->slots, 0, sizeof(q->slots));
 		memset(s->cars[i].race.pen_cat_severity, 0,
 		    sizeof(s->cars[i].race.pen_cat_severity));
+		memset(s->cars[i].race.pen_state, 0,
+		    sizeof(s->cars[i].race.pen_state));
 	}
 	/* Single emit covers the multi-car wipe. */
 	leaderboard_request_emit(s);
@@ -676,6 +686,14 @@ penalty_clear_tp(struct Server *s, int car_id)
 	if (car_id < 0 || car_id >= ACC_MAX_CARS)
 		return;
 	q = &s->cars[car_id].race.pen;
+	/*
+	 * Drop the post-race time accumulator so a /cleartp'd total does
+	 * not re-materialise in full on the next TP report (the EXE_TP
+	 * path only re-inits when severity is 0).  Leave the DT/SG ladder
+	 * (pen_cat_severity) alone -- those entries survive /cleartp.
+	 */
+	memset(&s->cars[car_id].race.pen_state[EXE_TP], 0,
+	    sizeof(s->cars[car_id].race.pen_state[EXE_TP]));
 	for (i = 0; i < q->count; i++) {
 		const struct PenaltyEntry *p = &q->slots[i];
 		int is_tp = p->race_end_tp != 0 ||
