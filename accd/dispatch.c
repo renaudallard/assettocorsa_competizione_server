@@ -477,7 +477,16 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * it matters only over a long stint.)
 		 */
 		new_min = (!pc->session_clock_seen || rtt < pc->best_rtt_ms);
-		if (new_min) {
+		/*
+		 * A future / forged pong_srv_ts makes (now - srv_ts) wrap to
+		 * a huge unsigned value whose signed form is negative.  Never
+		 * latch such a sample: otherwise the first pong would pin
+		 * best_rtt_ms near 4e9 forever and skew every Mode-A relay
+		 * clock for the whole session.  Skipping it leaves
+		 * session_clock_seen clear so the next sane pong latches,
+		 * mirroring the exe's sign-bit "seen" sentinel.
+		 */
+		if (new_min && (int32_t)rtt >= 0) {
 			uint64_t session_now =
 			    mono_ms() - s->session.phase_started_ms;
 			pc->session_clock_offset_ms =
