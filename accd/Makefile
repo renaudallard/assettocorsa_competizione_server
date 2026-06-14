@@ -164,7 +164,7 @@ pb.o: pb.c io.h pb.h
 penalty.o: penalty.c log.h penalty.h state.h io.h lobby.h msg.h session.h \
  tick.h
 prim.o: prim.c prim.h io.h
-ratings.o: ratings.c json.h log.h ratings.h state.h io.h lobby.h msg.h
+ratings.o: ratings.c io.h json.h log.h ratings.h state.h lobby.h msg.h
 results.o: results.c io.h log.h penalty.h state.h lobby.h msg.h results.h
 sandbox.o: sandbox.c sandbox.h log.h
 session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \

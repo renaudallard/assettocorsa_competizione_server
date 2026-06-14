@@ -37,6 +37,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
+#include "io.h"
 #include "json.h"
 #include "log.h"
 #include "ratings.h"
@@ -188,13 +189,15 @@ ratings_save(struct Server *s)
 	int i, first = 1;
 
 	ratings_path(s, path, sizeof(path));
-	snprintf(tmp, sizeof(tmp), "%s.tmp", path);
-	f = fopen(tmp, "wb");
-	if (f == NULL) {
-		log_warn("ratings_save: open %s: %s", tmp,
-		    strerror(errno));
+	/*
+	 * Route through the shared atomic-write helper so the file is
+	 * fsync'd before the rename, matching results.json / bans.json
+	 * durability instead of risking a truncated ratings.json that
+	 * would reset the SA/TR ladder on the next load after a crash.
+	 */
+	f = atomic_open(tmp, sizeof(tmp), path, "ratings_save");
+	if (f == NULL)
 		return;
-	}
 	fputs("{\n", f);
 	for (i = 0; i < ACC_RATINGS_MAX; i++) {
 		const struct RatingEntry *e = &s->ratings[i];
@@ -209,18 +212,8 @@ ratings_save(struct Server *s)
 		first = 0;
 	}
 	fputs("\n}\n", f);
-	if (fclose(f) != 0) {
-		log_warn("ratings_save: write %s: %s", tmp,
-		    strerror(errno));
-		(void)unlink(tmp);
+	if (atomic_close(f, tmp, path, "ratings_save") != 0)
 		return;
-	}
-	if (rename(tmp, path) != 0) {
-		log_warn("ratings_save: rename %s: %s", path,
-		    strerror(errno));
-		(void)unlink(tmp);
-		return;
-	}
 	log_info("ratings_save: %s", path);
 }
 
