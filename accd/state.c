@@ -377,7 +377,7 @@ conn_drop(struct Server *s, struct Conn *c)
 	 * the units kunos already uses for its own tracking; we
 	 * mirror by emitting last_udp_client_ts directly.
 	 */
-	if (c->state == CONN_AUTH)
+	if (c->state == CONN_AUTH && !c->is_smpr)
 		log_kunos("Removing dead connection %u  (last lastUdpPaketReceived %u)",
 		    (unsigned)c->conn_id, (unsigned)c->last_udp_client_ts);
 	/*
