@@ -2376,8 +2376,8 @@ repeated ServerMonitorSessionDef  sessions
 int32  currentSessionIndex
 int32  weekendTimeSeconds
 float  idealLineGrip
-int32  ambientTemp
-int32  roadTemp
+float  ambientTemp                  /* fixed32 — exe parser FUN_14003f510 requires tags 0x25/0x2d */
+float  roadTemp                     /* fixed32 — was wrongly transcribed as int32 */
 float  cloudLevel
 float  rainLevel
 float  trackWetness
@@ -2411,7 +2411,7 @@ repeated TimedValue accumulatedLatencyErrorHistory
 
 **`ServerMonitorRealtimeUpdate`** — the periodic push (every `realtimeCarUpdateInterval` ms):
 ```
-int32                                          serverNow
+double                                         serverNow        /* fixed64 — exe parser FUN_14003f040 requires tag 0x09; ms clock */
 ServerMonitorSessionState                      sessionState
 repeated ServerMonitorRealtimeConnectionState  connections
 repeated ServerMonitorRealtimeCarState         cars
@@ -2419,10 +2419,10 @@ repeated ServerMonitorRealtimeCarState         cars
 
 **`ServerMonitorLeaderboardEntry`**:
 ```
-ServerMonitorCarEntry          carEntry
+int32                          field1 (carId?)   /* exe parser FUN_14003e770 case 0: scalar varint at +0x70, NOT a CarEntry submessage; accd emit-side fix deferred until +0x70 source is pinned */
 string                         currentConnectionSteamId
 int32                          missingMandatoryPitstops
-repeated int32                 driverTimes
+repeated fixed32               driverTimes        /* exe wants fixed32 (0x22 packed / 0x25 single), not varint */
 int32                          lastLapTime
 repeated int32                 lastLapSplits
 int32                          bestLapTime

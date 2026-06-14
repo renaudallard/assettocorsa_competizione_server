@@ -93,8 +93,8 @@
 #define PB_SS_CURRENT_SESSION_INDEX	1
 #define PB_SS_WEEKEND_TIME_SECONDS	2
 #define PB_SS_IDEAL_LINE_GRIP		3
-#define PB_SS_AMBIENT_TEMP		4
-#define PB_SS_ROAD_TEMP			5
+#define PB_SS_AMBIENT_TEMP		4	/* fixed32 (float) */
+#define PB_SS_ROAD_TEMP			5	/* fixed32 (float) */
 #define PB_SS_CLOUD_LEVEL		6
 #define PB_SS_RAIN_LEVEL		7
 #define PB_SS_TRACK_WETNESS		8
@@ -105,16 +105,19 @@
 #define PB_SS_CARS_CONNECTED		13
 
 /* ----- ServerMonitorRealtimeUpdate (msg 0x06) -------------------- */
-#define PB_RTU_SERVER_NOW		1
+#define PB_RTU_SERVER_NOW		1	/* fixed64 (double, ms) */
 #define PB_RTU_SESSION_STATE		2	/* SessionState submessage */
 #define PB_RTU_CONNECTIONS		3	/* repeated */
 #define PB_RTU_CARS			4	/* repeated */
 
 /* ----- ServerMonitorLeaderboardEntry (sub of LEADERBOARD) -------- */
-#define PB_LBE_CAR_ENTRY		1	/* CarEntry submessage */
+#define PB_LBE_CAR_ENTRY		1	/* exe wants scalar varint at
+						 * +0x70, NOT a submessage;
+						 * emit-side fix deferred until
+						 * the +0x70 source is pinned */
 #define PB_LBE_CURRENT_STEAM_ID		2
 #define PB_LBE_MISSING_MANDATORY_PITS	3
-#define PB_LBE_DRIVER_TIMES		4	/* repeated int32 */
+#define PB_LBE_DRIVER_TIMES		4	/* repeated fixed32 */
 #define PB_LBE_LAST_LAP_TIME		5
 #define PB_LBE_LAST_LAP_SPLITS		6	/* repeated int32 */
 #define PB_LBE_BEST_LAP_TIME		7

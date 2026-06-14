@@ -208,11 +208,16 @@ monitor_build_session_state(struct ByteBuf *bb, const struct Server *s)
 		return -1;
 	if (pb_w_float(bb, PB_SS_IDEAL_LINE_GRIP, 0.95f) < 0)
 		return -1;
-	if (pb_w_int32(bb, PB_SS_AMBIENT_TEMP,
-	    s->session.ambient_temp > 0 ? s->session.ambient_temp : ACC_DEFAULT_AMBIENT_C) < 0)
+	/*
+	 * ambientTemp / roadTemp are fixed32 (float) on the wire: the exe
+	 * parser FUN_14003f510 requires tags 0x25 / 0x2d, not the varint
+	 * pb_w_int32 emits, so a kunos-schema reader dropped both temps.
+	 */
+	if (pb_w_float(bb, PB_SS_AMBIENT_TEMP,
+	    (float)(s->session.ambient_temp > 0 ? s->session.ambient_temp : ACC_DEFAULT_AMBIENT_C)) < 0)
 		return -1;
-	if (pb_w_int32(bb, PB_SS_ROAD_TEMP,
-	    s->session.track_temp > 0 ? s->session.track_temp : 26) < 0)
+	if (pb_w_float(bb, PB_SS_ROAD_TEMP,
+	    (float)(s->session.track_temp > 0 ? s->session.track_temp : 26)) < 0)
 		return -1;
 	if (pb_w_float(bb, PB_SS_CLOUD_LEVEL, s->weather.clouds) < 0)
 		return -1;
@@ -261,8 +266,13 @@ monitor_build_realtime_update(struct ByteBuf *bb,
 	size_t sub_start;
 	int i;
 
-	if (pb_w_int32(bb, PB_RTU_SERVER_NOW,
-	    (int32_t)(s->session.weekend_time_s * 1000)) < 0)
+	/*
+	 * serverNow is a fixed64 double (ms) on the wire: the exe parser
+	 * FUN_14003f040 requires tag 0x09 (8-byte) for field 1, not a
+	 * varint.  Do the *1000 in 64-bit so it cannot wrap.
+	 */
+	if (pb_w_double(bb, PB_RTU_SERVER_NOW,
+	    (double)((int64_t)s->session.weekend_time_s * 1000)) < 0)
 		return -1;
 	if (pb_sub_begin(bb, PB_RTU_SESSION_STATE, &sub_start) < 0)
 		return -1;
@@ -335,11 +345,12 @@ build_leaderboard_entry(struct ByteBuf *bb, const struct Server *s,
 			return -1;
 	}
 
-	/* PB_LBE_DRIVER_TIMES (repeated i32) — accumulated stint ms per
-	 * driver index, in order. */
+	/* PB_LBE_DRIVER_TIMES (repeated fixed32) — accumulated stint ms
+	 * per driver index, in order.  The exe parser FUN_14003e770
+	 * accepts packed (0x22) or single fixed32 (0x25), not varint. */
 	for (k = 0; k < car->driver_count && k < ACC_MAX_DRIVERS_PER_CAR; k++)
-		if (pb_w_int32(bb, PB_LBE_DRIVER_TIMES,
-		    race->driver_stint_ms[k]) < 0)
+		if (pb_w_fixed32(bb, PB_LBE_DRIVER_TIMES,
+		    (uint32_t)race->driver_stint_ms[k]) < 0)
 			return -1;
 
 	if (pb_w_int32(bb, PB_LBE_LAST_LAP_TIME, race->last_lap_ms) < 0)

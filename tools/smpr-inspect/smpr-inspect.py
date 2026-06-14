@@ -92,6 +92,15 @@ def read_float(buf, pos):
     return struct.unpack_from("<f", buf, pos)[0], pos + 4
 
 
+def read_double(buf, pos):
+    return struct.unpack_from("<d", buf, pos)[0], pos + 8
+
+
+def read_fixed32(buf, pos):
+    # fixed32 carrying a 32-bit int (e.g. driverTimes ms), not a float.
+    return struct.unpack_from("<i", buf, pos)[0], pos + 4
+
+
 # --- schemas (match accd/monitor.h) --------------------------------
 
 SCHEMAS = {
@@ -114,8 +123,8 @@ SCHEMAS = {
         1: ("currentSessionIndex", "i32"),
         2: ("weekendTimeSeconds", "i32"),
         3: ("idealLineGrip", "f32"),
-        4: ("ambientTemp", "i32"),
-        5: ("roadTemp", "i32"),
+        4: ("ambientTemp", "f32"),
+        5: ("roadTemp", "f32"),
         6: ("cloudLevel", "f32"),
         7: ("rainLevel", "f32"),
         8: ("trackWetness", "f32"),
@@ -142,7 +151,7 @@ SCHEMAS = {
         7: ("isSpecator", "bool"),
     }),
     0x06: ("RealtimeUpdate", {
-        1: ("serverNow", "i32"),
+        1: ("serverNow", "f64"),
         2: ("sessionState", "sub:SessionState"),
         3: ("connections", "sub:ConnectionEntry"),
         4: ("cars", "sub:CarEntry"),
@@ -173,7 +182,7 @@ SUBSCHEMAS = {
         1: ("carEntry", "sub:CarEntry"),
         2: ("currentSteamId", "string"),
         3: ("missingMandatoryPits", "i32"),
-        4: ("driverTimes", "i32"),
+        4: ("driverTimes", "fx32"),
         5: ("lastLapTime", "i32"),
         6: ("lastLapSplits", "i32"),
         7: ("bestLapTime", "i32"),
@@ -220,6 +229,11 @@ def decode(buf, schema):
             elif kind == "f32":
                 val, pos = read_float(buf, pos)
                 val = round(val, 4)
+            elif kind == "f64":
+                val, pos = read_double(buf, pos)
+                val = round(val, 4)
+            elif kind == "fx32":
+                val, pos = read_fixed32(buf, pos)
             elif kind == "string":
                 val, pos = read_string(buf, pos)
             elif kind.startswith("sub:"):
