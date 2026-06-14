@@ -369,8 +369,15 @@ results_write(struct Server *s)
 		fprintf(f, "          \"teamName\": ");
 		fprint_json_str(f, car->team_name);
 		fprintf(f, ",\n");
+		/*
+		 * car->nationality is never populated (always 0); the real
+		 * value lives per-driver, so source it from the default
+		 * driver like the exe's car/team nationality.
+		 */
 		fprintf(f, "          \"nationality\": %u,\n",
-		    car->nationality);
+		    car->drivers[car->current_driver_index <
+		    car->driver_count ? car->current_driver_index : 0]
+		    .nationality);
 		fprintf(f, "          \"carGuid\": -1,\n");
 		fprintf(f, "          \"teamGuid\": -1,\n");
 		fprintf(f, "          \"drivers\": [");
