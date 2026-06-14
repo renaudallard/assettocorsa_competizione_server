@@ -1667,7 +1667,14 @@ stint_check_violations(struct Server *s)
 			    d < ACC_MAX_DRIVERS_PER_CAR; d++) {
 				uint32_t stint_s = (uint32_t)(
 				    r->driver_stint_ms[d] / 1000);
-				if (stint_s > limit_s) {
+				/*
+				 * Compare in ms like the exe (FUN_14012ae10:
+				 * limit_s*1000 < stint_ms); truncating to whole
+				 * seconds first would grant up to ~999 ms of
+				 * leniency at the boundary.
+				 */
+				if ((int64_t)r->driver_stint_ms[d] >
+				    (int64_t)limit_s * 1000) {
 					log_info("Car %d driver %d stint "
 					    "%us > limit %us -> DQ", i, d,
 					    (unsigned)stint_s,
