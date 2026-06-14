@@ -1402,7 +1402,15 @@ session_advance(struct Server *s)
 	uint8_t next = (uint8_t)(s->session.session_index + 1);
 
 	if (!s->session.results_written) {
-		(void)results_write(s);
+		/*
+		 * Respect the dumpLeaderboards knob here too: the normal
+		 * end-of-session path gates the write in tick.c, but admin
+		 * /next force-advances call session_advance directly with
+		 * results_written still clear, so without this gate /next
+		 * would write results even when the operator disabled it.
+		 */
+		if (s->dump_leaderboards)
+			(void)results_write(s);
 		s->session.results_written = 1;
 	}
 
