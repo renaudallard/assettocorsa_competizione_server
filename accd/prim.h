@@ -90,6 +90,14 @@ int	rd_str_a(struct Reader *r, char **out);
 int	rd_str_b(struct Reader *r, char **out);
 
 /*
+ * Read a u16-byte-length-prefixed raw string -- the read-side mirror
+ * of wr_str_raw.  The wire is [u16 byte_count][byte_count raw bytes];
+ * the kson lobby identity token (0x5f) uses this encoding, not the
+ * Format-A / Format-B wide forms.
+ */
+int	rd_str_raw(struct Reader *r, char **out);
+
+/*
  * Skip n bytes.  Returns 0 on success, -1 if not enough data.
  */
 int	rd_skip(struct Reader *r, size_t n);

@@ -369,6 +369,33 @@ rd_str_b(struct Reader *r, char **out)
 	return 0;
 }
 
+int
+rd_str_raw(struct Reader *r, char **out)
+{
+	uint16_t n;
+	char *buf;
+	size_t i;
+
+	if (rd_u16(r, &n) < 0)
+		return -1;
+	if (rd_remaining(r) < n)
+		return -1;
+	buf = malloc((size_t)n + 1);
+	if (buf == NULL)
+		return -1;
+	for (i = 0; i < n; i++) {
+		unsigned char b = r->p[i];
+		/* C0 controls + DEL -> '?'; see rd_str_a for rationale. */
+		if (b < 0x20 || b == 0x7f)
+			b = '?';
+		buf[i] = (char)b;
+	}
+	buf[n] = '\0';
+	r->p += n;
+	*out = buf;
+	return 0;
+}
+
 /* ----- writers ---------------------------------------------------- */
 
 int

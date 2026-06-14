@@ -710,7 +710,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 
 		rd_init(&qr, buf, len);
 		(void)rd_skip(&qr, 1);		/* msg_id */
-		if (rd_str_b(&qr, &query) < 0 || query == NULL)
+		if (rd_str_raw(&qr, &query) < 0 || query == NULL)
 			return;
 		if (strcmp(query, s->lobby.token_b) != 0) {
 			log_debug("udp 0x5f: token mismatch from %s:%u",
