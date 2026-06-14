@@ -561,6 +561,16 @@ server_alloc_race_number(struct Server *s, int my_slot, int requested)
 	int i, n, off;
 
 	/*
+	 * The requested number comes straight off the wire.  ACC car
+	 * numbers are three digits, and the fallback below allocates
+	 * in 1..999, so anything outside that is treated as "no
+	 * preference" (-1).  This also keeps the requested + off
+	 * additions below from overflowing on a hostile value.
+	 */
+	if (requested < 1 || requested > 999)
+		requested = -1;
+
+	/*
 	 * Try requested, requested+1, ..., requested+9.  The exe
 	 * skips uVar34 <= 0 in this offset loop (signed comparison),
 	 * so a request of 0 lands on offset 1 first, and a -1
