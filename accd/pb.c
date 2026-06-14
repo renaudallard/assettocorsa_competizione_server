@@ -162,6 +162,21 @@ pb_w_float(struct ByteBuf *bb, int field, float v)
 	return pb_w_fixed32(bb, field, u);
 }
 
+int
+pb_w_double(struct ByteBuf *bb, int field, double v)
+{
+	unsigned char b[8];
+	uint64_t u;
+	int i;
+
+	memcpy(&u, &v, 8);
+	if (pb_w_tag(bb, field, PB_WIRE_FIXED64) < 0)
+		return -1;
+	for (i = 0; i < 8; i++)
+		b[i] = (unsigned char)((u >> (i * 8)) & 0xff);
+	return bb_append(bb, b, 8);
+}
+
 /*
  * Submessage with backpatched length.  Reserves a 5-byte
  * placeholder where the length varint will be written.

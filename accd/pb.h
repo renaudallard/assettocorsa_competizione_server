@@ -68,6 +68,7 @@ int	pb_w_string(struct ByteBuf *bb, int field, const char *s);
 int	pb_w_bytes(struct ByteBuf *bb, int field, const void *p, size_t n);
 int	pb_w_fixed32(struct ByteBuf *bb, int field, uint32_t v);
 int	pb_w_float(struct ByteBuf *bb, int field, float v);
+int	pb_w_double(struct ByteBuf *bb, int field, double v);
 
 /*
  * Begin a submessage at field number `field`.  Writes the tag,
