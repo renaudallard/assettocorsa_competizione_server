@@ -100,7 +100,16 @@ udp_bind(int port)
 	 * that case return EAGAIN instead of stalling the main loop.
 	 */
 	flags = fcntl(fd, F_GETFL, 0);
-	if (flags >= 0)
-		(void)fcntl(fd, F_SETFL, flags | O_NONBLOCK);
+	if (flags < 0 || fcntl(fd, F_SETFL, flags | O_NONBLOCK) < 0) {
+		/*
+		 * A blocking UDP socket would wedge the single-threaded
+		 * main loop: handle_udp drains via EAGAIN, which a
+		 * blocking recvfrom never returns, so it would block
+		 * forever once the queue empties.  Fail the bind instead.
+		 */
+		log_err("fcntl(udp O_NONBLOCK): %s", strerror(errno));
+		close(fd);
+		return -1;
+	}
 	return fd;
 }
