@@ -370,15 +370,36 @@ build_leaderboard_entry(struct ByteBuf *bb, const struct Server *s,
 	if (pb_w_int32(bb, PB_LBE_TOTAL_TIME, race->race_time_ms) < 0)
 		return -1;
 
-	/* Head pending penalty (slot 0).  Non-admin slots only — admin
-	 * penalties don't surface in client-visible leaderboard either. */
-	if (race->pen.count > 0 && !race->pen.slots[0].admin) {
-		if (pb_w_enum(bb, PB_LBE_CURRENT_PENALTY,
-		    race->pen.slots[0].kind) < 0)
-			return -1;
-		if (pb_w_int32(bb, PB_LBE_CURRENT_PENALTY_VALUE,
-		    race->pen.slots[0].laps_remaining) < 0)
-			return -1;
+	/*
+	 * First active penalty.  Mirror the 0x36 head-selection
+	 * (handshake.c): skip served, client-reported pending, admin,
+	 * and race-end-converted entries so the monitor reports the
+	 * same active penalty the client-visible leaderboard does,
+	 * not whatever happens to sit at slot 0.
+	 */
+	{
+		int ap = -1, pi;
+
+		for (pi = 0; pi < race->pen.count; pi++) {
+			if (race->pen.slots[pi].served)
+				continue;
+			if (race->pen.slots[pi].pending)
+				continue;
+			if (race->pen.slots[pi].admin)
+				continue;
+			if (race->pen.slots[pi].race_end_tp != 0)
+				continue;
+			ap = pi;
+			break;
+		}
+		if (ap >= 0) {
+			if (pb_w_enum(bb, PB_LBE_CURRENT_PENALTY,
+			    race->pen.slots[ap].kind) < 0)
+				return -1;
+			if (pb_w_int32(bb, PB_LBE_CURRENT_PENALTY_VALUE,
+			    race->pen.slots[ap].laps_remaining) < 0)
+				return -1;
+		}
 	}
 
 	if (d != NULL) {
