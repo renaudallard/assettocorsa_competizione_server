@@ -477,13 +477,26 @@ wr_str_a(struct ByteBuf *bb, const char *s)
 
 	cnt = 0;
 	off = 0;
-	while (off < len && cnt < 255) {
+	/*
+	 * The exe's writeString rejects any wstring whose length is
+	 * >= 0xff (FUN_14004d390 / AC2 FUN_143461160 guard on
+	 * length < 0xff), so the real accepted maximum is 254
+	 * codepoints.  Stop at 254 to stay inside that ceiling.
+	 */
+	while (off < len && cnt < 254) {
 		uint32_t cp;
 		size_t n;
 
 		n = utf8_decode(s + off, len - off, &cp);
 		if (n == 0)
 			break;
+		/*
+		 * The exe's Format-A reader keeps only the low 16 bits
+		 * of each codepoint, so a non-BMP value would decode to
+		 * the wrong glyph.  Clamp to U+FFFD like wr_str_b.
+		 */
+		if (cp >= 0x10000)
+			cp = 0xFFFD;
 		cps[cnt++] = cp;
 		off += n;
 	}

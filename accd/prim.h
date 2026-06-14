@@ -114,8 +114,9 @@ int	wr_f32(struct ByteBuf *bb, float v);
 
 /*
  * Write a Format-A string.  s must be a NUL-terminated UTF-8
- * string.  Length is encoded as u8 codepoint count (so any string
- * longer than 255 codepoints is truncated).
+ * string.  Length is encoded as a u8 codepoint count; the exe caps
+ * the accepted length below 0xff, so anything past 254 codepoints
+ * is truncated.  Non-BMP codepoints are written as U+FFFD.
  */
 int	wr_str_a(struct ByteBuf *bb, const char *s);
 
