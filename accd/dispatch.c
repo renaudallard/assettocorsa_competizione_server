@@ -690,11 +690,18 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			    "Latency error: %d ms",
 			    (int)latency_ms);
 			bb_init(&out);
+			/*
+			 * chat_type 0 = player-chat lane (renders in the
+			 * chat window attributed to the source driver),
+			 * matching the exe (FUN_140027f80:505) and accd's
+			 * own h_chat relay.  Type 4 would show as a
+			 * sender-less SRV banner despite the named sender.
+			 */
 			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 			    wr_str_a(&out, from) == 0 &&
 			    wr_str_a(&out, body_txt) == 0 &&
 			    wr_i32(&out, 0) == 0 &&
-			    wr_u8(&out, 4) == 0)
+			    wr_u8(&out, 0) == 0)
 				(void)conn_send_framed(dst,
 				    out.data, out.wpos);
 			bb_free(&out);
