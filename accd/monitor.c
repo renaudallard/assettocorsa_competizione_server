@@ -231,7 +231,14 @@ monitor_build_session_state(struct ByteBuf *bb, const struct Server *s)
 	if (pb_w_float(bb, PB_SS_RAIN_FORECAST_30MIN,
 	    s->weather.current_rain) < 0)
 		return -1;
-	if (pb_w_int32(bb, PB_SS_CARS_CONNECTED, s->nconns) < 0)
+	/*
+	 * Cars connected = drivers in cars, not raw connections:
+	 * nconns also counts carless spectators and SMPR monitors,
+	 * which would disagree with the CarEntry / ConnectionEntry
+	 * records emitted alongside in the same update.
+	 */
+	if (pb_w_int32(bb, PB_SS_CARS_CONNECTED,
+	    server_used_car_count(s)) < 0)
 		return -1;
 	return 0;
 }
