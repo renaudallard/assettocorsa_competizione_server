@@ -714,42 +714,47 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		}
 	}
 
-	/* Build the transformed 0x3b broadcast. Body:
-	 *   u16 car_id + u32 lap_time + u8 flag + i32 session_ts + u16 flags.
-	 *
-	 * Field 2 (the lap/split time, accd's split_time) keeps the
-	 * negative -> LAP_TIME_INVALID guard so a crafted 0x21 can't
-	 * sign-extend into a ~4-billion-ms time on the client.  Field 4 is
-	 * NOT a lap time: the exe builder FUN_140011f30 emits it as a
-	 * session-relative TIMESTAMP (no clamp, no INVALID sentinel),
-	 * normalised per the receiving frame.  accd's own raw_ts (the
-	 * inbound second u32, named lap_time here) must be mapped through
-	 * c->session_clock_offset_ms exactly as the 0x3a path does, not
-	 * clamped — otherwise a benign raw_ts that is negative-as-i32 would
-	 * relay as 0x7fffffff while the exe relays a real session value. */
+	/*
+	 * Build the transformed 0x3b broadcast per-recipient, mirroring
+	 * the exe's FUN_14001ae20 call in the 0x21 dispatcher
+	 * (FUN_1400142f0:475) -- same fan-out as 0x19, 0x3a, 0x3c.
+	 * Field 2 keeps the negative -> LAP_TIME_INVALID guard so a crafted
+	 * 0x21 can't sign-extend into a ~4-billion-ms time on the client.
+	 * Field 4 is a session-relative timestamp normalised per recipient.
+	 * FUN_14001ae20 excludes the sender (conn != param_4 check at
+	 * FUN_14001ae20:29), so we skip the sender in the loop.
+	 */
 	{
 		uint32_t split_wire = split_time < 0
 		    ? LAP_TIME_INVALID : (uint32_t)split_time;
-		int32_t ts_relayed = (int32_t)((int64_t)lap_time
-		    + conn_clock_offset(s, c));
+		int ts_off, i;
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
 		    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
 		    wr_u32(&out, split_wire) < 0 ||
-		    wr_u8(&out, flag_b) < 0 ||
-		    wr_i32(&out, ts_relayed) < 0 ||
+		    wr_u8(&out, flag_b) < 0)
+			goto done;
+		ts_off = (int)out.wpos;
+		if (wr_i32(&out, 0) < 0 ||   /* placeholder, patched per peer */
 		    wr_u16(&out, car_field) < 0)
 			goto done;
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct Conn *peer = s->conns[i];
+			int32_t ts_peer;
+			if (peer == NULL || peer->state != CONN_AUTH ||
+			    peer->is_smpr)
+				continue;
+			if (peer->conn_id == c->conn_id)
+				continue;
+			ts_peer = (int32_t)((int64_t)lap_time +
+			    conn_clock_offset(s, peer));
+			out.data[ts_off + 0] = (uint8_t)ts_peer;
+			out.data[ts_off + 1] = (uint8_t)(ts_peer >> 8);
+			out.data[ts_off + 2] = (uint8_t)(ts_peer >> 16);
+			out.data[ts_off + 3] = (uint8_t)(ts_peer >> 24);
+			(void)bcast_send_one(peer, out.data, out.wpos);
+		}
 	}
-	/*
-	 * Include the sender on the 0x3b relay (BCAST_EXCEPT_NONE).  The
-	 * AC2 client's HUD TOURS counter for the OWN car only advances
-	 * when the server echoes the lap-complete relay back — without
-	 * the self-echo, a 1-driver server leaves the driver's lap count
-	 * frozen even after they cross S/F.  Other peers see this car's
-	 * lap_count change too, exactly as before.
-	 */
-	(void)bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
 done:
 	bb_free(&out);
 	return 0;
