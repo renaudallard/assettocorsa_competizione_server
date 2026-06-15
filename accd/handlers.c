@@ -131,10 +131,10 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	struct Reader r;
 	uint8_t msg_id;
 	uint16_t reporter_car_id, target_car_id;
-	int32_t timestamp, ts_relayed;
+	int32_t timestamp;
 	uint8_t quality;
 	struct ByteBuf out;
-	int rc;
+	int i, ts_off;
 
 	(void)s;
 
@@ -164,23 +164,35 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	 * (no isSessionOver guard at case 0x19) and sends to ALL
 	 * including the sender.
 	 *
-	 * The contact timestamp is the reporter's wire clock; normalise
-	 * it through the sender's `c->session_clock_offset_ms` to the
-	 * server-session-relative frame, exactly as the 0x3a/0x3b/0x4f
-	 * relays do.  The exe does this per recipient (FUN_140041fc0),
-	 * which bcast_all cannot carry, but the session-relative frame
-	 * is shared so this is the closest single-value match.
+	 * The timestamp is per-recipient: the exe applies FUN_140041fc0
+	 * (each receiving conn's clock offset) inside the fan-out loop
+	 * FUN_14001ae20.  We replicate this by building one shared
+	 * buffer, then patching the 4-byte timestamp field for each peer
+	 * before sending.
 	 */
-	ts_relayed = (int32_t)((int64_t)timestamp + conn_clock_offset(s, c));
 	bb_init(&out);
 	if (wr_u8(&out, SRV_LAP_BROADCAST) < 0 ||
 	    wr_u16(&out, reporter_car_id) < 0 ||
-	    wr_u16(&out, target_car_id) < 0 ||
-	    wr_i32(&out, ts_relayed) < 0 ||
+	    wr_u16(&out, target_car_id) < 0)
+		goto out;
+	ts_off = (int)out.wpos;
+	if (wr_i32(&out, 0) < 0 ||	/* placeholder, patched per peer */
 	    wr_u8(&out, quality) < 0)
 		goto out;
-	rc = bcast_all(s, out.data, out.wpos, BCAST_EXCEPT_NONE);
-	(void)rc;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *peer = s->conns[i];
+		int32_t ts_peer;
+
+		if (peer == NULL || peer->state != CONN_AUTH || peer->is_smpr)
+			continue;
+		ts_peer = (int32_t)((int64_t)timestamp +
+		    conn_clock_offset(s, peer));
+		out.data[ts_off + 0] = (uint8_t)ts_peer;
+		out.data[ts_off + 1] = (uint8_t)(ts_peer >> 8);
+		out.data[ts_off + 2] = (uint8_t)(ts_peer >> 16);
+		out.data[ts_off + 3] = (uint8_t)(ts_peer >> 24);
+		(void)bcast_send_one(peer, out.data, out.wpos);
+	}
 out:
 	bb_free(&out);
 	return 0;
@@ -1049,9 +1061,9 @@ h_out_of_track(struct Server *s, struct Conn *c,
 {
 	struct Reader r;
 	uint8_t msg_id, force;
-	int32_t ts_raw, ts_relayed;
+	int32_t ts_raw;
 	struct ByteBuf out;
-	int rc;
+	int i, ts_off;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 ||
@@ -1141,23 +1153,35 @@ h_out_of_track(struct Server *s, struct Conn *c,
 	 * word so the client's out-of-track widget reads the same flags it
 	 * gets from 0x3a/0x3b.
 	 *
-	 * The timestamp is normalised through the sender's
-	 * session_clock_offset_ms to the server-session-relative frame, the
-	 * same as the 0x19/0x3a/0x3b/0x4f relays (the exe normalises it per
-	 * recipient via FUN_140042030 / FUN_140041fc0).  A real-client misano
-	 * pcap shows the 0x3c timestamps in session-relative ms, confirming
-	 * the frame; relaying the raw client clock put a wrong-frame value in
-	 * the receiving out-of-track widget.
+	 * The timestamp is per-recipient: the exe applies FUN_140041fc0
+	 * (each receiving conn's clock offset) inside FUN_14001ae20.
+	 * Build one shared buffer and patch the 4-byte timestamp field for
+	 * each peer, excluding the sender.
 	 */
-	ts_relayed = (int32_t)((int64_t)ts_raw + conn_clock_offset(s, c));
 	bb_init(&out);
 	if (wr_u8(&out, SRV_OUT_OF_TRACK_RELAY) < 0 ||
 	    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
-	    wr_u16(&out, s->cars[c->car_id].race.car_field) < 0 ||
-	    wr_i32(&out, ts_relayed) < 0)
+	    wr_u16(&out, s->cars[c->car_id].race.car_field) < 0)
 		goto out;
-	rc = bcast_all(s, out.data, out.wpos, c->conn_id);
-	(void)rc;
+	ts_off = (int)out.wpos;
+	if (wr_i32(&out, 0) < 0)	/* placeholder, patched per peer */
+		goto out;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *peer = s->conns[i];
+		int32_t ts_peer;
+
+		if (peer == NULL || peer->state != CONN_AUTH || peer->is_smpr)
+			continue;
+		if (peer->conn_id == c->conn_id)
+			continue;
+		ts_peer = (int32_t)((int64_t)ts_raw +
+		    conn_clock_offset(s, peer));
+		out.data[ts_off + 0] = (uint8_t)ts_peer;
+		out.data[ts_off + 1] = (uint8_t)(ts_peer >> 8);
+		out.data[ts_off + 2] = (uint8_t)(ts_peer >> 16);
+		out.data[ts_off + 3] = (uint8_t)(ts_peer >> 24);
+		(void)bcast_send_one(peer, out.data, out.wpos);
+	}
 out:
 	bb_free(&out);
 	return 0;
