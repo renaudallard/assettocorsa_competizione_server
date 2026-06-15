@@ -322,8 +322,8 @@ main(int argc, char **argv)
 	    srv.lan_discovery, srv.track);
 	log_kunos("Track %s was set and updated", srv.track);
 	if (srv.stats_udp_port > 0)
-		log_info("policy: statsUdpPort=%d (0xbe telemetry to "
-		    "127.0.0.1)", srv.stats_udp_port);
+		log_info("policy: serverDiagnosticsUdpPort=%d (0xbe telemetry "
+		    "to 127.0.0.1)", srv.stats_udp_port);
 	if (srv.register_to_lobby) {
 		log_info("policy: registerToLobby=1 (will register with "
 		    "Kunos kson backend)");

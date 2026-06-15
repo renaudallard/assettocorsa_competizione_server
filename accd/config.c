@@ -243,7 +243,7 @@ config_load(struct Server *s, const char *cfg_dir)
 	s->lan_discovery = json_obj_get_int(configuration,
 	    "lanDiscovery", s->lan_discovery);
 	s->stats_udp_port = json_obj_get_int(configuration,
-	    "statsUdpPort", 0);
+	    "serverDiagnosticsUdpPort", 0);
 	s->configuration_version = (uint32_t)json_obj_get_int(
 	    configuration, "configVersion", 0);
 	json_free(configuration);
