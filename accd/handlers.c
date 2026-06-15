@@ -424,11 +424,19 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		if (lap_ms < 0)
 			invalid = 1;
 
-		/* Persist the lap-states word (exe car+0x54) for the 0x36
-		 * status field and the 0x3c relay. */
-		race->car_field = car_field;
-
-		race->lap_count++;
+		/*
+		 * Kunos pcap (admin_clear, Practice): after an out-lap
+		 * the 0x36 shows lap_count=0 and status=0x0000, proving
+		 * the exe skips both updates for out-laps.  Cut laps and
+		 * other non-out-lap invalids still update car_field and
+		 * lap_count (only is_out_lap gates them).
+		 */
+		if (!is_out_lap) {
+			/* Persist the lap-states word for the 0x36 status
+			 * field and the 0x3c relay. */
+			race->car_field = car_field;
+			race->lap_count++;
+		}
 		if (!invalid)
 			race->last_lap_ms = lap_ms;
 		if (!invalid && (race->best_lap_ms == 0 ||
@@ -445,8 +453,8 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 * earlier behaviour of writing lap_ms=0 into the ring slot
 		 * grew the 0x36 leaderboard payload by 4 B per recorded
 		 * invalid lap and produced visible byte-level divergence
-		 * against the exe.  lap_count above still ticks regardless
-		 * so the per-car lap counter is preserved.
+		 * against the exe.  lap_history_count tracks valid laps;
+		 * lap_count tracks all non-out-lap crossings.
 		 */
 		if (!invalid) {
 			uint32_t slot = race->lap_history_count
