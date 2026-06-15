@@ -478,8 +478,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * same condition drives the fresh 0x28 re-emit at the end.
 		 * Anchor to session-start mono_ms so the value stays bounded
 		 * regardless of host uptime.  (The exe also folds in a slow
-		 * per-conn drift integrator, 0x280d0, that we do not track;
-		 * it matters only over a long stint.)
+		 * per-conn drift integrator at 0x280d0; we mirror it via
+		 * c->drift_ms, updated in h_udp_car_update.)
 		 */
 		new_min = (!pc->session_clock_seen || rtt < pc->best_rtt_ms);
 		/*
