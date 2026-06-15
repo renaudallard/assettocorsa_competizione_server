@@ -317,22 +317,17 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 * timetable only ever saw sector 0.  Emit the arrival-ordered
 	 * per-lap buffer.
 	 *
-	 * The trailing i32 timestamp is the sender's wire clock_ms
-	 * normalised through `c->session_clock_offset_ms` to the
-	 * server-session-relative frame, mirroring kunos's
-	 * FUN_140042000(server, raw_ts) = raw_ts + per_conn_offset
-	 * (case 0x20 dispatcher in FUN_1400142f0:308).  Without the
-	 * normalisation, the peer's AC2 client interprets the timestamp
-	 * in the sender's boot/session domain and the live timetable
-	 * sees splits drifting by the per-conn offset each lap.  The
-	 * trailing u16 is the lap-states/car_field word (exe car+0x1e8).
+	 * The trailing i32 timestamp is normalised per recipient, mirroring
+	 * the exe's use of FUN_14001ae20 (per-recipient fan-out) in the 0x20
+	 * dispatcher (FUN_1400142f0:316) -- the same pattern as the 0x19 and
+	 * 0x3c fixes.  Build the static parts once, then patch the 4-byte
+	 * timestamp for each peer before sending.
+	 * The trailing u16 is the lap-states/car_field word (exe car+0x1e8).
 	 */
 	{
 		struct ByteBuf out;
-		int32_t clock_relayed = (int32_t)((int64_t)clock_ms
-		    + conn_clock_offset(s, c));
 		uint8_t n = race->lap_split_n;
-		int ok, si;
+		int ok, si, ts_off, i;
 
 		bb_init(&out);
 		ok = wr_u8(&out, SRV_SECTOR_SPLITS_RELAY) == 0 &&
@@ -344,10 +339,27 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 			    : (uint32_t)race->lap_split_buf[si];
 			ok = wr_u32(&out, sw) == 0;
 		}
-		ok = ok && wr_i32(&out, clock_relayed) == 0 &&
+		ts_off = (int)out.wpos;
+		ok = ok && wr_i32(&out, 0) == 0 &&   /* placeholder, patched per peer */
 		    wr_u16(&out, car_field) == 0;
-		if (ok)
-			(void)bcast_all(s, out.data, out.wpos, c->conn_id);
+		if (ok) {
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct Conn *peer = s->conns[i];
+				int32_t ts_peer;
+				if (peer == NULL || peer->state != CONN_AUTH ||
+				    peer->is_smpr)
+					continue;
+				if (peer->conn_id == c->conn_id)
+					continue;
+				ts_peer = (int32_t)((int64_t)clock_ms +
+				    conn_clock_offset(s, peer));
+				out.data[ts_off + 0] = (uint8_t)ts_peer;
+				out.data[ts_off + 1] = (uint8_t)(ts_peer >> 8);
+				out.data[ts_off + 2] = (uint8_t)(ts_peer >> 16);
+				out.data[ts_off + 3] = (uint8_t)(ts_peer >> 24);
+				(void)bcast_send_one(peer, out.data, out.wpos);
+			}
+		}
 		bb_free(&out);
 	}
 	return 0;
