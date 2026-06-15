@@ -5,7 +5,7 @@
 # then SG30 is terminal (force=0 doesn't escalate to DQ).
 #
 # Expected: kunos tail = 0a (SG30 wire for cat=3, PitSpeeding).
-# accd tail should match after the per-category ladder fix.
+# accd tail matches after the per-car ladder fix (v0.3.142).
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"

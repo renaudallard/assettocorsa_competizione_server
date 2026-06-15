@@ -1,17 +1,11 @@
 #!/bin/sh
 # Same-category ladder escalation regression.
-# Bot sends DT/SG10/SG20/SG30 sequentially for cat=0 (Cutting).
-# Kunos's FUN_140125f50 runs a per-CATEGORY ladder that escalates
-# repeated cat=0 reports through DT -> SG10 -> SG20 -> SG30 -> DQ;
-# accd runs a per-EXE_KIND ladder where each kind has its own sheet,
-# so successive different-kind reports DON'T escalate.
+# Bot sends DT/SG10/SG20/SG30 sequentially for cat=0 (Cutting, force=1).
+# With force=1 the ladder collapses DT directly to DQ in two reports
+# (DT-fresh, then any second report escalates via bVar6=6=EXE_DQ).
+# Both kunos and accd (per-car ladder) produce tail 05 03 (DQ+Cutting).
 #
-# Expected (per matrix_results.tsv FAIL Scenario B):
-#   kunos tail = 05 03 (DQ wire for cutting, value=3)
-#   accd  tail = wire of the LAST kind sent (07 03 for SG20, etc.)
-#
-# This test ENCODES the known divergence so a future fix can flip
-# RESULT from DIFFER to IDENTICAL automatically.
+# See also run_ladder_2cat.sh for the cross-category regression.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"

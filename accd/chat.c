@@ -1123,13 +1123,10 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				int pre = pq->count;
 				int pi;
 				/*
-		 * category here is the AC2 cat enum (0..17) used to index
-		 * pen_cat_severity[18] in penalty_enqueue's dedup gate;
-		 * passing the wire-value 19 silently bypasses that gate
-		 * (19 >= sizeof(pen_cat_severity)) so repeated /dq spam
-		 * piled duplicate entries into the 8-slot queue, evicting
-		 * legitimate DT/SG history.  Use 8 (Trolling/RaceControl
-		 * — kunos's penalty.c:249 fallback for non-forced DQ).
+		 * Use category 8 (Trolling/RaceControl) per kunos
+		 * penalty.c fallback for non-forced DQ; the dedup
+		 * gate in penalty_enqueue is now per-car so any
+		 * category value is safe, but 8 matches kunos.
 		 */
 		penalty_enqueue(s, car_id, EXE_DQ, 8, 3,
 				    1, 0, REASON_RACE_CONTROL);

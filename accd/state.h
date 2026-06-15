@@ -366,16 +366,16 @@ struct CarRaceState {
 	struct PenaltyQueue	pen;
 	struct PenaltySheetState	pen_state[7];	/* exe kind 1..6 */
 	/*
-	 * Per-category ladder state for the DT/SG escalation chain.
-	 * Indexed by 0x41 category 0..17.  Each entry holds the last
-	 * stored severity (EXE_DT..EXE_DQ) for that category, so a
-	 * subsequent report on the SAME category steps the ladder
-	 * instead of starting fresh (kunos's FUN_140125f50 keeps a
-	 * per-car sheet keyed by cat; the ladder step within one cat
-	 * is DT -> SG30 (force=0) or DT -> DQ (force=1)).  Initialized
-	 * to 0 by session_start.
+	 * Per-car DT/SG escalation ladder.  Kunos FUN_140125f50 keys
+	 * its PenaltySheet by carId (entry+0x28); category is stored
+	 * at +0x5c as metadata, NOT as a search key.  A second DT/SG
+	 * report for the same car steps the single per-car ladder
+	 * regardless of the incoming category.  dtsg_ladder_cat holds
+	 * the first report's category for the results.json label only.
+	 * Both are zeroed by penalty_clear and session reset.
 	 */
-	uint8_t		pen_cat_severity[18];
+	uint8_t		dtsg_ladder_sev;
+	uint8_t		dtsg_ladder_cat;
 	/*
 	 * Driver-stint tracking for FUN_14012ae10-style enforcement.
 	 * stint_start_ms = monotonic ms when the current driver most

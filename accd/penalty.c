@@ -318,17 +318,13 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 	/* Immediate-effect special case: DQ. */
 	if (exe_kind == EXE_DQ) {
 		/*
-		 * If this category already reached DQ via the per-cat
-		 * ladder (e.g. cat=0 r2 escalated from DT to DQ), kunos
-		 * treats a subsequent DQ-direct (kind=6) report as
-		 * terminal — no new Penalty pushed, no broadcast.  Pcap
-		 * (2026-05-11 4-bot run): kunos's r6 = cat=0 kind=6 lands
-		 * after r2 already ran the cat=0 ladder to DQ and produces
-		 * NO 0x36 emit; the next mid-session emit is r15 = cat=3
-		 * kind=6 which is the first cat=3 DQ event.
+		 * If the per-car ladder already reached DQ, kunos treats
+		 * a subsequent DQ-direct (kind=6) report as terminal: no
+		 * new Penalty is pushed, no 0x36 broadcast.  Pcap
+		 * (2026-05-11 4-bot run): r6 = cat=0 kind=6 after r2
+		 * already escalated to DQ produces NO 0x36 emit.
 		 */
-		if (category < sizeof(race->pen_cat_severity) &&
-		    race->pen_cat_severity[category] == EXE_DQ) {
+		if (race->dtsg_ladder_sev == EXE_DQ) {
 			/*
 			 * Kunos pcap (2026-05-13 TP-then-admin-DQ) shows the
 			 * dedup'd admin /dq for an already-DQ'd category
@@ -358,8 +354,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		}
 		penalty_materialize(s, car_id, EXE_DQ, collision,
 		    value, reason, category);
-		if (category < sizeof(race->pen_cat_severity))
-			race->pen_cat_severity[category] = EXE_DQ;
+		race->dtsg_ladder_sev = EXE_DQ;
 		st = &race->pen_state[EXE_DQ];
 		st->severity = EXE_DQ;
 		st->category = category;
@@ -420,55 +415,37 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			race->pen_state[EXE_DQ].severity = EXE_DQ;
 			race->pen_state[EXE_DQ].issued_ms = now_ms;
 			/*
-			 * Mirror the ladder-step path above: mark this
-			 * category as terminal so a follow-up direct DQ
-			 * on the same category hits the dedup guard at
-			 * line 228 and doesn't materialise twice.
+			 * Mark the car's ladder terminal so a follow-up
+			 * direct DQ hits the dedup guard and doesn't
+			 * materialise twice.
 			 */
-			if (category < sizeof(race->pen_cat_severity))
-				race->pen_cat_severity[category] = EXE_DQ;
+			race->dtsg_ladder_sev = EXE_DQ;
 		}
 		return 0;
 	}
 
 	/*
-	 * DT/SG ladder — kunos's FUN_140125f50 keeps a per-car sheet
-	 * keyed by category.  A second report for the same category
-	 * steps the ladder regardless of the incoming kind.  Each step
-	 * materialises the current severity + advances:
+	 * DT/SG ladder — kunos's FUN_140125f50 keys the sheet per-car
+	 * (search key = carId at entry+0x28; category at +0x5c is
+	 * metadata, not a key).  Any new DT/SG report for the same car
+	 * steps the single per-car ladder regardless of category:
 	 *   force=0:  DT -> SG30 (terminal)
 	 *   force=1:  DT -> DQ
-	 * SG30 -> DQ only when force=1.  DQ is terminal.  We mirror
-	 * this with a per-category byte (pen_cat_severity[category])
-	 * so different-kind reports for the same cat collapse onto
-	 * one ladder, matching the pcap-observed kunos tail of 05 00
-	 * after four sequential cat=0 reports.
+	 * SG30 -> DQ only when force=1.  DQ is terminal.
 	 */
 	{
 		uint8_t old_sev;
 		uint8_t new_sev;
 		uint8_t bVar6;
 
-		if (category >= sizeof(race->pen_cat_severity))
-			category = 0;	/* defensive: clamp out-of-enum */
-
-		old_sev = race->pen_cat_severity[category];
+		old_sev = race->dtsg_ladder_sev;
 		bVar6 = (uint8_t)((force + 2) * 2);
 		/* bVar6 = 4 (SG30) if force=0, 6 (DQ) if force=1. */
 
 		if (old_sev == 0) {
-			/*
-			 * Fresh category: keep the existing per-exe_kind
-			 * sheet (used by other code paths, e.g. admin /sg
-			 * counter) AND record the cat ladder state.
-			 */
-			st = &race->pen_state[exe_kind];
-			st->severity = exe_kind;
-			st->category = category;
-			st->issued_ms = now_ms;
-			st->reason = reason;
-			st->counter = value;
-			race->pen_cat_severity[category] = exe_kind;
+			/* First DT/SG for this car: record cat for label. */
+			race->dtsg_ladder_cat = category;
+			race->dtsg_ladder_sev = exe_kind;
 			penalty_materialize(s, car_id, exe_kind, collision,
 			    value, reason, category);
 			return 0;
@@ -497,46 +474,40 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		}
 
 		/*
-		 * Replace the existing cat entry in place so the post-step
-		 * wire reaches the next broadcast.  Mirrors kunos's
-		 * remove+recreate at FUN_140125f50:161 (FUN_140126b50
-		 * removes) which then loops back to LAB_140125fb0 and
-		 * creates a new entry with kind=bVar6 value=0.
+		 * Replace the existing entry in place.  The per-car model
+		 * guarantees at most one active DT/SG slot; find it by
+		 * scanning backwards for the first unserved DT/SG entry.
+		 * Mirrors kunos's remove+recreate at FUN_140125f50:161.
 		 */
 		{
-			/*
-			 * old_pen was previously derived from the NEW report's
-			 * collision flag, not the queued entry's.  When the
-			 * driver's first DT was clean (col=0 → PEN_DT) and the
-			 * escalation step arrives with col=1, we'd compute
-			 * old_pen = PEN_DTC and fail to find the queued
-			 * PEN_DT.  Match on the unaccented kind and walk past
-			 * the per-entry collision; only the queued entry's
-			 * reason needs to line up.
-			 */
-			uint8_t old_pen_base =
-			    penalty_pen_kind_of(old_sev, 0, value);
-			uint8_t old_pen_col =
-			    penalty_pen_kind_of(old_sev, 1, value);
 			uint8_t new_pen = penalty_pen_kind_of(new_sev, 0, 0);
 			struct PenaltyQueue *q = &race->pen;
 			int i;
 			for (i = q->count - 1; i >= 0; i--) {
-				if (q->slots[i].served ||
-				    q->slots[i].reason != reason)
+				if (q->slots[i].served)
 					continue;
-				if (q->slots[i].kind != old_pen_base &&
-				    q->slots[i].kind != old_pen_col)
+				if (!penalty_kind_is_dtsg(q->slots[i].kind))
 					continue;
 				q->slots[i].kind = new_pen;
-				q->slots[i].laps_remaining = 0;
+				/*
+				 * Kunos's recreate uses the incoming report's
+				 * value when the incoming kind matches the old
+				 * severity (same-kind second report), and 0
+				 * otherwise.  Pcap (2-cat test): DT+cat0 then
+				 * DT+cat3 → stepped SG30 shows laps_remaining=3;
+				 * f0 test: DT then SG10 → stepped SG30 shows 0.
+				 */
+				q->slots[i].laps_remaining =
+				    (exe_kind == old_sev) ? value : 0;
 				q->slots[i].issued_ms = now_ms;
+				/* Reason updates to the incoming report's. */
+				q->slots[i].reason = reason;
 				break;
 			}
 			(void)collision;
 		}
 
-		race->pen_cat_severity[category] = new_sev;
+		race->dtsg_ladder_sev = new_sev;
 
 		if (new_sev == EXE_DQ) {
 			s->cars[car_id].race.disqualified = 1;
@@ -623,12 +594,11 @@ penalty_clear(struct Server *s, int car_id)
 	q->count = 0;
 	memset(q->slots, 0, sizeof(q->slots));
 	/*
-	 * Reset the per-cat ladder so a subsequent client 0x41 for any
-	 * cat lands on the fresh branch (and emits the report's wire in
-	 * the tail) rather than being treated as an escalation step.
+	 * Reset the per-car ladder so the next DT/SG report lands on
+	 * the fresh branch rather than being treated as an escalation.
 	 */
-	memset(s->cars[car_id].race.pen_cat_severity, 0,
-	    sizeof(s->cars[car_id].race.pen_cat_severity));
+	s->cars[car_id].race.dtsg_ladder_sev = 0;
+	s->cars[car_id].race.dtsg_ladder_cat = 0;
 	/*
 	 * Reset the accumulators too, mirroring the exe's full
 	 * PenaltySheet destroy.  Without this the EXE_TP counter keeps
@@ -657,8 +627,8 @@ penalty_clear_all(struct Server *s)
 		q = &s->cars[i].race.pen;
 		q->count = 0;
 		memset(q->slots, 0, sizeof(q->slots));
-		memset(s->cars[i].race.pen_cat_severity, 0,
-		    sizeof(s->cars[i].race.pen_cat_severity));
+		s->cars[i].race.dtsg_ladder_sev = 0;
+		s->cars[i].race.dtsg_ladder_cat = 0;
 		memset(s->cars[i].race.pen_state, 0,
 		    sizeof(s->cars[i].race.pen_state));
 	}
@@ -690,7 +660,7 @@ penalty_clear_tp(struct Server *s, int car_id)
 	 * Drop the post-race time accumulator so a /cleartp'd total does
 	 * not re-materialise in full on the next TP report (the EXE_TP
 	 * path only re-inits when severity is 0).  Leave the DT/SG ladder
-	 * (pen_cat_severity) alone -- those entries survive /cleartp.
+	 * (dtsg_ladder_sev) alone -- those entries survive /cleartp.
 	 */
 	memset(&s->cars[car_id].race.pen_state[EXE_TP], 0,
 	    sizeof(s->cars[car_id].race.pen_state[EXE_TP]));
