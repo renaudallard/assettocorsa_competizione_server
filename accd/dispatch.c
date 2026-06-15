@@ -441,6 +441,9 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		if (pc->is_smpr)
 			return;
+		/* Mirror FUN_140027f80:246 -- exe gates 0x16 on CONN_AUTH. */
+		if (pc->state != CONN_AUTH)
+			return;
 		/*
 		 * Same IP-bind as 0x13 / 0x1e / 0x5e / 0x22: refuse a
 		 * pong whose UDP source IP doesn't match the conn's
@@ -620,6 +623,9 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			 */
 			return;
 		}
+		/* Mirror FUN_140027f80:246 -- exe gates 0x1e on CONN_AUTH. */
+		if (c != NULL && c->state != CONN_AUTH)
+			return;
 		(void)h_udp_car_update(s, c, buf, len);
 		return;
 	}
@@ -675,6 +681,9 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		if (src != NULL &&
 		    src->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+			return;
+		/* Mirror FUN_140027f80:246 -- exe gates 0x5e on CONN_AUTH. */
+		if (src != NULL && src->state != CONN_AUTH)
 			return;
 		if (enable_chat == 1 && src != NULL && dst != NULL &&
 		    !dst->is_smpr) {

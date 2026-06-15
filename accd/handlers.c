@@ -2655,6 +2655,9 @@ h_udp_car_info_request(struct Server *s,
 	 */
 	if (requester->is_smpr)
 		return 0;
+	/* Mirror FUN_140027f80:246 -- exe gates 0x22 on CONN_AUTH. */
+	if (requester->state != CONN_AUTH)
+		return 0;
 	/*
 	 * Require the UDP source IP to match the requester conn's
 	 * accepted IP.  Without this, any UDP peer can pick another
