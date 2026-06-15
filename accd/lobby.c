@@ -529,7 +529,7 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	/*
 	 * Session block: u8 sessionCount, then each 10-byte session:
 	 * u8 type, u8 day, u8 hour, i16 duration_min, u16 pre_race_s,
-	 * u16 overtime_s, u8 timeMultiplier (=1 for 1.0×).
+	 * u16 overtime_s, u8 timeMultiplier.
 	 */
 	sess_count = s->session_count;
 	if (wr_u8(&bb, sess_count) < 0) goto err;
@@ -552,7 +552,8 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 		if (wr_u16(&bb, pre_race) < 0) goto err;
 		if (wr_u16(&bb, s->session_overtime_s > 0
 		    ? s->session_overtime_s : 120) < 0) goto err;
-		if (wr_u8(&bb, 1) < 0) goto err;
+		if (wr_u8(&bb, d->time_multiplier > 0
+		    ? d->time_multiplier : 1) < 0) goto err;
 	}
 
 	/*
