@@ -2513,9 +2513,26 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	 * every incoming UDP packet gives us a fresh (client_ts, server_ms)
 	 * pair, so the 0x28 f32 deltas never depend on a stale 1-Hz pong.
 	 * Matches the exe's FUN_1400419e0 which updates +0x280cc/+0x280ce
-	 * on every 0x1e — minus the explicit drift accumulator, because
-	 * the 18 Hz 0x1e cadence keeps the pivot fresh to within ~55 ms.
+	 * on every 0x1e.
+	 *
+	 * Also update the clock drift accumulator (FUN_1400419e0:20-25).
+	 * drift += (server_delta - client_delta) on each new-seq packet.
+	 * Only runs after first pong (session_clock_seen).  drift_valid=0
+	 * after a best-pong reset — first packet after reset stores prev
+	 * timestamps without touching drift (mirrors exe's prev_seq=-1
+	 * sentinel path).  Car+0x50 (wire +0x07) = (int)(best_rtt + drift).
 	 */
+	if (c->session_clock_seen) {
+		double srv = (double)(int)(uint32_t)mono_ms();
+		double cli = (double)(int)(uint32_t)client_ts_ms;
+
+		if (c->drift_valid)
+			c->drift_ms += (srv - c->drift_prev_server) -
+			    (cli - c->drift_prev_client);
+		c->drift_prev_server = srv;
+		c->drift_prev_client = cli;
+		c->drift_valid = 1;
+	}
 	c->last_udp_client_ts = client_ts_ms;
 	c->last_udp_server_ms = (uint32_t)mono_ms();
 

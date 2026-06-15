@@ -495,6 +495,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			    (int64_t)pong_client_ts;
 			pc->best_rtt_ms = rtt;
 			pc->session_clock_seen = 1;
+			pc->drift_ms = 0.0;
+			pc->drift_valid = 0;
 		}
 
 		/*

@@ -823,6 +823,20 @@ struct Conn {
 	uint8_t		i_fb_valid;		/* 1 after i_fb seeded (first pong) */
 	uint32_t	best_rtt_ms;		/* lowest pong RTT seen so far */
 	uint8_t		session_clock_seen;	/* 1 after first pong */
+	double		drift_ms;		/* clock drift acc (FUN_1400419e0
+						 * conn[0x280d0]): updated each 0x1e
+						 * as drift += (server_delta -
+						 * client_delta); reset to 0 on new
+						 * best-RTT pong; Car+0x50 (wire
+						 * +0x07) = (int)(best_rtt_ms +
+						 * drift_ms) */
+	double		drift_prev_server;	/* prev server_ms as double
+						 * (conn[0x280cc]) */
+	double		drift_prev_client;	/* prev client_ts as double
+						 * (conn[0x280ce]) */
+	int8_t		drift_valid;		/* 0 = skip drift update on first
+						 * 0x1e after pong reset; 1 = prev
+						 * timestamps are valid */
 	uint32_t	last_pong_client_ts;	/* client_ts from most recent 0x16 pong;
 						 * used only by the first-pong re-
 						 * emit detection (latches non-zero

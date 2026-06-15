@@ -127,7 +127,7 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	int k, ok;
 	int16_t clamped;
 	uint32_t adj_ts;
-	uint16_t sender_rtt_ms = 0;
+	uint16_t sender_tick_seq = 0;
 	int j;
 
 	/*
@@ -147,23 +147,21 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	    - clock_adj);
 
 	/*
-	 * FUN_14001a170 emits a u16 at conn+0x50 here — the sender
-	 * connection's server-measured avg RTT.  Receivers read it
-	 * to render the per-car ping column on the HUD timing tower.
-	 * Capture-based analysis earlier said this was 0, but that
-	 * was because the capture came from a loopback test where
-	 * RTT collapses to 0 before the pong smoothing kicks in;
-	 * a real client session needs the live value.
+	 * FUN_14001a170 emits Car+0x50 as u16 at wire +0x07.
+	 * Car+0x50 is set by FUN_1400419e0:29 on each 0x1e ingest:
+	 *   Car+0x50 = (int)((double)best_rtt_ms + drift_ms)
+	 * where best_rtt_ms = RTT at the best pong (conn[0x280c3])
+	 * and drift_ms accumulates (server_delta - client_delta)
+	 * per 0x1e packet (conn[0x280d0]), reset on new best pong.
+	 * Receivers use this for the per-car ping HUD column.
 	 */
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		struct Conn *sender = s->conns[j];
 		if (sender != NULL && sender->car_id ==
 		    (int)(car - s->cars)) {
-			if (sender->avg_rtt_ms > 65535)
-				sender_rtt_ms = 65535;
-			else
-				sender_rtt_ms =
-				    (uint16_t)sender->avg_rtt_ms;
+			sender_tick_seq = (uint16_t)(int)(
+			    (double)sender->best_rtt_ms +
+			    sender->drift_ms);
 			break;
 		}
 	}
@@ -172,7 +170,7 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	if (wr_u16(bb, car->car_id) < 0) return -1;
 	if (wr_u8(bb, car->rt.packet_seq) < 0) return -1;
 	if (wr_u32(bb, adj_ts) < 0) return -1;
-	if (wr_u16(bb, sender_rtt_ms) < 0) return -1;
+	if (wr_u16(bb, sender_tick_seq) < 0) return -1;
 
 	for (k = 0; k < 3 && ok; k++)
 		ok = wr_f32(bb, car->rt.vec_a[k]) == 0;
