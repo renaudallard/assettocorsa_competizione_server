@@ -304,14 +304,6 @@ session_reset(struct Server *s, uint8_t session_index)
 				break;
 			}
 		}
-		if (prior < 0) {
-			for (k = (int)session_index - 1; k >= 0; k--) {
-				if (s->sessions[k].session_type == 0) {
-					prior = k;
-					break;
-				}
-			}
-		}
 		/*
 		 * Two passes, matching the exe's grid builder
 		 * (FUN_140032400).  Pass 1 assigns every car that has an
@@ -330,6 +322,10 @@ session_reset(struct Server *s, uint8_t session_index)
 		 * zombie-slot reclaim in handshake_handle; unreclaimed
 		 * zombies stay invisible because broadcast_grid iterates
 		 * only `used` cars.
+		 *
+		 * No practice-session fallback: the exe uses
+		 * defaultGridPosition when no qualifying precedes the race,
+		 * never the practice finish order.
 		 */
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct CarEntry *car = &s->cars[i];
