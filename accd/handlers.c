@@ -1818,11 +1818,12 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	 * so the accumulator lands on the correct driver slot, then start
 	 * the incoming driver's stint (the exe restarts on swap via
 	 * FUN_14012b230 -> FUN_14011ab60; accd previously only stopped). */
+	i = car->current_driver_index;   /* outgoing slot */
 	stint_stop_tracking(s, c->car_id);
 	car->current_driver_index = swap_code;
 	stint_start_tracking(s, c->car_id);
-	for (i = 0; i < ACC_MAX_DRIVERS_PER_CAR; i++)
-		car->swap_state[i] = 0;
+	car->swap_state[i] = 5;          /* outgoing: exe FUN_140012830:106 */
+	car->swap_state[swap_code] = 2;  /* incoming: exe FUN_140012830:105 */
 	log_info("driver swap: car %u -> driver %u (%s %s)",
 	    (unsigned)car_id, (unsigned)swap_code,
 	    car->drivers[swap_code].first_name,
