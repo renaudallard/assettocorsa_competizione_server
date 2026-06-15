@@ -320,7 +320,6 @@ build_leaderboard_entry(struct ByteBuf *bb, const struct Server *s,
 	const struct CarRaceState *race = &car->race;
 	const struct DriverInfo *d = NULL;
 	int driving_conn = driving_conn_for_car(s, car_idx);
-	size_t sub_start;
 	int k;
 	uint8_t idx;
 
@@ -328,9 +327,14 @@ build_leaderboard_entry(struct ByteBuf *bb, const struct Server *s,
 	if (idx < car->driver_count && idx < ACC_MAX_DRIVERS_PER_CAR)
 		d = &car->drivers[idx];
 
-	if (pb_sub_begin(bb, PB_LBE_CAR_ENTRY, &sub_start) < 0) return -1;
-	if (monitor_build_car_entry(bb, car, driving_conn) < 0) return -1;
-	if (pb_sub_end(bb, sub_start) < 0) return -1;
+	/* Field 1: RTT+drift seq (Car+0x50 in exe); scalar varint, skipped
+	 * when zero (FUN_14003b680). */
+	if (driving_conn >= 0 && s->conns[driving_conn] != NULL) {
+		const struct Conn *dc = s->conns[driving_conn];
+		int32_t ts = (int32_t)((double)dc->best_rtt_ms + dc->drift_ms);
+		if (ts != 0 && pb_w_int32(bb, PB_LBE_RTT_SEQ, ts) < 0)
+			return -1;
+	}
 
 	if (d != NULL && d->steam_id[0] != '\0')
 		if (pb_w_string(bb, PB_LBE_CURRENT_STEAM_ID, d->steam_id) < 0)

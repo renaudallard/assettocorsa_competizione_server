@@ -111,10 +111,9 @@
 #define PB_RTU_CARS			4	/* repeated */
 
 /* ----- ServerMonitorLeaderboardEntry (sub of LEADERBOARD) -------- */
-#define PB_LBE_CAR_ENTRY		1	/* exe wants scalar varint at
-						 * +0x70, NOT a submessage;
-						 * emit-side fix deferred until
-						 * the +0x70 source is pinned */
+#define PB_LBE_RTT_SEQ			1	/* scalar varint: Car+0x50 in exe
+						 * = (int)(best_rtt_ms + drift_ms);
+						 * FUN_14003b680 skips when zero */
 #define PB_LBE_CURRENT_STEAM_ID		2
 #define PB_LBE_MISSING_MANDATORY_PITS	3
 #define PB_LBE_DRIVER_TIMES		4	/* repeated fixed32 */
