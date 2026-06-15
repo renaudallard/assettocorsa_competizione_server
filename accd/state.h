@@ -807,7 +807,7 @@ struct Conn {
 							 * into a session-relative
 							 * IEEE-754 double.
 							 * This is the exe Mode-A
-							 * base D_base (conn+0xa0310);
+							 * base D_base (conn+0xa0340);
 							 * Mode A is latency_mode
 							 * != 0. */
 	int64_t		session_avg_offset_ms;	/* session-relative average-RTT
