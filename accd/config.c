@@ -543,6 +543,23 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 		s->pre_race_waiting_s = (uint16_t)json_obj_get_int(
 		    event, "preRaceWaitingTimeSeconds", 80);
+		if (s->register_to_lobby) {
+			if (s->pre_race_waiting_s < 80) {
+				log_warn("preRaceWaitingTimeSeconds (%u) has been "
+				    "set to 80s, %u seconds are too low for "
+				    "public multiplayer",
+				    (unsigned)s->pre_race_waiting_s,
+				    (unsigned)s->pre_race_waiting_s);
+				s->pre_race_waiting_s = 80;
+			}
+		} else if (s->pre_race_waiting_s < 5) {
+			log_warn("preRaceWaitingTimeSeconds (%u) has been set "
+			    "to 5s, %u seconds are too low even for private "
+			    "servers",
+			    (unsigned)s->pre_race_waiting_s,
+			    (unsigned)s->pre_race_waiting_s);
+			s->pre_race_waiting_s = 5;
+		}
 		{
 			/*
 			 * A negative sessionOverTimeSeconds is the exe's
