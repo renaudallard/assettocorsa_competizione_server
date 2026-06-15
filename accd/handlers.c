@@ -526,11 +526,11 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			}
 		}
 
-		/* Per-lap state reset.  The exe emits NO 0x3c on a lap
-		 * boundary: a real-client misano pcap shows 0 clear frames
-		 * (car_field=0) across 81 inbound off-track reports and 9
-		 * relays.  The only 0x3c emit site is the 0x3d handler, gated
-		 * by the car+0x1e8 latch. */
+		/* Per-lap state reset.  The exe (FUN_1400142f0:464) zeroes
+		 * car+0x1e8 at lap-end before the 0x3b relay fan-out, so the
+		 * 0x3c relay on the next out-of-track event always starts with
+		 * a clean car_field; that is why the pcap shows car_field=0
+		 * across inbound off-track reports on the new lap. */
 		{
 			race->current_lap_ms = 0;
 			race->out_of_track_latched = 0;
@@ -554,6 +554,8 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			/* Reset the 0x3a arrival-ordered split buffer for the
 			 * new lap (mirrors the exe vector reset at lap-end). */
 			race->lap_split_n = 0;
+			/* Mirror exe line 464: zero car+0x1e8 for new lap. */
+			race->car_field = 0;
 		}
 
 		/* Local rating EWMA: clean lap +5 SA, cut -25, out-lap
@@ -736,7 +738,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			goto done;
 		ts_off = (int)out.wpos;
 		if (wr_i32(&out, 0) < 0 ||   /* placeholder, patched per peer */
-		    wr_u16(&out, car_field) < 0)
+		    wr_u16(&out, 0) < 0)      /* exe zeroes car+0x1e8 before relay */
 			goto done;
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct Conn *peer = s->conns[i];
