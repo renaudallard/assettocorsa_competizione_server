@@ -535,7 +535,8 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	if (wr_u8(&bb, sess_count) < 0) goto err;
 	for (i = 0; i < sess_count; i++) {
 		const struct SessionDef *d = &s->sessions[i];
-		uint16_t pre_race = d->session_type == 10 ? 80 : 3;
+		uint16_t pre_race = d->session_type == 10 ?
+		    s->pre_race_waiting_s : 3;
 		if (wr_u8(&bb, d->session_type) < 0) goto err;
 		if (wr_u8(&bb, d->day_of_weekend) < 0) goto err;
 		if (wr_u8(&bb, d->hour_of_day) < 0) goto err;
