@@ -419,13 +419,13 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
  *   23-byte tail (FUN_140034f60):
  *     u8 hour_of_day (+0x28)
  *     u8 0           (+0x2c)
- *     i8 time_multiplier - 1 (+0x30)
- *     f32 grip       (+0x34)
+ *     u8 raceDay - 1 (+0x30)
+ *     f32 timeMultiplier (+0x34)
  *     u16 sched_field (+0x38)
  *     u32 duration_s  (+0x3c)
  *     u32 overtime_s  (+0x40)
  *     u8 0           (+0x44)
- *     u8 0           (+0x48)
+ *     u8 sessionType (+0x48)
  *     f32 1.0        (+0x4c)
  */
 int
@@ -457,7 +457,7 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
  *   u8  hour_of_day        (e.g. P=14, R=16 from event.json)
  *   u8  0                  (always)
  *   u8  dayOfWeekend - 1   (P=0, Q=1, R=2 in the typical schedule)
- *   f32 1.0                (constant, likely a grip/time-multiplier)
+ *   f32 timeMultiplier     (from event.json)
  *   u16 session_type code  (P=3, Q=4, R=5 — internal AC2 enum,
  *                           DIFFERENT from def->session_type)
  *   u32 duration_seconds   (duration_min * 60)
@@ -466,11 +466,8 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
  *   u8  def->session_type  (P=0, Q=4, R=10 — JSON-spec enum)
  *   f32 1.0                (constant)
  *
- * This is the same 23-byte slot AC2 reads via FUN_14352c640.  Unlike
- * the welcome-trailer tail (write_track_records / write_session_tail)
- * which writes timeMultiplier-1 at the +0x30 byte, the race-end emit
- * carries dayOfWeekend-1 there; AC2 keeps a separate enum-code field
- * for sessions in the result widget.
+ * This is the same 23-byte slot AC2 reads via FUN_14352c640.  AC2 keeps
+ * a separate enum-code field for sessions in the result widget.
  */
 int
 write_session_result_header(struct ByteBuf *bb,
