@@ -436,7 +436,17 @@ conn_drop(struct Server *s, struct Conn *c)
 		 */
 		if (s->cars[c->car_id].team_entry_id >= 0) {
 			int8_t group = s->cars[c->car_id].team_entry_id;
+			uint8_t d_idx = s->cars[c->car_id].current_driver_index;
 			int g;
+			/*
+			 * FUN_140011bf0:53 initialises each driver slot to 1
+			 * (ready) before scanning for a live conn match.  A
+			 * disconnected slot has no match, so it gets 1.
+			 * Reset the leaving driver's slot here before
+			 * broadcasting so teammates see the correct state.
+			 */
+			if (d_idx < ACC_MAX_DRIVERS_PER_CAR)
+				s->cars[c->car_id].swap_state[d_idx] = 1;
 			for (g = 0; g < ACC_MAX_CARS; g++) {
 				if (s->cars[g].team_entry_id == group)
 					broadcast_swap_state(s, &s->cars[g]);
