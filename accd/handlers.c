@@ -299,7 +299,6 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	/* Persist the lap-states word (exe car+0x54 / +0x1e8) for the 0x36
 	 * status field and the 0x3c relay. */
 	race->car_field = car_field;
-	race->race_time_ms = clock_ms;
 	race->sectors_in_lap++;
 	log_info("sector split: car=%d sector=%u time=%dms clock=%d",
 	    c->car_id, (unsigned)sector_index, (int)sector_time_ms,
@@ -558,6 +557,14 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			/* Mirror exe line 464: zero car+0x1e8 for new lap. */
 			race->car_field = 0;
 			race->sectors_in_lap = 0;
+			/*
+			 * Record the S/F crossing timestamp as the start time
+			 * of the new open lap (mirrors exe lap_start_time at
+			 * car+0x1b8, set in FUN_1400142f0 at the 0x21 branch).
+			 * Used as tiebreaker in cmp_cars after sectors_in_lap:
+			 * earlier crossing = further through the lap = ahead.
+			 */
+			race->race_time_ms = lap_time;
 		}
 
 		/* Local rating EWMA: clean lap +5 SA, cut -25, out-lap
