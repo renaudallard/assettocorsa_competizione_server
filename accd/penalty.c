@@ -502,6 +502,13 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 				q->slots[i].issued_ms = now_ms;
 				/* Reason updates to the incoming report's. */
 				q->slots[i].reason = reason;
+				/*
+				 * Clear the admin flag on promotion.  The exe has
+				 * no admin-flag concept; a promoted entry is a
+				 * server-confirmed event and must be visible in
+				 * the active_pen prefix and pq_emit array.
+				 */
+				q->slots[i].admin = 0;
 				break;
 			}
 			(void)collision;
