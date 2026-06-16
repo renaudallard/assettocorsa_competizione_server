@@ -1105,17 +1105,19 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	    ? (uint32_t)race->last_lap_ms : LAP_TIME_INVALID) < 0) return -1;
 	if (wr_u16(bb, (uint16_t)race->lap_count) < 0) return -1;
 	{
-		uint32_t rt = race->race_time_ms > 0
-		    ? (uint32_t)race->race_time_ms : 0;
 		/*
-		 * Add the results-phase TP only onto a valid time; the exe
-		 * keeps the no-time sentinel for cars with no lap (it never
-		 * adds onto 0x7fffffff, 140128a80.c skips to keep the
-		 * sentinel when the base time is invalid).
+		 * Exe (FUN_140128a80:444-455) always emits 0x7fffffff for
+		 * this field in live sessions; only the post-race results
+		 * path (0x3e) uses the actual elapsed time.  In live context
+		 * apply_results_tp is 0, so emit the sentinel.
 		 */
-		if (rt > 0)
-			rt += tp_ms;
-		if (wr_u32(bb, rt > 0 ? rt : LAP_TIME_INVALID) < 0)
+		uint32_t rt = LAP_TIME_INVALID;
+		if (apply_results_tp && race->race_time_ms > 0) {
+			rt = (uint32_t)race->race_time_ms + tp_ms;
+			if (rt == 0)
+				rt = LAP_TIME_INVALID;
+		}
+		if (wr_u32(bb, rt) < 0)
 			return -1;
 	}
 	if (wr_u8(bb, ec->last_elo < 0xff
