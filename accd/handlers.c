@@ -300,6 +300,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 * status field and the 0x3c relay. */
 	race->car_field = car_field;
 	race->race_time_ms = clock_ms;
+	race->sectors_in_lap++;
 	log_info("sector split: car=%d sector=%u time=%dms clock=%d",
 	    c->car_id, (unsigned)sector_index, (int)sector_time_ms,
 	    (int)clock_ms);
@@ -556,6 +557,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->lap_split_n = 0;
 			/* Mirror exe line 464: zero car+0x1e8 for new lap. */
 			race->car_field = 0;
+			race->sectors_in_lap = 0;
 		}
 
 		/* Local rating EWMA: clean lap +5 SA, cut -25, out-lap

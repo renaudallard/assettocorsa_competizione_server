@@ -859,6 +859,15 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (ra->lap_count != rb->lap_count)
 		return rb->lap_count - ra->lap_count;
 	/*
+	 * Secondary intra-lap key: how many sector splits the car has
+	 * completed in the current open lap (0, 1 or 2).  Mirrors the
+	 * exe's use of car+0x1b0 "sectors_completed" as the second sort
+	 * criterion in FUN_140120970:186-202.  More sectors = further
+	 * through the lap = better position.
+	 */
+	if (ra->sectors_in_lap != rb->sectors_in_lap)
+		return (int)rb->sectors_in_lap - (int)ra->sectors_in_lap;
+	/*
 	 * Effective race time = raw cumulative lap time + unserved
 	 * DT/SG converted to +30/+40/+50/+60 s + admin TP5/TP15.
 	 * penalty_total_ms() handles the conversion (penalty.c:358);
