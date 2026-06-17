@@ -498,7 +498,8 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 				 * f0 test: DT then SG10 → stepped SG30 shows 0.
 				 */
 				q->slots[i].laps_remaining =
-				    (exe_kind == old_sev) ? value : 0;
+				    (old_sev == EXE_DT && exe_kind > EXE_DT)
+				    ? 0 : value;
 				q->slots[i].issued_ms = now_ms;
 				/* Reason updates to the incoming report's. */
 				q->slots[i].reason = reason;
