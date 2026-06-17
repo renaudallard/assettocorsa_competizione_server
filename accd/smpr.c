@@ -403,8 +403,6 @@ smpr_notify_car_changed(struct Server *s, int car_id)
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS)
 		return;
-	if (!s->cars[car_id].used)
-		return;
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		if (s->conns[i] != NULL &&
 		    s->conns[i]->car_id == car_id) {

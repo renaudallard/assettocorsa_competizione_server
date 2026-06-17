@@ -416,6 +416,7 @@ conn_drop(struct Server *s, struct Conn *c)
 		 * the leaderboard session-best counters.
 		 */
 		s->cars[c->car_id].used = 0;
+		smpr_notify_car_changed(s, c->car_id);
 		car_runtime_reset_gate(&s->cars[c->car_id].rt);
 		/*
 		 * Kunos's per-disconnect car-reap line (FUN_14001c300);
