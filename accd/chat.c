@@ -1155,7 +1155,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/clear_all")) {
 		penalty_clear_all(s);
 		chat_broadcast(s,
-		    "All pending penalties cleared by Race Control", 4);
+		    "All penalties cleared by administrator", 4);
 	} else if (chat_prefix(text, "/clear")) {
 		if (chat_parse_int(text + 6, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);
