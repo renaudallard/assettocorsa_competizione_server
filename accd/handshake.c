@@ -1465,7 +1465,7 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 	if (wr_f32(bb, 0.0f) < 0) return -1;
 
-	if (wr_f32(bb, (float)s->session.weekend_time_s) < 0)
+	if (wr_f32(bb, fmodf((float)s->session.weekend_time_s, 86400.0f)) < 0)
 		return -1;
 	return 0;
 }
