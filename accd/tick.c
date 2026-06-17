@@ -729,9 +729,19 @@ broadcast_grid(struct Server *s)
 	bb_init(&bb);
 	if (wr_u8(&bb, SRV_GRID_POSITIONS) < 0)
 		goto done;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
-		if (s->cars[i].used)
+	/*
+	 * Count cars to include: connected cars plus disconnected cars that
+	 * have a valid grid slot assigned (race.grid_position >= 0).  The
+	 * grid builder assigns positions to all slots with driver_count > 0,
+	 * so a car that disconnected after qualy keeps its slot and should
+	 * appear in the 0x3f packet, mirroring the exe's leaderboard-vector
+	 * iteration in FUN_1401318b0.
+	 */
+	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+		struct CarEntry *car = &s->cars[i];
+		if (car->used || car->race.grid_position >= 0)
 			n++;
+	}
 	if (wr_u8(&bb, (uint8_t)n) < 0)
 		goto done;
 	/*
@@ -747,7 +757,7 @@ broadcast_grid(struct Server *s)
 			struct CarEntry *car = &s->cars[i];
 			struct CarRaceState *ar;
 			uint32_t best_ms;
-			if (!car->used)
+			if (!car->used && car->race.grid_position < 0)
 				continue;
 			if (car->race.grid_position != g)
 				continue;
@@ -768,7 +778,7 @@ broadcast_grid(struct Server *s)
 		struct CarEntry *car = &s->cars[i];
 		struct CarRaceState *ar;
 		uint32_t best_ms;
-		if (!car->used)
+		if (!car->used && car->race.grid_position < 0)
 			continue;
 		if (car->race.grid_position >= 0 &&
 		    car->race.grid_position <= ACC_MAX_CARS)
