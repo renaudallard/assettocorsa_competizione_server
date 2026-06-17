@@ -607,13 +607,14 @@ penalty_clear(struct Server *s, int car_id)
 	s->cars[car_id].race.dtsg_ladder_sev = 0;
 	s->cars[car_id].race.dtsg_ladder_cat = 0;
 	/*
-	 * Reset the accumulators too, mirroring the exe's full
-	 * PenaltySheet destroy.  Without this the EXE_TP counter keeps
-	 * its old total, so the next time penalty re-materialises the
-	 * whole cleared amount instead of starting fresh.
+	 * Clear DT/SG/DQ accumulators.  The exe's FUN_140126b50 only
+	 * iterates the +0x30 sheet list (DT/SG/DQ) and never touches
+	 * the +0x48 TP sheet, so pen_state[EXE_TP] is preserved.
 	 */
 	memset(s->cars[car_id].race.pen_state, 0,
-	    sizeof(s->cars[car_id].race.pen_state));
+	    EXE_TP * sizeof(*s->cars[car_id].race.pen_state));
+	memset(&s->cars[car_id].race.pen_state[EXE_DQ], 0,
+	    sizeof(*s->cars[car_id].race.pen_state));
 	/*
 	 * 0x36 per-car tail bytes change when the queue is wiped — the
 	 * memcmp-cache must re-emit so AC2 stops rendering the cleared
@@ -637,7 +638,9 @@ penalty_clear_all(struct Server *s)
 		s->cars[i].race.dtsg_ladder_sev = 0;
 		s->cars[i].race.dtsg_ladder_cat = 0;
 		memset(s->cars[i].race.pen_state, 0,
-		    sizeof(s->cars[i].race.pen_state));
+		    EXE_TP * sizeof(*s->cars[i].race.pen_state));
+		memset(&s->cars[i].race.pen_state[EXE_DQ], 0,
+		    sizeof(*s->cars[i].race.pen_state));
 	}
 	/* Single emit covers the multi-car wipe. */
 	leaderboard_request_emit(s);
