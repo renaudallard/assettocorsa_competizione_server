@@ -147,9 +147,13 @@ monitor_build_configuration_state(struct ByteBuf *bb,
 		return -1;
 	if (pb_w_int32(bb, PB_CFG_MAX_SLOTS, s->max_connections) < 0)
 		return -1;
-	if (pb_w_int32(bb, PB_CFG_TRACK_MEDALS, 0) < 0)
+	if (pb_w_int32(bb, PB_CFG_TRACK_MEDALS,
+	    ACC_RATING_REQUIRED(s->track_medals_required) ?
+	    s->track_medals_required : 0) < 0)
 		return -1;
-	if (pb_w_int32(bb, PB_CFG_SA_REQUIRED, 0) < 0)
+	if (pb_w_int32(bb, PB_CFG_SA_REQUIRED,
+	    ACC_RATING_REQUIRED(s->safety_rating_required) ?
+	    s->safety_rating_required : 0) < 0)
 		return -1;
 	if (pb_w_bool(bb, PB_CFG_IS_PW_PROTECTED, has_pw) < 0)
 		return -1;
