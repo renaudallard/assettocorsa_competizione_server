@@ -307,12 +307,6 @@ struct CarRaceState {
 	uint8_t		out_of_track_latched;
 	uint8_t		cuts_this_lap;		/* per-lap counted cuts;
 						 * log only, no wire effect */
-	uint64_t	last_cut_ms;		/* mono_ms of last counted
-						 * cut — debounce window
-						 * so a sustained off-track
-						 * episode (many force=1
-						 * events from the client)
-						 * counts as a single cut */
 	uint8_t		formation_lap_done;	/* exe car+0x200 flag */
 	uint8_t		disqualified;		/* PEN_DQ terminal flag */
 	uint8_t		race_end_short_circuit;	/* set when stint_check_

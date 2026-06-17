@@ -535,7 +535,6 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->current_lap_ms = 0;
 			race->out_of_track_latched = 0;
 			race->cuts_this_lap = 0;
-			race->last_cut_ms = 0;
 			/*
 			 * Snapshot the just-completed lap's splits BEFORE the
 			 * per-lap sector_ms reset, so results.c can emit them
@@ -1135,42 +1134,34 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		return 0;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
-		uint64_t now_ms = mono_ms();
 
 		/*
-		 * Latch gate: skip if we've already counted a cut within
-		 * the last 2 s.  Coarse approximation of the exe's car+0x1e8
-		 * bit 0 latch, which is set on the first cut, persists across
-		 * sector splits (the 0x20 handler overwrites car+0x1e8 with
-		 * the client-reported lap-states word, whose bit 0 stays set
-		 * for the rest of a dirty lap) and clears only at lap-complete
-		 * (0x21 zeroes the word).  Keeps a single physical excursion
-		 * counting as one cut while not firing spurious relays.
+		 * Latch gate: exe (FUN_1400142f0 case 0x3d) sets bit 0 of
+		 * car+0x1e8 on the first cut, suppresses all further 0x3c
+		 * relays for the rest of the lap, and clears the bit at
+		 * lap-complete (0x21 zeroes the word).  out_of_track_latched
+		 * mirrors this exactly: set here, cleared in h_sector_split
+		 * _single's per-lap reset block.
 		 */
-		if (now_ms - race->last_cut_ms >= 2000) {
-			race->out_of_track_latched = 1;
-			if (race->cuts_this_lap < 255)
-				race->cuts_this_lap++;
-			race->last_cut_ms = now_ms;
-			/*
-			 * No quali instant-drop here: the exe 0x3d handler
-			 * has no phase check and no eligibility mutation - it
-			 * only sets the +0x1e8 latch and relays 0x3c.  Quali
-			 * lap validity is decided by the client lap-states
-			 * word at lap completion (h_sector_split_single ->
-			 * session_quali_drop_eligibility during overtime),
-			 * matching how the exe drives it.
-			 */
-			log_info("out-of-track: car=%d ts=%d cuts=%u",
-			    c->car_id, (int)ts_raw,
-			    (unsigned)race->cuts_this_lap);
-		} else {
-			log_debug("out-of-track: car=%d debounced "
-			    "(dt=%llu ms)", c->car_id,
-			    (unsigned long long)
-			    (now_ms - race->last_cut_ms));
-			return 0;	/* don't relay repeats either */
+		if (race->out_of_track_latched) {
+			log_debug("out-of-track: car=%d suppressed "
+			    "(latch set)", c->car_id);
+			return 0;
 		}
+		race->out_of_track_latched = 1;
+		if (race->cuts_this_lap < 255)
+			race->cuts_this_lap++;
+		/*
+		 * No quali instant-drop here: the exe 0x3d handler has no
+		 * phase check and no eligibility mutation - it only sets the
+		 * +0x1e8 latch and relays 0x3c.  Quali lap validity is
+		 * decided by the client lap-states word at lap completion
+		 * (h_sector_split_single -> session_quali_drop_eligibility
+		 * during overtime), matching how the exe drives it.
+		 */
+		log_info("out-of-track: car=%d ts=%d cuts=%u",
+		    c->car_id, (int)ts_raw,
+		    (unsigned)race->cuts_this_lap);
 	}
 
 	/*
