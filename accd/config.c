@@ -951,6 +951,28 @@ config_load(struct Server *s, const char *cfg_dir)
 	}
 
 	/*
+	 * Public-MP servers clear forceEntryList (FUN_140023700:520-524),
+	 * force allowAutoDQ=1 (FUN_140023700:550-554), and clear
+	 * dumpEntryList (FUN_140023700:556-561).  Applied before the
+	 * formationLapType remap below because that remap gates on
+	 * force_entry_list.
+	 */
+	if (s->force_entry_list && s->register_to_lobby && !s->is_cp_server) {
+		log_warn("forceEntryList set but is a public server, "
+		    "disabling forceEntryList");
+		s->force_entry_list = 0;
+	}
+	if (!s->allow_auto_dq && s->register_to_lobby && !s->is_cp_server) {
+		log_warn("allowAutoDQ is false but is a public server, "
+		    "forcing allowAutoDQ=1");
+		s->allow_auto_dq = 1;
+	}
+	if (s->dump_entry_list && s->register_to_lobby && !s->is_cp_server) {
+		log_warn("dumpEntryList set but is a public server, "
+		    "disabling dumpEntryList");
+		s->dump_entry_list = 0;
+	}
+	/*
 	 * Public-MP servers force formationLapType 1 (manual) to 3, matching
 	 * the exe (FUN_140023700:531-543).  "Public MP" = registered to the
 	 * lobby, not a championship server, and not using a forced entry
