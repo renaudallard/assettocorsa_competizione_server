@@ -474,23 +474,16 @@ int
 write_session_result_header(struct ByteBuf *bb,
     const struct SessionDef *def, uint16_t session_overtime_s)
 {
-	uint16_t type_code;
 	uint32_t duration_s = (uint32_t)def->duration_min * 60u;
 	uint8_t dow_minus_one = def->day_of_weekend > 0
 	    ? (uint8_t)(def->day_of_weekend - 1) : 0;
 
-	switch (def->session_type) {
-	case 0:		type_code = 3;	break;	/* P */
-	case 4:		type_code = 4;	break;	/* Q */
-	case 10:	type_code = 5;	break;	/* R */
-	default:	type_code = 3;	break;	/* default to P */
-	}
 	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, dow_minus_one) < 0) return -1;
 	if (wr_f32(bb, (float)(def->time_multiplier > 0
 	    ? def->time_multiplier : 1)) < 0) return -1;
-	if (wr_u16(bb, type_code) < 0) return -1;
+	if (wr_u16(bb, def->session_type == 10 ? 80 : 3) < 0) return -1;
 	if (wr_u32(bb, duration_s) < 0) return -1;
 	if (wr_u32(bb, session_overtime_s > 0 ? session_overtime_s : 120) < 0)
 		return -1;
