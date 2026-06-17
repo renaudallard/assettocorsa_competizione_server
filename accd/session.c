@@ -775,6 +775,19 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (ra->disqualified != rb->disqualified)
 		return ra->disqualified ? 1 : -1;
 
+	/*
+	 * Retired cars sort after active cars, for both race and P/Q.
+	 * Mirrors key 2 in both FUN_140120c90 (race) and FUN_140120970
+	 * (qualy): bit 6 (0x40) of the per-car race flags byte, applied
+	 * before any timing key.
+	 */
+	{
+		int ret_a = (ra->car_field & 0x40) != 0;
+		int ret_b = (rb->car_field & 0x40) != 0;
+		if (ret_a != ret_b)
+			return ret_a ? 1 : -1;
+	}
+
 	if (session_is_practice_or_qualy(s)) {
 		int32_t la = ra->best_lap_ms;
 		int32_t lb = rb->best_lap_ms;
@@ -789,17 +802,6 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	}
 	if (ra->lap_count != rb->lap_count)
 		return rb->lap_count - ra->lap_count;
-	/*
-	 * Retired cars sort after active cars but before DQ'd cars.
-	 * Mirrors FUN_140120c90 key 2: bit 6 (0x40) of the per-car
-	 * race flags byte.
-	 */
-	{
-		int ret_a = (ra->car_field & 0x40) != 0;
-		int ret_b = (rb->car_field & 0x40) != 0;
-		if (ret_a != ret_b)
-			return ret_a ? 1 : -1;
-	}
 	/*
 	 * Intra-lap key: how many sector splits the car has completed
 	 * in the current open lap (0, 1 or 2).  More sectors = further
