@@ -1083,8 +1083,7 @@ session_tick(struct Server *s)
 			log_info("overtime: no car racing on track, "
 			    "skipping grace period");
 			s->session.ts[5] = now;
-			if (s->session.ts[6] <= now)
-				s->session.ts[6] = now + post_grace_ms(s);
+			s->session.ts[6] = now + post_grace_ms(s);
 		} else if (def->session_type == 10) {
 			s->session.overtime_hold = 1;
 			s->session.cars_in_overtime = (int16_t)racing;
@@ -1132,8 +1131,7 @@ session_tick(struct Server *s)
 				log_info("quali overtime: no eligible cars, "
 				    "skipping grace");
 				s->session.ts[5] = now;
-				if (s->session.ts[6] <= now)
-					s->session.ts[6] = now + post_grace_ms(s);
+				s->session.ts[6] = now + post_grace_ms(s);
 			}
 		}
 	}
@@ -1250,8 +1248,7 @@ session_overtime_car_finished(struct Server *s)
 		uint64_t grace = post_grace_ms(s);
 		s->session.overtime_hold = 0;
 		s->session.ts[5] = now;
-		if (s->session.ts[6] <= now)
-			s->session.ts[6] = now + grace;
+		s->session.ts[6] = now + grace;
 		log_info("overtime: all cars finished, releasing hold "
 		    "(post=%llums)", (unsigned long long)grace);
 	} else {
@@ -1291,8 +1288,7 @@ session_quali_drop_eligibility(struct Server *s, int car_id)
 	    s->session.overtime_hold) {
 		s->session.overtime_hold = 0;
 		s->session.ts[5] = mono_ms() + 1000;
-		if (s->session.ts[6] <= s->session.ts[5])
-			s->session.ts[6] = s->session.ts[5] + post_grace_ms(s);
+		s->session.ts[6] = s->session.ts[5] + post_grace_ms(s);
 		log_info("quali overtime: all eligible cars done, "
 		    "releasing hold");
 	} else {
