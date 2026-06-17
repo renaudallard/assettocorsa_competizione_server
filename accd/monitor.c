@@ -189,10 +189,10 @@ monitor_build_configuration_state(struct ByteBuf *bb,
 			    def->time_multiplier : 1) < 0)
 				return -1;
 			if (pb_w_int32(bb, PB_SDEF_OVERTIME_DURATION_S,
-			    120) < 0)
+			    (int32_t)s->session_overtime_s) < 0)
 				return -1;
 			if (pb_w_int32(bb, PB_SDEF_PRE_RACE_WAIT_TIME_S,
-			    80) < 0)
+			    (int32_t)s->pre_race_waiting_s) < 0)
 				return -1;
 			if (pb_sub_end(bb, start) < 0)
 				return -1;
