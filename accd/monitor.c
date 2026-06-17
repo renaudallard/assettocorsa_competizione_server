@@ -157,7 +157,8 @@ monitor_build_configuration_state(struct ByteBuf *bb,
 		return -1;
 	if (pb_w_bool(bb, PB_CFG_IS_PW_PROTECTED, has_pw) < 0)
 		return -1;
-	if (pb_w_bool(bb, PB_CFG_IS_LOCKED_ENTRY_LIST, 0) < 0)
+	if (pb_w_bool(bb, PB_CFG_IS_LOCKED_ENTRY_LIST,
+	    s->force_entry_list ? 1 : 0) < 0)
 		return -1;
 
 	/* Repeated SessionDef sub-messages from the configured sessions. */
