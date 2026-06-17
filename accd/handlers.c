@@ -2072,6 +2072,7 @@ h_elo_update(struct Server *s, struct Conn *c,
 		log_info("Car %d elo update => %u",
 		    c->car_id, (unsigned)new_elo);
 		s->cars[c->car_id].last_elo = new_elo;
+		leaderboard_request_emit(s);
 	}
 	(void)reserved;
 	return 0;
