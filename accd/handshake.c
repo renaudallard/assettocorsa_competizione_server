@@ -459,8 +459,8 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
  *   u8  0                  (always)
  *   u8  dayOfWeekend - 1   (P=0, Q=1, R=2 in the typical schedule)
  *   f32 timeMultiplier     (from event.json)
- *   u16 session_type code  (P=3, Q=4, R=5 — internal AC2 enum,
- *                           DIFFERENT from def->session_type)
+ *   u16 sched_field        (P=3, Q=3, R=80 — exe FUN_140034f60
+ *                           sched_field; NOT the AC2-internal enum)
  *   u32 duration_seconds   (duration_min * 60)
  *   u32 overtime_seconds   (sessionOverTimeSeconds)
  *   u8  0                  (always)
