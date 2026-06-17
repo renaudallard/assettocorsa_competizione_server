@@ -1099,8 +1099,7 @@ session_tick(struct Server *s)
 					continue;
 				}
 				if (car->race.on_track &&
-				    !car->race.in_pit &&
-				    car->race.lap_count >= 1) {
+				    !car->race.in_pit) {
 					car->race.quali_eligible_to_finish = 1;
 					eligible++;
 				} else {
