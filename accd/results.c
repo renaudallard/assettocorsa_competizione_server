@@ -261,11 +261,11 @@ results_write(struct Server *s)
 	fprintf(f, ",\n");
 	fprintf(f, "  \"sessionIndex\": %u,\n", (unsigned)sidx);
 	fprintf(f, "  \"raceWeekendIndex\": 0,\n");
-	fprintf(f, "  \"serverName\": ");
-	fprint_json_str(f, s->server_name);
-	fprintf(f, ",\n");
 	fprintf(f, "  \"metaData\": ");
 	fprint_json_str(f, s->meta_data);
+	fprintf(f, ",\n");
+	fprintf(f, "  \"serverName\": ");
+	fprint_json_str(f, s->server_name);
 	fprintf(f, ",\n");
 	fprintf(f, "  \"sessionResult\": {\n");
 	{
