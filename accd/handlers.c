@@ -1832,6 +1832,17 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	result = 0;
 
 	/*
+	 * Send 0x49 reply before the 0x58 broadcast.  Exe FUN_140012c30:1061
+	 * sends the reply to the requester first, then lines 1063-1094 do the
+	 * swap-notify broadcast.
+	 */
+	bb_init(&out);
+	if (wr_u8(&out, SRV_DRIVER_SWAP_RESULT) == 0 &&
+	    wr_u8(&out, result) == 0)
+		bcast_send_one(c, out.data, out.wpos);
+	bb_free(&out);
+
+	/*
 	 * Broadcast 0x58 driver swap notification.  exe FUN_1400142f0:1063
 	 * gates this on the doDriverSwapBroadcast config flag (the same flag
 	 * that gates the 0x47 state broadcast), so suppress it when disabled.
@@ -1861,9 +1872,10 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	    wr_f32(&out, car->restrictor) == 0)
 		bcast_send_one(c, out.data, out.wpos);
 	bb_free(&out);
+	return 0;
 
 reply:
-	/* Send 0x49 reply to the requester. */
+	/* Send 0x49 reply to the requester (error path). */
 	bb_init(&out);
 	if (wr_u8(&out, SRV_DRIVER_SWAP_RESULT) < 0 ||
 	    wr_u8(&out, result) < 0)
