@@ -1577,13 +1577,14 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 						    "RegisterToLobby "
 						    "succeeded");
 						/*
-						 * Exe order on 0xef accept
-						 * (FUN_140044c10): 0xcb
-						 * session update first,
-						 * then 0xd1 drivers.
+						 * Exe (FUN_140044c10:267) calls
+						 * the 0xcb builder before setting
+						 * state=REGISTERED, making it a
+						 * no-op (builder gates on
+						 * state==REGISTERED).  Send only
+						 * 0xd1; the first real 0xcb comes
+						 * from the phase-change path.
 						 */
-						(void)lobby_send_session_update(
-						    l, s);
 						(void)lobby_send_drivers_update(
 						    l, s);
 					} else if (rc == 0) {
