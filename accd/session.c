@@ -765,6 +765,16 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (!b->used)
 		return -1;
 
+	/*
+	 * DQ'd cars always sort last regardless of lap count.
+	 * Mirrors FUN_140120c90 key 1: FUN_140117300 bitmask check on
+	 * the active penalty wire code.  accd's disqualified flag is set
+	 * by penalty_enqueue when exe_kind == EXE_DQ, which is the same
+	 * condition the exe's bitmask tests for.
+	 */
+	if (ra->disqualified != rb->disqualified)
+		return ra->disqualified ? 1 : -1;
+
 	if (session_is_practice_or_qualy(s)) {
 		int32_t la = ra->best_lap_ms;
 		int32_t lb = rb->best_lap_ms;
