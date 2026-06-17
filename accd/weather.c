@@ -210,10 +210,12 @@ weather_generate_fourier(struct Server *s, uint32_t seed)
 	w->n_harmonics = ns;
 
 	/*
-	 * Wind-speed base: |Gaussian| (high bit masked in exe).  We use
-	 * fabsf of a wider Gaussian so the magnitude is plausible (m/s).
+	 * Wind-speed base: |Gaussian(windSpeedMean, windSpeedDeviation)|
+	 * matching FUN_140116c50 lines 141-146.  wind_speed_dev already
+	 * has the 0.01 floor applied in weather_init.
 	 */
-	w->wind_speed_base = fabsf(mt_gaussian(&m, 1.5f, 1.0f));
+	w->wind_speed_base = fabsf(mt_gaussian(&m, w->wind_speed_mean,
+	    w->wind_speed_dev));
 
 	/*
 	 * Wind direction: FUN_140116c50 (line 147) regenerates the base
@@ -266,7 +268,9 @@ weather_generate_fourier(struct Server *s, uint32_t seed)
 
 void
 weather_init(struct Server *s, float base_clouds, float base_rain,
-    int randomness, uint32_t start_time_s)
+    int randomness, uint32_t start_time_s,
+    float wind_speed_mean, float wind_speed_dev,
+    float weather_base_mean, float weather_base_dev)
 {
 	struct WeatherStatus *w = &s->weather;
 
@@ -296,18 +300,21 @@ weather_init(struct Server *s, float base_clouds, float base_rain,
 	 * baseDev 0.3, varDev 1/7 ≈ 0.143.  These show up on the wire
 	 * inside the welcome's TopLevel WeatherData even with no
 	 * harmonic drift.
+	 * wind_speed_mean/dev and weather_base_mean/dev come from event.json
+	 * (FUN_140109bc0 +0x38/+0x3c/+0x50/+0x54); apply the 0.01 minimum
+	 * on dev here so weather_generate_fourier sees the clamped value.
 	 */
 	w->is_dynamic = (uint8_t)(w->randomness > 0);
 	w->ambient_mean = 24.0f;
 	w->wind_speed_base = 0.0f;
-	w->wind_speed_mean = 0.0f;
-	w->wind_speed_dev = 0.01f;
+	w->wind_speed_mean = wind_speed_mean;
+	w->wind_speed_dev = wind_speed_dev < 0.01f ? 0.01f : wind_speed_dev;
 	w->wind_direction_base = 0.0f;
 	w->wind_direction_change = 0.0f;
 	w->wind_harmonic = 0;
 	w->n_harmonics = 0;
-	w->weather_base_mean = 0.4f;
-	w->weather_base_dev = 0.3f;
+	w->weather_base_mean = weather_base_mean;
+	w->weather_base_dev = weather_base_dev;
 	w->variability_dev = 0.142857f;
 	w->n_sine = 0;
 	w->n_cosine = 0;

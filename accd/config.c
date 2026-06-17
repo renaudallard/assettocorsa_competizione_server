@@ -632,12 +632,21 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "rain", 0.0);
 			int randomness = json_obj_get_int(event,
 			    "weatherRandomness", 0);
+			float ws_mean = (float)json_obj_get_num(event,
+			    "windSpeedMean", 0.0);
+			float ws_dev = (float)json_obj_get_num(event,
+			    "windSpeedDeviation", 0.01);
+			float wb_mean = (float)json_obj_get_num(event,
+			    "weatherBaseMean", 0.4);
+			float wb_dev = (float)json_obj_get_num(event,
+			    "weatherBaseDeviation", 0.3);
 			{
 				uint32_t start_s =
 				    (uint32_t)s->sessions[0].hour_of_day
 				    * 3600u;
 				weather_init(s, clouds, rain, randomness,
-				    start_s);
+				    start_s, ws_mean, ws_dev,
+				    wb_mean, wb_dev);
 				s->session.weekend_time_s = start_s;
 			}
 		}

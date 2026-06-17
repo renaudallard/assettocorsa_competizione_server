@@ -44,10 +44,14 @@
 
 /* Initialize the weather state from event.json values.
  * start_time_s is hourOfDay * 3600 so initial cloud/rain
- * values match what weather_step will compute on first tick. */
+ * values match what weather_step will compute on first tick.
+ * wind_speed_mean/dev and weather_base_mean/dev are read from
+ * the same event.json (FUN_140109bc0) and default to 0/0.01
+ * and 0.4/0.3 when absent. */
 void	weather_init(struct Server *s, float base_clouds,
-		float base_rain, int randomness,
-		uint32_t start_time_s);
+		float base_rain, int randomness, uint32_t start_time_s,
+		float wind_speed_mean, float wind_speed_dev,
+		float weather_base_mean, float weather_base_dev);
 
 /*
  * Step the weather simulator forward.  Called every CADENCE_
