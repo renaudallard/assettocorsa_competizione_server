@@ -1532,7 +1532,7 @@ write_mtr(struct ByteBuf *bb, struct Server *s)
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0xff) < 0) return -1;
-	if (wr_u8(bb, 0xd0) < 0) return -1;
+	if (wr_u8(bb, 0xf0) < 0) return -1;
 	if (wr_u32(bb, 0xffffffff) < 0) return -1;
 	if (wr_u32(bb, 0) < 0) return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
