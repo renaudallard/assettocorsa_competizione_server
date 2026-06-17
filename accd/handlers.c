@@ -1258,9 +1258,9 @@ client_category_to_reason(uint8_t category)
 	 * checker (FUN_140e5ab60): 16=SpeedingOnStart (speed-driven),
 	 * 17=WrongPositionOnStart (damage-driven escalation).
 	 *
-	 * Cats 1, 2, 7, 8, 9 have NO wire path in FUN_1400f03b0 — the
-	 * kunos exe never emits a wire code for these.  Best fallback:
-	 * REASON_RACE_CONTROL (wire 15-19) for those (and other unknowns).
+	 * Cats 1, 2, 7, 9 have NO wire path in FUN_1400f03b0.  Cat 8
+	 * (RaceControl) DOES have wire paths (wires 15-19 for DT/SG/DQ).
+	 * Best fallback: REASON_RACE_CONTROL (wire 15-19) for unknown cats.
 	 *
 	 * Note: penalty.c:penalty_wire_value emits these wire codes
 	 * verbatim, matching the kunos dispatcher FUN_1400f03b0 byte for
