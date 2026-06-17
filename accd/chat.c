@@ -325,9 +325,9 @@ chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 	}
 	penalty_format_chat(chat, sizeof(chat),
 	    (uint8_t)kind, REASON_RACE_CONTROL, collision, car_num);
-	if (!collision)
+	if (!collision || c == NULL)
 		chat_broadcast(s, chat, 4);
-	else if (c != NULL)
+	else
 		chat_reply(c, chat, 4);
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", chat);
