@@ -1745,7 +1745,8 @@ h_update_driver_swap_state(struct Server *s, struct Conn *c,
 	if (car->team_entry_id >= 0) {
 		int j;
 		for (j = 0; j < ACC_MAX_CARS; j++) {
-			if (s->cars[j].team_entry_id == car->team_entry_id)
+			if (s->cars[j].team_entry_id == car->team_entry_id &&
+			    s->cars[j].used)
 				broadcast_swap_state(s, &s->cars[j]);
 		}
 	} else {
@@ -1971,7 +1972,8 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 	if (car->team_entry_id >= 0) {
 		int g;
 		for (g = 0; g < ACC_MAX_CARS; g++) {
-			if (s->cars[g].team_entry_id == car->team_entry_id)
+			if (s->cars[g].team_entry_id == car->team_entry_id &&
+			    s->cars[g].used)
 				broadcast_swap_state(s, &s->cars[g]);
 		}
 	} else {
