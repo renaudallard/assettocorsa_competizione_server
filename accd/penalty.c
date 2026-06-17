@@ -595,32 +595,47 @@ void
 penalty_clear(struct Server *s, int car_id)
 {
 	struct PenaltyQueue *q;
+	int i, n = 0;
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS)
 		return;
 	q = &s->cars[car_id].race.pen;
-	q->count = 0;
-	memset(q->slots, 0, sizeof(q->slots));
 	/*
-	 * Reset the per-car ladder so the next DT/SG report lands on
+	 * Compact-filter: drop DT/SG/DQ entries, keep TP entries.
+	 * The exe's FUN_140126b50 only iterates the +0x30 DT/SG/DQ
+	 * sheet and never touches the +0x48 TP sheet, so accumulated
+	 * TP queue entries must survive /clear.
+	 */
+	for (i = 0; i < q->count; i++) {
+		const struct PenaltyEntry *p = &q->slots[i];
+		int is_tp = p->race_end_tp != 0 ||
+		    p->kind == PEN_TP5  || p->kind == PEN_TP15 ||
+		    p->kind == PEN_TP30 || p->kind == PEN_TP40 ||
+		    p->kind == PEN_TP50 || p->kind == PEN_TP60;
+		if (!is_tp)
+			continue;
+		if (n != i)
+			q->slots[n] = q->slots[i];
+		n++;
+	}
+	if (n < q->count) {
+		memset(&q->slots[n], 0,
+		    (size_t)(q->count - n) * sizeof(q->slots[0]));
+		q->count = n;
+	}
+	/*
+	 * Reset the per-car DT/SG ladder so the next report lands on
 	 * the fresh branch rather than being treated as an escalation.
 	 */
 	s->cars[car_id].race.dtsg_ladder_sev = 0;
 	s->cars[car_id].race.dtsg_ladder_cat = 0;
 	/*
-	 * Clear DT/SG/DQ accumulators.  The exe's FUN_140126b50 only
-	 * iterates the +0x30 sheet list (DT/SG/DQ) and never touches
-	 * the +0x48 TP sheet, so pen_state[EXE_TP] is preserved.
+	 * Clear DT/SG/DQ accumulators; preserve pen_state[EXE_TP].
 	 */
 	memset(s->cars[car_id].race.pen_state, 0,
 	    EXE_TP * sizeof(*s->cars[car_id].race.pen_state));
 	memset(&s->cars[car_id].race.pen_state[EXE_DQ], 0,
 	    sizeof(*s->cars[car_id].race.pen_state));
-	/*
-	 * 0x36 per-car tail bytes change when the queue is wiped — the
-	 * memcmp-cache must re-emit so AC2 stops rendering the cleared
-	 * penalty.  Same family as the chat.c:236 post-eviction fix.
-	 */
 	leaderboard_request_emit(s);
 }
 
@@ -630,21 +645,10 @@ penalty_clear_all(struct Server *s)
 	int i;
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
-		struct PenaltyQueue *q;
 		if (!s->cars[i].used)
 			continue;
-		q = &s->cars[i].race.pen;
-		q->count = 0;
-		memset(q->slots, 0, sizeof(q->slots));
-		s->cars[i].race.dtsg_ladder_sev = 0;
-		s->cars[i].race.dtsg_ladder_cat = 0;
-		memset(s->cars[i].race.pen_state, 0,
-		    EXE_TP * sizeof(*s->cars[i].race.pen_state));
-		memset(&s->cars[i].race.pen_state[EXE_DQ], 0,
-		    sizeof(*s->cars[i].race.pen_state));
+		penalty_clear(s, i);
 	}
-	/* Single emit covers the multi-car wipe. */
-	leaderboard_request_emit(s);
 }
 
 /*
