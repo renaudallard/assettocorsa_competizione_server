@@ -700,18 +700,31 @@ done:
 /*
  * Build and emit the SRV_GRID_POSITIONS (0x3f) at the start of
  * the RACE phase.  Body: u8 grid_count + per-car { u16 carId +
- * u8 driverIndex + u32 grid_position + u8 = 1 }.  The exe builds each
- * record in FUN_1401318b0: byte +4 = LeaderboardLine +0x180 (the
- * current driver index, 0 pre-swap), and a constant 1 at +0xc that
- * becomes the trailing wire byte.  The client infers each car's
- * starting position from the record ORDER, so the u32 (exe: the
- * +0x1d4 best-lap field) is informational; we carry the grid slot.
+ * u8 driverIndex + u32 best_lap_ms + u8 = 1 }.  The exe builds each
+ * record in FUN_1401318b0: byte +4 = LeaderboardLine +0x180 (current
+ * driver index), u32 +8 = LeaderboardLine +0x1d4 (qualifying
+ * best_lap_ms), constant 1 at +0xc as trailing wire byte.  The client
+ * infers each car's starting position from the record ORDER; the u32
+ * carries the qualifying lap time for the pre-race grid display.
  */
 static void
 broadcast_grid(struct Server *s)
 {
 	struct ByteBuf bb;
-	int i, g, n = 0, emitted = 0;
+	int i, g, n = 0, emitted = 0, qualy_si = -1;
+
+	/*
+	 * Find the most recent qualifying session so we can supply
+	 * the best-lap time from its archive (FUN_1401318b0:46 reads
+	 * LeaderboardLine+0x1d4 from qualifying entries only).
+	 */
+	for (i = (int)s->session.session_index - 1; i >= 0; i--) {
+		if (i < s->session_count &&
+		    s->sessions[i].session_type == 4) {
+			qualy_si = i;
+			break;
+		}
+	}
 
 	bb_init(&bb);
 	if (wr_u8(&bb, SRV_GRID_POSITIONS) < 0)
@@ -732,13 +745,19 @@ broadcast_grid(struct Server *s)
 		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
 		    i++) {
 			struct CarEntry *car = &s->cars[i];
+			struct CarRaceState *ar;
+			uint32_t best_ms;
 			if (!car->used)
 				continue;
 			if (car->race.grid_position != g)
 				continue;
+			ar = (qualy_si >= 0)
+			    ? car->race_archive[qualy_si] : NULL;
+			best_ms = (ar != NULL && ar->best_lap_ms > 0)
+			    ? (uint32_t)ar->best_lap_ms : LAP_TIME_INVALID;
 			if (wr_u16(&bb, car->car_id) < 0 ||
 			    wr_u8(&bb, car->current_driver_index) < 0 ||
-			    wr_u32(&bb, (uint32_t)g) < 0 ||
+			    wr_u32(&bb, best_ms) < 0 ||
 			    wr_u8(&bb, 1) < 0)
 				goto done;
 			emitted++;
@@ -747,14 +766,20 @@ broadcast_grid(struct Server *s)
 	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections &&
 	    emitted < n; i++) {
 		struct CarEntry *car = &s->cars[i];
+		struct CarRaceState *ar;
+		uint32_t best_ms;
 		if (!car->used)
 			continue;
 		if (car->race.grid_position >= 0 &&
 		    car->race.grid_position <= ACC_MAX_CARS)
 			continue;
+		ar = (qualy_si >= 0)
+		    ? car->race_archive[qualy_si] : NULL;
+		best_ms = (ar != NULL && ar->best_lap_ms > 0)
+		    ? (uint32_t)ar->best_lap_ms : LAP_TIME_INVALID;
 		if (wr_u16(&bb, car->car_id) < 0 ||
 		    wr_u8(&bb, car->current_driver_index) < 0 ||
-		    wr_u32(&bb, (uint32_t)i) < 0 ||
+		    wr_u32(&bb, best_ms) < 0 ||
 		    wr_u8(&bb, 1) < 0)
 			goto done;
 		emitted++;
