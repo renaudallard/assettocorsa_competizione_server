@@ -395,9 +395,11 @@ console_dispatch(struct Server *s, const char *line)
 		g_debug = !g_debug;
 		reply("debug tracing %s", g_debug ? "enabled" : "disabled");
 	} else if (chat_prefix(p, "legacy")) {
+		s->legacy_netcode = 1;
 		chat_broadcast(s, "Server now uses legacy netcode", 4);
 		reply("legacy netcode enabled");
 	} else if (chat_prefix(p, "regular")) {
+		s->legacy_netcode = 0;
 		chat_broadcast(s, "Server is now in regular mode", 4);
 		reply("regular mode enabled");
 	} else if (chat_prefix(p, "admin")) {
