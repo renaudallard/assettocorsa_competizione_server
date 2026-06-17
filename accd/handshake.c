@@ -684,13 +684,16 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 		}
 
 		/*
-		 * Current session: skip disconnected/empty slots (their live
-		 * state is stale).  Archived session: race_src_for already
-		 * returned non-NULL only for participants, so keep a driver
-		 * who has since disconnected — the exe re-emits the frozen
-		 * per-session classification regardless of connection state.
+		 * For archived sessions race_src_for already returned non-NULL
+		 * only for participants, so disconnected cars are included
+		 * automatically.  For the current session, mirror the exe
+		 * (FUN_140034a40): include a car that disconnected mid-session
+		 * as long as it has accumulated any race data (lap or best lap).
+		 * Truly empty slots (never connected this session) have both
+		 * zeroed by session_reset and are skipped.
 		 */
-		if (session_idx < 0 && !s->cars[j].used)
+		if (session_idx < 0 && !s->cars[j].used &&
+		    r->lap_count == 0 && r->best_lap_ms == 0)
 			continue;
 		nc++;
 	}
