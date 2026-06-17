@@ -1350,6 +1350,14 @@ tick_run(struct Server *s)
 	 */
 	if (s->session.phase != *last_phase) {
 		/*
+		 * Trigger an immediate 0x37 weather broadcast on the next
+		 * weather tick.  exe (FUN_14002f710:772) sets its last-emit
+		 * timestamp to -1.0 on every phase transition, so the 5 s
+		 * gate fires immediately.  Mirror that by rewinding
+		 * last_weather_ms to just before the threshold.
+		 */
+		last_weather_ms = now_ms - CADENCE_WEATHER_MS;
+		/*
 		 * 0x3f grid positions fire once per race, at the
 		 * PRE_SESSION (countdown) transition.  The exe instead
 		 * emits it at the END of a Qualifying session: FUN_14002f710
