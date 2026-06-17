@@ -528,6 +528,22 @@ main(int argc, char **argv)
 				continue;
 			}
 			/*
+			 * Drop a TCP-authenticated connection that never opened
+			 * its UDP channel within 60s.  The exe's state=1 timeout
+			 * path in FUN_14002f180 covers this: a joiner that dies
+			 * between TCP accept and first UDP packet would otherwise
+			 * hold a car slot indefinitely, blocking session starts.
+			 * SMPR monitors are TCP-only and are exempt.
+			 */
+			if (cn->state == CONN_AUTH && !cn->is_smpr &&
+			    cn->last_udp_server_ms == 0 &&
+			    mono_ms() - cn->accepted_mono_ms > 60000) {
+				log_info("conn=%u auth but no UDP after 60s, "
+				    "closing", (unsigned)cn->conn_id);
+				conn_drop(&srv, cn);
+				continue;
+			}
+			/*
 			 * Force-drop an authenticated driver who has gone
 			 * UDP-silent for more than 5s, mirroring the exe's
 			 * ignorePrematureDisconnects=0 timer (FUN_14002f180):
