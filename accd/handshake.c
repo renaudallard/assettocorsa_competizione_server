@@ -1330,7 +1330,7 @@ build_rating_summary(struct ByteBuf *bb, const struct Server *s)
 		if (wr_u16(bb, s->cars[j].car_id) < 0) return -1;
 		if (wr_u8(bb, 0) < 0) return -1;
 		if (wr_u16(bb, (uint16_t)(sa / 10)) < 0) return -1;
-		if (wr_u16(bb, (uint16_t)(tr / 10)) < 0) return -1;
+		if (wr_u16(bb, (uint16_t)(sa / 10)) < 0) return -1;
 		if (wr_i16(bb, -1) < 0) return -1;
 		if (wr_i16(bb, -1) < 0) return -1;
 		/*
