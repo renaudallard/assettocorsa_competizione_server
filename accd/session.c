@@ -790,10 +790,19 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (ra->lap_count != rb->lap_count)
 		return rb->lap_count - ra->lap_count;
 	/*
-	 * Secondary intra-lap key: how many sector splits the car has
-	 * completed in the current open lap (0, 1 or 2).  Mirrors the
-	 * exe's use of car+0x1b0 "sectors_completed" as the second sort
-	 * criterion in FUN_140120970:186-202.  More sectors = further
+	 * Retired cars sort after active cars but before DQ'd cars.
+	 * Mirrors FUN_140120c90 key 2: bit 6 (0x40) of the per-car
+	 * race flags byte.
+	 */
+	{
+		int ret_a = (ra->car_field & 0x40) != 0;
+		int ret_b = (rb->car_field & 0x40) != 0;
+		if (ret_a != ret_b)
+			return ret_a ? 1 : -1;
+	}
+	/*
+	 * Intra-lap key: how many sector splits the car has completed
+	 * in the current open lap (0, 1 or 2).  More sectors = further
 	 * through the lap = better position.
 	 */
 	if (ra->sectors_in_lap != rb->sectors_in_lap)
