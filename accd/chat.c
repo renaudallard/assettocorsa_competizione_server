@@ -366,7 +366,7 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 		              : "%s %s has been kicked from the server",
 		    d->first_name, d->last_name);
 	}
-	chat_broadcast(s, chat, 5);
+	chat_broadcast(s, chat, 4);
 
 	{
 		struct ByteBuf out;
