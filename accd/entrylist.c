@@ -519,6 +519,8 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 			json_escape(buf, sizeof(buf), car->custom_car);
 			fprintf(fp, "      \"customCar\": \"%s\",\n", buf);
 		}
+		fprintf(fp, "      \"overrideDriverInfo\": %d,\n",
+		    car->used ? 1 : 0);
 		fputs("      \"drivers\": [\n", fp);
 		for (d = 0; d < car->driver_count; d++) {
 			const struct DriverInfo *di = &car->drivers[d];
