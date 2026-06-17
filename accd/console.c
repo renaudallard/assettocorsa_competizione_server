@@ -328,32 +328,32 @@ console_dispatch(struct Server *s, const char *line)
 	} else if (chat_prefix(p, "clear")) {
 		cmd_clear(s, p + 5);
 	} else if (chat_prefix(p, "tp5c")) {
-		chat_do_penalty(s, "tp5c", p + 4, 1, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "tp5c", p + 4, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "tp5")) {
-		chat_do_penalty(s, "tp5", p + 3, 0, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "tp5", p + 3, 0, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "tp15c")) {
-		chat_do_penalty(s, "tp15c", p + 5, 1, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "tp15c", p + 5, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "tp15")) {
-		chat_do_penalty(s, "tp15", p + 4, 0, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "tp15", p + 4, 0, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "dtc")) {
-		chat_do_penalty(s, "dtc", p + 3, 1, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "dtc", p + 3, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "dt")) {
-		chat_do_penalty(s, "dt", p + 2, 0, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "dt", p + 2, 0, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "sg10")) {
 		/* SG is always collision (exe parity); see chat.c. */
-		chat_do_penalty(s, "sg10c", p + 4, 1, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "sg10c", p + 4, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "sg20")) {
-		chat_do_penalty(s, "sg20c", p + 4, 1, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "sg20c", p + 4, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "sg30")) {
-		chat_do_penalty(s, "sg30c", p + 4, 1, rbuf, sizeof(rbuf));
+		chat_do_penalty(s, NULL, "sg30c", p + 4, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "ballast")) {
 		chat_do_bop(s, p + 7, 1, rbuf, sizeof(rbuf));
