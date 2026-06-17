@@ -49,7 +49,7 @@
  *   u32 udp_port
  *   u16 + N bytes     serverName  (kson_string: u16 byte-length + UTF-8)
  *   u8  + N bytes     trackName   (u8 byte-length + UTF-8)
- *   u32 maxCarSlots   (rated capacity, NOT maxConnections)
+ *   u8  maxCarSlots   (rated capacity, NOT maxConnections)
  *   ff fa 01 00 00 01 00 00          <-- capability flags, verbatim
  *   u8  weatherRandomness
  *   u8  session_count
