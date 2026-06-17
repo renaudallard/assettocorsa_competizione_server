@@ -568,80 +568,9 @@ compute_phase(const struct SessionState *ss, uint64_t now)
 		return PHASE_OVERTIME;
 	if (now < ss->ts[6])
 		return PHASE_COMPLETED;
-	/*
-	 * Phase-6 end-detection hold (FUN_14002f710 bVar8==6): stay in
-	 * COMPLETED while a non-finished car is still active on track.
-	 * Maintained by session_update_completion_hold before this runs.
-	 */
-	if (ss->completion_hold)
-		return PHASE_COMPLETED;
 	return PHASE_ADVANCE;
 }
 
-/*
- * Per-tick maintenance of the phase-6 end-detection hold.  Mirrors the
- * stock server's FUN_14002f710 phase-6 loop: once a session has run past
- * its aftercare end (would otherwise advance), keep it in COMPLETED while
- * any non-finished car is still active - in a race a car that moved
- * within the last 5 min (FUN_140042890 mode 1, car+0x158), in P/Q a car
- * still on track and out of the pits (mode 0).  A hard cap stops a car
- * stuck moving or latched on-track from holding the lobby forever (the
- * exe relies on the 5-min movement window; accd adds the absolute cap).
- */
-#define COMPLETION_HOLD_CAP_MS 300000u	/* 5 min, == the movement window */
-
-static void
-session_update_completion_hold(struct Server *s, uint64_t now)
-{
-	struct SessionState *ss = &s->session;
-	int is_race, i, active = 0;
-
-	/* Only relevant at the very end: overtime released and past the
-	 * aftercare timer (the point compute_phase would return ADVANCE). */
-	if (!ss->ts_valid || ss->overtime_hold || now < ss->ts[6] ||
-	    ss->session_index >= s->session_count) {
-		ss->completion_hold = 0;
-		ss->completion_hold_started_ms = 0;
-		return;
-	}
-	is_race = (s->sessions[ss->session_index].session_type == 10);
-
-	for (i = 0; i < ACC_MAX_CARS; i++) {
-		struct CarEntry *car = &s->cars[i];
-
-		if (!car->used || car->race.finished)
-			continue;
-		if (is_race) {
-			if (car->rt.last_moved_ms != 0 && now -
-			    car->rt.last_moved_ms <= COMPLETION_HOLD_CAP_MS)
-				active++;
-		} else if (car->race.on_track && !car->race.in_pit) {
-			active++;
-		}
-	}
-
-	if (active == 0) {
-		if (ss->completion_hold)
-			log_info("session: completion hold released, field "
-			    "stopped");
-		ss->completion_hold = 0;
-		ss->completion_hold_started_ms = 0;
-		return;
-	}
-	if (ss->completion_hold_started_ms == 0)
-		ss->completion_hold_started_ms = now;
-	else if (now - ss->completion_hold_started_ms >
-	    COMPLETION_HOLD_CAP_MS) {
-		log_info("session: completion hold cap reached, advancing "
-		    "with %d car(s) still active", active);
-		ss->completion_hold = 0;	/* hard cap: release */
-		return;
-	}
-	if (!ss->completion_hold)
-		log_info("session: holding completion, %d non-finished "
-		    "car(s) still active on track", active);
-	ss->completion_hold = 1;
-}
 
 int
 session_advance_race_triggers(struct Server *s, float leader_pos)
@@ -1111,9 +1040,7 @@ session_tick(struct Server *s)
 		return;
 	}
 
-	/* Compute the new phase from schedule slots.  Refresh the phase-6
-	 * end-detection hold first so compute_phase sees it this tick. */
-	session_update_completion_hold(s, now);
+	/* Compute the new phase from schedule slots. */
 	new_phase = compute_phase(&s->session, now);
 	enter_phase(s, new_phase);
 

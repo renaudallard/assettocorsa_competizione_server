@@ -444,17 +444,6 @@ struct SessionState {
 	uint64_t	overtime_hold_started_ms;
 
 	/*
-	 * Phase-6 (COMPLETED) end-detection hold: the stock server keeps
-	 * a session in its end-detection phase while any non-finished car
-	 * is still active - moved within the last 5 min in a race
-	 * (FUN_140042890 mode 1) or on track in P/Q (mode 0) - refusing to
-	 * finalise until the field has stopped/left.  Set per tick by
-	 * session_update_completion_hold; gates COMPLETED -> ADVANCE.
-	 */
-	uint8_t		completion_hold;
-	uint64_t	completion_hold_started_ms;
-
-	/*
 	 * Race green-flag position gate (FUN_14012f4a0 in accServer.exe).
 	 * For race sessions, ts[3]/ts[4] are held at UINT64_MAX until the
 	 * leader's normalized track position crosses the configured
