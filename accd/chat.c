@@ -358,10 +358,14 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 		log_warn("admin: car #%d has no active connection", car_num);
 		return;
 	}
-	snprintf(chat, sizeof(chat),
-	    permanent ? "Car #%d has been banned from the server"
-	              : "Car #%d has been kicked from the server",
-	    car_num);
+	{
+		struct DriverInfo *d = &s->cars[car_id].drivers[
+		    s->cars[car_id].current_driver_index];
+		snprintf(chat, sizeof(chat),
+		    permanent ? "%s %s has been banned from the server"
+		              : "%s %s has been kicked from the server",
+		    d->first_name, d->last_name);
+	}
 	chat_broadcast(s, chat, 5);
 
 	{
