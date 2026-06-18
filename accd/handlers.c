@@ -1679,27 +1679,12 @@ h_update_driver_swap_state(struct Server *s, struct Conn *c,
 	uint16_t car_id;
 	struct CarEntry *car;
 	int slot_idx;
-	int is_owner;
 
 	rd_init(&r, body, len);
 	if (rd_u8(&r, &msg_id) < 0 || rd_u16(&r, &car_id) < 0) {
 		log_warn("h_update_driver_swap_state: short body");
 		return 0;
 	}
-	/*
-	 * Match exe FUN_140012c30:62-91 dual-path semantics:
-	 *   owner path (sender's car_id == target): accept any state byte,
-	 *     overwrite the corresponding slot
-	 *   foreign path (sender doesn't own target): only accept state
-	 *     values in {2, 3, 4} (CONNECTED / REQUESTED / CONFIRMED) per
-	 *     the (byte)(state - 2U) < 3 gate at FUN_140012c30:83 — slots
-	 *     with any other value are silently dropped
-	 *
-	 * Pre-fix accd rejected the message entirely if the sender wasn't
-	 * the owner, which broke the multi-driver team scenario where a
-	 * non-driving teammate sends their own CONNECTED/REQUESTED state
-	 * for the shared car.
-	 */
 	if (car_id < ACC_CAR_ID_BASE ||
 	    car_id >= ACC_CAR_ID_BASE + ACC_MAX_CARS) {
 		log_warn("h_update_driver_swap_state: bad car_id %u",
@@ -1712,8 +1697,19 @@ h_update_driver_swap_state(struct Server *s, struct Conn *c,
 		    (unsigned)car_id);
 		return 0;
 	}
-	is_owner = (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
-	    (uint16_t)(ACC_CAR_ID_BASE + c->car_id) == car_id);
+	/*
+	 * Exe FUN_1400142f0 (case 0x47) rejects the message entirely when
+	 * the wire car_id does not match the sender's own car — it logs
+	 * "Received ACP_UPDATE_DRIVER_SWAP_STATE for alien car" and breaks.
+	 * The dual-path logic in FUN_140012c30 applies to the fan-out over
+	 * peer connections, not to the inbound sender.
+	 */
+	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS ||
+	    (uint16_t)(ACC_CAR_ID_BASE + c->car_id) != car_id) {
+		log_warn("h_update_driver_swap_state: alien car %u from conn %d",
+		    (unsigned)car_id, c->car_id);
+		return 0;
+	}
 	if (rd_u8(&r, &dcnt) < 0)
 		return 0;
 	if (dcnt > car->driver_count)
@@ -1722,16 +1718,10 @@ h_update_driver_swap_state(struct Server *s, struct Conn *c,
 		uint8_t st;
 		if (rd_u8(&r, &st) < 0)
 			break;
-		if (is_owner) {
-			car->swap_state[slot_idx] = st;
-		} else if (st >= 2 && st <= 4) {
-			/* Foreign-conn filter: only CONNECTED/REQ/CONFIRM. */
-			car->swap_state[slot_idx] = st;
-		}
-		/* Drop any foreign-conn slot whose state isn't 2/3/4. */
+		car->swap_state[slot_idx] = st;
 	}
-	log_info("driver swap state update: car=%u from=%s states=[%u,%u,%u,%u]",
-	    (unsigned)car_id, is_owner ? "owner" : "foreign",
+	log_info("driver swap state update: car=%u states=[%u,%u,%u,%u]",
+	    (unsigned)car_id,
 	    (unsigned)car->swap_state[0], (unsigned)car->swap_state[1],
 	    (unsigned)car->swap_state[2], (unsigned)car->swap_state[3]);
 	/*
