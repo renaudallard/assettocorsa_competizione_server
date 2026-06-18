@@ -1216,7 +1216,7 @@ lobby_apply_cp_event(struct LobbyClient *l, struct Server *s,
 		    wr_str_a(&out, "Server") == 0 &&
 		    wr_str_a(&out, "Server is starting the next event, you "
 		    "will be disconnected") == 0 &&
-		    wr_i32(&out, 0) == 0 &&
+		    wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
 		    wr_u8(&out, 3) == 0)
 			(void)bcast_send_one(cn, out.data, out.wpos);
 		bb_free(&out);
@@ -1383,7 +1383,7 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 			    wr_str_a(&out, "Server") == 0 &&
 			    wr_str_a(&out, s2) == 0 &&
-			    wr_i32(&out, 0) == 0 &&
+			    wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
 			    wr_u8(&out, 3) == 0)
 				(void)bcast_send_one(target_conn, out.data,
 				    out.wpos);
@@ -1443,7 +1443,7 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		if (wr_u8(&out, SRV_CHAT_OR_STATE) != 0 ||
 		    wr_str_a(&out, "Server") != 0 ||
 		    wr_str_a(&out, s2) != 0 ||
-		    wr_i32(&out, 0) != 0 ||
+		    wr_i32(&out, (int32_t)s->session.weekend_time_s) != 0 ||
 		    wr_u8(&out, 3) != 0) {
 			bb_free(&out);
 			break;
