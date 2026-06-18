@@ -371,6 +371,14 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 	}
 	chat_broadcast(s, chat, 4);
 
+	/*
+	 * Exe (FUN_14001dae0:745) DQs the car before sending the
+	 * kick/ban message so the player appears disqualified in
+	 * the session results.  force=0 so allow_auto_dq still
+	 * gates it (mirrors the exe's seventh argument = 0).
+	 */
+	(void)penalty_enqueue(s, car_id, EXE_DQ, 0, 0, 0, 0, 0);
+
 	{
 		struct ByteBuf out;
 		const char *reason = permanent
