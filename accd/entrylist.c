@@ -544,7 +544,8 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 		}
 		fputs("\n      ]\n    }", fp);
 	}
-	fputs("\n  ],\n  \"configVersion\": 1\n}\n", fp);
+	fprintf(fp, "\n  ],\n  \"forceEntryList\": %d,\n  \"configVersion\": 1\n}\n",
+	    s->force_entry_list ? 1 : 0);
 	if (atomic_close(fp, tmp_path, path, "entrylist_save") < 0)
 		return -1;
 	log_info("entrylist_save: wrote %s", path);
