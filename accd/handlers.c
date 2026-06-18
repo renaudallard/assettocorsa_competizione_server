@@ -746,7 +746,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			goto done;
 		ts_off = (int)out.wpos;
 		if (wr_i32(&out, 0) < 0 ||   /* placeholder, patched per peer */
-		    wr_u16(&out, 0) < 0)      /* exe zeroes car+0x1e8 before relay */
+		    wr_u16(&out, car_field) < 0)
 			goto done;
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct Conn *peer = s->conns[i];
