@@ -589,6 +589,16 @@ penalty_serve_front(struct Server *s, int car_id)
 	q->slots[idx].cleared_lap =
 	    (int16_t)(s->cars[car_id].race.lap_count + 1);
 	q->slots[idx].laps_remaining = 0;
+	/*
+	 * Mirror FUN_140126b50: after serving a DT/SG the PenaltySheet's
+	 * category (+0x58) and severity (+0x59) are zeroed via FUN_140124e00,
+	 * so the next DT/SG report lands in the fresh branch (bVar2==0) and
+	 * restarts the ladder.  Without this reset a served DT is still seen
+	 * as the current ladder level and the next DT immediately escalates
+	 * to SG30 instead of starting fresh.
+	 */
+	s->cars[car_id].race.dtsg_ladder_sev = 0;
+	s->cars[car_id].race.dtsg_ladder_cat = 0;
 }
 
 void
