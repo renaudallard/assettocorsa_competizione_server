@@ -521,6 +521,8 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 		}
 		fprintf(fp, "      \"overrideDriverInfo\": %d,\n",
 		    car->used ? 1 : 0);
+		fprintf(fp, "      \"isServerAdmin\": %d,\n",
+		    car->is_server_admin ? 1 : 0);
 		fputs("      \"drivers\": [\n", fp);
 		for (d = 0; d < car->driver_count; d++) {
 			const struct DriverInfo *di = &car->drivers[d];
