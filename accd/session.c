@@ -800,8 +800,15 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 			return -1;
 		return la < lb ? -1 : (la > lb ? 1 : 0);
 	}
-	if (ra->lap_count != rb->lap_count)
-		return rb->lap_count - ra->lap_count;
+	/*
+	 * Mirror FUN_140127850: count only valid (non-cut, non-out-lap)
+	 * completions for the race leaderboard position key, not total
+	 * crossings.  lap_history_count tracks the same set that the exe's
+	 * INT32_MAX-sentinel lap-vector uses; lap_count would overcount when
+	 * a driver's laps were all cut.
+	 */
+	if (ra->lap_history_count != rb->lap_history_count)
+		return (int)rb->lap_history_count - (int)ra->lap_history_count;
 	/*
 	 * Intra-lap key: how many sector splits the car has completed
 	 * in the current open lap (0, 1 or 2).  More sectors = further
