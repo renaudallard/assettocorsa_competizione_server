@@ -374,7 +374,7 @@ session_reset(struct Server *s, uint8_t session_index)
  * Populate the 7 schedule timestamps when the first driver
  * connects.  Matches FUN_14012e970 (startSession) in the exe:
  *   ts[0] = now - 1
- *   ts[1] = ts[0] + pre_ms        (3000 non-race; pre_race_waiting_s race)
+ *   ts[1] = ts[0] + pre_ms        (pre_race_waiting_s for all session types)
  *   ts[2] = ts[1]                 (non-race; race holds ts[2..6] until
  *                                  the position-triggered formation/green)
  *   ts[3] = ts[2]                 (non-race; race = green-cross time)
@@ -408,8 +408,7 @@ session_start(struct Server *s)
 	const struct SessionDef *def =
 	    &s->sessions[s->session.session_index];
 	uint64_t now = mono_ms();
-	uint64_t pre_ms = def->session_type == 10
-	    ? (uint64_t)s->pre_race_waiting_s * 1000ull : 3000;
+	uint64_t pre_ms = (uint64_t)s->pre_race_waiting_s * 1000ull;
 	uint64_t dur_ms = (uint64_t)def->duration_min * 60000ull;
 	uint64_t ot_ms  = (uint64_t)s->session_overtime_s * 1000ull;
 	uint64_t post_ms = def->session_type == 10
