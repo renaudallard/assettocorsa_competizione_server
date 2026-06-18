@@ -941,7 +941,14 @@ broadcast_stats_udp(struct Server *s)
 	bb_init(&wb);
 	ok = wr_u8(&bb, SRV_PERIODIC_UDP) == 0;
 	ok = ok && wr_f32(&bb, (float)s->session.weekend_time_s) == 0;
-	ok = ok && wr_u8(&bb, s->session.phase) == 0;
+	/*
+	 * Exe's PHASE_COMPLETED (6) is zero-width; the post-session
+	 * countdown runs inside PHASE_ADVANCE (7).  Map COMPLETED to
+	 * ADVANCE on the wire so clients see the same phase byte as
+	 * the exe during the post-session wait (FUN_14002f710).
+	 */
+	ok = ok && wr_u8(&bb, s->session.phase == PHASE_COMPLETED
+	    ? PHASE_ADVANCE : s->session.phase) == 0;
 	ok = ok && write_session_mgr_state(&bb, s, 0, 0) == 0;
 
 	/*
