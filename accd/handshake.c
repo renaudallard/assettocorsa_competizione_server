@@ -1633,7 +1633,20 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	ci_off = drv_len + 8;
 	ci_len = owner->hs_echo_len - ci_off;
 
-	slot1 = (uint8_t)(car_slot + 1);
+	/*
+	 * Byte@+2: sequential 1-based index among the active (used) cars
+	 * ordered by slot.  FUN_140032c90 reads car+0x2 (a per-car counter
+	 * set when the car is added) and adds 1.  With non-contiguous slots
+	 * (a slot was freed by a mid-session disconnect) the exe's index is
+	 * smaller than slot+1; e.g. slots 0 and 2 active yields b2=1 and b2=2
+	 * where slot+1 would give 1 and 3.
+	 */
+	{
+		int k, seq = 0;
+		for (k = 0; k <= car_slot; k++)
+			if (s->cars[k].used) seq++;
+		slot1 = (uint8_t)seq;
+	}
 	if (wr_u16(bb, ec->car_id) < 0) return -1;
 	if (wr_u8(bb, slot1) < 0) return -1;
 	/*
