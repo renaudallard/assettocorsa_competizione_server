@@ -2049,11 +2049,18 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 		    wr_u16(&out, s->cars[c->car_id].car_id) == 0 &&
 		    wr_u8(&out, force) == 0) {
 			if (force) {
-				double ts_d =
-				    (double)(int64_t)ts_raw +
-				    (double)conn_clock_offset(s, c);
+				double ts_d, ts_adj;
 				uint8_t bytes[8];
-				memcpy(bytes, &ts_d, sizeof(bytes));
+				/*
+				 * Wire ts is an IEEE-754 double, not an
+				 * integer.  Reinterpret the bits directly
+				 * (memcpy avoids UB) before adding the
+				 * session clock offset.
+				 */
+				memcpy(&ts_d, &ts_raw, sizeof(ts_d));
+				ts_adj = ts_d +
+				    (double)conn_clock_offset(s, c);
+				memcpy(bytes, &ts_adj, sizeof(bytes));
 				(void)bb_append(&out, bytes,
 				    sizeof(bytes));
 			}
