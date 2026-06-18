@@ -191,7 +191,13 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
 	 * can report violationInLap; cleared_lap stays open until the
 	 * penalty is served.  memset above zeroed both, so set them here.
 	 */
-	e->violation_lap = (int16_t)(s->cars[car_id].race.lap_count + 1);
+	/*
+	 * Exe FUN_140129b10 counts laps that closed before the violation
+	 * timestamp (0-based rank among completed laps), which equals
+	 * lap_count at the moment of the penalty.  The previous +1 was
+	 * the current lap number (1-based), one higher than the exe value.
+	 */
+	e->violation_lap = (int16_t)s->cars[car_id].race.lap_count;
 	e->cleared_lap = -1;
 	/*
 	 * laps_remaining: caller-supplied value verbatim.  For DT/SG
