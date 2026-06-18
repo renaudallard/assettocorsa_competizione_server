@@ -1469,7 +1469,8 @@ tick_run(struct Server *s)
 					if (s->cars[j].race.race_end_short_circuit)
 						continue;
 					penalty_convert_race_end(
-					    &s->cars[j].race.pen);
+					    &s->cars[j].race.pen,
+					    (int16_t)s->cars[j].race.lap_count);
 				}
 				/*
 				 * The converted entries are consumed by

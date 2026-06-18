@@ -792,7 +792,7 @@ penalty_total_ms(const struct PenaltyQueue *q)
  * 30/40/50/60-second buckets.
  */
 void
-penalty_convert_race_end(struct PenaltyQueue *q)
+penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count)
 {
 	int i;
 	uint8_t new_kind;
@@ -844,6 +844,13 @@ penalty_convert_race_end(struct PenaltyQueue *q)
 		 */
 		p->race_end_tp = new_kind;
 		p->collision = 0;
+		/*
+		 * Mirror FUN_140127440: after converting, exe calls
+		 * FUN_140126b50 to serve the original DT/SG entry, which
+		 * sets cleared_lap to the current lap.  Record that here so
+		 * results.json writes the correct clearedInLap value.
+		 */
+		p->cleared_lap = (int16_t)(lap_count + 1);
 		/*
 		 * Preserve laps_remaining — kunos's 0x3e per-car tail
 		 * reads the original DT/SG value (e.g. 3 for a 3-cut
