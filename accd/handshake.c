@@ -2550,8 +2550,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 				why = "late qualy (results broadcast, "
 				    "awaiting aftercare)";
 			else if (s->preparation_locked &&
-			    (s->session.phase == PHASE_FORMATION ||
-			     s->session.phase == PHASE_PRE_SESSION))
+			    s->session.phase == PHASE_FORMATION)
 				why = "locked preparation phase";
 
 			if (why != NULL) {
