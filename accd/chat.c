@@ -273,7 +273,7 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 }
 
 void
-chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
+chat_do_penalty(struct Server *s, const char *cmd,
     const char *args, int collision, char *reply, size_t replysz)
 {
 	int car_num, car_id, kind;
@@ -325,10 +325,7 @@ chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 	}
 	penalty_format_chat(chat, sizeof(chat),
 	    (uint8_t)kind, REASON_RACE_CONTROL, collision, car_num);
-	if (!collision || c == NULL)
-		chat_broadcast(s, chat, 4);
-	else
-		chat_reply(c, chat, 4);
+	chat_broadcast(s, chat, 4);
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", chat);
 	log_info("admin: %s", chat);
@@ -1164,7 +1161,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(chat, sizeof(chat),
 				    "Car #%d was disqualified by Race Control",
 				    car_num);
-				chat_reply(c, chat, 4);
+				chat_broadcast(s, chat, 4);
 			}
 		}
 	} else if (chat_prefix(text, "/clear_all")) {
@@ -1185,7 +1182,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(chat, sizeof(chat),
 				    "Pending penalties for #%d cleared "
 				    "by Race Control", car_num);
-				chat_reply(c, chat, 4);
+				chat_broadcast(s, chat, 4);
 			}
 		}
 	} else if (chat_prefix(text, "/cleartp")) {
@@ -1202,21 +1199,21 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(chat, sizeof(chat),
 				    "Pending post race time penalties for #%d "
 				    "cleared by Race Control", car_num);
-				chat_reply(c, chat, 4);
+				chat_broadcast(s, chat, 4);
 			}
 		}
 	} else if (chat_prefix(text, "/tp5c")) {
-		chat_do_penalty(s, c, "tp5c", text + 5, 1, NULL, 0);
+		chat_do_penalty(s, "tp5c", text + 5, 1, NULL, 0);
 	} else if (chat_prefix(text, "/tp5")) {
-		chat_do_penalty(s, c, "tp5", text + 4, 0, NULL, 0);
+		chat_do_penalty(s, "tp5", text + 4, 0, NULL, 0);
 	} else if (chat_prefix(text, "/tp15c")) {
-		chat_do_penalty(s, c, "tp15c", text + 6, 1, NULL, 0);
+		chat_do_penalty(s, "tp15c", text + 6, 1, NULL, 0);
 	} else if (chat_prefix(text, "/tp15")) {
-		chat_do_penalty(s, c, "tp15", text + 5, 0, NULL, 0);
+		chat_do_penalty(s, "tp15", text + 5, 0, NULL, 0);
 	} else if (chat_prefix(text, "/dtc")) {
-		chat_do_penalty(s, c, "dtc", text + 4, 1, NULL, 0);
+		chat_do_penalty(s, "dtc", text + 4, 1, NULL, 0);
 	} else if (chat_prefix(text, "/dt")) {
-		chat_do_penalty(s, c, "dt", text + 3, 0, NULL, 0);
+		chat_do_penalty(s, "dt", text + 3, 0, NULL, 0);
 	} else if (chat_prefix(text, "/sg10")) {
 		/*
 		 * SG is always the collision variant, matching the exe admin
@@ -1225,11 +1222,11 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		 * /sgNN or accd-only /sgNNc token; the collision PEN_SG*C kinds
 		 * still serve client 0x41 reports and the penalty ladder.
 		 */
-		chat_do_penalty(s, c, "sg10c", text + 5, 1, NULL, 0);
+		chat_do_penalty(s, "sg10c", text + 5, 1, NULL, 0);
 	} else if (chat_prefix(text, "/sg20")) {
-		chat_do_penalty(s, c, "sg20c", text + 5, 1, NULL, 0);
+		chat_do_penalty(s, "sg20c", text + 5, 1, NULL, 0);
 	} else if (chat_prefix(text, "/sg30")) {
-		chat_do_penalty(s, c, "sg30c", text + 5, 1, NULL, 0);
+		chat_do_penalty(s, "sg30c", text + 5, 1, NULL, 0);
 	} else if (chat_prefix(text, "/ballast")) {
 		char rb[128] = "";
 		chat_do_bop(s, text + 8, 1, rb, sizeof(rb));

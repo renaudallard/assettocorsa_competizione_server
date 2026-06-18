@@ -87,7 +87,7 @@ void	chat_broadcast_as(struct Server *s, const char *sender,
  */
 void	chat_do_kick(struct Server *s, const char *args, int permanent,
 	    char *reply, size_t replysz);
-void	chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
+void	chat_do_penalty(struct Server *s, const char *cmd,
 	    const char *args, int collision,
 	    char *reply, size_t replysz);
 void	chat_do_bop(struct Server *s, const char *args, int is_ballast,
