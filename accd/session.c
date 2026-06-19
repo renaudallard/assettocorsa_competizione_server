@@ -1507,6 +1507,20 @@ stint_check_violations(struct Server *s)
 {
 	int i;
 	int is_race = session_is_race(s);
+	uint32_t leader_laps = 0;
+
+	/*
+	 * Find the leader lap count.  Used below to catch cars that
+	 * completed the race before PHASE_OVERTIME started (e.g. the
+	 * leader in a fixed-lap race whose final S/F crossing happened
+	 * in PHASE_SESSION, before r->finished was set).
+	 */
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		const struct CarEntry *ce = &s->cars[i];
+		if (ce->driver_count > 0 &&
+		    (uint32_t)ce->race.lap_count > leader_laps)
+			leader_laps = (uint32_t)ce->race.lap_count;
+	}
 
 	/*
 	 * Each per-check gate handles its own "not configured" case.
@@ -1522,14 +1536,20 @@ stint_check_violations(struct Server *s)
 		struct CarRaceState *r;
 		int d;
 
-		/*
-		 * Enforce on any slot with an identity + lap data so a
-		 * driver who committed a violation and then disconnected
-		 * still shows as DQ'd in the results file.  conn_drop
-		 * flushes stint_start_ms on disconnect, so the pending-
-		 * stint accumulation is accurate.
-		 */
 		if (car->driver_count == 0 || car->race.lap_count == 0)
+			continue;
+		/*
+		 * Exe (FUN_14012b380) triggers FUN_14012ae10 only when a
+		 * car crosses S/F during PHASE_OVERTIME or later.  Cars
+		 * that disconnected before overtime started and never
+		 * crossed S/F in overtime (r->finished == 0 AND lap_count
+		 * < leader_laps) must not be checked here.  Cars with
+		 * r->finished set crossed S/F in overtime; cars whose
+		 * lap_count matches the leader completed the race even if
+		 * their final S/F crossing happened before PHASE_OVERTIME.
+		 */
+		if (!car->race.finished &&
+		    (uint32_t)car->race.lap_count < leader_laps)
 			continue;
 		r = &car->race;
 		/* Flush any in-progress stint before checking. */
