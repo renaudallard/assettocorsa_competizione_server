@@ -743,6 +743,12 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	{
 		uint32_t split_wire = split_time < 0
 		    ? LAP_TIME_INVALID : (uint32_t)split_time;
+		/* Exe FUN_14012b380 injects bit 0x0400 (isSessionOver) when
+		 * the session has ended server-side, so peers know this lap
+		 * completed after the session clock ran out. */
+		uint16_t relay_cf = car_field;
+		if (s->session.phase >= PHASE_OVERTIME)
+			relay_cf |= 0x0400;
 		int ts_off, i;
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
@@ -752,7 +758,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			goto done;
 		ts_off = (int)out.wpos;
 		if (wr_i32(&out, 0) < 0 ||   /* placeholder, patched per peer */
-		    wr_u16(&out, car_field) < 0)
+		    wr_u16(&out, relay_cf) < 0)
 			goto done;
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct Conn *peer = s->conns[i];
