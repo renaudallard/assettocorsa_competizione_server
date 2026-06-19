@@ -463,8 +463,14 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			if (lap_ms > 0)
 				race->total_race_time_ms += lap_ms;
 		}
-		if (!invalid)
+		/* Track last completed lap for 0x36 display: include cut laps,
+		 * exclude only out-laps (exe FUN_140127850 finds the most recent
+		 * entry in the global session history without a cut filter;
+		 * out-laps are excluded because they do not increment lap_count). */
+		if (!is_out_lap && lap_ms > 0) {
 			race->last_lap_ms = lap_ms;
+			race->completed_lap_flags = car_field;
+		}
 		if (!invalid && (race->best_lap_ms == 0 ||
 		    lap_ms < race->best_lap_ms))
 			race->best_lap_ms = lap_ms;

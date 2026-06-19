@@ -246,13 +246,21 @@ struct CarRaceState {
 	uint8_t		sectors_in_lap;		/* 0/1/2: sector splits in current lap */
 	/*
 	 * Last-known inbound lap-states / car_field word from the client's
-	 * 0x20/0x21 splits (exe car+0x54, copied to LeaderboardLine +0x1d0
-	 * for the 0x36 status word, and car+0x1e8 for the 0x3a/0x3c trailing
-	 * field).  Bits per FUN_140f8e8d0: 0x01 HasCut, 0x02 HasPenalty,
+	 * 0x20/0x21 splits (exe car+0x54, car+0x1e8 for the 0x3a/0x3c
+	 * trailing field).  Bits per FUN_140f8e8d0: 0x01 HasCut, 0x02 HasPenalty,
 	 * 0x04 IsOutLap, 0x08 IsInLap, 0x40 IsRetired, 0x80 IsDisqualified,
 	 * 0x400 IsSessionOver, 0x800 NextLapHasCut, etc.
 	 */
 	uint16_t	car_field;
+	/*
+	 * Lap-states word of the most recently completed non-out-lap.
+	 * Set at lap-end before the per-lap car_field reset.  Used as
+	 * the 0x36 status: exe FUN_140128a80:441 sets LL+0x1d0 from the
+	 * last completed lap history entry, not the in-progress car_field.
+	 * HasCut 0x01 tells AC2 to display the cut lap time in last_lap
+	 * but inhibit the timing-tower new-best commit.
+	 */
+	uint16_t	completed_lap_flags;
 	/*
 	 * Snapshot of sector_ms[] taken at lap-completion just before
 	 * the per-lap reset, so results.c's "lastSplits" field reflects

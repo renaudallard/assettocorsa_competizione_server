@@ -878,19 +878,15 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 * with no client-visible effect.  accd sets it below when a results-
 	 * phase time penalty applies (tp_ms > 0), mirroring the exe.
 	 *
-	 * The AC2 client's lap-time-completion gate (FUN_141021930:152) skips
-	 * the lap-time/best/sector commit and the timing-tower lap advance
-	 * whenever the word carries HasCut 0x01 / HasPenalty 0x02 /
-	 * IsOutLap 0x04 / IsInLap 0x08 / gate-bit 0x1000.  That freeze is
-	 * entirely client-side and is how the stock client behaves: a lap the
-	 * client itself flagged as cut shows no valid time, and a player who
-	 * cuts every lap sees the tower lap number stall; a clean lap (word
-	 * 0x0000) clears it.  v0.3.87 masked 0x180F here, which made accd more
-	 * lenient than the stock server; reverted to the verbatim echo.
-	 * The 0x3a/0x3c relays already carry the full word (live lap-states).
+	 * Emit the completed-lap flags word for the 0x36 status, matching
+	 * exe FUN_140128a80:441: LL+0x1d0 is set from the last completed
+	 * lap's history entry car_field, not from the in-progress car_field.
+	 * HasCut 0x01 in this word tells AC2 to display the cut lap time
+	 * in last_lap but inhibit the timing-tower new-best commit.
+	 * The in-progress car_field is carried by the 0x3a/0x3c relays.
 	 */
 	{
-		uint16_t status = race->car_field;
+		uint16_t status = race->completed_lap_flags;
 		if (tp_ms > 0)
 			status |= 0x2000;	/* PostRaceTime marker */
 		if (wr_u16(bb, status) < 0)
