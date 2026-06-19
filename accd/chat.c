@@ -611,9 +611,7 @@ chat_do_track(struct Server *s, const char *args,
 	name = args;
 	if (*name == '\0') {
 		if (reply != NULL)
-			snprintf(reply, replysz,
-			    "current track: %s (type 'tracks' for list)",
-			    s->track);
+			snprintf(reply, replysz, "no track name specified");
 		return 0;
 	}
 
