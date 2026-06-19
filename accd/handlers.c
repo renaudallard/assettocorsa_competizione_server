@@ -1153,6 +1153,10 @@ h_out_of_track(struct Server *s, struct Conn *c,
 			return 0;
 		}
 		race->out_of_track_latched = 1;
+		/* Exe (FUN_1400142f0:728) writes car+0x1e8 |= 1 before
+		 * calling the 0x3c builder, so the relayed car_field has
+		 * HasCut (0x0001) set on the first cut of the lap. */
+		race->car_field |= 0x0001;
 		if (race->cuts_this_lap < 255)
 			race->cuts_this_lap++;
 		/*
