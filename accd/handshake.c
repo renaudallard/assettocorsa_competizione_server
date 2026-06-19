@@ -1309,28 +1309,45 @@ build_rating_summary(struct ByteBuf *bb, const struct Server *s)
 {
 	int j, nc = 0;
 
-	for (j = 0; j < ACC_MAX_CARS; j++)
-		if (s->cars[j].used)
-			nc++;
+	/*
+	 * Exe (FUN_14002f710:958-1019) counts and iterates the CONN vector,
+	 * not the car vector.  A disconnected driver's conn is removed from
+	 * the vector immediately; their car slot stays used until the zombie
+	 * reclaim window.  Iterating used-cars sent one stale entry per
+	 * disconnected driver.  Mirror the exe by counting AUTH'd non-SMPR
+	 * conns that own a car slot.
+	 */
+	for (j = 0; j < ACC_MAX_CARS; j++) {
+		const struct Conn *c = s->conns[j];
+
+		if (c == NULL || c->state != CONN_AUTH || c->is_smpr ||
+		    c->car_id < 0)
+			continue;
+		nc++;
+	}
 	if (wr_u8(bb, SRV_RATING_SUMMARY) < 0) return -1;
 	if (wr_u8(bb, (uint8_t)nc) < 0) return -1;
 	for (j = 0; j < ACC_MAX_CARS; j++) {
+		const struct Conn *c = s->conns[j];
+		const struct CarEntry *car;
 		uint16_t sa = 5000, tr = 5000;
 		const char *sid;
 		uint8_t di;
 
-		if (!s->cars[j].used)
+		if (c == NULL || c->state != CONN_AUTH || c->is_smpr ||
+		    c->car_id < 0)
 			continue;
+		car = &s->cars[c->car_id];
 		/*
 		 * Emit the CURRENT driver's rating, matching the driver
 		 * ratings_on_lap evolves (handlers.c).  Using drivers[0]
 		 * would show a stale co-driver's rating after a swap.
 		 */
-		di = s->cars[j].current_driver_index < s->cars[j].driver_count
-		    ? s->cars[j].current_driver_index : 0;
-		sid = s->cars[j].drivers[di].steam_id;
+		di = car->current_driver_index < car->driver_count
+		    ? car->current_driver_index : 0;
+		sid = car->drivers[di].steam_id;
 		ratings_get(s, sid, &sa, &tr);
-		if (wr_u16(bb, s->cars[j].car_id) < 0) return -1;
+		if (wr_u16(bb, car->car_id) < 0) return -1;
 		if (wr_u8(bb, 0) < 0) return -1;
 		if (wr_u16(bb, (uint16_t)(sa / 10)) < 0) return -1;
 		if (wr_u16(bb, (uint16_t)(sa / 10)) < 0) return -1;
