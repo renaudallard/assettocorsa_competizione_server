@@ -1109,8 +1109,13 @@ session_tick(struct Server *s)
 					car->race.quali_eligible_to_finish = 0;
 					continue;
 				}
+				/* Exe FUN_140042890 (param_2==0 path):
+				 * eligible requires Track flag AND no
+				 * HasCut (car+0x1e8 & 1 == 0); a car
+				 * already cut cannot convert its lap. */
 				if (car->race.on_track &&
-				    !car->race.in_pit) {
+				    !car->race.in_pit &&
+				    !(car->race.car_field & 0x0001)) {
 					car->race.quali_eligible_to_finish = 1;
 					eligible++;
 				} else {
