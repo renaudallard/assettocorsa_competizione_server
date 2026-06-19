@@ -2143,21 +2143,12 @@ handshake_handle(struct Server *s, struct Conn *c,
 
 	/*
 	 * Carless observer (exe FUN_140033980): a spectatorPassword
-	 * connection takes no car slot.  Skip the driver-info parse, the
-	 * car allocation, and all driver-only session gates; reach the
-	 * welcome with car_id = -1 so its own-car field is emitted as
-	 * 0xffffffff and the AC2 client renders a free camera.  The
-	 * spectator stays in the connection table and receives every
-	 * broadcast (0x36 / 0x28 / 0x37 / 0x39) fanned over the conn list.
+	 * connection takes no car slot.  Still parse driver info so
+	 * the steam_id is available for the ban/kick check below —
+	 * exe FUN_140025690:281-338 walks the ban/kick lists before
+	 * reaching the spectator path at line 1269.  The spectator
+	 * exit is placed after those checks, before car allocation.
 	 */
-	if (c->is_spectator) {
-		c->car_id = -1;
-		c->state = CONN_AUTH;
-		log_kunos("Sending initData with -1 carIndex, meaning "
-		    "connectionId %u enters as spectator",
-		    (unsigned)c->conn_id);
-		goto reply;
-	}
 
 	/*
 	 * Save the raw handshake body (after password) for echoing
@@ -2323,14 +2314,23 @@ handshake_handle(struct Server *s, struct Conn *c,
 			goto reply;
 		}
 
+		/* Spectator exit: ban/kick passed, skip car allocation. */
+		if (c->is_spectator) {
+			c->car_id = -1;
+			c->state = CONN_AUTH;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			log_kunos("Sending initData with -1 carIndex, meaning "
+			    "connectionId %u enters as spectator",
+			    (unsigned)c->conn_id);
+			goto reply;
+		}
+
 		/*
 		 * Join rating / competition gate (FUN_140025690).  The
 		 * trackMedals / SA / RC / competition values are the client-
 		 * declared ratings read off the wire numeric block above; the
-		 * original server trusts them like the steam_id.  accd's local
-		 * ratings.c ledger is an accd-only feature and is NOT the gate
-		 * source.  Carless spectators have already branched away, so
-		 * no spectator guard is needed here.
+		 * original server trusts them like the steam_id.
 		 *
 		 * A CP server (isCPServer) accepts connections only during
 		 * Free Practice (session_type 0) and gates on the competition-
