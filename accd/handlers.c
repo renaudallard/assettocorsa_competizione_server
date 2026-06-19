@@ -781,6 +781,7 @@ h_chat(struct Server *s, struct Conn *c,
 	char *text = NULL;
 	const char *sender;
 	int handled;
+	int32_t client_ts_ms = 0;
 	struct ByteBuf out;
 
 	/*
@@ -789,7 +790,7 @@ h_chat(struct Server *s, struct Conn *c,
 	 *   u8  0x2a
 	 *   str_a text         (single string; max 35 codepoints per
 	 *                       kunos's FUN_1400142f0 case 0x2a)
-	 *   i32 client_ts_ms   (server-side ignored by kunos)
+	 *   i32 client_ts_ms   (echoed verbatim in the relayed 0x2b)
 	 *
 	 * Sender is server-side: the per-car driver name resolved from
 	 * the connection's car_id, not the wire.  Previously this handler
@@ -806,13 +807,10 @@ h_chat(struct Server *s, struct Conn *c,
 		free(text);
 		return 0;
 	}
-	/* The trailing i32 timestamp is read for completeness but
-	 * doesn't gate anything — kunos doesn't consume it either. */
-	{
-		int32_t client_ts_ms;
-		(void)rd_i32(&r, &client_ts_ms);
-		(void)client_ts_ms;
-	}
+	/* Trailing i32 from AC2 client (param_1+0x650 in FUN_14352d760).
+	 * The exe echoes it verbatim into the relayed 0x2b (FUN_140033030:26),
+	 * so we capture it here for use in the broadcast below. */
+	(void)rd_i32(&r, &client_ts_ms);
 	/*
 	 * Sender: driver display name from the car_entry.  Falls back
 	 * to "BOT_N" / numeric id if the car has no driver string.
