@@ -460,6 +460,8 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			 * field and the 0x3c relay. */
 			race->car_field = car_field;
 			race->lap_count++;
+			if (lap_ms > 0)
+				race->total_race_time_ms += lap_ms;
 		}
 		if (!invalid)
 			race->last_lap_ms = lap_ms;
@@ -888,7 +890,7 @@ h_chat(struct Server *s, struct Conn *c,
 		if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 		    wr_str_a(&out, sender) == 0 &&
 		    wr_str_a(&out, text) == 0 &&
-		    wr_i32(&out, 0) == 0 &&
+		    wr_i32(&out, client_ts_ms) == 0 &&
 		    wr_u8(&out, 0) == 0)
 			(void)bcast_all(s, out.data, out.wpos,
 			    BCAST_EXCEPT_NONE);
