@@ -1259,6 +1259,16 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				if (pq->slots[pi].served)
 					continue;
 				/*
+				 * Admin-issued fresh entries: exe FUN_140125f50
+				 * fresh branch (lines 147-153) writes only
+				 * PenaltySheet metadata and does not push a
+				 * Penalty object, so the inner vector (source
+				 * of +0x200/+0x201) stays empty.  Skip admin
+				 * entries here to match that behaviour.
+				 */
+				if (pq->slots[pi].admin)
+					continue;
+				/*
 				 * Archived-session emit only: hide pending
 				 * (client-0x41) entries.  In the current
 				 * session the tail follows the latest report
