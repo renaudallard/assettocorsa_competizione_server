@@ -1970,6 +1970,36 @@ handshake_send_state_sync(struct Conn *new_conn, struct Server *s)
 }
 
 /*
+ * Return 1 if car model byte is permitted in the configured carGroup.
+ * Mirrors FUN_140025690:1062-1135 (exe DAT_140143e30=GT3, e38=GT4,
+ * e50=GT2, e48=Cup, e40=ST; verified from exe binary wchar_t data).
+ * TCX and GTC are NOT enforced by the exe at the handshake layer;
+ * they only affect the lobby wire byte (FUN_140116480).  Unknown
+ * groups fall through and admit all cars, matching exe LAB_14002749d.
+ */
+static int
+car_in_group(const char *group, uint8_t model)
+{
+	if (strcmp(group, "FreeForAll") == 0)
+		return 1;
+	if (strcmp(group, "GT3") == 0)
+		return (uint8_t)(model - 0x32) > 0x0b &&
+		    (model > 0x1a ||
+		    ((0x4040200U >> (model & 0x1f)) & 1) == 0);
+	if (strcmp(group, "GT4") == 0)
+		return (uint8_t)(model - 0x32) <= 0x0b;
+	if (strcmp(group, "GT2") == 0)
+		return (uint8_t)(model - 0x1a) <= 0x3c &&
+		    ((0x1fc0000000000009ULL >>
+		    ((uint64_t)(model - 0x1a) & 0x3f)) & 1) == 1;
+	if (strcmp(group, "Cup") == 0)
+		return model == 9 || model == 0x1a;
+	if (strcmp(group, "ST") == 0)
+		return model == 0x12;
+	return 1;
+}
+
+/*
  * Send a 0x0b accept response with the welcome trailer.
  * Header: u8(0x0b) + u16(udp_port) + u8(0x12) +
  * u16(conn_id) + u32(car_id).
@@ -2601,6 +2631,23 @@ handshake_handle(struct Server *s, struct Conn *c,
 				free(steam); free(team);
 				goto reply;
 			}
+		}
+
+		/*
+		 * carGroup model enforcement (exe FUN_140025690:1062-1135).
+		 * "FreeForAll" (and TCX/GTC) admit all cars; GT3/GT4/GT2/
+		 * Cup/ST restrict to specific model ranges.  Reconnects
+		 * already branched via post_slot_assignment and skip this.
+		 * Reject reason 1 mirrors FUN_14002db30(1,0,0,0,...).
+		 */
+		if (!car_in_group(s->car_group, cmodel)) {
+			log_info("rejecting %s: car model %u not in "
+			    "group %s", steam_buf, (unsigned)cmodel,
+			    s->car_group);
+			reason = REJECT_BAD_GROUP;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
 		}
 
 		/*

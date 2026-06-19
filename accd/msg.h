@@ -142,6 +142,7 @@
  */
 enum reject_reason {
 	REJECT_OK         = 0,	/* not on the wire — "do not reject" */
+	REJECT_BAD_GROUP  = 1,	/* carModel does not match server carGroup */
 	REJECT_KICKED     = 4,
 	REJECT_BANNED     = 5,
 	REJECT_PASSWORD   = 6,
