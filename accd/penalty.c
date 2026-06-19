@@ -496,16 +496,14 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 					continue;
 				q->slots[i].kind = new_pen;
 				/*
-				 * Kunos's recreate uses the incoming report's
-				 * value when the incoming kind matches the old
-				 * severity (same-kind second report), and 0
-				 * otherwise.  Pcap (2-cat test): DT+cat0 then
-				 * DT+cat3 → stepped SG30 shows laps_remaining=3;
-				 * f0 test: DT then SG10 → stepped SG30 shows 0.
+				 * The exe hardcodes laps_remaining=3 for all
+				 * ladder steps (140125f50.c lines 181, 187).
+				 * Exception: DT incoming with current slot
+				 * already at SG+ uses 0 (line 163).
 				 */
 				q->slots[i].laps_remaining =
 				    (old_sev == EXE_DT && exe_kind > EXE_DT)
-				    ? 0 : value;
+				    ? 0 : 3;
 				q->slots[i].issued_ms = now_ms;
 				/* Reason updates to the incoming report's. */
 				q->slots[i].reason = reason;
