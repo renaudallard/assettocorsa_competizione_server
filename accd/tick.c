@@ -1529,9 +1529,14 @@ tick_run(struct Server *s)
 					    car->race.disqualified);
 				}
 			}
-			broadcast_session_results(s);
 			if (!s->session.results_written) {
 				/*
+				 * Exe (FUN_14002f710) writes the JSON file via
+				 * FUN_14010bc40 BEFORE emitting 0x3e.  Mirror
+				 * that order so a crash between the two steps
+				 * leaves a results file rather than a bare wire
+				 * broadcast.
+				 *
 				 * dumpLeaderboards = 1 in settings.json:
 				 * write the per-session results.json.
 				 * Operators who explicitly disable the
@@ -1569,6 +1574,7 @@ tick_run(struct Server *s)
 				}
 				s->session.results_written = 1;
 			}
+			broadcast_session_results(s);
 			/*
 			 * Snapshot per-car race state so future 0x56
 			 * garage requests for this session's laps can
