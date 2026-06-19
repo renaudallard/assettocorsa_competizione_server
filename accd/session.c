@@ -1159,23 +1159,42 @@ session_tick(struct Server *s)
 	}
 
 	/*
-	 * Release an active overtime hold when every on-track car
-	 * has left (disconnect mid-overtime).  Without this the
-	 * race session can be stuck in OVERTIME forever if the
-	 * holding drivers vanish without completing another lap.
+	 * Release an active overtime hold when no car is still actively
+	 * racing.
+	 *
+	 * Race sessions mirror exe FUN_14002f710 (phase==6 block) which
+	 * calls FUN_140042890 per car: a non-finished car is considered
+	 * still racing if (now - car+0x158 <= 300000 ms).  car+0x158 is
+	 * last_moved_ms, updated on every 0x1e where |vec_c| > 5 km/h.
+	 * When no non-finished car has moved in the last 300 s the hold
+	 * releases.  Handles crashes, disconnects, and long pit stops
+	 * without requiring a lap completion to decrement a counter.
+	 *
+	 * Quali and other session types fall back to the approximate
+	 * lap_count + !in_pit check (handled via the eligibility set).
 	 */
 	if (s->session.overtime_hold) {
 		int i, still_racing = 0;
 		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
 		    i++) {
-			if (!s->cars[i].used)
+			struct CarEntry *car = &s->cars[i];
+			if (!car->used)
 				continue;
-			if (s->cars[i].race.lap_count > 0 &&
-			    !s->cars[i].race.in_pit)
-				still_racing++;
+			if (session_is_race(s)) {
+				if (car->race.finished)
+					continue;
+				if (car->rt.last_moved_ms > 0 &&
+				    now - car->rt.last_moved_ms <=
+				    300000ull)
+					still_racing++;
+			} else {
+				if (car->race.lap_count > 0 &&
+				    !car->race.in_pit)
+					still_racing++;
+			}
 		}
 		if (still_racing == 0) {
-			log_info("overtime: all racing cars left, "
+			log_info("overtime: no car still racing, "
 			    "releasing hold");
 			s->session.overtime_hold = 0;
 			s->session.cars_in_overtime = 0;
