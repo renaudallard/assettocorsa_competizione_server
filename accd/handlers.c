@@ -2526,6 +2526,16 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	car = &s->cars[c->car_id];
 	rt = &car->rt;
 
+	/* Mirror exe FUN_140042900:71-80: warn when the client clock
+	 * is ahead of the server clock by more than the threshold. */
+	{
+		uint32_t server_now32 = (uint32_t)mono_ms();
+		int threshold = s->legacy_netcode ? 25 : 5;
+		if ((int32_t)(client_ts_ms - server_now32) > threshold)
+			log_warn("onCarUpdate: timestamp %d ms in future",
+			    (int32_t)(client_ts_ms - server_now32));
+	}
+
 	/*
 	 * Drop outdated packets, mirroring exe FUN_140042900:
 	 *
