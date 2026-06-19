@@ -243,7 +243,6 @@ struct CarRaceState {
 	 */
 	int32_t		lap_split_buf[3];
 	uint8_t		lap_split_n;
-	uint8_t		sectors_in_lap;		/* 0/1/2: sector splits in current lap */
 	/*
 	 * Last-known inbound lap-states / car_field word from the client's
 	 * 0x20/0x21 splits (exe car+0x54, car+0x1e8 for the 0x3a/0x3c
