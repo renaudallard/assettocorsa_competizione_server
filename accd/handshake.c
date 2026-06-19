@@ -1534,8 +1534,8 @@ write_track_records(struct ByteBuf *bb, struct Server *s)
  * MultiplayerTrackRecord::writeToPacket (FUN_14011da70) — 19 bytes.
  * No direct decomp; the field purpose is a "best lap record" for the
  * circuit (signed sentinels when none recorded).  Bytes 6..11 carry
- * the 0xffd0ffffffff sentinel verified against a v1.10.2 welcome
- * capture (resp_00_0x0b.bin).
+ * the 0xfff0ffffffff sentinel verified against kunos_welcome7.bin and
+ * welcome2.bin (both kunos captures confirm byte 7 = 0xf0).
  */
 static int
 write_mtr(struct ByteBuf *bb, struct Server *s)
