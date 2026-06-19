@@ -631,19 +631,17 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 	int j, d, nc = 0;
 	/*
 	 * cvar8 gates whether AC2 reads the per-car +0x204
-	 * missingMandatoryPitstop field from the wire.  Kunos pcap
-	 * (2026-05-09 Practice scenario): cvar8=0 with no mandatory pit.
-	 * Kunos pcap (2026-05-11 1-min Race scenario): cvar8=1 always in
-	 * race regardless of mandatory_pit_count.  So the rule is "1 if
-	 * mandatory_pit configured OR session being reported is Race".
-	 *
-	 * The 0x3e race-end emit invokes us once per completed session
-	 * with that session's own type so practice entries inside a
-	 * race-end results frame get cvar8=0 and race entries get
-	 * cvar8=1, matching kunos.
+	 * missingMandatoryPitstop field from the wire.  Exe derives cvar8
+	 * by scanning the LeaderboardLine vector for any entry whose
+	 * +0x204 field is >= 0 (FUN_140034a40:103), which only occurs for
+	 * Race sessions.  Practice/Qualifying always emit cvar8=0 even when
+	 * mandatory_pit_count > 0 because +0x204 is never set outside a
+	 * Race.  The 0x3e race-end emit invokes us once per completed
+	 * session with that session's own type so practice entries inside a
+	 * race-end results frame get cvar8=0 and race entries get cvar8=1.
 	 */
 	int in_race = (session_type == 10);
-	uint8_t cvar8 = (s->mandatory_pit_count > 0 || in_race) ? 1 : 0;
+	uint8_t cvar8 = in_race ? 1 : 0;
 	/*
 	 * results_ctx is the exe's FUN_140128a80 param_6 analog: true only
 	 * for the 0x3e race-results broadcast, where the exe folds each
