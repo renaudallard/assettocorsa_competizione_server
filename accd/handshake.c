@@ -1299,10 +1299,11 @@ write_car_leaderboard_record(struct ByteBuf *bb,
  * sites previously inlined this exact build, leading to two-site
  * drift hazard the moment the wire shape changes.  Body per-car
  * matches FUN_14002f710's tail layout: u16 car_id, u8 0, i16 SA,
- * i16 TR, i16 -1, i16 -1, str_a steam_id.  Ratings are stored ×100
- * internally but the 0x4e wire scale is ×10 (the AC2 client divides
- * each rating slot by 10 at 143526030), so the SA/TR slots are
- * emitted as the stored value /10.
+ * i16 SA (repeated, exe reads same conn offset twice), i16 -1,
+ * i16 -1, str_a steam_id.  Ratings are stored x100 internally but
+ * the 0x4e wire scale is x10 (the AC2 client divides each rating
+ * slot by 10 at 143526030), so the SA slots are emitted as the
+ * stored value /10.
  */
 int
 build_rating_summary(struct ByteBuf *bb, const struct Server *s)
