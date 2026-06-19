@@ -78,6 +78,7 @@ session_type_str(uint8_t t)
 	switch (t) {
 	case 0:		return "FP";
 	case 4:		return "Q";
+	case 9:		return "SP";
 	case 10:	return "R";
 	default:	return "FP";
 	}
