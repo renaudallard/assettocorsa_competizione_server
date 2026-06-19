@@ -429,10 +429,10 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 static const char *track_list[] = {
 	"monza", "misano", "paul_ricard", "silverstone", "spa",
 	"nurburgring", "hungaroring", "zandvoort", "brands_hatch",
-	"zolder", "barcelona", "mount_panorama_2019", "laguna_seca",
+	"zolder", "barcelona", "mount_panorama", "laguna_seca",
 	"suzuka", "kyalami", "oulton_park", "snetterton", "donington",
 	"imola", "watkins_glen", "cota", "indianapolis", "valencia",
-	"nurburgring_24h", "red_bull_ring",
+	"nurburgring_24h", "red_bull_ring", "paul_ricard_gt4",
 	NULL
 };
 
