@@ -560,7 +560,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			 * Record the S/F crossing timestamp as the start time
 			 * of the new open lap (mirrors exe lap_start_time at
 			 * car+0x1b8, set in FUN_1400142f0 at the 0x21 branch).
-			 * Used as tiebreaker in cmp_cars after sectors_in_lap:
+			 * Used as tiebreaker in cmp_cars for equal lap counts:
 			 * earlier crossing = further through the lap = ahead.
 			 */
 			race->race_time_ms = lap_time;
