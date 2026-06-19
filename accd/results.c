@@ -653,8 +653,12 @@ results_write(struct Server *s)
 				fprintf(f, ", \"penaltyValue\": %d,", pvalue);
 				fprintf(f, " \"violationInLap\": %d,",
 				    p->violation_lap);
-				fprintf(f, " \"clearedInLap\": %d",
-				    p->cleared_lap);
+				/*
+				 * Exe (FUN_140127440) creates a fresh TP entry
+				 * via FUN_140125f50 with cleared_lap = -1 (the
+				 * "not yet served" sentinel).  Use -1 here too.
+				 */
+				fprintf(f, " \"clearedInLap\": %d", -1);
 				fprintf(f, " }");
 				prp_first = 0;
 			}
