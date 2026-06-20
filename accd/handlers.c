@@ -595,7 +595,9 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		/* DT/SG serve-deadline countdown.  Three racing laps to
 		 * serve, else auto-DQ.  The exe always DQs a serve miss
 		 * (allowAutoDQ does not soften it). */
-		if (race->pen.count > 0 && !race->disqualified) {
+		/* Exe FUN_140125c60 iterates the penalty sheet with no
+		 * disqualified guard; mirror that unconditional check. */
+		if (race->pen.count > 0) {
 			int pi = penalty_first_unserved_dtsg(&race->pen);
 			struct PenaltyEntry *front = pi >= 0
 			    ? &race->pen.slots[pi] : NULL;
