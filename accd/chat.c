@@ -384,8 +384,10 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 		    : "You have been kicked from the server";
 
 		bb_init(&out);
+		/* Exe FUN_14001dae0 emits a zero-length sender string for
+		 * kick/ban 0x2b, not "Race Control". */
 		if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
-		    wr_str_a(&out, RC_SENDER) == 0 &&
+		    wr_str_a(&out, "") == 0 &&
 		    wr_str_a(&out, reason) == 0 &&
 		    wr_i32(&out, 0) == 0 &&
 		    wr_u8(&out, 5) == 0)
