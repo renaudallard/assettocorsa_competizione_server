@@ -238,6 +238,20 @@ config_load(struct Server *s, const char *cfg_dir)
 		return -1;
 	s->tcp_port = json_obj_get_int(configuration, "tcpPort", s->tcp_port);
 	s->udp_port = json_obj_get_int(configuration, "udpPort", s->udp_port);
+	/*
+	 * Deprecated maxClients (exe FUN_1401030e0:101): read it first as the
+	 * connection cap, log a deprecation notice, then let maxConnections
+	 * override.  A legacy config that only sets maxClients then keeps the
+	 * operator value instead of falling back to the default.
+	 */
+	{
+		int mc = json_obj_get_int(configuration, "maxClients", -1);
+		if (mc >= 0) {
+			log_warn("maxClients=%d is deprecated; please move to "
+			    "maxConnections", mc);
+			s->max_connections = mc;
+		}
+	}
 	s->max_connections = json_obj_get_int(configuration,
 	    "maxConnections", s->max_connections);
 	s->lan_discovery = json_obj_get_int(configuration,
