@@ -823,6 +823,10 @@ struct Conn {
 						 * relay projection uses this. */
 	uint8_t		i_fb_valid;		/* 1 after i_fb seeded (first pong) */
 	uint32_t	best_rtt_ms;		/* lowest pong RTT seen so far */
+	uint32_t	pong_threshold_ms;	/* 0x28 re-emit threshold: reset to
+						 * avg_rtt after each ring update
+						 * (exe FUN_1400420e0 stored_threshold);
+						 * emit fires when rtt < this value */
 	uint8_t		session_clock_seen;	/* 1 after first pong */
 	double		drift_ms;		/* clock drift acc (FUN_1400419e0
 						 * conn[0x280d0]): updated each 0x1e

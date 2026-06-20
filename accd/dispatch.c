@@ -419,7 +419,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		uint32_t pong_srv_ts = 0, pong_client_ts = 0;
 		struct Conn *pc;
 		uint32_t now_ms, rtt;
-		int new_min;
+		int new_min, emit_28;
 
 		rd_init(&pr, buf, len);
 		(void)rd_skip(&pr, 1);		/* msg_id */
@@ -483,6 +483,16 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		new_min = (!pc->session_clock_seen || rtt < pc->best_rtt_ms);
 		/*
+		 * 0x28 re-emit gate: mirrors exe FUN_1400420e0's stored_threshold
+		 * which is reset to avg_rtt after each ring update.  On the first
+		 * pong (session_clock_seen=0) always emit; thereafter emit when
+		 * the sample beats the previous pong's average (not the absolute
+		 * minimum), so a marginal improvement still refreshes the client's
+		 * time base even when best_rtt_ms is already set.
+		 */
+		emit_28 = (!pc->session_clock_seen ||
+		    rtt < pc->pong_threshold_ms);
+		/*
 		 * A future / forged pong_srv_ts makes (now - srv_ts) wrap to
 		 * a huge unsigned value whose signed form is negative.  Never
 		 * latch such a sample: otherwise the first pong would pin
@@ -539,6 +549,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			if (cnt > 0)
 				pc->avg_rtt_ms =
 				    (uint32_t)(sum / (unsigned)cnt);
+			pc->pong_threshold_ms = pc->avg_rtt_ms;
 		}
 		/*
 		 * Averaged-rtt/2 clock offset - the exe's FUN_1400420e0:82
@@ -580,7 +591,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * literal first pong left the client's timer slightly stale
 		 * after a sharper RTT estimate arrived.
 		 */
-		if (new_min && s->session.ts_valid) {
+		if (emit_28 && s->session.ts_valid) {
 			struct ByteBuf bb;
 
 			bb_init(&bb);
