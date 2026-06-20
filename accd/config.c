@@ -364,6 +364,15 @@ config_load(struct Server *s, const char *cfg_dir)
 		    settings, "trackMedalsRequirement", -1);
 		s->safety_rating_required = (uint8_t)json_obj_get_int(
 		    settings, "safetyRatingRequirement", -1);
+		/*
+		 * Intentional divergence: the stock exe reader FUN_140106300
+		 * matches the key "racecraftRatingRequirement " with a trailing
+		 * space (length 0x1b), while its own writer FUN_1401122f0 emits
+		 * the key without one (length 0x1a), so kunos silently ignores
+		 * this setting.  accd reads the correct key and honours it, so
+		 * an operator who sets racecraftRatingRequirement gets the
+		 * enforcement they asked for.
+		 */
 		s->racecraft_rating_required = (uint8_t)json_obj_get_int(
 		    settings, "racecraftRatingRequirement", -1);
 		/*
