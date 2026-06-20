@@ -731,12 +731,16 @@ config_load(struct Server *s, const char *cfg_dir)
 			if (stint_sec < 0)
 				stint_sec = 0;
 			/*
-			 * Fallback cascade matching FUN_14002aca0:
-			 * maxTotalDrivingTime defaults to the race session
-			 * duration + 10 min, then driverStintTimeSec falls
-			 * back to maxTotalDrivingTime when unset, so the
-			 * original server never silently disables stint
-			 * enforcement.
+			 * Fallback cascade matching FUN_14002aca0:366-388
+			 * ORDER exactly: back-propagate maxTotalDrivingTime
+			 * into the stint ONLY when it is already set, then
+			 * derive maxTotalDrivingTime = raceDuration + 10 min
+			 * ONLY when the stint is already set.  When BOTH keys
+			 * are absent the exe leaves driverStintTimeSec = 0 (no
+			 * stint enforcement).  The previous order filled
+			 * maxDrivingTime unconditionally and then derived a
+			 * non-zero stint, so accd over-emitted the 0x4f stint
+			 * sync and enforced a stint the stock server does not.
 			 */
 			for (si = 0; si < s->session_count &&
 			    si < ACC_MAX_SESSIONS; si++)
@@ -745,10 +749,10 @@ config_load(struct Server *s, const char *cfg_dir)
 					    s->sessions[si].duration_min * 60;
 					break;
 				}
-			if (max_drv_time < 1 && race_dur_s > 0)
-				max_drv_time = race_dur_s + 600;
 			if (stint_sec < 1 && max_drv_time > 0)
 				stint_sec = max_drv_time;
+			if (stint_sec > 0 && max_drv_time < 1 && race_dur_s > 0)
+				max_drv_time = race_dur_s + 600;
 			if (stint_sec > 86400)	/* cap at 24h */
 				stint_sec = 86400;
 			if (pit_count < 0)
