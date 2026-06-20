@@ -781,19 +781,30 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			if (!sess_over &&
 			    s->session.phase > PHASE_OVERTIME) {
 				uint32_t leader_laps = 0;
+				int leader_finished = 0;
 				int k;
 				for (k = 0; k < ACC_MAX_CARS; k++) {
 					const struct CarEntry *ce =
 					    &s->cars[k];
 					if (ce->driver_count > 0 &&
 					    (uint32_t)ce->race.lap_count >
-					    leader_laps)
+					    leader_laps) {
 						leader_laps = (uint32_t)
 						    ce->race.lap_count;
+						leader_finished =
+						    ce->race.finished;
+					}
 				}
 				if ((uint32_t)s->cars[c->car_id].race.lap_count
 				    >= leader_laps)
 					sess_over = 1;
+				else
+					/*
+					 * Lapped-down car: exe FUN_14012b380:31
+					 * copies the leader's finished latch into
+					 * isSessionOver instead of leaving it 0.
+					 */
+					sess_over = leader_finished;
 			}
 			if (sess_over)
 				relay_cf |= 0x0400;
