@@ -1445,21 +1445,14 @@ write_trailer_weather_data(struct ByteBuf *bb, const struct Server *s)
 
 /*
  * trailer_additional_state (FUN_1400330e0): per-session weather record
- * embedded in the welcome trailer.  The parser is FUN_14352cb30 in AC2
- * (log string "ACP_SERVER_RESPONSE.post readTrackConditionsUpdate"), which
- * dispatches via a vtable slot to read a type-specific body.  The body
- * size depends on whether the weather is dynamic or static:
- *
- *   Dynamic (randomness > 0): WeatherStatus vtable = 68 B total (17 f32).
- *     Identical wire layout to the periodic 0x37 broadcast.
- *
- *   Static (randomness = 0): WeatherData vtable = 84 B total.
- *     Head: 7 f32 (same); body: 12 WeatherData fields + i16 nSine(0) +
- *     i16 nCosine(0) = 52 B (FUN_14011e660, the same vtable method used
- *     for the TopLevel WeatherData section); time: 1 f32.
- *     Without the extra 16 B the client vtable dispatch over-reads into
- *     the following TrackRecords section (exe FUN_1400330e0 branch on
- *     param_1+0x314 / +0x315).
+ * embedded in the welcome trailer.  The exe serializer FUN_140033510
+ * writes a fixed 7 u32 head, dispatches one vtable body, then a 1 f32
+ * tail.  Every branch of FUN_1400330e0 (static and dynamic weather alike)
+ * builds the body with ksRacing::WeatherStatus::vftable = 9 floats, so
+ * the record is always 68 B (17 f32) regardless of weatherRandomness.
+ * The AC2 client reader FUN_14352cb30 is symmetric (7 u32 + WeatherStatus
+ * body + 1 f32).  The 84 B WeatherData body (FUN_14011e660) belongs only
+ * to the separate TopLevel WeatherData section, never to TrackConditions.
  */
 static int
 write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
@@ -1483,25 +1476,15 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	if (weather_write_track_conditions_head(bb, clouds, wet) < 0)
 		return -1;
 
-	if (!dyn) {
-		/*
-		 * Static weather: WeatherData vtable path (FUN_14011e660).
-		 * Writes the same 12-field layout as the TopLevel WeatherData
-		 * section followed by i16 nSine=0 and i16 nCosine=0.
-		 */
-		if (write_trailer_weather_data(bb, s) < 0)
-			return -1;
-	} else {
-		if (wr_f32(bb, ambient) < 0) return -1;
-		if (wr_f32(bb, road) < 0) return -1;
-		if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
-		if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
-		if (wr_f32(bb, clouds) < 0) return -1;
-		if (wr_f32(bb, rain) < 0) return -1;
-		if (wr_f32(bb, dry) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-		if (wr_f32(bb, 0.0f) < 0) return -1;
-	}
+	if (wr_f32(bb, ambient) < 0) return -1;
+	if (wr_f32(bb, road) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_speed) < 0) return -1;
+	if (wr_f32(bb, s->weather.wind_direction) < 0) return -1;
+	if (wr_f32(bb, clouds) < 0) return -1;
+	if (wr_f32(bb, rain) < 0) return -1;
+	if (wr_f32(bb, dry) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
+	if (wr_f32(bb, 0.0f) < 0) return -1;
 
 	if (wr_f32(bb, fmodf((float)s->session.weekend_time_s, 86400.0f)) < 0)
 		return -1;
