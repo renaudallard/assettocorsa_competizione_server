@@ -1436,6 +1436,13 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	 * through so accd applies them; the pending latch below keeps the DQ
 	 * tail-only on the wire like every other client report.
 	 */
+	/* Exe FUN_140125f50:86-89: kind=EXE_TP with value=0 clears the
+	 * TP accumulator (destructs all Penalty inner objects + zeroes
+	 * the descriptor).  Mirror that before the normal drop gate. */
+	if (value == 0 && kind == EXE_TP) {
+		penalty_clear_tp(s, c->car_id);
+		return 0;
+	}
 	if (value <= 0 && kind != EXE_DQ)
 		return 0;
 	{
