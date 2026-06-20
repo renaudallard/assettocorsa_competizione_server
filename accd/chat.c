@@ -359,14 +359,16 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 		log_warn("admin: car #%d has no active connection", car_num);
 		return;
 	}
-	{
-		struct DriverInfo *d = &s->cars[car_id].drivers[
-		    s->cars[car_id].current_driver_index];
-		snprintf(chat, sizeof(chat),
-		    permanent ? "%s %s has been banned from the server"
-		              : "%s %s has been kicked from the server",
-		    d->first_name, d->last_name);
-	}
+	/*
+	 * Exe FUN_14001dae0 builds the banner as "#<raceNumber> has been
+	 * kicked/banned from the server" (DAT_140149bc4 "#" + the car's
+	 * race number), not the driver name.  car_num is the race number
+	 * the admin typed, which resolved to this car.
+	 */
+	snprintf(chat, sizeof(chat),
+	    permanent ? "#%d has been banned from the server"
+	              : "#%d has been kicked from the server",
+	    car_num);
 	chat_broadcast(s, chat, 4);
 
 	/*
