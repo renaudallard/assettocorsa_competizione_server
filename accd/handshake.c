@@ -670,16 +670,16 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 		if (r == NULL)
 			continue;	/* didn't participate in this session */
 
-		if (!r->disqualified) {
-			if (r->best_lap_ms > 0 &&
-			    r->best_lap_ms < sess_best_lap)
-				sess_best_lap = r->best_lap_ms;
-			for (d = 0; d < 3; d++)
-				if (r->best_sectors_ms[d] > 0 &&
-				    r->best_sectors_ms[d] < sess_best_sec[d])
-					sess_best_sec[d] =
-					    r->best_sectors_ms[d];
-		}
+		/* Exe FUN_140128a80:421-424 has no DQ predicate on the
+		 * session-best update; include DQ'd cars unconditionally. */
+		if (r->best_lap_ms > 0 &&
+		    r->best_lap_ms < sess_best_lap)
+			sess_best_lap = r->best_lap_ms;
+		for (d = 0; d < 3; d++)
+			if (r->best_sectors_ms[d] > 0 &&
+			    r->best_sectors_ms[d] < sess_best_sec[d])
+				sess_best_sec[d] =
+				    r->best_sectors_ms[d];
 
 		/*
 		 * For archived sessions race_src_for already returned non-NULL
