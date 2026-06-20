@@ -1193,8 +1193,12 @@ session_tick(struct Server *s)
 				    300000ull)
 					still_racing++;
 			} else {
-				if (car->race.lap_count > 0 &&
-				    !car->race.in_pit)
+				/* Exe FUN_140042890 (param_2==0, non-race):
+				 * eligible iff on_track && !(car+0x1e8 & 1).
+				 * in_pit is redundant (in-pit cars have
+				 * on_track=0). */
+				if (car->race.on_track &&
+				    !(car->race.car_field & 0x0001))
 					still_racing++;
 			}
 		}
