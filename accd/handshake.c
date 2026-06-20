@@ -1988,6 +1988,53 @@ handshake_send_state_sync(struct Conn *new_conn, struct Server *s)
 }
 
 /*
+ * Send a proactive 0x4f sub=1 (stint started) to `new_conn` for every
+ * car whose driver stint is currently active (exe FUN_14002dcb0 sweep,
+ * only during PHASE_SESSION / PHASE_OVERTIME of a race session).
+ * Wire: u8 SRV_DRIVER_STINT_RELAY + u16 car_id + u8(1) + 8-byte double.
+ * The timestamp is the server-session-relative ms at which the stint
+ * started, matching the value the original 0x4f relay would have
+ * delivered to peers already present when the stint began.
+ */
+static void
+handshake_send_stint_sync(struct Conn *new_conn, struct Server *s)
+{
+	int i;
+
+	if (!session_is_race(s))
+		return;
+	if (s->session.phase != PHASE_SESSION &&
+	    s->session.phase != PHASE_OVERTIME)
+		return;
+
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct CarEntry *car = &s->cars[i];
+		struct ByteBuf out;
+		double ts_d;
+		uint8_t ts_bytes[8];
+
+		if (!car->used)
+			continue;
+		if (i == new_conn->car_id)
+			continue;
+		if (car->race.stint_start_ms == 0)
+			continue;
+
+		ts_d = (double)(car->race.stint_start_ms -
+		    s->session.phase_started_ms);
+		memcpy(ts_bytes, &ts_d, sizeof(ts_bytes));
+
+		bb_init(&out);
+		if (wr_u8(&out, SRV_DRIVER_STINT_RELAY) == 0 &&
+		    wr_u16(&out, car->car_id) == 0 &&
+		    wr_u8(&out, 1) == 0 &&
+		    bb_append(&out, ts_bytes, sizeof(ts_bytes)) == 0)
+			(void)conn_send_framed(new_conn, out.data, out.wpos);
+		bb_free(&out);
+	}
+}
+
+/*
  * Return 1 if car model byte is permitted in the configured carGroup.
  * Mirrors FUN_140025690:1062-1135 (exe DAT_140143e30=GT3, e38=GT4,
  * e50=GT2, e48=Cup, e40=ST; verified from exe binary wchar_t data).
@@ -2060,6 +2107,7 @@ handshake_send_accept(struct Conn *c, struct Server *s)
 
 	/* Proactive state sync for already-connected cars. */
 	handshake_send_state_sync(c, s);
+	handshake_send_stint_sync(c, s);
 
 	/*
 	 * Mid-race joiner: start this driver's stint now, mirroring the exe
@@ -3027,9 +3075,6 @@ reply:
 	 * sync (one 0x2e per car).  Verified: conn-lifecycle parity audit
 	 * 2026-06-01 + the 2026-05-10 2-bot pcap.
 	 *
-	 * Known low-severity gap: during an active race the exe also seeds
-	 * the joiner with a per-car 0x4f sub-opcode 1 (FUN_14002dcb0); accd's
-	 * state-sync emits only the 0x2e.  Mid-race joins only.
 	 */
 	{
 		(void)c;
