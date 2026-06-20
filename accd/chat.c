@@ -112,7 +112,7 @@ chat_broadcast(struct Server *s, const char *text, uint8_t chat_type)
 		return;
 	bb_init(&out);
 	if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
-	    wr_str_a(&out, RC_SENDER) == 0 &&
+	    wr_str_a(&out, "") == 0 &&
 	    wr_str_a(&out, text) == 0 &&
 	    wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
 	    wr_u8(&out, chat_type) == 0)
@@ -140,7 +140,7 @@ chat_reply(const struct Server *s, struct Conn *c,
 		return;
 	bb_init(&out);
 	if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
-	    wr_str_a(&out, RC_SENDER) == 0 &&
+	    wr_str_a(&out, "") == 0 &&
 	    wr_str_a(&out, text) == 0 &&
 	    wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
 	    wr_u8(&out, chat_type) == 0)
@@ -736,23 +736,16 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		}
 		c->last_admin_attempt_ms = now_ms;
 		if (strcmp(arg, s->admin_password) == 0) {
-			struct ByteBuf out;
 			c->is_admin = 1;
 			/*
 			 * Unicast the elevation reply only to the requesting
 			 * conn, matching the exe's FUN_140021680 admin path
-			 * (calls FUN_14004cc50 unicast).  chat_broadcast
-			 * here would announce "You are now server admin" to
-			 * every connected client, exposing the elevation.
+			 * (calls FUN_14004cc50 unicast).  chat_broadcast here
+			 * would announce it to every connected client, exposing
+			 * the elevation.  chat_reply carries the empty sender and
+			 * weekend_time_s timestamp the exe uses.
 			 */
-			bb_init(&out);
-			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
-			    wr_str_a(&out, RC_SENDER) == 0 &&
-			    wr_str_a(&out, "You are now server admin") == 0 &&
-			    wr_i32(&out, 0) == 0 &&
-			    wr_u8(&out, 4) == 0)
-				(void)bcast_send_one(c, out.data, out.wpos);
-			bb_free(&out);
+			chat_reply(s, c, "You are now server admin", 4);
 			log_info("admin: conn=%u elevated to admin",
 			    (unsigned)c->conn_id);
 		} else {

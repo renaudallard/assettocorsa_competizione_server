@@ -47,12 +47,12 @@
 #include "state.h"
 
 /*
- * Sender string for SRV_CHAT_OR_STATE messages originating from
- * the server (admin announcements, DSQ chat, kick/ban broadcasts).
- * The AC2 client groups chat by exact sender match, so a typo
- * would silently split the sender into two HUD lanes.
+ * Server-originated SRV_CHAT_OR_STATE messages (admin announcements,
+ * DSQ chat, kick/ban broadcasts) carry an EMPTY sender string, matching
+ * the exe (FUN_140021680 / FUN_14001dae0 leave the reply sender wstring
+ * zero-init); the chat_type byte (4 = Race Control banner) drives the
+ * client rendering, not the sender label.
  */
-#define RC_SENDER	"Race Control"
 
 /*
  * Process a chat message from c with the given UTF-8 text.

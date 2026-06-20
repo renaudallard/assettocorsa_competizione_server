@@ -2524,8 +2524,9 @@ h_ctrl_info(struct Server *s, struct Conn *c,
 		bb_init(&bb);
 		/*
 		 * Exe framing for this message: EMPTY sender name and
-		 * chat_type 0 (FUN_1400142f0:1438/1456), unlike the
-		 * RC_SENDER/type-4 used by other server-originated chat.
+		 * chat_type 0 (FUN_1400142f0:1438/1456), unlike the type-4
+		 * Race-Control banner used by other server-originated chat
+		 * (which also carries an empty sender).
 		 */
 		if (wr_u8(&bb, SRV_CHAT_OR_STATE) == 0 &&
 		    wr_str_a(&bb, "") == 0 &&
