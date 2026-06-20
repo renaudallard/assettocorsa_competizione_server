@@ -1993,6 +1993,16 @@ handshake_send_stint_sync(struct Conn *new_conn, struct Server *s)
 	if (s->session.phase != PHASE_SESSION &&
 	    s->session.phase != PHASE_OVERTIME)
 		return;
+	/*
+	 * The exe seeds the 0x4f stint-start frame only when stint
+	 * enforcement is active: FUN_14002dcb0 builds it inside
+	 * `if (param_4 != 0)` where param_4 = (driverStintTimeSec > 0)
+	 * (caller FUN_140025690:1365).  With no stint limit it sends only
+	 * the 0x2e state sync.  driver_stint_time_s tracks the same
+	 * post-fallback value, so gate on it.
+	 */
+	if (s->driver_stint_time_s == 0)
+		return;
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarEntry *car = &s->cars[i];
