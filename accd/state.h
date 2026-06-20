@@ -764,6 +764,8 @@ struct Conn {
 	enum conn_state	state;
 	uint16_t	conn_id;	/* server-assigned, also "carIndex" */
 	int32_t		car_id;		/* index into server.cars[], -1 if spectator */
+	char		steam_id[32];	/* parsed at handshake; drives the eager
+					 * same-SteamID dedup for spectators too */
 	int		is_admin;
 	uint64_t	last_admin_attempt_ms;	/* /admin rate limit anchor */
 	int		is_spectator;

@@ -2355,6 +2355,34 @@ handshake_handle(struct Server *s, struct Conn *c,
 			(void)rd_str_a(&r, &team);
 		}
 
+		/*
+		 * Eager same-SteamID dedup, mirroring the exe
+		 * (FUN_140025690:267-279): the instant a fresh handshake is
+		 * parsed, before the ban/kick/rating/slot gates, close any
+		 * existing connection (driver OR spectator) with a matching
+		 * SteamID.  accd's quick-reconnect below only covers live
+		 * driver slots after the gates, so a stale spectator or
+		 * rejected-rejoin socket would otherwise linger until the
+		 * passive UDP reaper.  Mark the old conn dead only; the driver
+		 * slot reclaim stays with the quick-reconnect (car_id untouched).
+		 */
+		if (steam_buf[0] != '\0') {
+			int dj;
+			for (dj = 0; dj < ACC_MAX_CARS; dj++) {
+				struct Conn *o = s->conns[dj];
+				if (o == NULL || o == c)
+					continue;
+				if (strcmp(o->steam_id, steam_buf) != 0)
+					continue;
+				log_info("closing old connection %u for "
+				    "SteamId %s during new handshake",
+				    (unsigned)o->conn_id, steam_buf);
+				o->state = CONN_DISCONNECT;
+			}
+			snprintf(c->steam_id, sizeof(c->steam_id), "%s",
+			    steam_buf);
+		}
+
 		/* Ban check. */
 		if (bans_contains(&s->bans, steam_buf)) {
 			log_debug("rejecting banned steam_id %s", steam_buf);
