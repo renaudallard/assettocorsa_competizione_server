@@ -768,12 +768,40 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	{
 		uint32_t split_wire = split_time < 0
 		    ? LAP_TIME_INVALID : (uint32_t)split_time;
-		/* Exe FUN_14012b380 injects bit 0x0400 (isSessionOver) when
-		 * the session has ended server-side, so peers know this lap
-		 * completed after the session clock ran out. */
+		/*
+		 * isSessionOver (lap-states bit 0x0400): exe FUN_14012b380
+		 * sets it per car, not as a flat phase gate.  Non-race flags
+		 * the lap once the session has fully ended, i.e. strictly past
+		 * the overtime grace window (exe gates on 5 < phase, not >=).
+		 * Race flags a car that already finished (race.finished
+		 * mirrors the exe's car+0x1d1 latch) and, after the session
+		 * completes, any car still running on the leader's lap.
+		 */
 		uint16_t relay_cf = car_field;
-		if (s->session.phase >= PHASE_OVERTIME)
+		if (session_is_race(s)) {
+			int sess_over = s->cars[c->car_id].race.finished;
+			if (!sess_over &&
+			    s->session.phase > PHASE_OVERTIME) {
+				uint32_t leader_laps = 0;
+				int k;
+				for (k = 0; k < ACC_MAX_CARS; k++) {
+					const struct CarEntry *ce =
+					    &s->cars[k];
+					if (ce->driver_count > 0 &&
+					    (uint32_t)ce->race.lap_count >
+					    leader_laps)
+						leader_laps = (uint32_t)
+						    ce->race.lap_count;
+				}
+				if ((uint32_t)s->cars[c->car_id].race.lap_count
+				    >= leader_laps)
+					sess_over = 1;
+			}
+			if (sess_over)
+				relay_cf |= 0x0400;
+		} else if (s->session.phase > PHASE_OVERTIME) {
 			relay_cf |= 0x0400;
+		}
 		int ts_off, i;
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
