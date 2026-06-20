@@ -453,6 +453,18 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			invalid = 1;
 
 		/*
+		 * Live best-lap and best-sector selection uses the exe's full
+		 * lap-states mask (FUN_140127850): the lap is rejected from
+		 * "best" if any bit in 0x100f is set (cut 0x01, 0x02, out-lap
+		 * 0x04, in-lap 0x08, hi-byte 0x1000) or the time is outside
+		 * [1, 0x7ffffffe].  This is stricter than `invalid` (cut +
+		 * out-lap only), which still gates lap_count / last_lap /
+		 * lap_history so cut laps keep ticking the counters.
+		 */
+		int valid_for_best = (car_field & 0x100f) == 0 &&
+		    lap_ms >= 1 && lap_ms <= 0x7ffffffe;
+
+		/*
 		 * Kunos pcap (admin_clear, Practice): after an out-lap
 		 * the 0x36 shows lap_count=0 and status=0x0000, proving
 		 * the exe skips both updates for out-laps.  Cut laps and
@@ -475,7 +487,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->last_lap_ms = lap_ms;
 			race->completed_lap_flags = car_field;
 		}
-		if (!invalid && (race->best_lap_ms == 0 ||
+		if (valid_for_best && (race->best_lap_ms == 0 ||
 		    lap_ms < race->best_lap_ms)) {
 			race->best_lap_ms = lap_ms;
 			race->best_lap_set_at_ms = mono_ms();
@@ -511,25 +523,20 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 * Results-log append: record EVERY completed lap (valid and
 		 * invalid) in global completion order for the results.json
 		 * laps[] array, independent of the valid-only 16-slot ring
-		 * above.  isValidForBest mirrors the exe's results verdict
-		 * (FUN_140129b10): invalid if any lap-states bit in 0x100f is
-		 * set or the laptime is outside [1, 0x7ffffffe].  This is
-		 * stricter than the live best_lap mask (cut + out-lap only),
-		 * which is left untouched so 0x36 byte-parity is preserved.
+		 * above.  isValidForBest reuses the same 0x100f verdict the
+		 * exe applies to both the live best (FUN_140127850) and the
+		 * results validity (FUN_140129b10).
 		 */
-		{
-			int valid_for_best = (car_field & 0x100f) == 0 &&
-			    lap_ms >= 1 && lap_ms <= 0x7ffffffe;
+		results_laps_append(s, s->cars[c->car_id].car_id,
+		    s->cars[c->car_id].current_driver_index,
+		    lap_ms, race->sector_ms, valid_for_best);
 
-			results_laps_append(s, s->cars[c->car_id].car_id,
-			    s->cars[c->car_id].current_driver_index,
-			    lap_ms, race->sector_ms, valid_for_best);
-		}
-
-		/* Best-sector tracking from the just-completed lap's
-		 * stored sector_ms[].  Skip invalid laps so a slow out-lap
-		 * or cut lap doesn't lock the session-best column. */
-		if (!invalid) {
+		/* Best-sector tracking from the just-completed lap's stored
+		 * sector_ms[].  Gated on the same 0x100f mask as best_lap so an
+		 * in-lap, cut, or out-lap doesn't lock the session-best column
+		 * (exe FUN_140127850 updates best sectors only for laps that
+		 * pass the mask). */
+		if (valid_for_best) {
 			int si;
 			for (si = 0; si < 3; si++) {
 				int32_t st = race->sector_ms[si];
