@@ -299,6 +299,11 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	/* Persist the lap-states word (exe car+0x54 / +0x1e8) for the 0x36
 	 * status field and the 0x3c relay. */
 	race->car_field = car_field;
+	/* Exe FUN_1400142f0:309 overwrites the full u16 at car+0x1e8 with
+	 * the client value, implicitly clearing the HasCut latch when bit 0
+	 * is absent.  Mirror: reset out_of_track_latched when HasCut=0. */
+	if (!(car_field & 0x0001))
+		race->out_of_track_latched = 0;
 	log_info("sector split: car=%d sector=%u time=%dms clock=%d",
 	    c->car_id, (unsigned)sector_index, (int)sector_time_ms,
 	    (int)clock_ms);
