@@ -476,8 +476,6 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			 * field and the 0x3c relay. */
 			race->car_field = car_field;
 			race->lap_count++;
-			if (lap_ms > 0)
-				race->total_race_time_ms += lap_ms;
 		}
 		/* Track last completed lap for 0x36 display: include cut laps,
 		 * exclude only out-laps (exe FUN_140127850 finds the most recent

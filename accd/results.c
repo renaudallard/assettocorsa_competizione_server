@@ -461,7 +461,7 @@ results_write(struct Server *s)
 		    car->race.best_sectors_ms[1],
 		    car->race.best_sectors_ms[2]);
 		fprintf(f, "          \"totalTime\": %d,\n",
-		    car->race.total_race_time_ms);
+		    car->race.race_time_ms);
 		fprintf(f, "          \"lapCount\": %d,\n",
 		    car->race.lap_count);
 		fprintf(f, "          \"lastSplitId\": 0\n");

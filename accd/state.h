@@ -275,7 +275,6 @@ struct CarRaceState {
 	int32_t		last_lap_splits_ms[3];
 	int32_t		best_sectors_ms[3];
 	int32_t		race_time_ms;
-	int32_t		total_race_time_ms;
 	int32_t		lap_history_ms[ACC_LAP_HISTORY];
 	/*
 	 * Per-lap sector splits captured at lap-completion time
