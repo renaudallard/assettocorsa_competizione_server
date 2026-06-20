@@ -190,9 +190,14 @@ probe: probe.c
 #     reject with "failed with value 13")
 #   - the 0x0c reject reply carries the right code for the right
 #     reason (wrong-version=7, wrong-password=6, accept=0x0b)
+#   - fake_client.py walks the welcome trailer byte-by-byte (driver +
+#     spectator) the way the AC2 client does, catching size drift in
+#     any of the 11 sections to EOF (this is what flagged the 84 B
+#     TrackConditions overrun the smoke test alone missed)
 test: ${PROG}
 	python3 tests/smoke_handshake.py
 	python3 tests/smoke_reject_codes.py
+	sh tests/integration/run_welcome_trailer_walk.sh
 
 clean:
 	rm -f ${PROG} ${OBJS} probe

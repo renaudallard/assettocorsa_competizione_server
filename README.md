@@ -722,7 +722,7 @@ printf '\x04\x00\x09\x00\x01\x00' | nc -q 1 127.0.0.1 9232 | xxd
 
 ```sh
 cd accd
-make test                                        # python smoke pair
+make test                # handshake + reject smokes + welcome-trailer walk
 ```
 
 For the full integration suite (60+ scripts covering every wire
