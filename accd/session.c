@@ -1216,6 +1216,18 @@ session_tick(struct Server *s)
 			    "releasing hold");
 			s->session.overtime_hold = 0;
 			s->session.cars_in_overtime = 0;
+			/*
+			 * Collapse the held boundaries like every other
+			 * overtime-release path (skip-grace 1091, leader-finish
+			 * 1170, overtime_car_finished): ts[5]=now ends the
+			 * grace immediately and ts[6]=now+post_grace arms a real
+			 * aftercare end.  Without this the schedule stayed at the
+			 * original far-future ts[5] when sessionOverTimeSeconds
+			 * exceeds the 300 s no-movement window, so the phase
+			 * machine lingered instead of advancing.
+			 */
+			s->session.ts[5] = now;
+			s->session.ts[6] = now + post_grace_ms(s);
 		}
 	}
 
