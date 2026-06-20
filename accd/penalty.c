@@ -590,8 +590,9 @@ penalty_serve_front(struct Server *s, int car_id)
 	 * silently removed and the penalty would look perpetually open.
 	 */
 	q->slots[idx].served = 1;
+	/* 0-based lap index matching violation_lap and exe FUN_140126b50. */
 	q->slots[idx].cleared_lap =
-	    (int16_t)(s->cars[car_id].race.lap_count + 1);
+	    (int16_t)s->cars[car_id].race.lap_count;
 	q->slots[idx].laps_remaining = 0;
 	/*
 	 * Mirror FUN_140126b50: after serving a DT/SG the PenaltySheet's
@@ -854,7 +855,7 @@ penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count)
 		 * sets cleared_lap to the current lap.  Record that here so
 		 * results.json writes the correct clearedInLap value.
 		 */
-		p->cleared_lap = (int16_t)(lap_count + 1);
+		p->cleared_lap = (int16_t)lap_count;
 		/*
 		 * Preserve laps_remaining — kunos's 0x3e per-car tail
 		 * reads the original DT/SG value (e.g. 3 for a 3-cut
