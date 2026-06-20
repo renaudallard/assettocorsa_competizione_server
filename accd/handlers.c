@@ -2816,6 +2816,13 @@ h_udp_car_info_request(struct Server *s,
 	 */
 	if (requester->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
 		return 0;
+	/*
+	 * Refresh the requester's UDP liveness: the exe writes conn+0xa01e8
+	 * = now before building the 0x23 reply (FUN_140027f80:663), the same
+	 * field the 5 s dead-connection reaper reads, so a conn that emits
+	 * only 0x22 stays alive.  Mirrors the 0x1e handler.
+	 */
+	requester->last_udp_server_ms = (uint32_t)mono_ms();
 
 	slot = (int)target_car_id - ACC_CAR_ID_BASE;
 	if (slot < 0 || slot >= ACC_MAX_CARS || !s->cars[slot].used) {
