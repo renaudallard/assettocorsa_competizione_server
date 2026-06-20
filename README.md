@@ -339,6 +339,7 @@ plain UTF-8 — detection is automatic.
     "udpPort": 9231,
     "tcpPort": 9232,
     "maxConnections": 30,
+    "registerToLobby": 0,
     "statsUdpPort": 0,
     "configVersion": 1
 }
@@ -366,7 +367,6 @@ the server browser will show 24, not 30.
     "spectatorPassword": "",
     "maxCarSlots": 30,
     "allowAutoDQ": 1,
-    "registerToLobby": 1,
     "lanDiscovery": 1,
     "useAsyncLeaderboard": 0,
     "unsafeRejoin": 1,

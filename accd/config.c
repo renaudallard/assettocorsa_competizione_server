@@ -246,6 +246,15 @@ config_load(struct Server *s, const char *cfg_dir)
 	    "serverDiagnosticsUdpPort", 0);
 	s->configuration_version = (uint32_t)json_obj_get_int(
 	    configuration, "configVersion", 0);
+	/*
+	 * registerToLobby lives in configuration.json (exe FUN_1401030e0:165);
+	 * the settings.json reader FUN_140106300 never looks at it.  Reading it
+	 * from settings.json ignored every stock public config and silently
+	 * forced accd private, flipping the maxCarSlots clamp, preRaceWaiting
+	 * floor, forceEntryList / allowAutoDQ forcing and formationLapType remap.
+	 */
+	s->register_to_lobby = json_obj_get_int(configuration,
+	    "registerToLobby", s->register_to_lobby);
 	json_free(configuration);
 
 	settings = load_json(cfg_dir, "settings.json");
@@ -273,8 +282,6 @@ config_load(struct Server *s, const char *cfg_dir)
 		    "dumpEntryList", s->dump_entry_list);
 		s->allow_auto_dq = json_obj_get_int(settings,
 		    "allowAutoDQ", s->allow_auto_dq);
-		s->register_to_lobby = json_obj_get_int(settings,
-		    "registerToLobby", s->register_to_lobby);
 		s->use_async_leaderboard = (uint8_t)json_obj_get_int(
 		    settings, "useAsyncLeaderboard",
 		    s->use_async_leaderboard);
