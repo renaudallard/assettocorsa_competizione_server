@@ -114,7 +114,7 @@ int	session_is_practice_or_qualy(const struct Server *s);
  * Decrements the cars-still-racing counter; releases the
  * overtime hold when all cars have finished.
  */
-void	session_overtime_car_finished(struct Server *s);
+void	session_overtime_car_finished(struct Server *s, int car_id);
 
 /*
  * Quali "Right to Finish" / "Instant Drop": clear a car's

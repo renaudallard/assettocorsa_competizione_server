@@ -734,7 +734,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			 */
 			if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS)
 				s->cars[c->car_id].race.finished = 1;
-			session_overtime_car_finished(s);
+			session_overtime_car_finished(s, c->car_id);
 			session_quali_drop_eligibility(s, c->car_id);
 		}
 	}

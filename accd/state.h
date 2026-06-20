@@ -455,6 +455,10 @@ struct SessionState {
 	 * the hold is force-released regardless of cars_in_overtime.
 	 */
 	uint64_t	overtime_hold_started_ms;
+	uint8_t		overtime_leader_armed;	/* SM+0x262: 1 = leader-finish
+						 * one-shot not yet fired;
+						 * exe FUN_14012ed70 fires it
+						 * once and clears the flag */
 
 	/*
 	 * Race green-flag position gate (FUN_14012f4a0 in accServer.exe).

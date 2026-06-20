@@ -1094,6 +1094,8 @@ session_tick(struct Server *s)
 			s->session.overtime_hold = 1;
 			s->session.cars_in_overtime = (int16_t)racing;
 			s->session.overtime_hold_started_ms = now;
+			/* Arm the leader-finish one-shot (SM+0x262). */
+			s->session.overtime_leader_armed = 1;
 			log_info("overtime: hold active, %d cars racing "
 			    "(hard cap in %us)", racing,
 			    (unsigned)s->session_overtime_s);
@@ -1262,8 +1264,10 @@ session_tick(struct Server *s)
  * and adjusts ts[5] to let the phase advance.
  */
 void
-session_overtime_car_finished(struct Server *s)
+session_overtime_car_finished(struct Server *s, int car_id)
 {
+	uint64_t now;
+
 	if (!s->session.overtime_hold)
 		return;
 	/*
@@ -1275,16 +1279,39 @@ session_overtime_car_finished(struct Server *s)
 	 */
 	if (!session_is_race(s))
 		return;
+
+	now = mono_ms();
+
+	/*
+	 * Leader-finish one-shot (SM+0x262, exe FUN_14012ed70): when the
+	 * race leader crosses S/F during overtime, set ts[6] = now +
+	 * post_race_s.  This fires only once (the arm flag is cleared so
+	 * subsequent finishers don't reset ts[6] further out).
+	 */
+	if (s->session.overtime_leader_armed &&
+	    car_id >= 0 && car_id < ACC_MAX_CARS &&
+	    s->cars[car_id].race.position == 1) {
+		uint64_t grace = post_grace_ms(s);
+		s->session.overtime_leader_armed = 0;
+		s->session.ts[6] = now + grace;
+		log_info("overtime: leader finished, ts[6]=now+%llums",
+		    (unsigned long long)grace);
+	}
+
 	if (s->session.cars_in_overtime > 0)
 		s->session.cars_in_overtime--;
 	if (s->session.cars_in_overtime <= 0) {
-		uint64_t now = mono_ms();
-		uint64_t grace = post_grace_ms(s);
+		/*
+		 * All remaining cars finished: collapse ts[6] to now
+		 * (exe FUN_14012e140 sets SM+0x220 = param_2 = now).
+		 * If the leader one-shot already set ts[6] = now+grace,
+		 * this overrides it with an immediate advance, ending the
+		 * aftercare instantly once the last car is done.
+		 */
 		s->session.overtime_hold = 0;
 		s->session.ts[5] = now;
-		s->session.ts[6] = now + grace;
-		log_info("overtime: all cars finished, releasing hold "
-		    "(post=%llums)", (unsigned long long)grace);
+		s->session.ts[6] = now;
+		log_info("overtime: all cars finished, collapsing to now");
 	} else {
 		log_info("overtime: %d cars still racing",
 		    (int)s->session.cars_in_overtime);
