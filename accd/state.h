@@ -230,6 +230,11 @@ struct CarRaceState {
 	int16_t		grid_position;
 	int32_t		lap_count;
 	int32_t		best_lap_ms;
+	uint64_t	best_lap_set_at_ms;	/* mono_ms when best_lap_ms was
+						 * set; tiebreaker in P/Q sort
+						 * (exe FUN_140120c90:74 compares
+						 * a session-time-of-best double
+						 * at lap+0x58) */
 	int32_t		last_lap_ms;
 	int32_t		current_lap_ms;
 	int32_t		sector_ms[3];

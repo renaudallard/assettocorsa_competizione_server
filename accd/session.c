@@ -797,7 +797,14 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 			return 1;
 		if (lb == 0)
 			return -1;
-		return la < lb ? -1 : (la > lb ? 1 : 0);
+		if (la != lb)
+			return la < lb ? -1 : 1;
+		/* Exe FUN_140120c90:74 tiebreaks by session-time-of-best:
+		 * the lap set earlier ranks higher. */
+		if (ra->best_lap_set_at_ms != rb->best_lap_set_at_ms)
+			return ra->best_lap_set_at_ms < rb->best_lap_set_at_ms
+			    ? -1 : 1;
+		return 0;
 	}
 	/*
 	 * Mirror FUN_140127850: count only valid (non-cut, non-out-lap)

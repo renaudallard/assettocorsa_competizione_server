@@ -476,8 +476,10 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->completed_lap_flags = car_field;
 		}
 		if (!invalid && (race->best_lap_ms == 0 ||
-		    lap_ms < race->best_lap_ms))
+		    lap_ms < race->best_lap_ms)) {
 			race->best_lap_ms = lap_ms;
+			race->best_lap_set_at_ms = mono_ms();
+		}
 
 		/*
 		 * Per-car lap history (drives 0x36 list 2 + 0x56 garage).
