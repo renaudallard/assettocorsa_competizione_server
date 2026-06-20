@@ -151,6 +151,15 @@ h_lap_completed(struct Server *s, struct Conn *c,
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
+	/*
+	 * Normalize a signed-negative quality byte to 0xff: the exe reads
+	 * it as int8_t and for any value >= 0x80 captures the contact
+	 * quality as -1.0 (invalid), which round-trips back to 0xff in the
+	 * 0x1b relay (FUN_1400142f0:189, FUN_1400179b0:70-82).  Values
+	 * 0x00-0x7f and 0xff already round-trip unchanged.
+	 */
+	if ((int8_t)quality < 0)
+		quality = 0xff;
 
 	log_info("SA contact: conn=%u reporter=%u target=%u ts=%d qual=%u",
 	    (unsigned)c->conn_id, (unsigned)reporter_car_id,
