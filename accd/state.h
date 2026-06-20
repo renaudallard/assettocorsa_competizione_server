@@ -846,6 +846,11 @@ struct Conn {
 						 * at ~18 Hz so the pivot is never
 						 * more than ~55 ms stale). */
 	uint32_t	last_udp_server_ms;
+	uint64_t	last_keepalive_ms;	/* mono_ms of last 0x14 sent to
+						 * this conn; 0 = never.  Exe
+						 * FUN_140041e80 uses a per-conn
+						 * field (conn+0xa0238) rather than
+						 * a global timer. */
 	uint32_t	welcome_bytes;		/* size of last 0x0b welcome
 						 * trailer sent on this
 						 * conn — reported on the

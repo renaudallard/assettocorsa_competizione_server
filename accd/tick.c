@@ -541,6 +541,13 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 
 		if (c == NULL || c->state != CONN_AUTH || c->is_smpr)
 			continue;
+		/* Exe FUN_140041e80 uses a per-connection timer
+		 * (conn+0xa0238) so each conn's 0x14 cadence is
+		 * independent.  Gate here and stamp on send. */
+		if (c->last_keepalive_ms != 0 &&
+		    srv_ms - (uint32_t)c->last_keepalive_ms <
+		    CADENCE_KEEPALIVE_MS)
+			continue;
 		/* Clamp like build_percar_body does — a stalled link can
 		 * push avg_rtt_ms past 65535 and the silent cast wraps to
 		 * a small value, which the HUD renders as a misleadingly
@@ -552,6 +559,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
 		    (const struct sockaddr *)&c->peer,
 		    sizeof(c->peer));
+		c->last_keepalive_ms = (uint64_t)srv_ms;
 	}
 }
 
@@ -1021,7 +1029,6 @@ tick_run(struct Server *s)
 	 * fires on the first tick after startup (matches the prior
 	 * tick-modulo behavior that always fires at tick 0).
 	 */
-	static uint64_t last_keepalive_ms = 0;
 	static uint64_t last_ifb_slew_ms = 0;
 	uint64_t *last_leaderboard_ms = &s->session.last_leaderboard_ms;
 	static uint64_t last_weather_ms = 0;
@@ -1195,12 +1202,11 @@ tick_run(struct Server *s)
 
 	/*
 	 * Keepalive 0x14 + 0xbe localhost telemetry + optional latency
-	 * CSV row, all sharing the 1 s wall-clock cadence.  See
-	 * CADENCE_KEEPALIVE_MS — driven off now_ms so the cadence is
-	 * honest regardless of how many tick iterations the OS schedules
-	 * per second.
+	 * CSV row.  broadcast_keepalive uses per-conn timers (exe
+	 * FUN_140041e80 stores the stamp at conn+0xa0238), so call it
+	 * every tick; the per-conn gate inside handles the ~1 Hz cadence.
 	 */
-	if (now_ms - last_keepalive_ms >= CADENCE_KEEPALIVE_MS) {
+	{
 		broadcast_keepalive(s, SRV_KEEPALIVE_14);
 		broadcast_stats_udp(s);
 
@@ -1229,7 +1235,6 @@ tick_run(struct Server *s)
 			}
 			fflush(fp);
 		}
-		last_keepalive_ms = now_ms;
 	}
 
 	/*
