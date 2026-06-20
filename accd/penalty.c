@@ -358,6 +358,31 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			leaderboard_request_emit(s);
 			return 0;
 		}
+		/* Exe FUN_140125f50:146-157: when param_5==EXE_DQ and the DT/SG
+		 * sheet has a non-zero severity byte, FUN_140126b50 is called
+		 * first to zero it before the DQ materialises.  FUN_140127440
+		 * (race-end converter) reads severity=0 and skips conversion,
+		 * preventing the DT/SG from generating an unearned time penalty.
+		 * Mirror: mark all unserved DT/SG entries as served. */
+		{
+			int j;
+			for (j = 0; j < race->pen.count; j++) {
+				struct PenaltyEntry *pe = &race->pen.slots[j];
+				if (pe->served)
+					continue;
+				switch (pe->kind) {
+				case PEN_DT: case PEN_DTC:
+				case PEN_SG10: case PEN_SG10C:
+				case PEN_SG20: case PEN_SG20C:
+				case PEN_SG30: case PEN_SG30C:
+					pe->served = 1;
+					pe->laps_remaining = 0;
+					break;
+				default:
+					break;
+				}
+			}
+		}
 		penalty_materialize(s, car_id, EXE_DQ, collision,
 		    value, reason, category);
 		race->dtsg_ladder_sev = EXE_DQ;
