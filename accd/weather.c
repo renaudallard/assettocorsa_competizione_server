@@ -239,21 +239,27 @@ weather_generate_fourier(struct Server *s, uint32_t seed)
 	 */
 	max_idx = 1;
 	{
-		float max_abs = 0.0f;
+		/* Exe 140116c50.c:159-171: fVar11 is initialized to 0.0 and
+		 * updated with the raw signed coeff value (fVar11 = fVar7)
+		 * whenever ABS(fVar7) > fVar11.  Using raw signed tracking
+		 * means a negative winning sine makes fVar11 negative, so any
+		 * cosine with nonzero abs value can steal the index.  Mirror
+		 * the exe behavior exactly. */
+		float tracker = 0.0f;
 		int idx = 1;
 		for (k = 0; k < (int)w->n_sine; k++) {
-			float a = fabsf(w->sine_coeffs[k]);
-			if (a > max_abs) {
-				max_abs = a;
+			float v = w->sine_coeffs[k];
+			if (fabsf(v) > tracker) {
+				tracker = v;
 				max_idx = idx;
 			}
 			idx++;
 		}
 		idx = 1;
 		for (k = 0; k < (int)w->n_cosine; k++) {
-			float a = fabsf(w->cosine_coeffs[k]);
-			if (a > max_abs) {
-				max_abs = a;
+			float v = w->cosine_coeffs[k];
+			if (fabsf(v) > tracker) {
+				tracker = v;
 				max_idx = idx;
 			}
 			idx++;
