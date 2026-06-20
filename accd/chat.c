@@ -1050,18 +1050,16 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		char msg[160];
 		const char *head = s->weather.randomness > 0
 		    ? "Snowflake weather:" : "Standard weather:";
+		/* Format matches exe FUN_140021680:425-443:
+		 * head + rain%|clouds%-wetness%|drywetness%|drywetness2% */
 		snprintf(msg, sizeof(msg),
-		    "%s rain=%d clouds=%d wet=%d dry=%d "
-		    "wind=%d/%d amb=%d road=%d",
+		    "%s %d|%d-%d|%d|%d",
 		    head,
 		    (int)(s->weather.current_rain * 100.0f),
 		    (int)(s->weather.clouds * 100.0f),
 		    (int)(s->weather.track_wetness * 100.0f),
 		    (int)(s->weather.dry_line_wetness * 100.0f),
-		    (int)s->weather.wind_speed,
-		    (int)s->weather.wind_direction,
-		    (int)s->session.ambient_temp,
-		    (int)s->session.track_temp);
+		    (int)(s->weather.puddles * 100.0f));
 		log_info("admin: /wt");
 		chat_reply(s, c, msg, 4);
 	} else if (chat_prefix(text, "/broadcast") ||
