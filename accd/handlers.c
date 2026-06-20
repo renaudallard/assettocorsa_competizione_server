@@ -1858,18 +1858,21 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 		return 0;
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS) {
+		/* Exe FUN_1400142f0:978-981 logs and breaks with NO 0x49
+		 * reply on the no-car-controlled path; 0x49 is emitted only
+		 * inside the car-matched branch. */
 		log_warn("ACP_EXECUTE_DRIVER_SWAP, but no car controlled "
 		    "for connection %u", (unsigned)c->conn_id);
-		result = 1;
-		goto reply;
+		return 0;
 	}
 	if (c->car_id < 0 ||
 	    (uint16_t)(ACC_CAR_ID_BASE + c->car_id) != car_id) {
+		/* Exe FUN_1400142f0:1100-1103 logs and breaks with NO 0x49
+		 * reply on the carId-mismatch path. */
 		log_warn("ACP_EXECUTE_DRIVER_SWAP, but carId mismatch: %u "
 		    "(car controlled %d for connection %u)",
 		    (unsigned)car_id, c->car_id, (unsigned)c->conn_id);
-		result = 1;
-		goto reply;
+		return 0;
 	}
 
 	car = &s->cars[c->car_id];
