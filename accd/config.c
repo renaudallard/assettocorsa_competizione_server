@@ -454,11 +454,12 @@ config_load(struct Server *s, const char *cfg_dir)
 		 * i.e. base 10, +1 per track medal capped at +3, and +0.25
 		 * per SA point (reaching 30 needs 3 TM and 70 SA).  With no
 		 * requirements rated is 10, reproducing the old flat clamp.
-		 * The gate is public-MP only: a private registerToLobby=0
-		 * server keeps its operator value, so Pi-4-class private
-		 * boxes are not silently reset to 10.
+		 * The gate is public-MP, non-CP only: a private
+		 * registerToLobby=0 server and a CP server (isCPServer,
+		 * FUN_1400214b0 +0x202) keep their operator value, so private
+		 * boxes and competition servers are not silently reset to 10.
 		 */
-		if (s->register_to_lobby) {
+		if (s->register_to_lobby && !s->is_cp_server) {
 			double rated = 10.0;
 			int cap;
 
