@@ -1321,7 +1321,9 @@ tick_run(struct Server *s)
 
 		if (!changed && cur_phase != s->session.last_emit_phase)
 			changed = 1;
-		for (k = 0; k < 7 && !changed; k++)
+		/* Exe FUN_14012e060 compares exactly 6 ts[] slots (0-5).
+		 * ts[6] is not included in the change detection. */
+		for (k = 0; k < 6 && !changed; k++)
 			if (s->session.ts[k] != s->session.last_emit_ts[k])
 				changed = 1;
 
