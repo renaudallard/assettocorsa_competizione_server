@@ -278,8 +278,13 @@ results_write(struct Server *s)
 			const struct CarRaceState *r = &s->cars[k].race;
 			int j;
 
-			if (r->disqualified)
-				continue;
+			/*
+			 * Include DQ'd cars: the exe session-best path
+			 * (FUN_140127850:52-74) gates only on cut/out-lap/
+			 * invalid flags, with no DQ predicate, so a valid fast
+			 * lap by a later-DQ'd driver still counts.  Matches the
+			 * wire side (write_car_leaderboard_record).
+			 */
 			if (r->best_lap_ms > 0 &&
 			    (best_lap == 0 || r->best_lap_ms < best_lap))
 				best_lap = r->best_lap_ms;

@@ -659,9 +659,9 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 	 * to 0, so stale prior-session values can't leak in).  Slots
 	 * where the driver disconnected mid-session keep their timing
 	 * so the fastest lap stays visible on the standings sidebar.
-	 * DQ'd cars are excluded so a protested time doesn't show as
-	 * the session best.  Entry count (nc) considers only currently
-	 * connected cars.
+	 * DQ'd cars are included (the exe FUN_140128a80:421-424 has no
+	 * DQ predicate on the session-best update).  Entry count (nc)
+	 * considers only currently connected cars.
 	 */
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		const struct CarRaceState *r =
