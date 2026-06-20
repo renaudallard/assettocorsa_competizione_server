@@ -570,13 +570,22 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			/* Mirror exe line 464: zero car+0x1e8 for new lap. */
 			race->car_field = 0;
 			/*
-			 * Record the S/F crossing timestamp as the start time
-			 * of the new open lap (mirrors exe lap_start_time at
-			 * car+0x1b8, set in FUN_1400142f0 at the 0x21 branch).
-			 * Used as tiebreaker in cmp_cars for equal lap counts:
-			 * earlier crossing = further through the lap = ahead.
+			 * Record the S/F crossing timestamp as the session-
+			 * relative race time (mirrors exe car+0x1b8, set in
+			 * FUN_1400142f0 at the 0x21 branch).  The exe
+			 * transforms the raw client timestamp by adding
+			 * session_clock_offset so the value is in ms from
+			 * session start; used as tiebreaker in cmp_cars and
+			 * as the finishing time in 0x3e results.
 			 */
-			race->race_time_ms = lap_time;
+			if (c->session_clock_seen) {
+				int64_t adj = (int64_t)lap_time +
+				    c->session_clock_offset_ms;
+				race->race_time_ms = adj > 0
+				    ? (int32_t)adj : 0;
+			} else {
+				race->race_time_ms = lap_time;
+			}
 		}
 
 		/* Local rating EWMA: clean lap +5 SA, cut -25, out-lap
