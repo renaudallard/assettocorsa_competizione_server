@@ -2561,8 +2561,8 @@ handshake_handle(struct Server *s, struct Conn *c,
 				c->car_id = reconnect_slot;
 				is_reconnect = 1;
 				log_info("Recognized reconnect: carId %d "
-				    "raceNumber #%d",
-				    c->car_id,
+				    "carModel %u raceNumber #%d",
+				    c->car_id, (unsigned)cmodel,
 				    s->cars[c->car_id].race_number);
 				goto post_slot_assignment;
 			}
