@@ -1374,7 +1374,8 @@ tick_run(struct Server *s)
 					    SRV_LARGE_STATE_RESPONSE) == 0 &&
 					    write_session_mgr_state(&bb, s,
 						client_ts_est,
-						c->avg_rtt_ms) == 0)
+						(uint32_t)((double)c->best_rtt_ms +
+						c->drift_ms)) == 0)
 						(void)conn_send_framed(c,
 						    bb.data, bb.wpos);
 				}

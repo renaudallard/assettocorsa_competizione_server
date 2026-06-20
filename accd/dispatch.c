@@ -597,7 +597,9 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			bb_init(&bb);
 			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
 			    write_session_mgr_state(&bb, s,
-				pong_client_ts, rtt) == 0)
+				pong_client_ts,
+				(uint32_t)((double)pc->best_rtt_ms +
+				pc->drift_ms)) == 0)
 				(void)conn_send_framed(pc,
 				    bb.data, bb.wpos);
 			bb_free(&bb);
