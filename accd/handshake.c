@@ -1259,15 +1259,19 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				if (pq->slots[pi].served)
 					continue;
 				/*
-				 * Admin-issued fresh entries: exe FUN_140125f50
-				 * fresh branch (lines 147-153) writes only
-				 * PenaltySheet metadata and does not push a
-				 * Penalty object, so the inner vector (source
-				 * of +0x200/+0x201) stays empty.  Skip admin
-				 * entries here to match that behaviour.
+				 * Admin chat-issued penalties DO surface in the
+				 * per-car tail.  Kunos pcap (1-min race, admin
+				 * /dt 911, 2026-06-20) shows b0/b1 = 0f 03
+				 * (wire 15 = RaceControl DT, value 3) the moment
+				 * the /dt lands, persisting to the race-end 0x3e.
+				 * The tail is built from the PenaltySheet
+				 * (+0x58/+0x59) that FUN_140125f50 populates, not
+				 * from a separately pushed Penalty object, so it
+				 * is not empty for fresh admin entries.  Only the
+				 * active_pen prefix and pq_emit list stay at 0
+				 * for admin entries (kunos leaves those
+				 * untouched); those skips remain above.
 				 */
-				if (pq->slots[pi].admin)
-					continue;
 				/*
 				 * Archived-session emit only: hide pending
 				 * (client-0x41) entries.  In the current

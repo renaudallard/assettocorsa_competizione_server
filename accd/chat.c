@@ -304,14 +304,15 @@ chat_do_penalty(struct Server *s, const char *cmd,
 		    collision, REASON_RACE_CONTROL) < 0)
 			return;
 		/*
-		 * Admin chat-issued penalties are tracked server-side for
-		 * race-end conversion + per-session results but kunos does
-		 * NOT surface them in the 0x36 active_pen prefix or
-		 * pq_emit list (pcap of admin /dt/sg/tp scenarios shows
-		 * the per-car record stays at active_pen=0 / pq_emit=0
-		 * even though the broadcast chat reports the penalty).
-		 * Mark every slot freshly enqueued by this call as `admin`
-		 * so write_car_leaderboard_record can skip them.
+		 * Kunos does NOT surface admin chat-issued penalties in the
+		 * 0x36 active_pen prefix or pq_emit list, but it DOES show
+		 * them in the per-car tail bytes: a 1-min race pcap
+		 * (2026-06-20, admin /dt 911) has the tail flip to 0f 03
+		 * (wire 15 = RaceControl DT, value 3) the moment the /dt
+		 * lands, persisting to the race-end 0x3e.  Mark every slot
+		 * freshly enqueued by this call as `admin` so
+		 * write_car_leaderboard_record skips it in active_pen +
+		 * pq_emit only; the per-car tail still surfaces it.
 		 * Use >= so the post-eviction pre==count case is handled
 		 * too: when the queue is at ACC_MAX_PENALTIES and the new
 		 * push evicts one, pre lands equal to count and a plain >
