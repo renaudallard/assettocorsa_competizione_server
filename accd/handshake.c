@@ -3233,6 +3233,11 @@ reply:
 			 * emit-time anchor to 0 on a join).  A literal 0 still
 			 * holds off until uptime passes 81 s, matching the exe.
 			 */
+			if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
+			    s->cars[c->car_id].driver_count > 0)
+				ratings_seed_from_client(s,
+				    s->cars[c->car_id].drivers[0].steam_id,
+				    wire_sa);
 			s->ratings_dirty = 1;
 			s->ratings_last_emit_ms = 0;
 		}

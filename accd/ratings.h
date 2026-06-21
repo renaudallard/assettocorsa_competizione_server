@@ -66,6 +66,14 @@ void	ratings_get(const struct Server *s, const char *steam_id,
 	    uint16_t *sa, uint16_t *tr);
 
 /*
+ * Seed SA from the handshake wire byte for a driver with no local
+ * record.  sa_wire is the 0-99 integer from the 41-byte DriverInfo
+ * block.  No-op if the driver already has a local record.
+ */
+void	ratings_seed_from_client(struct Server *s, const char *steam_id,
+	    uint8_t sa_wire);
+
+/*
  * Update a driver's ratings based on the outcome of a completed lap.
  *     clean=1 / has_cut=0 / out_lap=0 : SA +5 (capped 9999)
  *     has_cut=1                        : SA -25 (floor 0)
