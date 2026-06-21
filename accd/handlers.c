@@ -501,7 +501,8 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		}
 
 		/*
-		 * Per-car lap history (drives 0x36 list 2 + 0x56 garage).
+		 * Per-car valid-only lap history (drives the 0x36 l2 list;
+		 * the 0x56 garage reply uses the cut-inclusive lap56 ring).
 		 *
 		 * Invalid laps (cut / out-lap / latched out-of-track) are
 		 * skipped — kunos pcap (TP-then-admin-DQ scenario,
@@ -524,6 +525,24 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			race->lap_history_driver[slot] =
 			    s->cars[c->car_id].current_driver_index;
 			race->lap_history_count++;
+		}
+
+		/*
+		 * Cut-inclusive ring for the 0x56 garage reply: the exe emits
+		 * every lap with a real laptime (cut laps included), each with
+		 * its lap-states low byte as the quality flag.  Record all
+		 * non-out-lap crossings here (out-laps have no countable time),
+		 * keeping the cut bit in the quality byte.
+		 */
+		if (!is_out_lap && lap_ms > 0) {
+			uint32_t s56 = race->lap56_count % ACC_LAP_HISTORY;
+			int si;
+			race->lap56_ms[s56] = lap_ms;
+			for (si = 0; si < 3; si++)
+				race->lap56_splits[s56][si] =
+				    race->sector_ms[si];
+			race->lap56_quality[s56] = (uint8_t)car_field;
+			race->lap56_count++;
 		}
 
 		/*
@@ -2343,8 +2362,8 @@ h_load_setup(struct Server *s, struct Conn *c,
 		    wr_u16(&out, car_id) < 0)
 			goto done;
 
-		if (src != NULL && src->lap_history_count > 0) {
-			int total = src->lap_history_count;
+		if (src != NULL && src->lap56_count > 0) {
+			int total = src->lap56_count;
 			int count = total < ACC_LAP_HISTORY
 			    ? total : ACC_LAP_HISTORY;
 			int start = total <= ACC_LAP_HISTORY
@@ -2370,15 +2389,16 @@ h_load_setup(struct Server *s, struct Conn *c,
 				 * the Previous-Laps panel.
 				 */
 				if (wr_u32(&out,
-				    (uint32_t)src->lap_history_ms[idx]) < 0)
+				    (uint32_t)src->lap56_ms[idx]) < 0)
 					goto done;
 				if (wr_u8(&out, 3) < 0) goto done;
 				for (si = 0; si < 3; si++)
 					if (wr_u32(&out, (uint32_t)
-					    src->lap_splits_ms[idx][si]) < 0)
+					    src->lap56_splits[idx][si]) < 0)
 						goto done;
 				if (wr_u16(&out, car->car_id) < 0) goto done;
-				if (wr_u8(&out, 0) < 0) goto done;
+				if (wr_u8(&out, src->lap56_quality[idx]) < 0)
+					goto done;
 				if (wr_u16(&out,
 				    (uint16_t)(first_lap + k)) < 0)
 					goto done;

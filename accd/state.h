@@ -300,6 +300,18 @@ struct CarRaceState {
 	 * the ring with every later lap pinned to slot 255 % 16 = 15.
 	 */
 	uint32_t	lap_history_count;
+	/*
+	 * Cut-inclusive lap history for the 0x56 garage Previous-Laps reply.
+	 * The exe 0x56 (FUN_1400328f0) emits EVERY lap with a real laptime
+	 * (cut laps included, only the INT32_MAX sentinel filtered) plus a
+	 * per-lap quality byte (lap+0x4c lap-states low byte).  The valid-only
+	 * lap_history_ms ring above feeds the 0x36 l2 list and must stay
+	 * valid-only, so 0x56 keeps a separate ring that records cut laps too.
+	 */
+	int32_t		lap56_ms[ACC_LAP_HISTORY];
+	int32_t		lap56_splits[ACC_LAP_HISTORY][3];
+	uint8_t		lap56_quality[ACC_LAP_HISTORY];
+	uint32_t	lap56_count;
 	uint8_t		in_pit;
 	uint8_t		mandatory_pit_served;	/* count of 0x54
 						 * ACP_MANDATORY_PITSTOP_
