@@ -1041,12 +1041,12 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		/*
 		 * /wt: dump current weather snapshot.  accServer.exe
 		 * header is "Standard weather:" (or "Snowflake weather:"
-		 * when the dynamic-mode flag at +0x315 is set), followed
+		 * when simracerWeatherConditions at +0x315 is set), followed
 		 * by rain / cloud / wetness / dry-line fields scaled to
 		 * integer percent via DAT_14014bd74 (f32 100.0).
 		 */
 		char msg[160];
-		const char *head = s->weather.randomness > 0
+		const char *head = s->simracer_weather
 		    ? "Snowflake weather:" : "Standard weather:";
 		/* Format matches exe FUN_140021680:425-443:
 		 * head + rain%|clouds%-wetness%|drywetness%|drywetness2% */
