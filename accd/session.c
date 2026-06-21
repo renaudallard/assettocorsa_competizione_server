@@ -1279,6 +1279,7 @@ void
 session_overtime_car_finished(struct Server *s, int car_id)
 {
 	uint64_t now;
+	int leader_just_finished = 0;
 
 	if (!s->session.overtime_hold)
 		return;
@@ -1306,6 +1307,7 @@ session_overtime_car_finished(struct Server *s, int car_id)
 		uint64_t grace = post_grace_ms(s);
 		s->session.overtime_leader_armed = 0;
 		s->session.ts[6] = now + grace;
+		leader_just_finished = 1;
 		log_info("overtime: leader finished, ts[6]=now+%llums",
 		    (unsigned long long)grace);
 	}
@@ -1314,16 +1316,19 @@ session_overtime_car_finished(struct Server *s, int car_id)
 		s->session.cars_in_overtime--;
 	if (s->session.cars_in_overtime <= 0) {
 		/*
-		 * All remaining cars finished: collapse ts[6] to now
-		 * (exe FUN_14012e140 sets SM+0x220 = param_2 = now).
-		 * If the leader one-shot already set ts[6] = now+grace,
-		 * this overrides it with an immediate advance, ending the
-		 * aftercare instantly once the last car is done.
+		 * All remaining cars finished.  If the leader also crossed in
+		 * this same call, preserve the grace window already set above
+		 * so the 2-minute aftercare runs.  If the leader crossed
+		 * earlier, collapse ts[6] to now so the session ends without
+		 * waiting out the grace period again.
 		 */
 		s->session.overtime_hold = 0;
 		s->session.ts[5] = now;
-		s->session.ts[6] = now;
-		log_info("overtime: all cars finished, collapsing to now");
+		if (!leader_just_finished)
+			s->session.ts[6] = now;
+		log_info("overtime: all cars finished%s",
+		    leader_just_finished
+		    ? ", leader grace active" : ", collapsing to now");
 	} else {
 		log_info("overtime: %d cars still racing",
 		    (int)s->session.cars_in_overtime);
