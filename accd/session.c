@@ -1099,17 +1099,19 @@ session_tick(struct Server *s)
 			log_info("overtime: hold active, %d cars racing "
 			    "(hard cap in %us)", racing,
 			    (unsigned)s->session_overtime_s);
-		} else if (def->session_type == 4) {
+		} else if (def->session_type == 4 ||
+		    def->session_type == 0) {
 			/*
-			 * Quali "Right to Finish": at the moment the
-			 * timer hits 0:00, snapshot per-car eligibility.
-			 * A car is eligible if it's on track and not in
-			 * the pit / garage at this instant.  Cars in pit
-			 * lose their right immediately (handled by
-			 * eligible == 0 below).  Eligibility is dropped
-			 * later by handlers (lap completion or
-			 * invalidation during overtime).
+			 * Quali / Practice "Right to Finish": snapshot
+			 * eligible cars at the moment the timer hits 0:00.
+			 * A car is eligible if it is on track, not pitting,
+			 * and has not yet cut this lap.  Eligibility is
+			 * dropped when the car crosses S/F (session_quali_
+			 * drop_eligibility) or when the car goes to the pits
+			 * without finishing (still_racing check above).
 			 */
+			const char *stype = def->session_type == 4
+			    ? "quali" : "practice";
 			int eligible = 0;
 			for (i = 0; i < ACC_MAX_CARS &&
 			    i < s->max_connections; i++) {
@@ -1136,13 +1138,13 @@ session_tick(struct Server *s)
 				s->session.cars_in_overtime =
 				    (int16_t)eligible;
 				s->session.overtime_hold_started_ms = now;
-				log_info("quali overtime: %d eligible cars "
+				log_info("%s overtime: %d eligible cars "
 				    "still on flying lap (hard cap in %us)",
-				    eligible,
+				    stype, eligible,
 				    (unsigned)s->session_overtime_s);
 			} else {
-				log_info("quali overtime: no eligible cars, "
-				    "skipping grace");
+				log_info("%s overtime: no eligible cars, "
+				    "skipping grace", stype);
 				s->session.ts[5] = now;
 				s->session.ts[6] = now + post_grace_ms(s);
 			}
@@ -1336,23 +1338,24 @@ session_overtime_car_finished(struct Server *s, int car_id)
 }
 
 /*
- * Quali "Instant Drop" / lap-finish: drop a car's right-to-finish
- * during Quali overtime.  Called from h_out_of_track when a
- * flying lap is invalidated, and from the lap-completion path
- * when an eligible car crosses S/F.  No-op outside Quali
- * overtime.  When the eligibility set empties, behaves like
- * session_overtime_car_finished and lets the phase advance.
+ * Quali/Practice lap-finish: drop a car's right-to-finish during
+ * overtime.  Called from the lap-completion path when an eligible
+ * car crosses S/F.  No-op outside Quali/Practice overtime.  When
+ * the eligibility set empties, releases the hold and lets the phase
+ * advance.
  */
 void
 session_quali_drop_eligibility(struct Server *s, int car_id)
 {
 	struct CarRaceState *r;
+	uint8_t stype;
 
 	if (s->session.phase != PHASE_OVERTIME)
 		return;
 	if (s->session.session_index >= s->session_count)
 		return;
-	if (s->sessions[s->session.session_index].session_type != 4)
+	stype = s->sessions[s->session.session_index].session_type;
+	if (stype != 4 && stype != 0)
 		return;
 	if (car_id < 0 || car_id >= ACC_MAX_CARS)
 		return;

@@ -119,9 +119,8 @@ void	session_overtime_car_finished(struct Server *s, int car_id);
 /*
  * Quali "Right to Finish" / "Instant Drop": clear a car's
  * eligibility-to-finish flag and decrement the hold counter.
- * No-op outside Quali OVERTIME.  Call from the lap-invalidation
- * path (h_out_of_track) and from the lap-completion path when
- * the closing car was eligible.
+ * No-op outside Quali/Practice OVERTIME.  Call from the lap-completion
+ * path when the closing car was eligible.
  */
 void	session_quali_drop_eligibility(struct Server *s, int car_id);
 
