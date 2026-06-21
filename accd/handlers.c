@@ -646,16 +646,16 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			struct PenaltyEntry *front = pi >= 0
 			    ? &race->pen.slots[pi] : NULL;
 			/*
-			 * Only count laps the driver actually races: the exe
-			 * (FUN_140125c60) decrements the serve countdown only
-			 * when the lap-state in-lap bit (0x08) is clear, so an
-			 * in-lap (including the lap the penalty is served on)
-			 * doesn't burn the deadline and auto-DQ a lap early.
+			 * Every S/F crossing counts toward the serve deadline,
+			 * including in-laps: pitting should not reset the clock.
+			 * The auto-DQ trigger is guarded by the in-lap bit so a
+			 * driver who serves on a pit lap isn't DQ'd in the same
+			 * crossing before the serve is registered.
 			 */
-			if (front != NULL && front->laps_remaining > 0 &&
-			    (car_field & 0x0008) == 0) {
+			if (front != NULL && front->laps_remaining > 0) {
 				front->laps_remaining--;
-				if (front->laps_remaining == 0) {
+				if (front->laps_remaining == 0 &&
+				    (car_field & 0x0008) == 0) {
 					uint8_t inherited = front->reason;
 					uint8_t inherited_cat = front->category;
 					char chat[128];
