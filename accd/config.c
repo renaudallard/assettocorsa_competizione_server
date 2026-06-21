@@ -422,6 +422,14 @@ config_load(struct Server *s, const char *cfg_dir)
 		 */
 		s->is_cp_server = json_obj_get_int(settings,
 		    "isCPServer", 0) ? 1 : 0;
+		/*
+		 * isCPInvServer (exe FUN_140106300 +0xe3): an invitational CP
+		 * server suppresses the same public-MP forcing/clamping gates
+		 * as isCPServer.  FUN_1400214b0 and FUN_140023700 gate on BOTH
+		 * +0x202 == 0 AND +0x203 == 0.
+		 */
+		s->is_cp_inv_server = json_obj_get_int(settings,
+		    "isCPInvServer", 0) ? 1 : 0;
 		s->competition_rating_min = json_obj_get_int(settings,
 		    "competitionRatingMin", 0);
 		s->competition_rating_max = json_obj_get_int(settings,
@@ -489,7 +497,7 @@ config_load(struct Server *s, const char *cfg_dir)
 		 * FUN_1400214b0 +0x202) keep their operator value, so private
 		 * boxes and competition servers are not silently reset to 10.
 		 */
-		if (s->register_to_lobby && !s->is_cp_server) {
+		if (s->register_to_lobby && !s->is_cp_server && !s->is_cp_inv_server) {
 			double rated = 10.0;
 			int cap;
 
@@ -1001,17 +1009,17 @@ config_load(struct Server *s, const char *cfg_dir)
 	 * formationLapType remap below because that remap gates on
 	 * force_entry_list.
 	 */
-	if (s->force_entry_list && s->register_to_lobby && !s->is_cp_server) {
+	if (s->force_entry_list && s->register_to_lobby && !s->is_cp_server && !s->is_cp_inv_server) {
 		log_warn("forceEntryList set but is a public server, "
 		    "disabling forceEntryList");
 		s->force_entry_list = 0;
 	}
-	if (!s->allow_auto_dq && s->register_to_lobby && !s->is_cp_server) {
+	if (!s->allow_auto_dq && s->register_to_lobby && !s->is_cp_server && !s->is_cp_inv_server) {
 		log_warn("allowAutoDQ is false but is a public server, "
 		    "forcing allowAutoDQ=1");
 		s->allow_auto_dq = 1;
 	}
-	if (s->dump_entry_list && s->register_to_lobby && !s->is_cp_server) {
+	if (s->dump_entry_list && s->register_to_lobby && !s->is_cp_server && !s->is_cp_inv_server) {
 		log_warn("dumpEntryList set but is a public server, "
 		    "disabling dumpEntryList");
 		s->dump_entry_list = 0;
@@ -1024,7 +1032,7 @@ config_load(struct Server *s, const char *cfg_dir)
 	 * the unconditional 2 -> 3 remap is applied earlier at the read.
 	 */
 	if (s->formation_lap_type == 1 && s->register_to_lobby &&
-	    !s->is_cp_server && !s->force_entry_list) {
+	    !s->is_cp_server && !s->is_cp_inv_server && !s->force_entry_list) {
 		log_warn("formationLapType 1 (manual) forced to 3 on "
 		    "public-MP server");
 		s->formation_lap_type = 3;

@@ -964,6 +964,9 @@ struct Server {
 	uint8_t		is_cp_server;		/* settings.isCPServer: gate on
 						 * the competition-rating window
 						 * and restrict joins to FP */
+	uint8_t		is_cp_inv_server;	/* settings.isCPInvServer: same
+						 * public-MP gate suppression as
+						 * is_cp_server (exe +0xe3) */
 	int32_t		competition_rating_min;	/* settings.competitionRatingMin */
 	int32_t		competition_rating_max;	/* settings.competitionRatingMax */
 	uint8_t		is_race_locked;		/* settings.json
