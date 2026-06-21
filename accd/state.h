@@ -401,6 +401,8 @@ struct SessionDef {
 	uint8_t		session_type;	/* HB IX.6: P=0 Q=4 R=10 */
 	uint16_t	duration_min;
 	uint8_t		hour_of_day;
+	uint8_t		date_minute;	/* dateMinute: weather time-base
+					 * minute term (exe descriptor +0x2c) */
 	uint8_t		day_of_weekend;
 	uint8_t		time_multiplier;
 };

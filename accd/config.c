@@ -573,6 +573,8 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "sessionDurationMinutes", 10);
 			d->hour_of_day = (uint8_t)json_obj_get_int(sn,
 			    "hourOfDay", 12);
+			d->date_minute = (uint8_t)json_obj_get_int(sn,
+			    "dateMinute", 0);
 			d->day_of_weekend = (uint8_t)json_obj_get_int(sn,
 			    "dayOfWeekend", 0);
 			d->time_multiplier = (uint8_t)json_obj_get_int(sn,
@@ -688,6 +690,8 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "weatherBaseDeviation", 0.3);
 			{
 				uint32_t start_s =
+				    (uint32_t)s->sessions[0].date_minute
+				    * 60u +
 				    (uint32_t)s->sessions[0].hour_of_day
 				    * 3600u;
 				weather_init(s, clouds, rain, randomness,

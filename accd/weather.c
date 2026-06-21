@@ -574,7 +574,14 @@ weather_validate(struct Server *s)
 	 * checking each set bound, mirroring FUN_140133770's loop.
 	 */
 	factor = sd->time_multiplier > 0 ? (float)sd->time_multiplier : 1.0f;
-	start = (double)sd->hour_of_day * 3600.0;
+	/*
+	 * Weather time base = dateMinute*60 + hourOfDay*3600 (exe
+	 * FUN_140133770:43; the raceDay*86400 term is phase-neutral since
+	 * the cloud cycle is exactly 86400 s, so it is omitted).  Without
+	 * the minute term the cloud phase shifts when dateMinute != 0.
+	 */
+	start = (double)sd->date_minute * 60.0 +
+	    (double)sd->hour_of_day * 3600.0;
 	end = start + (double)sd->duration_min * 60.0 * (double)factor;
 
 	for (t = start - 14400.0; t < end; t += 600.0) {
