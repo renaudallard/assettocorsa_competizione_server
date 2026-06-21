@@ -535,8 +535,16 @@ lobby_send_registration(struct LobbyClient *l, const struct Server *s)
 	if (wr_u8(&bb, sess_count) < 0) goto err;
 	for (i = 0; i < sess_count; i++) {
 		const struct SessionDef *d = &s->sessions[i];
-		uint16_t pre_race = d->session_type == 10 ?
-		    s->pre_race_waiting_s : 3;
+		/*
+		 * pre_race is a CONSTANT session descriptor (80 race / 3
+		 * other), the same per-session +0x38 field the welcome trailer
+		 * emits (exe lobby FUN_140047af0:292 + welcome FUN_140034f60:50
+		 * read the same value).  The configured preRaceWaitingTimeSeconds
+		 * lives at +0x88 and drives the wait timing only; it is never
+		 * copied into the session object.  Match the welcome's 80/3 so
+		 * the lobby registration and the welcome trailer agree.
+		 */
+		uint16_t pre_race = d->session_type == 10 ? 80 : 3;
 		if (wr_u8(&bb, d->session_type) < 0) goto err;
 		if (wr_u8(&bb, d->day_of_weekend) < 0) goto err;
 		if (wr_u8(&bb, d->hour_of_day) < 0) goto err;
