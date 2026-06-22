@@ -819,27 +819,23 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 		switch (s->session.phase) {
 		case PHASE_WAITING:     p = 1; break;
 		case PHASE_FORMATION:   p = 2; break;
-		case PHASE_PRE_SESSION:
+		case PHASE_PRE_SESSION: p = 3; break;
+		case PHASE_SESSION:
 			/*
-			 * Exe's computeCurrentPhase splits this into PRE-1
-			 * (phase=3) and PRE-2 (phase=4).  PRE-2 is the race
-			 * grid-countdown / formation-lap window, gated on
-			 * `time >= ts[2]`.  Our PHASE_PRE_SESSION covers
-			 * both; emit 4 once we've crossed into the race
-			 * formation window so the kson backend (and any
-			 * scoreboard consumers) render the grid-countdown
-			 * state.  Non-race sessions stay at 3.
+			 * PHASE_SESSION covers ts[2]..ts[3] (formation done,
+			 * green not yet fired) and ts[3]..ts[4] (active race).
+			 * Kson phase 4 = grid-countdown (red lights); phase 5 =
+			 * active session.  Emit 4 only for the pre-green race
+			 * window; P/Q and post-green race emit 5.
 			 */
-			if (s->session.ts_valid &&
+			if (!s->session.green_fired &&
 			    s->session.session_index < s->session_count &&
 			    s->sessions[s->session.session_index]
-				.session_type == 10 &&
-			    mono_ms() >= s->session.ts[2])
+				.session_type == 10)
 				p = 4;
 			else
-				p = 3;
+				p = 5;
 			break;
-		case PHASE_SESSION:     p = 5; break;
 		case PHASE_OVERTIME:    p = 5; break;
 		case PHASE_COMPLETED:   p = 1; break;
 		default:                p = 1; break;
