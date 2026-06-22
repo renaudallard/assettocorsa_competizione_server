@@ -214,7 +214,7 @@ server_init(struct Server *s)
 	s->write_latency_dumps = 0;
 	s->do_driver_swap_broadcast = 1;
 	s->session_overtime_s = 120;
-	s->post_qualy_s = 10;
+	s->post_qualy_s = 16;
 	s->post_race_s = 15;
 	s->config_version = 0;
 	/* eventRules.json defaults — match the handbook III.2.4 spec. */
