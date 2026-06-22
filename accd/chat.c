@@ -337,8 +337,8 @@ chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 }
 
 void
-chat_do_kick(struct Server *s, const char *args, int permanent,
-    char *reply, size_t replysz)
+chat_do_kick(struct Server *s, struct Conn *c, const char *args,
+    int permanent, char *reply, size_t replysz)
 {
 	int car_num, car_id;
 	struct Conn *target = NULL;
@@ -373,7 +373,10 @@ chat_do_kick(struct Server *s, const char *args, int permanent,
 	    permanent ? "#%d has been banned from the server"
 	              : "#%d has been kicked from the server",
 	    car_num);
-	chat_broadcast(s, chat, 4);
+	if (c != NULL)
+		chat_reply(s, c, chat, 4);
+	else
+		chat_broadcast(s, chat, 4);
 
 	/*
 	 * Exe (FUN_14001dae0:745) DQs the car before sending the
@@ -1189,9 +1192,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		session_reset(s, 0);
 		chat_weekend_reset_broadcast(s);
 	} else if (chat_prefix(text, "/kick")) {
-		chat_do_kick(s, text + 5, 0, NULL, 0);
+		chat_do_kick(s, c, text + 5, 0, NULL, 0);
 	} else if (chat_prefix(text, "/ban")) {
-		chat_do_kick(s, text + 4, 1, NULL, 0);
+		chat_do_kick(s, c, text + 4, 1, NULL, 0);
 	} else if (chat_prefix(text, "/dq")) {
 		if (chat_parse_int(text + 3, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);

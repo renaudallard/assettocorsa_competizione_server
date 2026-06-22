@@ -342,10 +342,10 @@ console_dispatch(struct Server *s, const char *line)
 		chat_weekend_reset_broadcast(s);
 		reply("race weekend reset");
 	} else if (chat_prefix(p, "kick")) {
-		chat_do_kick(s, p + 4, 0, rbuf, sizeof(rbuf));
+		chat_do_kick(s, NULL, p + 4, 0, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "ban")) {
-		chat_do_kick(s, p + 3, 1, rbuf, sizeof(rbuf));
+		chat_do_kick(s, NULL, p + 3, 1, rbuf, sizeof(rbuf));
 		cmd_with_reply(rbuf);
 	} else if (chat_prefix(p, "dq")) {
 		cmd_dq(s, p + 2);

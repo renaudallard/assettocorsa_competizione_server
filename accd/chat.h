@@ -85,8 +85,8 @@ void	chat_broadcast_as(struct Server *s, const char *sender,
  * in-game clients, and writes a human-readable reply to
  * reply[replysz] if non-NULL.
  */
-void	chat_do_kick(struct Server *s, const char *args, int permanent,
-	    char *reply, size_t replysz);
+void	chat_do_kick(struct Server *s, struct Conn *c, const char *args,
+	    int permanent, char *reply, size_t replysz);
 void	chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 	    const char *args, int collision,
 	    char *reply, size_t replysz);
