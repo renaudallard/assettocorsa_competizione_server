@@ -897,10 +897,8 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    c->is_admin ? "(admin)" : "(driver)",
 		    (unsigned)c->conn_id, c->car_id, arg);
 		/*
-		 * Mirror exe FUN_14001dae0:187: unicast "Car #N reported,
-		 * thank you" back to the sender, where N is the reporter's
-		 * race number (from FUN_140003f80(&local_200, L"Car #",
-		 * local_220) + L" reported, thank you").
+		 * Exe FUN_14001dae0:187 builds "Car #N reported, thank you"
+		 * and falls through to *param_8=1 (line 1060) -> broadcast.
 		 */
 		{
 			char reply[64];
@@ -909,7 +907,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			    ? s->cars[c->car_id].race_number : 0;
 			snprintf(reply, sizeof(reply),
 			    "Car #%d reported, thank you", rnum);
-			chat_reply(s, c, reply, 4);
+			chat_broadcast(s, reply, 4);
 		}
 		return 1;
 	}
