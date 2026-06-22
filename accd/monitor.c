@@ -286,31 +286,85 @@ monitor_build_realtime_update(struct ByteBuf *bb,
 	if (pb_sub_end(bb, sub_start) < 0)
 		return -1;
 
-	/* Repeated PB_RTU_CONNECTIONS — one ConnectionEntry submessage per
-	 * authenticated, non-SMPR conn currently attached. */
+	/*
+	 * Repeated PB_RTU_CONNECTIONS: per-spec ServerMonitorRealtimeConnectionState,
+	 * NOT the static ConnectionEntry (NOTEBOOK_B §12B.3).  Carries per-tick
+	 * latency data (lastPing, currentAveragePing, legacyLatencyOffset) that
+	 * static ConnectionEntry lacks.
+	 */
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		const struct Conn *o = s->conns[i];
+		int32_t last_rtt;
+
 		if (o == NULL || o->state != CONN_AUTH || o->is_smpr)
 			continue;
+		/* Last RTT sample from the ring; fall back to avg if no samples. */
+		last_rtt = (o->rtt_ring_idx >= 0) ?
+		    o->rtt_ring[o->rtt_ring_idx] : (int32_t)o->avg_rtt_ms;
+		if (last_rtt < 0)
+			last_rtt = 0;
 		if (pb_sub_begin(bb, PB_RTU_CONNECTIONS, &sub_start) < 0)
 			return -1;
-		if (monitor_build_connection_entry(bb, s, o) < 0)
+		if (pb_w_int32(bb, PB_RCS_CONNECTION_ID,
+		    (int32_t)o->conn_id) < 0)
+			return -1;
+		if (pb_w_int32(bb, PB_RCS_LAST_PING, last_rtt) < 0)
+			return -1;
+		if (pb_w_int32(bb, PB_RCS_AVG_PING,
+		    (int32_t)o->avg_rtt_ms) < 0)
+			return -1;
+		if (pb_w_int32(bb, PB_RCS_LEGACY_LATENCY_OFFSET,
+		    o->clock_offset_ms) < 0)
+			return -1;
+		/* lockstep fields (5-7) not tracked; emit 0 */
+		if (pb_w_int32(bb, PB_RCS_LOCKSTEP_REF_PING, 0) < 0 ||
+		    pb_w_int32(bb, PB_RCS_LOCKSTEP_LAT_OFFSET, 0) < 0 ||
+		    pb_w_int32(bb, PB_RCS_LOCKSTEP_ACC_ERR, 0) < 0)
+			return -1;
+		if (pb_w_int32(bb, PB_RCS_LAST_UDP_RECV,
+		    (int32_t)o->last_udp_server_ms) < 0)
 			return -1;
 		if (pb_sub_end(bb, sub_start) < 0)
 			return -1;
 	}
 
-	/* Repeated PB_RTU_CARS — one CarEntry per used slot. */
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	/*
+	 * Repeated PB_RTU_CARS: per-spec ServerMonitorRealtimeCarState (carId,
+	 * drivingConnectionId, teamConnections); NOT the static CarEntry.
+	 */
+	for (i = 0; i < ACC_MAX_CARS; i++) {
 		const struct CarEntry *car = &s->cars[i];
-		int driving_conn;
-		if (!car->used)
+		int driving_conn, j;
+
+		if (car->driver_count == 0)
 			continue;
 		driving_conn = driving_conn_for_car(s, i);
 		if (pb_sub_begin(bb, PB_RTU_CARS, &sub_start) < 0)
 			return -1;
-		if (monitor_build_car_entry(bb, car, driving_conn) < 0)
+		if (pb_w_int32(bb, PB_RCARS_CAR_ID,
+		    (int32_t)car->car_id) < 0)
 			return -1;
+		if (pb_w_int32(bb, PB_RCARS_DRIVING_CONN_ID,
+		    driving_conn) < 0)
+			return -1;
+		/* teamConnections: conn_ids of non-driving team members */
+		if (car->team_entry_id >= 0) {
+			for (j = 0; j < ACC_MAX_CARS; j++) {
+				const struct Conn *tc = s->conns[j];
+				if (tc == NULL || tc->state != CONN_AUTH ||
+				    tc->is_smpr || tc->car_id < 0 ||
+				    tc->car_id >= ACC_MAX_CARS)
+					continue;
+				if (s->cars[tc->car_id].team_entry_id !=
+				    car->team_entry_id)
+					continue;
+				if ((int)tc->conn_id == driving_conn)
+					continue;
+				if (pb_w_int32(bb, PB_RCARS_TEAM_CONNECTIONS,
+				    (int32_t)tc->conn_id) < 0)
+					return -1;
+			}
+		}
 		if (pb_sub_end(bb, sub_start) < 0)
 			return -1;
 	}

@@ -104,11 +104,28 @@
 #define PB_SS_RAIN_FORECAST_30MIN	12
 #define PB_SS_CARS_CONNECTED		13
 
+/* ----- ServerMonitorRealtimeConnectionState (sub of RTU field 3) - */
+#define PB_RCS_CONNECTION_ID		1
+#define PB_RCS_LAST_PING		2
+#define PB_RCS_AVG_PING			3
+#define PB_RCS_LEGACY_LATENCY_OFFSET	4
+#define PB_RCS_LOCKSTEP_REF_PING	5
+#define PB_RCS_LOCKSTEP_LAT_OFFSET	6
+#define PB_RCS_LOCKSTEP_ACC_ERR		7
+#define PB_RCS_LAST_UDP_RECV		8
+/* field 9 = repeated TimedValue (unknown); not emitted */
+
+/* ----- ServerMonitorRealtimeCarState (sub of RTU field 4) -------- */
+#define PB_RCARS_CAR_ID			1
+#define PB_RCARS_DRIVING_CONN_ID	2
+#define PB_RCARS_TEAM_CONNECTIONS	3	/* repeated int32 */
+/* field 4 = TimedValue (unknown); not emitted */
+
 /* ----- ServerMonitorRealtimeUpdate (msg 0x06) -------------------- */
 #define PB_RTU_SERVER_NOW		1	/* fixed64 (double, ms) */
 #define PB_RTU_SESSION_STATE		2	/* SessionState submessage */
-#define PB_RTU_CONNECTIONS		3	/* repeated */
-#define PB_RTU_CARS			4	/* repeated */
+#define PB_RTU_CONNECTIONS		3	/* repeated RealtimeConnectionState */
+#define PB_RTU_CARS			4	/* repeated RealtimeCarState */
 
 /* ----- ServerMonitorLeaderboardEntry (sub of LEADERBOARD) -------- */
 #define PB_LBE_RTT_SEQ			1	/* scalar varint: Car+0x50 in exe
