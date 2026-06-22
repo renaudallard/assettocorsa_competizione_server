@@ -3286,8 +3286,8 @@ reply:
 			s->ratings_last_emit_ms = 0;
 		}
 
-		log_debug("welcome sequence sent: 0x2e+0x4f bcast + "
-		    "0x28+0x36+0x37 to conn=%u",
+		log_debug("welcome sequence sent: 0x2e+0x4f to new_conn, "
+		    "0x28 to new_conn, 0x36 bcast to all, conn=%u",
 		    (unsigned)c->conn_id);
 	}
 	return 0;
