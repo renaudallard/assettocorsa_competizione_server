@@ -1145,13 +1145,15 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				l1_n = si + 1;
 
 		/*
-		 * l2 carries the per-car lap history.  Pcap diff against
-		 * kunos accServer (2026-05-09) shows kunos always emits
-		 * 3 entries even when the car has driven 0 laps; the
-		 * std::vector is pre-allocated with 3 INT32_MAX sentinels
-		 * at car ctor time, and the real laps fill in later.
-		 * Padding to 3 means the AC2 client's lapHistoryStored
-		 * slot count stays stable across the record's lifecycle.
+		 * l2 carries the per-car lap history.
+		 * FUN_140034210 emits the actual vector size without padding:
+		 * (end - begin) >> 2, where the exe pre-allocates 1
+		 * INT32_MAX sentinel at LeaderboardLine ctor time.  Wire
+		 * count is 1 before any lap completes, growing from there.
+		 * The earlier minimum-3 was based on a mid-race pcap where
+		 * the bots had already driven 3+ laps (masking the true
+		 * minimum); the run_every_penalty.sh matrix (2026-06-22)
+		 * with 0 completed laps exposed the consistent 8 B over-count.
 		 */
 		{
 			int nh = race->lap_history_count < ACC_LAP_HISTORY
@@ -1161,7 +1163,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			    : race->lap_history_count % ACC_LAP_HISTORY;
 			int k;
 
-			l2_n = nh < 3 ? 3 : nh;
+			l2_n = nh < 1 ? 1 : nh;
 			for (k = 0; k < nh; k++) {
 				int idx = (start + k) % ACC_LAP_HISTORY;
 				l2_buf[k] = race->lap_history_ms[idx];
