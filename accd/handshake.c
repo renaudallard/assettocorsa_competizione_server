@@ -2723,7 +2723,9 @@ handshake_handle(struct Server *s, struct Conn *c,
 			uint8_t stype = s->sessions[sidx].session_type;
 			const char *why = NULL;
 
-			if (!s->unsafe_rejoin && stype == 10)
+			if (!s->unsafe_rejoin && stype == 10 &&
+			    s->session.phase >= PHASE_FORMATION &&
+			    s->session.phase <= PHASE_OVERTIME)
 				why = "unsafeRejoin=0 and race in progress";
 			else if (stype == 4 &&
 			    s->session.phase == PHASE_COMPLETED)
