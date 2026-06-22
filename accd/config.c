@@ -560,6 +560,24 @@ config_load(struct Server *s, const char *cfg_dir)
 		 */
 		track_zones_apply(s);
 
+		/*
+		 * FUN_1400214b0 step 3: clamp maxCarSlots to the track's
+		 * pit box count (ServerConfiguration +0xa0808, sourced from
+		 * FUN_14012c510 param_2 via FUN_140011150).  Applies to all
+		 * server types — the exe enforces this regardless of whether
+		 * the public-MP rating cap fired.
+		 */
+		{
+			int pc = track_pit_count(s->track);
+
+			if (s->max_car_slots > pc) {
+				log_warn("maxCarSlots %d exceeds pit count %d "
+				    "for %s, reducing",
+				    s->max_car_slots, pc, s->track);
+				s->max_car_slots = pc;
+			}
+		}
+
 		sessions = json_obj_get(event, "sessions");
 		n = json_arr_len(sessions);
 		if (n > ACC_MAX_SESSIONS)

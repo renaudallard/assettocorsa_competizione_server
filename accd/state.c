@@ -74,6 +74,7 @@ struct TrackZones {
 	float formation_start;
 	float green_start;
 	float green_end;
+	int pit_count;	/* per-track pit box count, exe FUN_14012c510 param_2 */
 };
 
 /*
@@ -86,43 +87,49 @@ struct TrackZones {
  * entries (hungaroring used the nurburgring values; oval used
  * paul_ricard_gt4; red_bull_ring used nurburgring_24h) and three
  * tracks were missing.  Aligning fixes those.
+ *
+ * pit_count is param_2 of FUN_14012c270, stored in the track zone
+ * struct at +0x20 and loaded into ServerConfiguration +0xa0808.
+ * FUN_1400214b0 clamps maxCarSlots to this value after the
+ * rating formula.
  */
 static const struct TrackZones track_zones[] = {
-	{"monza",           0.8000000f, 0.9915550f, 0.9999990f},
-	{"brands_hatch",    0.7299440f, 0.9765050f, 0.9999990f},
-	{"misano",          0.7499020f, 0.9700000f, 0.9899990f},
-	{"paul_ricard",     0.7849070f, 0.9914120f, 0.9999990f},
-	{"zolder",          0.7776030f, 0.9916960f, 0.9999990f},
-	{"silverstone",     0.7973160f, 0.9940350f, 0.9999990f},
-	{"hungaroring",     0.7578200f, 0.0000000f, 0.0079990f},
-	{"nurburgring",     0.7885620f, 0.9800000f, 0.9999990f},
-	{"barcelona",       0.7669800f, 0.9838080f, 0.9999990f},
-	{"zandvoort",       0.6926740f, 0.9752370f, 0.9849750f},
-	{"imola",           0.7824390f, 0.0150000f, 0.0340000f},
-	{"cota",            0.8814730f, 0.0454040f, 0.0605880f},
-	{"indianapolis",    0.6999490f, 0.9571550f, 0.9922090f},
-	{"watkins_glen",    0.7810060f, 0.9706860f, 0.9935680f},
-	{"valencia",        0.7477980f, 0.9800000f, 0.9999990f},
-	{"oval",            0.8600000f, 0.9709720f, 0.9900000f},
-	{"paul_ricard_gt4", 0.7849070f, 0.9914120f, 0.9999990f},
-	{"kyalami",         0.7251550f, 0.9999990f, 0.0173290f},
-	{"mount_panorama",  0.8559040f, 0.0100000f, 0.0204910f},
-	{"suzuka",          0.7824390f, 0.9856350f, 0.9999990f},
-	{"laguna_seca",     0.6331840f, 0.9721280f, 0.9999990f},
-	{"oulton_park",     0.7757550f, 0.9866660f, 0.9999990f},
-	{"snetterton",      0.7477380f, 0.9866660f, 0.9999990f},
-	{"donington",       0.7824390f, 0.0143790f, 0.0240000f},
-	{"red_bull_ring",   0.7749770f, 0.0000000f, 0.0192060f},
-	{"nurburgring_24h", 0.9434080f, 0.9933010f, 0.9999990f},
+	/* name              formation_start  green_start  green_end   pits */
+	{"monza",           0.8000000f, 0.9915550f, 0.9999990f,  29},
+	{"brands_hatch",    0.7299440f, 0.9765050f, 0.9999990f,  32},
+	{"misano",          0.7499020f, 0.9700000f, 0.9899990f,  30},
+	{"paul_ricard",     0.7849070f, 0.9914120f, 0.9999990f,  33},
+	{"zolder",          0.7776030f, 0.9916960f, 0.9999990f,  34},
+	{"silverstone",     0.7973160f, 0.9940350f, 0.9999990f,  36},
+	{"hungaroring",     0.7578200f, 0.0000000f, 0.0079990f,  27},
+	{"nurburgring",     0.7885620f, 0.9800000f, 0.9999990f,  30},
+	{"barcelona",       0.7669800f, 0.9838080f, 0.9999990f,  29},
+	{"zandvoort",       0.6926740f, 0.9752370f, 0.9849750f,  25},
+	{"imola",           0.7824390f, 0.0150000f, 0.0340000f,  30},
+	{"cota",            0.8814730f, 0.0454040f, 0.0605880f,  30},
+	{"indianapolis",    0.6999490f, 0.9571550f, 0.9922090f,  30},
+	{"watkins_glen",    0.7810060f, 0.9706860f, 0.9935680f,  30},
+	{"valencia",        0.7477980f, 0.9800000f, 0.9999990f,  29},
+	{"oval",            0.8600000f, 0.9709720f, 0.9900000f,  10},
+	{"paul_ricard_gt4", 0.7849070f, 0.9914120f, 0.9999990f,  33},
+	{"kyalami",         0.7251550f, 0.9999990f, 0.0173290f,  40},
+	{"mount_panorama",  0.8559040f, 0.0100000f, 0.0204910f,  36},
+	{"suzuka",          0.7824390f, 0.9856350f, 0.9999990f,  51},
+	{"laguna_seca",     0.6331840f, 0.9721280f, 0.9999990f,  30},
+	{"oulton_park",     0.7757550f, 0.9866660f, 0.9999990f,  28},
+	{"snetterton",      0.7477380f, 0.9866660f, 0.9999990f,  26},
+	{"donington",       0.7824390f, 0.0143790f, 0.0240000f,  37},
+	{"red_bull_ring",   0.7749770f, 0.0000000f, 0.0192060f,  28},
+	{"nurburgring_24h", 0.9434080f, 0.9933010f, 0.9999990f,  50},
 	/*
-	 * "spa" is the 27th entry the per-track audit treated as a
-	 * placeholder.  It is actually Spa-Francorchamps, with the
-	 * 3-char track name stored at DAT_14016b6f8 in the exe.
-	 * Verified against accd/tmp/capture2/spa_session.pcapng,
-	 * whose CircuitInfo bytes decode to
-	 * 0.9048780 / 0.1000000 / 0.1155060.
+	 * "spa" is the 27th entry — Spa-Francorchamps.  The 3-char track
+	 * name is stored at DAT_14016b6f8 in the exe.  Verified via
+	 * accd/tmp/capture2/spa_session.pcapng (CircuitInfo bytes decode
+	 * to 0.9048780 / 0.1000000 / 0.1155060).  The exe reports 82 pit
+	 * boxes (FUN_14012c510 param_2=0x52), matching the extended
+	 * endurance pit complex at Spa-Francorchamps.
 	 */
-	{"spa",             0.9048780f, 0.1000000f, 0.1155060f},
+	{"spa",             0.9048780f, 0.1000000f, 0.1155060f,  82},
 };
 
 void
@@ -149,6 +156,23 @@ track_zones_apply(struct Server *s)
 	    (double)s->formation_trigger_start,
 	    (double)s->green_trigger_start,
 	    (double)s->green_trigger_end);
+}
+
+/*
+ * Return the pit box count for a track, per the exe table
+ * (FUN_14012c510 param_2 copied into ServerConfiguration +0xa0808 by
+ * FUN_140011150 during FUN_140023700).  Returns 30 for unknown tracks,
+ * which is the public-MP hard cap and therefore never restricts further.
+ */
+int
+track_pit_count(const char *track)
+{
+	size_t i;
+
+	for (i = 0; i < sizeof(track_zones) / sizeof(track_zones[0]); i++)
+		if (strcmp(track, track_zones[i].name) == 0)
+			return track_zones[i].pit_count;
+	return 30;
 }
 
 /* <stdlib.h> hides the prototype under _POSIX_C_SOURCE; libc has it. */

@@ -1287,6 +1287,7 @@ void	server_free(struct Server *s);
  * event.json's formation/green override block runs so JSON still wins.
  */
 void	track_zones_apply(struct Server *s);
+int	track_pit_count(const char *track);
 void	track_random_pick(struct Server *s);
 int64_t	conn_clock_offset(const struct Server *s, const struct Conn *c);
 
