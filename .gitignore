@@ -33,3 +33,9 @@ accd/cfg/
 accd/tests/integration/cfg/ratings.json
 accd/tests/integration/cfg/current/
 accd/tests/integration/cfg/*.bak
+
+# Test run artifacts: pcap captures, logs, cached bytecode, result tables
+accd/tests/integration/*.pcap
+accd/tests/integration/*.log
+accd/tests/integration/__pycache__/
+accd/tests/integration/matrix_results.tsv
