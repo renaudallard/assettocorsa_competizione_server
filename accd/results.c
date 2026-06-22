@@ -613,15 +613,6 @@ results_write(struct Server *s)
 				 */
 				if (p->kind == PEN_DQ)
 					pvalue = (int)p->laps_remaining;
-				/*
-				 * Mirror FUN_140126b50: served entries write
-				 * penaltyValue=0 (the inner Penalty struct's +0x08
-				 * field is zeroed when served).  Race-end converted
-				 * DT/SG are also treated as served by the exe
-				 * before their TP replacement is created.
-				 */
-				if (p->served || p->race_end_tp != 0)
-					pvalue = 0;
 				if (!pen_first)
 					fprintf(f, ",");
 				fprintf(f, "\n    {");
