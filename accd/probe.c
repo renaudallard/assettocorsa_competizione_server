@@ -467,11 +467,11 @@ main(int argc, char *argv[])
 			/* Parse 0x0b accept. */
 			if (msg_id == 0x0b && flen >= 8) {
 				udp_port = get_u16(body + 1);
-				conn_id = get_u16(body + 6);
+				conn_id = get_u16(body + 4);
 				printf("  accept: udp=%d conn_id=%u "
-				    "nconns=%u flags=0x%02x\n",
+				    "car_id=0x%08x flags=0x%02x\n",
 				    udp_port, (unsigned)conn_id,
-				    (unsigned)get_u16(body + 4),
+				    get_u32(body + 6),
 				    body[3]);
 
 				udp_fd = socket(AF_INET, SOCK_DGRAM, 0);
