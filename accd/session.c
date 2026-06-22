@@ -60,6 +60,7 @@ uint32_t arc4random_uniform(uint32_t);
 #include "prim.h"
 #include "results.h"
 #include "session.h"
+#include "smpr.h"
 #include "state.h"
 #include "tick.h"
 
@@ -1520,6 +1521,7 @@ session_advance(struct Server *s)
 		 * timestamps come in.
 		 */
 		broadcast_session_mgr_state_all(s);
+		smpr_broadcast_session_state(s);
 		if (server_used_car_count(s) > 0)
 			session_start(s);
 		return;
@@ -1550,6 +1552,7 @@ session_advance(struct Server *s)
 	 */
 	(void)broadcast_leaderboard_force(s);
 	broadcast_session_mgr_state_all(s);
+	smpr_broadcast_session_state(s);
 	if (server_used_car_count(s) > 0)
 		session_start(s);
 }

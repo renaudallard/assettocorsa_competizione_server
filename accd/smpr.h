@@ -83,6 +83,7 @@ void	smpr_tick_realtime(struct Server *s);
  * broadcast_leaderboard_if_changed call in tick.c.
  */
 void	smpr_broadcast_leaderboard(struct Server *s);
+void	smpr_broadcast_session_state(struct Server *s);
 
 /*
  * Delta notifies — fan out CONNECTION_ENTRY / CAR_ENTRY to every

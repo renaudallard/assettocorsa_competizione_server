@@ -371,6 +371,23 @@ smpr_broadcast_leaderboard(struct Server *s)
 }
 
 /*
+ * Push SESSION_STATE to all connected SMPR monitors.  Called on session
+ * advance / phase change (exe FUN_14002aca0 sends 0x03 on event change).
+ */
+void
+smpr_broadcast_session_state(struct Server *s)
+{
+	int i;
+
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		struct Conn *c = s->conns[i];
+		if (c == NULL || !c->is_smpr || c->state != CONN_AUTH)
+			continue;
+		smpr_push_session_state(s, c);
+	}
+}
+
+/*
  * Fan out a single CONNECTION_ENTRY for `changed` to every SMPR
  * conn currently attached.  Skips when changed itself is an SMPR
  * conn (observers don't show up in the connection list).
