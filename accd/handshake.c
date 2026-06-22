@@ -1507,6 +1507,12 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
+	/* prefer evolved dynamic temps so late joiners see current conditions
+	 * (mirrors weather_build_broadcast which uses ambient_current/road_current) */
+	if (dyn && s->weather.ambient_current != 0.0f)
+		ambient = s->weather.ambient_current;
+	if (dyn && s->weather.road_current != 0.0f)
+		road = s->weather.road_current;
 
 	if (weather_write_track_conditions_head(bb, &s->grip) < 0)
 		return -1;
