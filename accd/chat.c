@@ -377,10 +377,7 @@ chat_do_kick(struct Server *s, struct Conn *c, const char *args,
 	    permanent ? "#%d has been banned from the server"
 	              : "#%d has been kicked from the server",
 	    car_num);
-	if (c != NULL)
-		chat_reply(s, c, chat, 4);
-	else
-		chat_broadcast(s, chat, 4);
+	chat_broadcast(s, chat, 4);
 
 	/*
 	 * Exe (FUN_14001dae0:745) DQs the car before sending the
