@@ -49,14 +49,15 @@
  *   u32 udp_port
  *   u16 + N bytes     serverName  (kson_string: u16 byte-length + UTF-8)
  *   u8  + N bytes     trackName   (u8 byte-length + UTF-8)
- *   u8  maxCarSlots   (rated capacity, NOT maxConnections)
- *   ff fa 01 00 00 01 00 00          <-- capability flags, verbatim
- *   u8  weatherRandomness
+ *   13 config bytes   (see lobby_send_registration for the full field map;
+ *                     RE'd from FUN_140047af0)
  *   u8  session_count
- *   per session (10 bytes):
- *      u8 type, u8 day_of_weekend, u8 hour, u8 duration_min,
- *      u8 0, u16 pre_race_wait_s, u16 overtime_s, u8 1
- *   u16 0             token pad
+ *   per session (9 bytes):
+ *      u8 type, u8 day_of_weekend, u8 hour_of_day,
+ *      i16 duration_min, u16 pre_race_s, u16 overtime_s,
+ *      u8 time_multiplier
+ *   u8  live_session_type  (0 at idle/registration)
+ *   u8  alt_id_len         (0 for empty alt-id)
  *   u16 64 + 64 alnum  token_a (server fingerprint, random per launch)
  *   u16 10 + 10 alnum  token_b
  *
@@ -65,10 +66,8 @@
  * Drivers update (on driver-count change): preamble(0xd1) + u8 count
  * + count * { u32 car_id, kson_string name, u8 current_driver_idx }.
  *
- * Source bytes for `ff fa 01 00 00 01 00 00` and the magic per-session
- * trailing 0x01 are still opaque — kunos hard-codes them in the
- * builder.  Tokens token_a/token_b are random alnum strings generated
- * at server boot (kunos uses time-seeded rand; we use arc4random).
+ * Tokens token_a/token_b are random alnum strings generated at server
+ * boot (kunos uses time-seeded rand; we use arc4random).
  */
 
 #define _POSIX_C_SOURCE 200809L
