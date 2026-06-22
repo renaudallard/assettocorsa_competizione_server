@@ -1298,11 +1298,11 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/ballast")) {
 		char rb[128] = "";
 		chat_do_bop(s, text + 8, 1, rb, sizeof(rb));
-		chat_reply(s, c, rb, 4);	/* unicast to the issuing admin */
+		chat_broadcast(s, rb, 4);
 	} else if (chat_prefix(text, "/restrictor")) {
 		char rb[128] = "";
 		chat_do_bop(s, text + 11, 0, rb, sizeof(rb));
-		chat_reply(s, c, rb, 4);
+		chat_broadcast(s, rb, 4);
 	} else if (chat_prefix(text, "/track")) {
 		char rb[128] = "";
 
