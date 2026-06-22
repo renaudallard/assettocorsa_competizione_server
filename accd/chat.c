@@ -1308,11 +1308,18 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/ballast")) {
 		char rb[128] = "";
 		chat_do_bop(s, text + 8, 1, rb, sizeof(rb));
-		chat_broadcast(s, rb, 4);
+		/*
+		 * Exe FUN_14001dae0 exits via line 644 goto LAB_14001f82a
+		 * without setting *param_8, so cVar20 stays 0 and the reply
+		 * goes through FUN_14004cc50 (unicast) to the admin only.
+		 */
+		if (rb[0] != '\0')
+			chat_reply(s, c, rb, 4);
 	} else if (chat_prefix(text, "/restrictor")) {
 		char rb[128] = "";
 		chat_do_bop(s, text + 11, 0, rb, sizeof(rb));
-		chat_broadcast(s, rb, 4);
+		if (rb[0] != '\0')
+			chat_reply(s, c, rb, 4);
 	} else if (chat_prefix(text, "/track")) {
 		char rb[128] = "";
 
