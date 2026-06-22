@@ -556,7 +556,7 @@ compute_phase(const struct SessionState *ss, uint64_t now)
 	if (now < ss->ts[2])
 		return PHASE_PRE_SESSION;
 	if (now < ss->ts[3])
-		return PHASE_PRE_SESSION;	/* race formation */
+		return PHASE_SESSION;	/* race: formation done, green not yet fired */
 	if (now < ss->ts[4])
 		return PHASE_SESSION;
 	if (now < ss->ts[5])
