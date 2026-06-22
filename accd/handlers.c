@@ -2732,8 +2732,8 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 		double cli = (double)(int)(uint32_t)client_ts_ms;
 
 		if (c->drift_valid)
-			c->drift_ms += (srv - c->drift_prev_server) -
-			    (cli - c->drift_prev_client);
+			c->drift_ms += (cli - c->drift_prev_client) -
+			    (srv - c->drift_prev_server);
 		c->drift_prev_server = srv;
 		c->drift_prev_client = cli;
 		c->drift_valid = 1;
