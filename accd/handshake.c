@@ -1997,6 +1997,8 @@ handshake_send_stint_sync(struct Conn *new_conn, struct Server *s)
 	if (s->session.phase != PHASE_SESSION &&
 	    s->session.phase != PHASE_OVERTIME)
 		return;
+	if (!s->session.green_fired)
+		return;
 	/*
 	 * The exe seeds the 0x4f stint-start frame only when stint
 	 * enforcement is active: FUN_14002dcb0 builds it inside
