@@ -1050,10 +1050,13 @@ session_tick(struct Server *s)
 	 * public lobby listing as a joinable Practice server,
 	 * instead of cycling through OVERTIME / COMPLETED where the
 	 * server disappears from the public server list.
+	 *
+	 * Exe FUN_14002f710:679 gates on bVar8 != 1 (phase != WAITING):
+	 * if the Race session is already waiting for drivers after Qualifying
+	 * ended, stay there; only reset when active/completing with nobody.
 	 */
 	if (server_used_car_count(s) == 0 &&
-	    (s->session.session_index != 0 ||
-	     s->session.phase != PHASE_WAITING)) {
+	    s->session.phase != PHASE_WAITING) {
 		log_info("no drivers, resetting to first session");
 		session_reset(s, 0);
 		lobby_notify_session_changed(&s->lobby);
