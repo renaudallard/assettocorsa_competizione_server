@@ -330,6 +330,8 @@ parse_string(struct parser *p)
 						     (low - 0xDC00));
 					}
 				}
+				if (cp >= 0xD800 && cp <= 0xDFFF)
+					cp = 0xFFFD;
 				if (cp < 0x80) {
 					out[used++] = (char)cp;
 				} else if (cp < 0x800) {
