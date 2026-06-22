@@ -1390,7 +1390,7 @@ build_rating_summary(struct ByteBuf *bb, const struct Server *s)
 		sid = car->drivers[di].steam_id;
 		ratings_get(s, sid, &sa, &tr);
 		if (wr_u16(bb, car->car_id) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, (uint8_t)di) < 0) return -1;
 		if (wr_u16(bb, (uint16_t)(sa / 10)) < 0) return -1;
 		if (wr_u16(bb, (uint16_t)(sa / 10)) < 0) return -1;
 		if (wr_i16(bb, -1) < 0) return -1;
