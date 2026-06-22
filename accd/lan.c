@@ -192,7 +192,7 @@ lan_handle(struct Server *s, int fd)
 
 	clients = 0;
 	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
-		if (s->cars[i].driver_count > 0)
+		if (s->cars[i].used)
 			clients++;
 
 	/*
