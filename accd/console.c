@@ -352,7 +352,7 @@ console_dispatch(struct Server *s, const char *line)
 	} else if (chat_prefix(p, "clear_all")) {
 		penalty_clear_all(s);
 		chat_broadcast(s,
-		    "All pending penalties cleared by Race Control", 4);
+		    "All penalties cleared by administrator", 4);
 		reply("all penalties cleared");
 	} else if (chat_prefix(p, "cleartp")) {
 		cmd_cleartp(s, p + 7);
