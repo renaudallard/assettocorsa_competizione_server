@@ -184,6 +184,8 @@ cmd_dq(struct Server *s, const char *args)
 {
 	int car_num, car_id;
 	char msg[128];
+	struct PenaltyQueue *pq;
+	int pre, pi;
 
 	if (chat_parse_int(args, &car_num) < 0) {
 		reply("usage: dq <race_number>");
@@ -196,8 +198,22 @@ cmd_dq(struct Server *s, const char *args)
 	}
 	/* category 8 (Trolling): the exe tags every admin-issued penalty
 	 * with cat 8, which the results writer renders as the reason. */
+	pq = &s->cars[car_id].race.pen;
+	pre = pq->count;
 	penalty_enqueue(s, car_id, EXE_DQ, 8, 3, 1, 0,
 	    REASON_RACE_CONTROL);
+	/*
+	 * Mark the freshly enqueued DQ slot(s) as admin so 0x36's
+	 * active_pen / pq_emit skip them -- kunos does not surface
+	 * admin-issued DQ in the per-car leaderboard prefix.
+	 * Same pattern as chat.c /dq and chat_do_penalty.
+	 */
+	if (pre >= pq->count)
+		pre = pq->count > 0 ? pq->count - 1 : 0;
+	if (pre < 0)
+		pre = 0;
+	for (pi = pre; pi < pq->count; pi++)
+		pq->slots[pi].admin = 1;
 	snprintf(msg, sizeof(msg),
 	    "Car #%d was disqualified by Race Control", car_num);
 	chat_broadcast(s, msg, 4);
