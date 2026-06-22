@@ -484,7 +484,20 @@ results_write(struct Server *s)
 		    car->race.race_time_ms);
 		fprintf(f, "          \"lapCount\": %d,\n",
 		    car->race.lap_count);
-		fprintf(f, "          \"lastSplitId\": 0\n");
+		/*
+		 * lastSplitId: how many sector splits the car completed in
+		 * its current (partial) lap when the session ended.
+		 * sector_ms[] holds in-progress split times; each entry is
+		 * set on a split event and reset to 0 on lap completion.
+		 */
+		{
+			int lsi = 0;
+			if (car->race.sector_ms[1] != 0)
+				lsi = 2;
+			else if (car->race.sector_ms[0] != 0)
+				lsi = 1;
+			fprintf(f, "          \"lastSplitId\": %d\n", lsi);
+		}
 		fprintf(f, "        },\n");
 		/*
 		 * missingMandatoryPitstop only applies to races with a
