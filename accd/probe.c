@@ -443,6 +443,14 @@ main(int argc, char *argv[])
 			}
 			if (rxlen < hdr_sz + flen)
 				break;
+			if (flen == 0) {
+				frame_seq++;
+				consumed = hdr_sz;
+				memmove(rxbuf, rxbuf + consumed,
+				    rxlen - consumed);
+				rxlen -= consumed;
+				continue;
+			}
 
 			body = rxbuf + hdr_sz;
 			msg_id = body[0];
