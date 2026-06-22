@@ -1140,8 +1140,19 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		uint8_t wide_flag = 0;
 		int32_t l2_buf[ACC_LAP_HISTORY];
 
+		/*
+		 * l1 carries the sector splits for the last completed lap.
+		 * FUN_140034210 reads them from LeaderboardLine +0x1b8, which
+		 * FUN_140128a80 copies from the car's lap-history entry at
+		 * lap-end.  Use last_lap_splits_ms[] (snapshot taken just
+		 * before sector_ms[] is reset at lap completion), NOT
+		 * sector_ms[] (the current in-progress lap's splits).
+		 * Pcap-verified 2026-06-22: kunos emits l1_n=0 mid-lap-2
+		 * because the formation lap had no recorded sector splits;
+		 * accd was emitting l1_n=2 from sector_ms[] by mistake.
+		 */
 		for (si = 0; si < 3; si++)
-			if (race->sector_ms[si] > 0)
+			if (race->last_lap_splits_ms[si] > 0)
 				l1_n = si + 1;
 
 		/*
@@ -1183,7 +1194,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		 */
 #define LAP_WIDE_PIVOT	0x10000u
 		for (si = 0; si < l1_n; si++)
-			if ((uint32_t)race->sector_ms[si] >= LAP_WIDE_PIVOT)
+			if ((uint32_t)race->last_lap_splits_ms[si] >= LAP_WIDE_PIVOT)
 				wide_flag = 1;
 		for (si = 0; si < l2_n; si++)
 			if ((uint32_t)l2_buf[si] >= LAP_WIDE_PIVOT)
@@ -1192,7 +1203,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		if (wr_u8(bb, wide_flag) < 0) return -1;
 		if (wr_u8(bb, (uint8_t)l1_n) < 0) return -1;
 		for (si = 0; si < l1_n; si++) {
-			uint32_t v = (uint32_t)race->sector_ms[si];
+			uint32_t v = (uint32_t)race->last_lap_splits_ms[si];
 			if (wide_flag) {
 				if (wr_u32(bb, v) < 0) return -1;
 			} else {
