@@ -597,6 +597,16 @@ results_write(struct Server *s)
 				const char *pname;
 				int pvalue;
 
+				/*
+				 * The exe only emits penalties that passed
+				 * through FUN_140126b50 (pit-served) or were
+				 * marked by penalty_convert_race_end (race_end_tp
+				 * set).  TP penalties from admin /tp* commands
+				 * have served=0 and race_end_tp=0 and appear in
+				 * neither array in the exe.
+				 */
+				if (!p->served && p->race_end_tp == 0)
+					continue;
 				pen_kind_json(p->kind, &pname, &pvalue);
 				if (!pen_first)
 					fprintf(f, ",");
