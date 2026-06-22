@@ -997,6 +997,13 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	if (!c->is_admin) {
 		log_info("admin command rejected (not admin) from conn=%u",
 		    (unsigned)c->conn_id);
+		/*
+		 * Mirror exe FUN_140021680:LAB_140021baa: reply with "You are
+		 * not a server administrator" unicast to the sender.  The exe
+		 * sends this to every non-admin that types a slash command
+		 * other than /report (which is allowed above the admin gate).
+		 */
+		chat_reply(s, c, "You are not a server administrator", 4);
 		return 1;
 	}
 
