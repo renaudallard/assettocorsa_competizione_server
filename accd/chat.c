@@ -1201,6 +1201,18 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		chat_do_kick(s, c, text + 5, 0, NULL, 0);
 	} else if (chat_prefix(text, "/ban")) {
 		chat_do_kick(s, c, text + 4, 1, NULL, 0);
+	} else if (chat_prefix(text, "/unban")) {
+		const char *sid = text + 6;
+		while (*sid == ' ') sid++;
+		if (*sid == '\0') {
+			chat_reply(s, c, "Usage: /unban <steam_id>", 4);
+		} else if (bans_remove(&s->bans, sid) == 0) {
+			bans_save(&s->bans, s->cfg_dir);
+			log_info("admin: unbanned %s", sid);
+			chat_reply(s, c, "Player unbanned", 4);
+		} else {
+			chat_reply(s, c, "steam_id not in ban list", 4);
+		}
 	} else if (chat_prefix(text, "/dq")) {
 		if (chat_parse_int(text + 3, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);
