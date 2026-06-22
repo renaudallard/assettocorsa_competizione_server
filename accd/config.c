@@ -689,11 +689,14 @@ config_load(struct Server *s, const char *cfg_dir)
 			float wb_dev = (float)json_obj_get_num(event,
 			    "weatherBaseDeviation", 0.3);
 			{
-				uint32_t start_s =
-				    (uint32_t)s->sessions[0].date_minute
-				    * 60u +
-				    (uint32_t)s->sessions[0].hour_of_day
-				    * 3600u;
+				uint32_t start_s = 0;
+
+				if (s->session_count > 0)
+					start_s =
+					    (uint32_t)s->sessions[0].date_minute
+					    * 60u +
+					    (uint32_t)s->sessions[0].hour_of_day
+					    * 3600u;
 				weather_init(s, clouds, rain, randomness,
 				    start_s, ws_mean, ws_dev,
 				    wb_mean, wb_dev);

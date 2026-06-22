@@ -567,6 +567,8 @@ weather_validate(struct Server *s)
 
 	if (!r->active)
 		return 1;	/* no validation configured */
+	if (s->session_count == 0)
+		return 1;	/* no sessions to validate against */
 
 	/*
 	 * Scan the first session's window (from 4 h before its start to
