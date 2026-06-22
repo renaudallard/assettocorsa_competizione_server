@@ -462,7 +462,7 @@ void
 compute_server_pings(const struct Server *s,
     uint16_t *avg_out, uint16_t *max_out)
 {
-	uint32_t sum = 0;
+	uint64_t sum = 0;
 	int count = 0;
 	uint16_t max_ping = 0;
 	int i;
@@ -477,7 +477,8 @@ compute_server_pings(const struct Server *s,
 			max_ping = cc->avg_rtt_ms > 65535
 			    ? 65535 : (uint16_t)cc->avg_rtt_ms;
 	}
-	*avg_out = count > 0 ? (uint16_t)(sum / count) : 0;
+	*avg_out = count > 0 ? (uint16_t)((sum / count) > 65535
+	    ? 65535 : sum / count) : 0;
 	*max_out = max_ping;
 }
 
