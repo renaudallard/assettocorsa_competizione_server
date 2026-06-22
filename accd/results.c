@@ -675,14 +675,16 @@ results_write(struct Server *s)
 				fprintf(f, " \"penalty\": ");
 				fprint_json_str(f, pname);
 				fprintf(f, ", \"penaltyValue\": %d,", pvalue);
-				fprintf(f, " \"violationInLap\": %d,",
-				    p->violation_lap);
 				/*
-				 * Exe (FUN_140127440) creates a fresh TP entry
-				 * via FUN_140125f50 with cleared_lap = -1 (the
-				 * "not yet served" sentinel).  Use -1 here too.
+				 * FUN_140127440 creates a fresh TP via
+				 * FUN_140125f50 which zeroes violation_time
+				 * (+0x60) and sets cleared_time=-1.0 (+0x68).
+				 * FUN_140129b10's loop yields 0 for both (the
+				 * counter pre-increments to 0 before the break
+				 * condition is checked against lap_start_time).
 				 */
-				fprintf(f, " \"clearedInLap\": %d", -1);
+				fprintf(f, " \"violationInLap\": %d,", 0);
+				fprintf(f, " \"clearedInLap\": %d", 0);
 				fprintf(f, " }");
 				prp_first = 0;
 			}
