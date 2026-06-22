@@ -1443,21 +1443,15 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 						break;
 					}
 			if (cn != NULL) {
-				char line[80];
-
 				cn->hellbanned = 1;
-				snprintf(line, sizeof(line),
-				    "Car #%d has been hellbanned", car_num);
-				chat_reply(s, c, line, 4);
 				log_info("admin: /hellban %d (conn=%u)",
 				    car_num, (unsigned)cn->conn_id);
-			} else {
-				char line[80];
-				snprintf(line, sizeof(line),
-				    "Couldn't locate connection for car #%d",
-				    car_num);
-				chat_reply(s, c, line, 4);
 			}
+			/*
+			 * Exe FUN_14001dae0:168 broadcasts "Hellban inactive"
+			 * regardless of whether the car was found.
+			 */
+			chat_broadcast(s, "Hellban inactive", 4);
 		}
 	} else if (chat_prefix(text, "/latencymode")) {
 		int mode;
