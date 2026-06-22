@@ -74,7 +74,8 @@ struct TrackZones {
 	float formation_start;
 	float green_start;
 	float green_end;
-	int pit_count;	/* per-track pit box count, exe FUN_14012c510 param_2 */
+	int pit_count;		/* public pit count, exe FUN_14012c270 param_2 */
+	int pit_count_priv;	/* private/CP pit count, exe FUN_14012c270 param_3 */
 };
 
 /*
@@ -88,48 +89,49 @@ struct TrackZones {
  * paul_ricard_gt4; red_bull_ring used nurburgring_24h) and three
  * tracks were missing.  Aligning fixes those.
  *
- * pit_count is param_2 of FUN_14012c270, stored in the track zone
- * struct at +0x20 and loaded into ServerConfiguration +0xa0808.
- * FUN_1400214b0 clamps maxCarSlots to this value after the
- * rating formula.
+ * FUN_14012c510 builds 27 TrackEntry objects by calling FUN_14012c270.
+ * param_2 -> +0x20 (public pit count, written to ServerConfiguration +0xa0808).
+ * param_3 -> +0x24 (private pit count, written to ServerConfiguration +0xa080c).
+ * FUN_1400214b0 selects +0xa080c when registerToLobby=0 or isCPServer/isCPInvServer;
+ * otherwise uses +0xa0808 (public).
  */
 static const struct TrackZones track_zones[] = {
-	/* name              formation_start  green_start  green_end   pits */
-	{"monza",           0.8000000f, 0.9915550f, 0.9999990f,  29},
-	{"brands_hatch",    0.7299440f, 0.9765050f, 0.9999990f,  32},
-	{"misano",          0.7499020f, 0.9700000f, 0.9899990f,  30},
-	{"paul_ricard",     0.7849070f, 0.9914120f, 0.9999990f,  33},
-	{"zolder",          0.7776030f, 0.9916960f, 0.9999990f,  34},
-	{"silverstone",     0.7973160f, 0.9940350f, 0.9999990f,  36},
-	{"hungaroring",     0.7578200f, 0.0000000f, 0.0079990f,  27},
-	{"nurburgring",     0.7885620f, 0.9800000f, 0.9999990f,  30},
-	{"barcelona",       0.7669800f, 0.9838080f, 0.9999990f,  29},
-	{"zandvoort",       0.6926740f, 0.9752370f, 0.9849750f,  25},
-	{"imola",           0.7824390f, 0.0150000f, 0.0340000f,  30},
-	{"cota",            0.8814730f, 0.0454040f, 0.0605880f,  30},
-	{"indianapolis",    0.6999490f, 0.9571550f, 0.9922090f,  30},
-	{"watkins_glen",    0.7810060f, 0.9706860f, 0.9935680f,  30},
-	{"valencia",        0.7477980f, 0.9800000f, 0.9999990f,  29},
-	{"oval",            0.8600000f, 0.9709720f, 0.9900000f,  10},
-	{"paul_ricard_gt4", 0.7849070f, 0.9914120f, 0.9999990f,  33},
-	{"kyalami",         0.7251550f, 0.9999990f, 0.0173290f,  40},
-	{"mount_panorama",  0.8559040f, 0.0100000f, 0.0204910f,  36},
-	{"suzuka",          0.7824390f, 0.9856350f, 0.9999990f,  51},
-	{"laguna_seca",     0.6331840f, 0.9721280f, 0.9999990f,  30},
-	{"oulton_park",     0.7757550f, 0.9866660f, 0.9999990f,  28},
-	{"snetterton",      0.7477380f, 0.9866660f, 0.9999990f,  26},
-	{"donington",       0.7824390f, 0.0143790f, 0.0240000f,  37},
-	{"red_bull_ring",   0.7749770f, 0.0000000f, 0.0192060f,  28},
-	{"nurburgring_24h", 0.9434080f, 0.9933010f, 0.9999990f,  50},
+	/* name           formation_start  green_start  green_end   pub priv */
+	{"monza",           0.8000000f, 0.9915550f, 0.9999990f,  29,  60},
+	{"brands_hatch",    0.7299440f, 0.9765050f, 0.9999990f,  32,  50},
+	{"misano",          0.7499020f, 0.9700000f, 0.9899990f,  30,  50},
+	{"paul_ricard",     0.7849070f, 0.9914120f, 0.9999990f,  33,  80},
+	{"zolder",          0.7776030f, 0.9916960f, 0.9999990f,  34,  50},
+	{"silverstone",     0.7973160f, 0.9940350f, 0.9999990f,  36,  60},
+	{"hungaroring",     0.7578200f, 0.0000000f, 0.0079990f,  27,  50},
+	{"nurburgring",     0.7885620f, 0.9800000f, 0.9999990f,  30,  50},
+	{"barcelona",       0.7669800f, 0.9838080f, 0.9999990f,  29,  50},
+	{"zandvoort",       0.6926740f, 0.9752370f, 0.9849750f,  25,  50},
+	{"imola",           0.7824390f, 0.0150000f, 0.0340000f,  30,  50},
+	{"cota",            0.8814730f, 0.0454040f, 0.0605880f,  30,  70},
+	{"indianapolis",    0.6999490f, 0.9571550f, 0.9922090f,  30,  60},
+	{"watkins_glen",    0.7810060f, 0.9706860f, 0.9935680f,  30,  60},
+	{"valencia",        0.7477980f, 0.9800000f, 0.9999990f,  29,  60},
+	{"oval",            0.8600000f, 0.9709720f, 0.9900000f,  10,   2},
+	{"paul_ricard_gt4", 0.7849070f, 0.9914120f, 0.9999990f,  33,  80},
+	{"kyalami",         0.7251550f, 0.9999990f, 0.0173290f,  40,  50},
+	{"mount_panorama",  0.8559040f, 0.0100000f, 0.0204910f,  36,  50},
+	{"suzuka",          0.7824390f, 0.9856350f, 0.9999990f,  51, 105},
+	{"laguna_seca",     0.6331840f, 0.9721280f, 0.9999990f,  30,  50},
+	{"oulton_park",     0.7757550f, 0.9866660f, 0.9999990f,  28,  50},
+	{"snetterton",      0.7477380f, 0.9866660f, 0.9999990f,  26,  50},
+	{"donington",       0.7824390f, 0.0143790f, 0.0240000f,  37,  50},
+	{"red_bull_ring",   0.7749770f, 0.0000000f, 0.0192060f,  28,  50},
+	{"nurburgring_24h", 0.9434080f, 0.9933010f, 0.9999990f,  50, 110},
 	/*
 	 * "spa" is the 27th entry — Spa-Francorchamps.  The 3-char track
 	 * name is stored at DAT_14016b6f8 in the exe.  Verified via
 	 * accd/tmp/capture2/spa_session.pcapng (CircuitInfo bytes decode
 	 * to 0.9048780 / 0.1000000 / 0.1155060).  The exe reports 82 pit
 	 * boxes (FUN_14012c510 param_2=0x52), matching the extended
-	 * endurance pit complex at Spa-Francorchamps.
+	 * endurance pit complex at Spa-Francorchamps.  Private count = 82 (same).
 	 */
-	{"spa",             0.9048780f, 0.1000000f, 0.1155060f,  82},
+	{"spa",             0.9048780f, 0.1000000f, 0.1155060f,  82,  82},
 };
 
 void
@@ -159,20 +161,23 @@ track_zones_apply(struct Server *s)
 }
 
 /*
- * Return the pit box count for a track, per the exe table
- * (FUN_14012c510 param_2 copied into ServerConfiguration +0xa0808 by
- * FUN_140011150 during FUN_140023700).  Returns 30 for unknown tracks,
- * which is the public-MP hard cap and therefore never restricts further.
+ * Return the pit box count for a track.  is_private selects the private
+ * path (param_3 / +0xa080c) used for registerToLobby=0, isCPServer, and
+ * isCPInvServer servers (FUN_1400214b0:75-81); public servers use param_2
+ * / +0xa0808.  Returns 30 (public cap) or 100 (generous private default)
+ * for unknown tracks so nothing is spuriously restricted.
  */
 int
-track_pit_count(const char *track)
+track_pit_count(const char *track, int is_private)
 {
 	size_t i;
 
-	for (i = 0; i < sizeof(track_zones) / sizeof(track_zones[0]); i++)
+	for (i = 0; i < sizeof(track_zones) / sizeof(track_zones[0]); i++) {
 		if (strcmp(track, track_zones[i].name) == 0)
-			return track_zones[i].pit_count;
-	return 30;
+			return is_private ? track_zones[i].pit_count_priv
+			    : track_zones[i].pit_count;
+	}
+	return is_private ? 100 : 30;
 }
 
 /* <stdlib.h> hides the prototype under _POSIX_C_SOURCE; libc has it. */

@@ -562,13 +562,14 @@ config_load(struct Server *s, const char *cfg_dir)
 
 		/*
 		 * FUN_1400214b0 step 3: clamp maxCarSlots to the track's
-		 * pit box count (ServerConfiguration +0xa0808, sourced from
-		 * FUN_14012c510 param_2 via FUN_140011150).  Applies to all
-		 * server types — the exe enforces this regardless of whether
-		 * the public-MP rating cap fired.
+		 * pit box count.  FUN_1400214b0:75-81 selects between
+		 * +0xa0808 (public, param_2) and +0xa080c (private, param_3)
+		 * based on registerToLobby=0 or isCPServer/isCPInvServer.
 		 */
 		{
-			int pc = track_pit_count(s->track);
+			int priv = !s->register_to_lobby ||
+			    s->is_cp_server || s->is_cp_inv_server;
+			int pc = track_pit_count(s->track, priv);
 
 			if (s->max_car_slots > pc) {
 				log_warn("maxCarSlots %d exceeds pit count %d "
