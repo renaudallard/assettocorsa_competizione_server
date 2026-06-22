@@ -1098,7 +1098,8 @@ tick_run(struct Server *s)
 	 * When green fires, broadcast the "Race start initialized"
 	 * system chat — the exe emits the exact same 0x2b.
 	 */
-	if (s->session.phase == PHASE_PRE_SESSION &&
+	if ((s->session.phase == PHASE_PRE_SESSION ||
+	     s->session.phase == PHASE_SESSION) &&
 	    s->session_count > 0 &&
 	    s->sessions[s->session.session_index].session_type == 10 &&
 	    !s->session.green_fired) {
