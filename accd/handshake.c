@@ -2537,7 +2537,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 					oc = &s->cars[old->car_id];
 					if (oc->driver_count == 0)
 						continue;
-					if (strcmp(oc->drivers[0].steam_id,
+					if (strcmp(old->steam_id,
 					    steam_buf) != 0)
 						continue;
 					log_info("Removed connection due to "
