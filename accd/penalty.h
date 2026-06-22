@@ -150,7 +150,8 @@ uint32_t
  * call finds no DT/SG entries to convert).
  */
 void
-	penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count);
+	penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count,
+	    float time_multiplier);
 
 /* Build the chat string for a penalty issuance.  Suffix is chosen
  * from `reason` (e.g. " - cutting") unless `collision` is set, in

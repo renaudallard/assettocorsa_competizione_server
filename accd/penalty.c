@@ -758,12 +758,7 @@ penalty_total_ms(const struct PenaltyQueue *q)
 		 * (kunos's pq_emit shows DT/SG verbatim after race-end).
 		 */
 		if (p->race_end_tp != 0) {
-			switch (p->race_end_tp) {
-			case PEN_TP30: total += 30000; break;
-			case PEN_TP40: total += 40000; break;
-			case PEN_TP50: total += 50000; break;
-			case PEN_TP60: total += 60000; break;
-			}
+			total += p->race_end_tp_ms;
 			continue;
 		}
 		switch (p->kind) {
@@ -822,10 +817,12 @@ penalty_total_ms(const struct PenaltyQueue *q)
  * 30/40/50/60-second buckets.
  */
 void
-penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count)
+penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count,
+    float time_multiplier)
 {
 	int i;
 	uint8_t new_kind;
+	uint32_t base_ms;
 	int car_dq = 0;
 
 	if (q == NULL)
@@ -853,10 +850,10 @@ penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count)
 		if (p->laps_remaining <= 0 && car_dq)
 			continue;
 		switch (p->kind) {
-		case PEN_DT:	case PEN_DTC:	new_kind = PEN_TP30; break;
-		case PEN_SG10:	case PEN_SG10C:	new_kind = PEN_TP40; break;
-		case PEN_SG20:	case PEN_SG20C:	new_kind = PEN_TP50; break;
-		case PEN_SG30:	case PEN_SG30C:	new_kind = PEN_TP60; break;
+		case PEN_DT:	case PEN_DTC:	new_kind = PEN_TP30; base_ms = 30000; break;
+		case PEN_SG10:	case PEN_SG10C:	new_kind = PEN_TP40; base_ms = 40000; break;
+		case PEN_SG20:	case PEN_SG20C:	new_kind = PEN_TP50; base_ms = 50000; break;
+		case PEN_SG30:	case PEN_SG30C:	new_kind = PEN_TP60; base_ms = 60000; break;
 		default:
 			continue;
 		}
@@ -871,8 +868,12 @@ penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count)
 		 * The per-car tail (handshake.c) hides the entry once
 		 * race_end_tp is set so AC2's active_pen widget doesn't
 		 * show a phantom DT after the race ends.
+		 *
+		 * Exe FUN_140127440 multiplies base seconds by the race
+		 * session's timeMultiplier (ServerConfiguration+0xac).
 		 */
 		p->race_end_tp = new_kind;
+		p->race_end_tp_ms = (uint32_t)((float)base_ms * time_multiplier);
 		p->collision = 0;
 		/*
 		 * Mirror FUN_140127440: after converting, exe calls

@@ -192,6 +192,7 @@ struct PenaltyEntry {
 	uint8_t		pending;	/* 1 = client-reported, awaits server validation */
 	uint8_t		admin;		/* 1 = admin chat-issued, hidden from 0x36 wire */
 	uint8_t		race_end_tp;	/* race-end DT/SG->TP30..TP60 conversion target */
+	uint32_t	race_end_tp_ms;	/* converted time in ms (base * timeMultiplier) */
 	uint8_t		driver_index;	/* driver active when the penalty was
 					 * incurred; for results.json attribution */
 	int16_t		violation_lap;	/* 0-based lap index when the penalty was

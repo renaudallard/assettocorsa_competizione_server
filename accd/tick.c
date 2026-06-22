@@ -1494,7 +1494,10 @@ tick_run(struct Server *s)
 						continue;
 					penalty_convert_race_end(
 					    &s->cars[j].race.pen,
-					    (int16_t)s->cars[j].race.lap_count);
+					    (int16_t)s->cars[j].race.lap_count,
+					    (float)s->sessions[
+						s->session.session_index
+					    ].time_multiplier);
 				}
 				/*
 				 * The converted entries are consumed by
