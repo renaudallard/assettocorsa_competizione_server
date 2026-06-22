@@ -1146,14 +1146,14 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 
 		/*
 		 * l2 carries the per-car lap history.
-		 * FUN_140034210 emits the actual vector size without padding:
-		 * (end - begin) >> 2, where the exe pre-allocates 1
-		 * INT32_MAX sentinel at LeaderboardLine ctor time.  Wire
-		 * count is 1 before any lap completes, growing from there.
-		 * The earlier minimum-3 was based on a mid-race pcap where
-		 * the bots had already driven 3+ laps (masking the true
-		 * minimum); the run_every_penalty.sh matrix (2026-06-22)
-		 * with 0 completed laps exposed the consistent 8 B over-count.
+		 * FUN_140034210 emits the vector size directly (end-begin)>>2.
+		 * The exe pre-allocates 3 INT32_MAX sentinels at
+		 * LeaderboardLine ctor time (pcap-verified 2026-06-22: kunos
+		 * emits l2_n=3 before any lap is completed on misano, and
+		 * l2_n=3 after the first lap).  The minimum-1 introduced in
+		 * 608be23 was wrong; that commit's matrix compared accd at
+		 * 1-lap state (stadion, 1s formation lap) vs kunos at 0-lap
+		 * state on misano (4161m, formation lap never completed in 30s).
 		 */
 		{
 			int nh = race->lap_history_count < ACC_LAP_HISTORY
@@ -1163,7 +1163,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			    : race->lap_history_count % ACC_LAP_HISTORY;
 			int k;
 
-			l2_n = nh < 1 ? 1 : nh;
+			l2_n = nh < 3 ? 3 : nh;
 			for (k = 0; k < nh; k++) {
 				int idx = (start + k) % ACC_LAP_HISTORY;
 				l2_buf[k] = race->lap_history_ms[idx];
