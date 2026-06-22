@@ -382,15 +382,20 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		kc->peer = *peer;
 		/*
-		 * Refresh the UDP-liveness timer the 5 s reaper checks, the
-		 * way the exe's 0x13 handler does (FUN_140041d90 sets conn+
-		 * 0xa01e8 = now, the field FUN_14002f180's 5000 ms reaper
-		 * reads).  A client that streams only keepalives (0x13/0x17)
-		 * with no 0x16 pong or 0x1e physics for >5 s - e.g. paused or
-		 * sitting in a menu - must stay alive like it does on the
-		 * stock server.  A genuinely gone client sends no 0x13, so
-		 * this never keeps a dead conn around.
+		 * Exe FUN_140041d90 (called on every 0x13 at FUN_140027f80:651)
+		 * resets the 50-entry RTT ring and best-RTT sentinel to -1 so
+		 * that the next 0x16 pong triggers a fresh 0x28 SRV_LARGE_STATE
+		 * with an updated client time base.  Without this reset, accd
+		 * only emits 0x28 on the literal first pong of the session.
 		 */
+		memset(kc->rtt_ring, -1, sizeof(kc->rtt_ring));
+		kc->rtt_ring_idx = -1;
+		kc->avg_rtt_ms = 0;
+		kc->best_rtt_ms = 0;
+		kc->session_clock_seen = 0;
+		kc->drift_ms = 0.0;
+		kc->drift_valid = 0;
+		/* Refresh the UDP-liveness timer the 5 s reaper checks. */
 		kc->last_udp_server_ms = (uint32_t)mono_ms();
 		return;
 	}
