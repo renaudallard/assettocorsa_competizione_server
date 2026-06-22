@@ -332,15 +332,15 @@ def parse_spawn_def(r):
     for _ in range(dc):
         parse_driver_info(r)
     r.u8()                            # active_driver_idx
-    r.u64()                           # timestamp
-    r.u8()                            # flag (+0x153)
-    r.u8()                            # flag (+0x152)
+    r.u64()                           # last_sys_data (car system u64, +0x1b0)
+    r.u8()                            # car_location (+0x153)
+    r.u8()                            # current_tyres (+0x152)
     for _ in range(5):
-        r.u8()                        # dirt
+        r.u8()                        # car_dirt
     for _ in range(5):
         r.u8()                        # damage
-    r.u16()                           # elo
-    r.u32()                           # stability
+    r.u16()                           # ballast_kg
+    r.u32()                           # restrictor (f32)
 
 
 def parse_season_entity(r):
@@ -474,9 +474,9 @@ def parse_leaderboard_record(r, cvar8):
         r.u8()                        # driver_category
         r.u16()                       # nationality
     # Six per-car fields after driver list
-    r.u16()
+    r.u16()                           # current_driver_index
     r.u32()                           # best_lap_ms
-    r.u32()                           # last_sys_data
+    r.u32()                           # last_lap_ms
     r.u16()                           # lap_count
     r.u32()                           # race_time_ms
     r.u8()                            # last_elo
