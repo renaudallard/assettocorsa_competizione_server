@@ -593,8 +593,12 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 int
 write_leaderboard_section(struct ByteBuf *bb, struct Server *s)
 {
+	uint8_t sidx = (s->session_count > 0 &&
+	    s->session.session_index < s->session_count)
+	    ? s->session.session_index
+	    : (s->session_count > 0 ? s->session_count - 1 : 0);
 	uint8_t cur_type = s->session_count > 0
-	    ? s->sessions[s->session.session_index].session_type : 0;
+	    ? s->sessions[sidx].session_type : 0;
 	/* Default emit (0x36 / welcome trailer) — current session.
 	 * is_archived=0, session_idx=-1 (live state).  results_ctx=0: the
 	 * exe builds the welcome trailer with the TP gate off (140033980.c
