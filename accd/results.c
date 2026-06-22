@@ -118,31 +118,25 @@ penalty_category_label(uint8_t category)
 }
 
 /*
- * Map a penalty_kind to the results.json penalty name and value.
- * Shared by the penalties[] and post_race_penalties[] writers.
+ * Map a penalty_kind to the results.json penalty name.
+ * penaltyValue (PenaltySheet+0x5c = param_3 in FUN_140125f50) is
+ * always 0 in the exe; all callers pass 0 for param_3.
  */
 static void
 pen_kind_json(uint8_t kind, const char **name, int *value)
 {
+	*value = 0;
 	switch (kind) {
-	case PEN_DT: case PEN_DTC:	*name = "DriveThrough"; *value = 3; break;
-	case PEN_SG10: case PEN_SG10C:	*name = "StopAndGo_10"; *value = 10; break;
-	case PEN_SG20: case PEN_SG20C:	*name = "StopAndGo_20"; *value = 20; break;
-	case PEN_SG30: case PEN_SG30C:	*name = "StopAndGo_30"; *value = 30; break;
-	/*
-	 * The exe kind-name table (FUN_1401174a0) maps kind 5 to the
-	 * single name "PostRaceTime" for every time penalty; the seconds
-	 * live in the penaltyValue field, not the name.
-	 */
-	case PEN_TP5:			*name = "PostRaceTime"; *value = 5; break;
-	case PEN_TP15:			*name = "PostRaceTime"; *value = 15; break;
-	case PEN_TP30:			*name = "PostRaceTime"; *value = 30; break;
-	case PEN_TP40:			*name = "PostRaceTime"; *value = 40; break;
-	case PEN_TP50:			*name = "PostRaceTime"; *value = 50; break;
-	case PEN_TP60:			*name = "PostRaceTime"; *value = 60; break;
-	case PEN_DQ:			*name = "Disqualified"; *value = 0; break;
-	case PEN_RBL:			*name = "RemoveBestLaptime"; *value = 0; break;
-	default:			*name = "Unknown"; *value = 0; break;
+	case PEN_DT: case PEN_DTC:	*name = "DriveThrough"; break;
+	case PEN_SG10: case PEN_SG10C:	*name = "StopAndGo_10"; break;
+	case PEN_SG20: case PEN_SG20C:	*name = "StopAndGo_20"; break;
+	case PEN_SG30: case PEN_SG30C:	*name = "StopAndGo_30"; break;
+	case PEN_TP5: case PEN_TP15:
+	case PEN_TP30: case PEN_TP40:
+	case PEN_TP50: case PEN_TP60:	*name = "PostRaceTime"; break;
+	case PEN_DQ:			*name = "Disqualified"; break;
+	case PEN_RBL:			*name = "RemoveBestLaptime"; break;
+	default:			*name = "Unknown"; break;
 	}
 }
 
@@ -604,28 +598,6 @@ results_write(struct Server *s)
 				int pvalue;
 
 				pen_kind_json(p->kind, &pname, &pvalue);
-				/*
-				 * Live PostRaceTime entries carry their true
-				 * accumulated seconds in laps_remaining (single
-				 * per-car counter, see penalty_set_tp); the
-				 * pen_kind_json bucket only distinguishes 5 / 15.
-				 * Report the real total so an ignored mandatory
-				 * pit shows 130, not 15.  Converted DT/SG TPs are
-				 * reported via post_race_penalties (race_end_tp).
-				 */
-				if (p->race_end_tp == 0 &&
-				    (p->kind == PEN_TP5 || p->kind == PEN_TP15) &&
-				    p->laps_remaining > 0)
-					pvalue = p->laps_remaining;
-				/*
-				 * FUN_140129b10 reads penalty+0x70 (laps_remaining)
-				 * as penaltyValue for all kinds.  For admin /dq
-				 * (FUN_14001dae0:248 passes param_7=3) the field is
-				 * 3; for ladder DQ it is zeroed by the caller.
-				 * pen_kind_json hardcodes 0, so override here.
-				 */
-				if (p->kind == PEN_DQ)
-					pvalue = (int)p->laps_remaining;
 				if (!pen_first)
 					fprintf(f, ",");
 				fprintf(f, "\n    {");
