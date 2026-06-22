@@ -733,10 +733,19 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 
 		for (pos = 1; pos <= ACC_MAX_CARS && emitted < nc; pos++) {
 			for (j = 0; j < ACC_MAX_CARS; j++) {
-				const struct CarRaceState *src;
-				if (session_idx < 0 && !s->cars[j].used)
+				const struct CarRaceState *src =
+				    race_src_for(&s->cars[j], session_idx);
+				/*
+				 * Mirror the counting loop: skip a disconnected
+				 * car (used=0) that has no race data, but keep
+				 * one that drove at least one lap or posted a
+				 * best time — the same guard used for nc above.
+				 */
+				if (session_idx < 0 && !s->cars[j].used &&
+				    (src == NULL ||
+				    (src->lap_count == 0 &&
+				    src->best_lap_ms == 0)))
 					continue;
-				src = race_src_for(&s->cars[j], session_idx);
 				if (src == NULL || src->position != pos)
 					continue;
 				if (write_car_leaderboard_record(bb, s,
@@ -748,11 +757,18 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 		}
 		/* Emit any stragglers whose position wasn't in [1..n]. */
 		for (j = 0; j < ACC_MAX_CARS && emitted < nc; j++) {
-			const struct CarRaceState *src;
+			const struct CarRaceState *src =
+			    race_src_for(&s->cars[j], session_idx);
 			int16_t p;
-			if (session_idx < 0 && !s->cars[j].used)
+			/*
+			 * Mirror the counting loop: same disconnected-car
+			 * skip condition as above and as nc's scan.
+			 */
+			if (session_idx < 0 && !s->cars[j].used &&
+			    (src == NULL ||
+			    (src->lap_count == 0 &&
+			    src->best_lap_ms == 0)))
 				continue;
-			src = race_src_for(&s->cars[j], session_idx);
 			if (src == NULL)
 				continue;
 			p = src->position;
