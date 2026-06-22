@@ -279,6 +279,7 @@ chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 {
 	int car_num, car_id, kind;
 	char chat[128];
+	(void)c;	/* exe always broadcasts; c kept for API compat */
 
 	if (chat_parse_int(args, &car_num) < 0)
 		return;
@@ -327,10 +328,13 @@ chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 	}
 	penalty_format_chat(chat, sizeof(chat),
 	    (uint8_t)kind, REASON_RACE_CONTROL, collision, car_num);
-	if (c != NULL)
-		chat_reply(s, c, chat, 4);
-	else
-		chat_broadcast(s, chat, 4);
+	/*
+	 * Exe FUN_14001dae0 sets *param_8=1 for every penalty command
+	 * (/dt, /sg*, /tp*), causing FUN_140021680 to route the reply
+	 * through FUN_14001ada0 (broadcast) rather than FUN_14004cc50
+	 * (unicast).  Broadcast to all — drivers see the announcement.
+	 */
+	chat_broadcast(s, chat, 4);
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", chat);
 	log_info("admin: %s", chat);
@@ -1236,7 +1240,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(chat, sizeof(chat),
 				    "Car #%d was disqualified by Race Control",
 				    car_num);
-				chat_reply(s, c, chat, 4);
+				chat_broadcast(s, chat, 4);
 			}
 		}
 	} else if (chat_prefix(text, "/clear_all")) {
@@ -1256,7 +1260,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(chat, sizeof(chat),
 				    "Pending penalties for #%d cleared "
 				    "by Race Control", car_num);
-				chat_reply(s, c, chat, 4);
+				chat_broadcast(s, chat, 4);
 			}
 		}
 	} else if (chat_prefix(text, "/cleartp")) {
@@ -1273,7 +1277,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				snprintf(chat, sizeof(chat),
 				    "Pending post race time penalties for #%d "
 				    "cleared by Race Control", car_num);
-				chat_reply(s, c, chat, 4);
+				chat_broadcast(s, chat, 4);
 			}
 		}
 	} else if (chat_prefix(text, "/tp5c")) {
