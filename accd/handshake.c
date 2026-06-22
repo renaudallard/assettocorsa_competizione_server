@@ -2541,6 +2541,15 @@ handshake_handle(struct Server *s, struct Conn *c,
 		}
 
 		/*
+		 * drivers[] index matched by the forceEntryList steam_id
+		 * search.  0 for non-entrylist joins; set below for multi-
+		 * driver team entries so the connecting co-driver's fields
+		 * land in the correct drivers[] slot.  Declared here so
+		 * the reconnect goto does not jump over its initializer.
+		 */
+		int matched_dj = 0;
+
+		/*
 		 * Quick-reconnect detection (FUN_140025690 in accServer.exe,
 		 * logs "Removed connection due to (quick) reconnect").  If an
 		 * already-authenticated peer has this steam_id, detach it
@@ -2802,6 +2811,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 				for (dj = 0; dj < ec->driver_count; dj++) {
 					if (strcmp(ec->drivers[dj].steam_id,
 					    steam_buf) == 0) {
+						matched_dj = dj;
 						slot = i;
 						break;
 					}
@@ -2819,6 +2829,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 						if (strcmp(ec->drivers[dj]
 						    .steam_id, steam_buf)
 						    == 0) {
+							matched_dj = dj;
 							slot = i;
 							break;
 						}
@@ -2948,23 +2959,24 @@ post_slot_assignment:
 		/* Populate the car slot with parsed data. */
 		car = &s->cars[c->car_id];
 		if (first != NULL)
-			snprintf(car->drivers[0].first_name,
-			    sizeof(car->drivers[0].first_name), "%s",
+			snprintf(car->drivers[matched_dj].first_name,
+			    sizeof(car->drivers[matched_dj].first_name), "%s",
 			    first);
 		if (last != NULL)
-			snprintf(car->drivers[0].last_name,
-			    sizeof(car->drivers[0].last_name), "%s",
+			snprintf(car->drivers[matched_dj].last_name,
+			    sizeof(car->drivers[matched_dj].last_name), "%s",
 			    last);
 		if (sname != NULL)
-			snprintf(car->drivers[0].short_name,
-			    sizeof(car->drivers[0].short_name), "%s",
+			snprintf(car->drivers[matched_dj].short_name,
+			    sizeof(car->drivers[matched_dj].short_name), "%s",
 			    sname);
-		car->drivers[0].driver_category = cat;
-		car->drivers[0].nationality = nat;
-		snprintf(car->drivers[0].steam_id,
-		    sizeof(car->drivers[0].steam_id), "%s", steam_buf);
+		car->drivers[matched_dj].driver_category = cat;
+		car->drivers[matched_dj].nationality = nat;
+		snprintf(car->drivers[matched_dj].steam_id,
+		    sizeof(car->drivers[matched_dj].steam_id), "%s", steam_buf);
 		if (car->driver_count == 0)
 			car->driver_count = 1;
+		car->current_driver_index = (uint8_t)matched_dj;
 
 		/*
 		 * entrylist isServerAdmin: auto-elevate this conn to admin
