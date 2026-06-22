@@ -1556,7 +1556,7 @@ write_track_records(struct ByteBuf *bb, struct Server *s)
 		    (uint32_t)def->duration_min * 60u;
 
 		if (wr_u8(bb, def->hour_of_day) < 0) return -1;
-		if (wr_u8(bb, 0) < 0) return -1;
+		if (wr_u8(bb, def->date_minute) < 0) return -1;
 		if (wr_u8(bb, (uint8_t)(def->day_of_weekend > 0
 		    ? def->day_of_weekend - 1 : 0)) < 0) return -1;
 		if (wr_f32(bb, (float)(def->time_multiplier > 0
