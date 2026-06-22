@@ -1236,10 +1236,15 @@ session_tick(struct Server *s)
 		}
 	}
 
-	/* Drive the in-game clock during the active session. */
-	if (s->session.phase == PHASE_SESSION ||
-	    s->session.phase == PHASE_OVERTIME) {
-		uint64_t active_start = s->session.ts[3];
+	/*
+	 * Drive the in-game clock from the moment WAITING ends through
+	 * OVERTIME.  The exe (FUN_14011f460) advances on every tick except
+	 * WAITING-with-no-drivers; formation lap and pre-session window
+	 * count toward elapsed time.
+	 */
+	if (s->session.phase >= PHASE_FORMATION &&
+	    s->session.phase <= PHASE_OVERTIME) {
+		uint64_t active_start = s->session.ts[0];
 		uint64_t elapsed = now > active_start
 		    ? now - active_start : 0;
 		s->session.weekend_time_s =
