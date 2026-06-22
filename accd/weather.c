@@ -788,7 +788,8 @@ weather_grip_step(struct GripState *g, float dt_s,
 
 	/* G0c = max(0.894, pow(G1c_pre,0.08) * (gripWet-gripBuild) + gripBuild). */
 	{
-		float pw = (G1c_pre <= 0.0f) ? 1.0f : powf(G1c_pre, 0.08f);
+		/* powf(0,0.08)=0 in IEEE 754; no guard needed (exe FUN_140133f90:125). */
+		float pw = powf(G1c_pre, 0.08f);
 		float v = pw * (gripWet - gripBuild) + gripBuild;
 		g->G0c = v < 0.894f ? 0.894f : v;
 	}
