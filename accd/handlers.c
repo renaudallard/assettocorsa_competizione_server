@@ -1578,7 +1578,9 @@ h_report_penalty(struct Server *s, struct Conn *c,
 			int before = pq->count;
 			(void)penalty_enqueue(s, c->car_id, kind, category,
 			    val, force, 0, reason);
-			if (pq->count > before)
+			if (before >= pq->count && pq->count >= ACC_MAX_PENALTIES)
+				before = pq->count - 1;
+			if (before < pq->count)
 				pq->slots[pq->count - 1].pending = 1;
 		}
 	}
