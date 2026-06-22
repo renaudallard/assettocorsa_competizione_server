@@ -1427,20 +1427,36 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			}
 		}
 	} else if (chat_prefix(text, "/connections")) {
+		/*
+		 * Exe FUN_140021680:1306 walks conns and sends one 0x5d
+		 * frame per connection via UDP unicast to the admin.
+		 * Wire: u8 SRV_CONNECTIONS_LIST_ROW + str_a display_name
+		 *       + u8(1) + u16 car_id.
+		 */
 		int j;
-		chat_reply(s, c, "Active connections:", 4);
+		struct ByteBuf cbb;
+		bb_init(&cbb);
 		for (j = 0; j < ACC_MAX_CARS; j++) {
-			char line[128];
 			struct Conn *cn = s->conns[j];
-			if (cn == NULL || cn->state != CONN_AUTH)
+			struct CarEntry *ccar;
+			struct DriverInfo *cdrv;
+			char cdisp[ACC_MAX_NAME_LEN * 2 + 2];
+
+			if (cn == NULL || cn->state != CONN_AUTH ||
+			    cn->car_id < 0)
 				continue;
-			snprintf(line, sizeof(line),
-			    "  conn=%u car=%d%s%s",
-			    (unsigned)cn->conn_id, cn->car_id,
-			    cn->is_admin ? " [admin]" : "",
-			    cn->is_spectator ? " [spectator]" : "");
-			chat_reply(s, c, line, 4);
+			ccar = &s->cars[cn->car_id];
+			cdrv = &ccar->drivers[ccar->current_driver_index];
+			snprintf(cdisp, sizeof(cdisp), "%s %s",
+			    cdrv->first_name, cdrv->last_name);
+			bb_clear(&cbb);
+			if (wr_u8(&cbb, SRV_CONNECTIONS_LIST_ROW) == 0 &&
+			    wr_str_a(&cbb, cdisp) == 0 &&
+			    wr_u8(&cbb, 1) == 0 &&
+			    wr_u16(&cbb, (uint16_t)ccar->car_id) == 0)
+				(void)conn_send_framed(c, cbb.data, cbb.wpos);
 		}
+		bb_free(&cbb);
 	} else if (chat_prefix(text, "/hellban")) {
 		if (chat_parse_int(text + 8, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s, car_num);
