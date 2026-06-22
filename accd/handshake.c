@@ -1842,9 +1842,9 @@ build_welcome_trailer(struct ByteBuf *bb, struct Server *s, struct Conn *c)
 	 *   u8 driver_count,
 	 *   DriverInfo (183 bytes from handshake) per driver,
 	 *   u8 active_driver_idx,
-	 *   u64 timestamp, u8 flag, u8 flag,
-	 *   5 tire bytes, 5 damage bytes,
-	 *   u16 elo, u32 stability.
+	 *   u64 last_sys_data, u8 car_location, u8 tyre_compound,
+	 *   5x u8 dirt, 5x u8 damage,
+	 *   u16 ballast, f32 restrictor.
 	 *
 	 * The handshake stores DriverInfo before CarInfo (with 8
 	 * intermediate bytes); the spawnDef wants CarInfo first.
