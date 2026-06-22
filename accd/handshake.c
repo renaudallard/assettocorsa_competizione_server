@@ -418,7 +418,7 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
  *     if valid: f32 (timestamp - base)
  *   23-byte tail (FUN_140034f60):
  *     u8 hour_of_day (+0x28)
- *     u8 0           (+0x2c)
+ *     u8 dateMinute  (+0x2c)
  *     u8 raceDay - 1 (+0x30)
  *     f32 timeMultiplier (+0x34)
  *     u16 sched_field (+0x38)
@@ -436,7 +436,7 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
 	uint32_t duration_s = (uint32_t)def->duration_min * 60u;
 
 	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, def->date_minute) < 0) return -1;
 	if (wr_u8(bb, def->day_of_weekend > 0
 	    ? (uint8_t)(def->day_of_weekend - 1) : 0) < 0) return -1;
 	if (wr_f32(bb, (float)(def->time_multiplier > 0
@@ -456,15 +456,15 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
  * Pcap-verified against kunos race-end emit (2026-05-11):
  *
  *   u8  hour_of_day        (e.g. P=14, R=16 from event.json)
- *   u8  0                  (always)
+ *   u8  dateMinute         (from event.json, default 0)
  *   u8  dayOfWeekend - 1   (P=0, Q=1, R=2 in the typical schedule)
  *   f32 timeMultiplier     (from event.json)
- *   u16 sched_field        (P=3, Q=3, R=80 — exe FUN_140034f60
+ *   u16 sched_field        (P=3, Q=3, R=80 -- exe FUN_140034f60
  *                           sched_field; NOT the AC2-internal enum)
  *   u32 duration_seconds   (duration_min * 60)
  *   u32 overtime_seconds   (sessionOverTimeSeconds)
  *   u8  0                  (always)
- *   u8  def->session_type  (P=0, Q=4, R=10 — JSON-spec enum)
+ *   u8  def->session_type  (P=0, Q=4, R=10 -- JSON-spec enum)
  *   f32 1.0                (constant)
  *
  * This is the same 23-byte slot AC2 reads via FUN_14352c640.  AC2 keeps
@@ -479,7 +479,7 @@ write_session_result_header(struct ByteBuf *bb,
 	    ? (uint8_t)(def->day_of_weekend - 1) : 0;
 
 	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
-	if (wr_u8(bb, 0) < 0) return -1;
+	if (wr_u8(bb, def->date_minute) < 0) return -1;
 	if (wr_u8(bb, dow_minus_one) < 0) return -1;
 	if (wr_f32(bb, (float)(def->time_multiplier > 0
 	    ? def->time_multiplier : 1)) < 0) return -1;
