@@ -1500,8 +1500,6 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	    : s->weather.current_rain;
 	float clouds = dyn ? tanhf(tanhf(s->weather.clouds) * 0.9f)
 	    : s->weather.clouds;
-	float wet = dyn ? tanhf(tanhf(s->weather.track_wetness) * 0.9f)
-	    : s->weather.track_wetness;
 	float dry = dyn ? tanhf(tanhf(s->weather.dry_line_wetness) * 0.9f)
 	    : s->weather.dry_line_wetness;
 
@@ -1510,7 +1508,7 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	road = s->session.track_temp > 0
 	    ? (float)s->session.track_temp : ambient + 4.0f;
 
-	if (weather_write_track_conditions_head(bb, clouds, wet) < 0)
+	if (weather_write_track_conditions_head(bb, &s->grip) < 0)
 		return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;

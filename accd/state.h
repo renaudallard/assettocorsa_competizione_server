@@ -925,6 +925,36 @@ struct ResultsLap {
 };
 
 /*
+ * Track grip / rubber integrator state (port of gripState in accServer.exe
+ * ServerState+0xa0868).  Persists across sessions; constructed once at
+ * server start by weather_grip_init() and evolved every weather tick by
+ * weather_grip_step().  Field names follow the exe offset convention
+ * (G## = gripState+0x##) so the RE notes remain traceable.
+ *
+ * Wire head map (FUN_1400330e0 RAW path, simracer_weather==0):
+ *   G0c=head[0] grip-now, G10=head[1] grip-green, G14=head[2] wet-top,
+ *   G18=head[3] wet-sub, G1c=head[4] clamp(G14-G3c), G20=head[5], G24=head[6].
+ */
+struct GripState {
+	float	G04;	/* base grip; init 0.96 */
+	float	G08;	/* rubber-build coeff; init 1.0 */
+	float	G0c;	/* head[0] grip-now; init 1.0, recomputed each step */
+	float	G10;	/* head[1] grip-green/base; init 0.5, recomputed */
+	float	G14;	/* head[2] wet-top; init 0.0 */
+	float	G18;	/* head[3] wet-sub; init 0.0 */
+	float	G1c;	/* head[4] clamped wet; init 0.0 */
+	float	G20;	/* head[5]; init 0.0, recomputed */
+	float	G24;	/* head[6]; init 0.0, recomputed */
+	float	G28;	/* wet-accum coeff; init 0.0020 */
+	float	G2c;	/* dry-top rate; init 0.00030 */
+	float	G30;	/* wet-sub-accum coeff; init 0.0010 */
+	float	G34;	/* dry-sub rate; init 0.00020 */
+	float	G38;	/* rubber accumulation; init 0.0 */
+	float	G3c;	/* wet-surface drag; init 0.0 */
+	float	G40;	/* last-tick seed (ms); init 0.0 */
+};
+
+/*
  * Global server state.
  */
 struct Server {
@@ -1149,6 +1179,7 @@ struct Server {
 	struct WeatherStatus	weather;
 	struct WeatherRules	weather_rules;	/* cfg/weatherRules.json (optional) */
 	uint32_t		weather_draw_seq;	/* increments per weekend re-draw to vary the seed */
+	struct GripState	grip;		/* track grip integrator; persists across sessions */
 	struct AssistRules	assist;
 	struct BanList		bans;
 	struct BanList		kicks;	/* ephemeral; cleared on weekend wrap */

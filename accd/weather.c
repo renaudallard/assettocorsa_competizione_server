@@ -340,6 +340,16 @@ weather_init(struct Server *s, float base_clouds, float base_rain,
 		w->variability_dev = 0.1f + r * 0.5f;
 		weather_generate_fourier(s, seed);
 	}
+
+	/*
+	 * Grip integrator: constructed once at server start per exe
+	 * FUN_14000bc90:409-411.  The exe never resets it across sessions;
+	 * guard on G04==0 (the memset-zero sentinel; after init G04=0.96)
+	 * so a weather_redraw or a multi-session weekend doesn't wipe
+	 * accumulated rubber.
+	 */
+	if (s->grip.G04 == 0.0f)
+		weather_grip_init(&s->grip);
 }
 
 /* ================================================================== */
@@ -469,6 +479,14 @@ weather_step(struct Server *s)
 	w->dry_line_wetness = dryline;
 	w->ambient_current = ambient;
 	w->road_current = road;
+
+	/*
+	 * Advance the grip integrator.  dt_s = 5.0 matches CADENCE_WEATHER.
+	 * traffic_speed = 0 until accd tracks per-car speed; at empty grid
+	 * the exe also sees ~0 so head values are stable with no rubber.
+	 */
+	weather_grip_step(&s->grip, 5.0f, rain, cloud, ambient,
+	    dryline, 0.0f);
 
 	/* === Wind speed / direction (live-only, not part of validation) */
 	dt = (float)((double)s->session.weekend_time_s -
@@ -639,6 +657,161 @@ weather_validate(struct Server *s)
 }
 
 /* ================================================================== */
+/* Grip integrator: FUN_140133ea0 (init) + FUN_140133f90 (step).       */
+/* gripState lives at ServerState+0xa0868 in the exe; in accd it is    */
+/* struct GripState Server.grip, initialized once at server start and  */
+/* evolved every weather tick (5 s cadence, matching accd's cadence).  */
+/* ================================================================== */
+
+void
+weather_grip_init(struct GripState *g)
+{
+	/* FUN_140133ea0 field initializer constants (140133ea0.c). */
+	g->G04 = 0.96f;
+	g->G08 = 1.0f;
+	g->G0c = 1.0f;
+	g->G10 = 0.5f;
+	g->G14 = 0.0f;
+	g->G18 = 0.0f;
+	g->G1c = 0.0f;
+	g->G20 = 0.0f;
+	g->G24 = 0.0f;
+	g->G28 = 0.0020f;
+	g->G2c = 0.00030f;
+	g->G30 = 0.0010f;
+	g->G34 = 0.00020f;
+	g->G38 = 0.0f;
+	g->G3c = 0.0f;
+	g->G40 = 0.0f;	/* last-tick seed; FUN_14011fa40 seeds on first call */
+}
+
+/*
+ * Port of FUN_140133f90.
+ * param_3 in the exe is the summed car speed (km/h); we receive it as
+ * traffic_speed in m/s (the conversion factor 3.6 km/h per m/s is
+ * already absorbed into the exe's param_3 accumulation loop
+ * FUN_1400427c0).  Pass 0.0 for an empty grid.
+ *
+ * Inputs I0..I4 map as follows:
+ *   I0 = rain, I1 = traffic_speed (m/s), I2 = ambient, I3 = dryLineWet,
+ *   I4 = cloud
+ * The speed constant 2e-07 in the rubber accumulation formula comes from
+ * the exe and already expects m/s (the km/h sum happens outside).
+ */
+void
+weather_grip_step(struct GripState *g, float dt_s,
+    float rain, float cloud, float ambient,
+    float dry_line_wet, float traffic_speed)
+{
+	float g14c, g1cc, s, cloudF, dryRate;
+	float gripBuild, gripWet;
+	float G14_new;
+	float G1c_pre;	/* G1c value before the step, used for gripWet */
+
+	/* Snapshot pre-step G1c for the gripWet formula. */
+	G1c_pre = g->G1c;
+
+	/* Clamp helpers. */
+	g14c = g->G14 < 0.4f ? g->G14 : 0.4f;
+	g1cc = g->G1c < 0.25f ? g->G1c : 0.25f;
+
+	/* Rubber accumulation: G38 += (1 - g14c*2.5) * I1 * 2e-07 * dt * G08 */
+	g->G38 = clamp01(g->G38 +
+	    (1.0f - g14c * 2.5f) * traffic_speed * 2e-07f * dt_s * g->G08);
+
+	/* Wet-surface drag: sign of traffic_speed applied to g1cc. */
+	if (traffic_speed > 0.0f)
+		s = g1cc;
+	else if (traffic_speed < 0.0f)
+		s = -g1cc;
+	else
+		s = 0.0f;
+
+	g->G3c = clamp01(g->G3c +
+	    (sqrtf(fabsf(traffic_speed) * 5.9999996e-07f) * s +
+	     rain * (-0.005f) +
+	     (g->G14 - g->G1c) * (-0.02f)) * dt_s * 0.25f);
+
+	/* Cloud and dry-rate computation. */
+	{
+		float tmp = (cloud - 0.4f) * 18.5f + 1.0f;
+		cloudF = tmp > 1.0f ? tmp : 1.0f;
+	}
+	{
+		float dlw = clamp01(dry_line_wet) / cloudF + 0.4f;
+		float r = dlw * ambient * (1.0f / 26.0f) * (1.0f - rain);
+		dryRate = r > 0.0f ? r : 0.0f;
+	}
+
+	/* G14 (wet-top) update. */
+	if (rain <= g->G14)
+		G14_new = rain > g->G14 - dryRate * g->G2c * dt_s
+		    ? rain
+		    : g->G14 - dryRate * g->G2c * dt_s;
+	else {
+		float v = g->G14 + rain * 1.35f * g->G28 * dt_s;
+		G14_new = rain < v ? rain : v;
+	}
+
+	/* G18 (wet-sub) update. */
+	if (G14_new <= g->G18) {
+		float v = g->G18 - dryRate * g->G34 * dt_s;
+		g->G18 = G14_new > v ? G14_new : v;
+	} else {
+		float v = rain * 1.35f * g->G30 * dt_s + g->G18;
+		g->G18 = G14_new < v ? G14_new : v;
+	}
+
+	/* Wash rubber off when wet. */
+	if (G14_new > 0.0f) {
+		float v = g->G38 - G14_new * 0.00087499997f * dt_s;
+		g->G38 = v > 0.0f ? v : 0.0f;
+	}
+
+	/* Store updated G14. */
+	g->G14 = G14_new;
+
+	/* Head output computations. */
+	{
+		float v = g->G38 * 0.05f + g->G04;
+		gripBuild = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+		if (gripBuild < 0.85f) gripBuild = 0.85f;
+	}
+	{
+		float v = g->G04 - g->G38 * 0.5f * G1c_pre;
+		float clamped = v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v);
+		gripWet = clamped < 0.30f ? 0.30f : clamped;
+	}
+
+	/* G10 = G04 (head[1] grip-green/base). */
+	g->G10 = g->G04;
+
+	/* G0c = max(0.894, pow(G1c_pre,0.08) * (gripWet-gripBuild) + gripBuild). */
+	{
+		float pw = (G1c_pre <= 0.0f) ? 1.0f : powf(G1c_pre, 0.08f);
+		float v = pw * (gripWet - gripBuild) + gripBuild;
+		g->G0c = v < 0.894f ? 0.894f : v;
+	}
+
+	/* G1c = clamp01(G14 - G3c). */
+	g->G1c = clamp01(g->G14 - g->G3c);
+
+	/* G20 = (1-G04==0) ? 0 : max(0, (gripBuild-G04)/(1-G04)). */
+	if (1.0f - g->G04 == 0.0f)
+		g->G20 = 0.0f;
+	else {
+		float v = (gripBuild - g->G04) / (1.0f - g->G04);
+		g->G20 = v > 0.0f ? v : 0.0f;
+	}
+
+	/* G24 = clamp01((gripBuild-G04)/(1-G04)). */
+	if (1.0f - g->G04 == 0.0f)
+		g->G24 = 0.0f;
+	else
+		g->G24 = clamp01((gripBuild - g->G04) / (1.0f - g->G04));
+}
+
+/* ================================================================== */
 /* 0x37 SRV_WEATHER_STATUS broadcast: periodic body.                   */
 /* ================================================================== */
 
@@ -651,27 +824,24 @@ wx_norm(float x)
 }
 
 /*
- * 7-float TrackConditions head built by FUN_1400330e0.  Pcap-verified
- * slot layout:
- *   0 grip = 1 - clouds * 0.3
- *   1 0.96 (DAT_14014bcd8)
- *   2..4 0.0
- *   5..6 track wetness
- * Shared with the welcome trailer (write_trailer_additional_state) so
- * the two heads cannot drift; clouds and wet are already wx_norm'd by
- * the caller when the weather is dynamic.
+ * 7-float TrackConditions head built by FUN_1400330e0, RAW path
+ * (simracer_weather==0, inner-if +0x315==0).  Reads directly from the
+ * grip integrator state: G0c=head[0] grip-now, G10=head[1] grip-green,
+ * G14=head[2] wet-top, G18=head[3] wet-sub, G1c=head[4] clamped-wet,
+ * G20=head[5], G24=head[6].  Shared by the live 0x37 broadcast and the
+ * welcome trailer so the two heads cannot drift.
  */
 int
-weather_write_track_conditions_head(struct ByteBuf *bb, float clouds,
-    float wet)
+weather_write_track_conditions_head(struct ByteBuf *bb,
+    const struct GripState *g)
 {
-	if (wr_f32(bb, 1.0f - clouds * 0.3f) < 0) return -1;
-	if (wr_f32(bb, 0.96f) < 0) return -1;	/* DAT_14014bcd8 */
-	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, 0.0f) < 0) return -1;
-	if (wr_f32(bb, wet) < 0) return -1;
-	if (wr_f32(bb, wet) < 0) return -1;
+	if (wr_f32(bb, g->G0c) < 0) return -1;	/* head[0] grip-now */
+	if (wr_f32(bb, g->G10) < 0) return -1;	/* head[1] grip-green */
+	if (wr_f32(bb, g->G14) < 0) return -1;	/* head[2] wet-top */
+	if (wr_f32(bb, g->G18) < 0) return -1;	/* head[3] wet-sub */
+	if (wr_f32(bb, g->G1c) < 0) return -1;	/* head[4] clamped-wet */
+	if (wr_f32(bb, g->G20) < 0) return -1;	/* head[5] */
+	if (wr_f32(bb, g->G24) < 0) return -1;	/* head[6] */
 	return 0;
 }
 
@@ -683,7 +853,6 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	int dyn = w->randomness > 0;
 	float rain = dyn ? wx_norm(w->current_rain) : w->current_rain;
 	float clouds = dyn ? wx_norm(w->clouds) : w->clouds;
-	float wet = dyn ? wx_norm(w->track_wetness) : w->track_wetness;
 	float dry = dyn ? wx_norm(w->dry_line_wetness)
 	    : w->dry_line_wetness;
 
@@ -704,7 +873,7 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 		road = ambient + 4.0f;
 
 	/* 17 × f32 body.  See reference_weather_wire_format.md slot table. */
-	if (weather_write_track_conditions_head(bb, clouds, wet) < 0)
+	if (weather_write_track_conditions_head(bb, &s->grip) < 0)
 		return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;

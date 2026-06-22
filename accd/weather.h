@@ -81,11 +81,34 @@ int	weather_validate(struct Server *s);
 int	weather_build_broadcast(struct Server *s, struct ByteBuf *bb);
 
 /*
- * Emit the 7-float TrackConditions head (FUN_1400330e0).  Shared by
- * the live 0x37 broadcast and the welcome trailer so the two heads
- * cannot drift.  clouds and wet are already wx_norm'd by the caller
- * when the weather is dynamic. */
+ * Emit the 7-float TrackConditions head (FUN_1400330e0, RAW-path for
+ * simracer_weather==0).  Shared by the live 0x37 broadcast and the
+ * welcome trailer so the two heads cannot drift.  Reads directly from
+ * the grip integrator state g (G0c..G24).
+ */
 int	weather_write_track_conditions_head(struct ByteBuf *bb,
-		float clouds, float wet);
+		const struct GripState *g);
+
+/*
+ * Initialize the grip integrator state to the exe's FUN_140133ea0 ctor
+ * constants.  Call once at server start from weather_init().  The state
+ * persists across all sessions (no per-session reset in the exe).
+ */
+void	weather_grip_init(struct GripState *g);
+
+/*
+ * Advance the grip integrator by dt_s seconds.  Port of FUN_140133f90.
+ * Inputs:
+ *   rain            -- current rain level (0..1)
+ *   cloud           -- current cloud level (0..1)
+ *   ambient         -- ambient temperature (°C)
+ *   dry_line_wet    -- dry-line wetness value from WeatherStatus
+ *   traffic_speed   -- sum of car speeds in m/s (0 for empty grid)
+ * Updates g in place; the next weather_write_track_conditions_head()
+ * call will read the new head values.
+ */
+void	weather_grip_step(struct GripState *g, float dt_s,
+		float rain, float cloud, float ambient,
+		float dry_line_wet, float traffic_speed);
 
 #endif /* ACCD_WEATHER_H */
