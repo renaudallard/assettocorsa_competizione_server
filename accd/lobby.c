@@ -52,7 +52,7 @@
  *   13 config bytes   (see lobby_send_registration for the full field map;
  *                     RE'd from FUN_140047af0)
  *   u8  session_count
- *   per session (9 bytes):
+ *   per session (10 bytes):
  *      u8 type, u8 day_of_weekend, u8 hour_of_day,
  *      i16 duration_min, u16 pre_race_s, u16 overtime_s,
  *      u8 time_multiplier
