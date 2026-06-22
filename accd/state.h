@@ -418,6 +418,9 @@ struct SessionDef {
 					 * minute term (exe descriptor +0x2c) */
 	uint8_t		day_of_weekend;
 	uint8_t		time_multiplier;
+	float		dynamic_track_multiplier; /* exe descriptor +0x4c;
+						   * default 0.0 (exe default
+						   * when absent from JSON) */
 };
 
 /*

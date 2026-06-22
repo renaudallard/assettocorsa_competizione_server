@@ -426,7 +426,7 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
  *     u32 overtime_s  (+0x40)
  *     u8 0           (+0x44)
  *     u8 sessionType (+0x48)
- *     f32 1.0        (+0x4c)
+ *     f32 dynamicTrackMultiplier (+0x4c)
  */
 int
 write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
@@ -447,7 +447,7 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
 		return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, def->session_type) < 0) return -1;
-	if (wr_f32(bb, 1.0f) < 0) return -1;
+	if (wr_f32(bb, def->dynamic_track_multiplier) < 0) return -1;
 	return 0;
 }
 
@@ -465,7 +465,7 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
  *   u32 overtime_seconds   (sessionOverTimeSeconds)
  *   u8  0                  (always)
  *   u8  def->session_type  (P=0, Q=4, R=10 -- JSON-spec enum)
- *   f32 1.0                (constant)
+ *   f32 dynamicTrackMultiplier (from event.json, default 0.0)
  *
  * This is the same 23-byte slot AC2 reads via FUN_14352c640.  AC2 keeps
  * a separate enum-code field for sessions in the result widget.
@@ -489,7 +489,7 @@ write_session_result_header(struct ByteBuf *bb,
 		return -1;
 	if (wr_u8(bb, 0) < 0) return -1;
 	if (wr_u8(bb, def->session_type) < 0) return -1;
-	if (wr_f32(bb, 1.0f) < 0) return -1;
+	if (wr_f32(bb, def->dynamic_track_multiplier) < 0) return -1;
 	return 0;
 }
 
