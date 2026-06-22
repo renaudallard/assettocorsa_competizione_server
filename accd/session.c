@@ -1781,7 +1781,7 @@ session_archive_snapshot(struct Server *s)
 		struct CarEntry *car = &s->cars[j];
 		struct CarRaceState *snap;
 
-		if (car->driver_count == 0)
+		if (!car->used && car->race.position == 0)
 			continue;
 		if (car->race_archive[idx] != NULL) {
 			free(car->race_archive[idx]);
