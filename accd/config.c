@@ -226,6 +226,7 @@ config_load(struct Server *s, const char *cfg_dir)
 	s->tcp_port = 9232;
 	s->udp_port = 9231;
 	s->max_connections = ACC_MAX_CARS;
+	s->max_car_slots = 10;
 	s->lan_discovery = 1;
 	s->password[0] = '\0';
 	s->admin_password[0] = '\0';
