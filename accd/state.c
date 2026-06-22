@@ -279,6 +279,7 @@ server_free(struct Server *s)
 	 * (e.g. SIGTERM at end of session) skipped this.
 	 */
 	session_archive_clear(s);
+	results_laps_free(s);
 	free(s->session.leaderboard_cache);
 	s->session.leaderboard_cache = NULL;
 	s->session.leaderboard_cache_cap = 0;
