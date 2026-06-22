@@ -263,11 +263,13 @@ results_write(struct Server *s)
 	fprintf(f, "  \"sessionIndex\": %u,\n", (unsigned)sidx);
 	/*
 	 * raceWeekendIndex: the exe (FUN_14010ee90) reads an int from
-	 * param_1+0x2c.  On wine with a single event.json the stored
-	 * value is -1 (unset weekend sequence).  Our reimpl has no
-	 * weekend-sequence concept, so always emit -1 to match.
+	 * param_1+0x2c.  FUN_140129b10 populates it from ServerState
+	 * +0xa0914, a counter that starts at 0 and is incremented by
+	 * "Resetting weekend to friday night" (FUN_14002c740:73).
+	 * Verified against a kunos wine result: sessionIndex 0, value 0.
+	 * accd has no weekend persistence so it is always weekend 0.
 	 */
-	fprintf(f, "  \"raceWeekendIndex\": -1,\n");
+	fprintf(f, "  \"raceWeekendIndex\": 0,\n");
 	fprintf(f, "  \"metaData\": ");
 	fprint_json_str(f, s->meta_data);
 	fprintf(f, ",\n");
