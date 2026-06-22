@@ -709,8 +709,10 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			if (src->car_id >= 0 &&
 			    src->car_id < ACC_MAX_CARS) {
 				struct CarEntry *car = &s->cars[src->car_id];
-				if (car->driver_count > 0)
-					from = car->drivers[0].last_name;
+				uint8_t idx = car->current_driver_index;
+				if (idx < car->driver_count &&
+				    idx < ACC_MAX_DRIVERS_PER_CAR)
+					from = car->drivers[idx].last_name;
 			}
 			snprintf(body_txt, sizeof(body_txt),
 			    "Latency error: %d ms",
