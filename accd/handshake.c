@@ -2793,8 +2793,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 			 * REJECT_FULL path fires for the "all members of
 			 * the team already connected" case.
 			 */
-			for (i = 0; i < ACC_MAX_CARS &&
-			    i < s->max_connections; i++) {
+			for (i = 0; i < ACC_MAX_CARS; i++) {
 				struct CarEntry *ec = &s->cars[i];
 				int dj;
 
@@ -2811,8 +2810,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 					break;
 			}
 			if (slot < 0) {
-				for (i = 0; i < ACC_MAX_CARS &&
-				    i < s->max_connections; i++) {
+				for (i = 0; i < ACC_MAX_CARS; i++) {
 					struct CarEntry *ec = &s->cars[i];
 					int dj;
 
@@ -2999,7 +2997,17 @@ post_slot_assignment:
 			car->race_number = server_alloc_race_number(s,
 			    c->car_id, (int)rnum);
 			car->car_model = cmodel;
-			car->cup_category = ccup;
+			/*
+			 * Derive cup_category from driver_category (cat),
+			 * matching FUN_140025690:496-505.  The raw wire
+			 * byte (ccup) is ignored — the exe never stores it.
+			 */
+			switch (cat) {
+			case 0:  car->cup_category = 2; break;
+			case 1:  car->cup_category = 3; break;
+			case 2:  case 3:  car->cup_category = 0; break;
+			default: car->cup_category = 4; break;
+			}
 			if (team != NULL)
 				snprintf(car->team_name,
 				    sizeof(car->team_name), "%s", team);
