@@ -1170,8 +1170,7 @@ session_tick(struct Server *s)
 		s->session.overtime_hold = 0;
 		s->session.cars_in_overtime = 0;
 		s->session.ts[5] = now;
-		if (s->session.ts[6] <= now)
-			s->session.ts[6] = now + post_grace_ms(s);
+		s->session.ts[6] = now;
 	}
 
 	/*
