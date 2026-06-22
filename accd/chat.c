@@ -126,7 +126,7 @@ chat_broadcast(struct Server *s, const char *text, uint8_t chat_type)
  * config command replies only to the issuing admin's socket: it
  * leaves the broadcast flag clear so the reply goes through the
  * unicast path (FUN_14004cc50), and only /start, /restart, /next and
- * /clear_all (plus the kick/ban announcement) fan out to everyone.
+ * /clear_all fan out to everyone (cVar20=1, FUN_14001ada0).
  * Broadcasting diagnostics such as /connections would expose every
  * driver's conn id, car, admin and spectator state to all players.
  */
