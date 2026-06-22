@@ -141,8 +141,17 @@ auto_short_formation(const struct Server *s)
 	int i;
 	for (i = 0; i < s->session_count; i++) {
 		const struct SessionDef *def = &s->sessions[i];
-		if (def->session_type == 10 && def->duration_min > 41)
-			return 0;	/* long race exists */
+		if (def->session_type == 10 && def->duration_min > 41) {
+			/*
+			 * Exe FUN_140023700 overrides the long-race auto-derive
+			 * to 1 (short) on public-MP servers, matching the check
+			 * applied to forceEntryList / allowAutoDQ / dumpEntryList.
+			 */
+			if (s->register_to_lobby && !s->is_cp_server &&
+			    !s->is_cp_inv_server)
+				return 1;
+			return 0;	/* long race on private server */
+		}
 	}
 	return 1;	/* short formation */
 }
