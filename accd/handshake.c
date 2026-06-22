@@ -1339,7 +1339,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
  * trailer fan-out and by the periodic broadcast in tick_run; both
  * sites previously inlined this exact build, leading to two-site
  * drift hazard the moment the wire shape changes.  Body per-car
- * matches FUN_14002f710's tail layout: u16 car_id, u8 0, i16 SA,
+ * matches FUN_14002f710's tail layout: u16 car_id, u8 current_driver_index, i16 SA,
  * i16 SA (repeated, exe reads same conn offset twice), i16 -1,
  * i16 -1, str_a steam_id.  Ratings are stored x100 internally but
  * the 0x4e wire scale is x10 (the AC2 client divides each rating
