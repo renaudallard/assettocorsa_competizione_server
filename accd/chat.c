@@ -1162,7 +1162,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		while (*arg == ' ')
 			arg++;
 		if (*arg == '\0') {
-			chat_broadcast(s, "usage: /broadcast <message>", 4);
+			chat_reply(s, c, "usage: /broadcast <message>", 4);
 		} else {
 			log_info("admin: /broadcast %s", arg);
 			chat_broadcast(s, arg, 4);
