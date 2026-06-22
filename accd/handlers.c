@@ -2449,9 +2449,9 @@ done:
  *   f32   sc            (+0x2c)   drives ", sc <value>" when > 0
  *   str_a cam_near      (+0x38)
  *   str_a cam_far       (+0x58)
- *   u32   scalar_b      (+0x34)
- *   f32   wear          (+0x78)
- *   u32   setup_id      (+0x7c)
+ *   f32   wear          (+0x34)   read via FUN_14000adc0 in FUN_14002c1e0
+ *   u32   scalar_b      (+0x78)   read via FUN_14000ad40
+ *   f32   setup_id      (+0x7c)   read via FUN_14000adc0
  *
  * Chat summary, ported verbatim from the dispatcher (FUN_1400142f0 case
  * 0x5b lines 1382-1418): "Ctrl Info carId<id> (<driver>): <model>" then
@@ -2468,8 +2468,8 @@ h_ctrl_info(struct Server *s, struct Conn *c,
 {
 	struct Reader r;
 	uint8_t msg_id, f_as = 0, f_scp = 0, f_gpe = 0;
-	uint32_t car_id_u32 = 0, scalar_b = 0, setup_id = 0;
-	float sc = 0.0f, wear = 0.0f;
+	uint32_t car_id_u32 = 0, scalar_b = 0;
+	float sc = 0.0f, wear = 0.0f, setup_id = 0.0f;
 	char *model = NULL, *cam_near = NULL, *cam_far = NULL;
 	char chat[256];
 	const char *driver_name;
@@ -2489,9 +2489,9 @@ h_ctrl_info(struct Server *s, struct Conn *c,
 	(void)rd_f32(&r, &sc);
 	(void)rd_str_a(&r, &cam_near);
 	(void)rd_str_a(&r, &cam_far);
-	(void)rd_u32(&r, &scalar_b);
 	(void)rd_f32(&r, &wear);
-	(void)rd_u32(&r, &setup_id);
+	(void)rd_u32(&r, &scalar_b);
+	(void)rd_f32(&r, &setup_id);
 
 	driver_name = "?";
 	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
@@ -2552,10 +2552,10 @@ h_ctrl_info(struct Server *s, struct Conn *c,
 	}
 #undef APPEND
 
-	log_info("ctrl info: conn=%u car=%d cam=%s-%s wear=%g setup=%u",
+	log_info("ctrl info: conn=%u car=%d cam=%s-%s wear=%g setup=%g",
 	    (unsigned)c->conn_id, (int)car_id_u32,
 	    cam_near ? cam_near : "", cam_far ? cam_far : "",
-	    (double)wear, (unsigned)setup_id);
+	    (double)wear, (double)setup_id);
 	(void)scalar_b;
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
