@@ -240,7 +240,7 @@ handle_udp(struct Server *s)
 			break;
 		}
 		dispatch_udp(s, &from, buf, (size_t)n);
-		if (++drained >= 256)
+		if (++drained >= 50)
 			break;
 	}
 }
