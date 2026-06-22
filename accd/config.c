@@ -599,6 +599,8 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "dayOfWeekend", 0);
 			d->time_multiplier = (uint8_t)json_obj_get_int(sn,
 			    "timeMultiplier", 1);
+			if (d->time_multiplier == 0)
+				d->time_multiplier = 1;
 			d->dynamic_track_multiplier = (float)json_obj_get_num(sn,
 			    "dynamicTrackMultiplier", 0.0);
 			type = json_obj_get_str(sn, "sessionType");
