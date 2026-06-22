@@ -1048,7 +1048,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		 * conversion, 0x3e broadcast, archive, and ratings save.
 		 */
 		log_info("admin: /next");
-		chat_reply(s, c, "Forwarding to next session", 4);
+		chat_broadcast(s, "Forwarding to next session", 4);
 		if (s->session.ts_valid) {
 			uint64_t now_ms = mono_ms();
 
@@ -1175,14 +1175,14 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		 * duration from ts[2] onwards.
 		 */
 		log_info("admin: /start");
-		chat_reply(s, c, "Session started by administrator", 4);
+		chat_broadcast(s, "Session started by administrator", 4);
 		if (s->session.ts_valid) {
 			s->session.ts[0] = 0;
 			s->session.ts[1] = 0;
 		}
 	} else if (chat_prefix(text, "/restart")) {
 		log_info("admin: /restart");
-		chat_reply(s, c, "Session restarted by administrator", 4);
+		chat_broadcast(s, "Session restarted by administrator", 4);
 		session_reset(s, s->session.session_index);
 	} else if (chat_prefix(text, "/resetWeekend") ||
 	           chat_prefix(text, "/resetweekend")) {
@@ -1235,7 +1235,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		}
 	} else if (chat_prefix(text, "/clear_all")) {
 		penalty_clear_all(s);
-		chat_reply(s, c, "All penalties cleared by administrator", 4);
+		chat_broadcast(s, "All penalties cleared by administrator", 4);
 	} else if (chat_prefix(text, "/clear")) {
 		if (chat_parse_int(text + 6, &car_num) == 0) {
 			int car_id = chat_car_by_racenum(s,car_num);
