@@ -689,14 +689,17 @@ results_write(struct Server *s)
 				fprint_json_str(f, pname);
 				fprintf(f, ", \"penaltyValue\": %d,", pvalue);
 				/*
-				 * FUN_140127440 creates a fresh TP via
-				 * FUN_140125f50 which zeroes violation_time
-				 * (+0x60) and sets cleared_time=-1.0 (+0x68).
-				 * FUN_140129b10's loop yields 0 for both (the
-				 * counter pre-increments to 0 before the break
-				 * condition is checked against lap_start_time).
+				 * FUN_140127440:59 calls FUN_140125f50 with
+				 * param_3 (race-end timestamp) as violation_time
+				 * (+0x60).  FUN_140129b10's loop counts laps
+				 * whose start_time < violation_time, yielding N-1
+				 * (all completed laps).  p->cleared_lap holds
+				 * lap_count-1 (set by penalty_convert_race_end).
+				 * cleared_time stays -1.0 (fresh TP, never
+				 * served), so clearedInLap loop yields 0.
 				 */
-				fprintf(f, " \"violationInLap\": %d,", 0);
+				fprintf(f, " \"violationInLap\": %d,",
+				    (int)p->cleared_lap);
 				fprintf(f, " \"clearedInLap\": %d", 0);
 				fprintf(f, " }");
 				prp_first = 0;
