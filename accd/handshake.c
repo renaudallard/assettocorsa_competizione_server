@@ -1654,8 +1654,6 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		return -1;
 	ci_off = drv_len + 8;
 	ci_len = owner->hs_echo_len - ci_off;
-	if (ci_len < 193)
-		return -1;
 
 	/*
 	 * Byte@+2: sequential 1-based index among the active (used) cars
