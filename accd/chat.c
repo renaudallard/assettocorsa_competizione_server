@@ -1091,25 +1091,31 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		const char *arg = text + 6;
 		while (*arg == ' ')
 			arg++;
+		/*
+		 * All /debug outcomes fall through to LAB_14002273f
+		 * (exe FUN_140021680:750-753) which sets cVar20='\0'
+		 * (broadcast). "unknown debug request" takes an
+		 * explicit goto LAB_140022912 (also cVar20='\0').
+		 */
 		if (strcmp(arg, "conditions") == 0) {
 			s->log_conditions = !s->log_conditions;
-			chat_reply(s, c, s->log_conditions
+			chat_broadcast(s, s->log_conditions
 			    ? "conditions are printed now"
 			    : "conditions stopped printing", 4);
 		} else if (strcmp(arg, "bandwidth") == 0) {
 			s->log_bandwidth = !s->log_bandwidth;
-			chat_reply(s, c, s->log_bandwidth
+			chat_broadcast(s, s->log_bandwidth
 			    ? "bandwidth stats are printed now"
 			    : "bandwidth stats stopped printing", 4);
 		} else if (strcmp(arg, "qos") == 0) {
 			s->log_qos = !s->log_qos;
-			chat_reply(s, c, s->log_qos
+			chat_broadcast(s, s->log_qos
 			    ? "netcode stats are printed now"
 			    : "netcode stats stopped printing", 4);
 		} else if (*arg == '\0') {
-			chat_reply(s, c, "missing parameter", 4);
+			chat_broadcast(s, "missing parameter", 4);
 		} else {
-			chat_reply(s, c, "unknown debug request", 4);
+			chat_broadcast(s, "unknown debug request", 4);
 		}
 		log_info("admin: /debug %s", arg);
 	} else if (chat_prefix(text, "/wt")) {
@@ -1475,7 +1481,11 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		s->legacy_netcode = !s->legacy_netcode;
 		log_info("admin: /mp -> legacy_netcode=%d",
 		    (int)s->legacy_netcode);
-		chat_reply(s, c, s->legacy_netcode
+		/*
+		 * Exe FUN_140021680:390 uses goto LAB_14002273f which
+		 * sets cVar20='\0' (FUN_14004cc50 broadcast path).
+		 */
+		chat_broadcast(s, s->legacy_netcode
 		    ? "Server now uses legacy netcode"
 		    : "Server is now in regular mode", 4);
 	} else if (chat_prefix(text, "/lockprep")) {
