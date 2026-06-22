@@ -35,9 +35,10 @@
  * when possible or copied into a separate slab region.  The
  * caller frees the entire tree with json_free() in O(1).
  *
- * The parser is intentionally minimal: no streaming, no UTF-16
- * surrogate pair handling beyond a basic check, no number
- * precision beyond what strtod can do.  Good enough for the
+ * The parser is intentionally minimal: no streaming, no number
+ * precision beyond what strtod can do.  UTF-16 surrogate pairs
+ * in \uXXXX escapes are decoded; lone surrogates become U+FFFD.
+ * Good enough for the
  * ACC config files which are small (entrylist.json is the
  * largest at maybe 10 KB for a full grid).
  */
