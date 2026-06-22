@@ -2870,6 +2870,13 @@ handshake_handle(struct Server *s, struct Conn *c,
 					used++;
 			if (used >= s->max_car_slots) {
 				reason = REJECT_FULL;
+				/*
+				 * Wire parity with exe FUN_140025690:645:
+				 * sub=0, a=current car count, b=max_car_slots.
+				 */
+				reject_sub = 0;
+				reject_a = (uint32_t)used;
+				reject_b = (uint32_t)s->max_car_slots;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;
