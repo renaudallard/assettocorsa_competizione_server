@@ -334,8 +334,13 @@ main(int argc, char **argv)
 
 	srv.tcp_fd = tcp_listen(srv.tcp_port);
 	srv.udp_fd = udp_bind(srv.udp_port);
-	if (srv.tcp_fd < 0 || srv.udp_fd < 0)
+	if (srv.tcp_fd < 0 || srv.udp_fd < 0) {
+		if (srv.tcp_fd >= 0)
+			close(srv.tcp_fd);
+		if (srv.udp_fd >= 0)
+			close(srv.udp_fd);
 		return 1;
+	}
 
 	/*
 	 * Open UDP 8999 for discovery when configuration.json lanDiscovery
