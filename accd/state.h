@@ -122,7 +122,7 @@ mono_ms(void)
  *
  * Matches the accServer.exe internal 7-level phase model
  * (FUN_14012e810 computeCurrentPhase).  Transitions are purely
- * time-driven via 6 scheduled timestamps populated in
+ * time-driven via 7 scheduled timestamps populated in
  * session_start() when the first driver connects.  Session type
  * (P/Q/R) is metadata in SessionDef, not a separate phase.
  */
@@ -446,7 +446,7 @@ struct SessionState {
 	int		grid_announced;		/* one-shot guard */
 
 	/*
-	 * 6 scheduled timestamps (ms, monotonic clock) matching
+	 * 7 scheduled timestamps (ms, monotonic clock) matching
 	 * the SessionManager in accServer.exe.  Populated by
 	 * session_start() when the first driver connects.
 	 *   ts[0] = pre_start (phase 1→3)
@@ -455,6 +455,7 @@ struct SessionState {
 	 *   ts[3] = active_end (phase 4→5)
 	 *   ts[4] = overtime_end (phase 5→6)
 	 *   ts[5] = aftercare_end (phase 6→7)
+	 *   ts[6] = advance_end (phase 6→7, inner boundary)
 	 */
 	uint64_t	ts[7];
 	int		ts_valid;	/* non-zero once populated */
@@ -472,6 +473,14 @@ struct SessionState {
 						 * one-shot not yet fired;
 						 * exe FUN_14012ed70 fires it
 						 * once and clears the flag */
+	/*
+	 * Mirrors exe's server+0x14180 aftercare counter: when an overtime
+	 * hold releases early (not hard-stop), the phase machine jumps
+	 * immediately to PHASE_ADVANCE (ts[5]=ts[6]=now) but session_advance
+	 * is deferred until advance_at_ms.  Zero means "no deferral" (hard
+	 * stop, or race paths where ts[6] already carries the grace).
+	 */
+	uint64_t	advance_at_ms;
 
 	/*
 	 * Race green-flag position gate (FUN_14012f4a0 in accServer.exe).

@@ -1609,7 +1609,9 @@ tick_run(struct Server *s)
 	 * carried the ADVANCE phase, so the next session's reset doesn't
 	 * clobber the end-of-session state before it reaches the client.
 	 */
-	if (s->session.phase == PHASE_ADVANCE)
+	if (s->session.phase == PHASE_ADVANCE &&
+	    (s->session.advance_at_ms == 0 ||
+	    now_ms >= s->session.advance_at_ms))
 		session_advance(s);
 
 	/*

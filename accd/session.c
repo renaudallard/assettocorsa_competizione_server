@@ -1090,7 +1090,8 @@ session_tick(struct Server *s)
 			log_info("overtime: no car racing on track, "
 			    "skipping grace period");
 			s->session.ts[5] = now;
-			s->session.ts[6] = now + post_grace_ms(s);
+			s->session.ts[6] = now;
+			s->session.advance_at_ms = now + post_grace_ms(s);
 		} else if (def->session_type == 10) {
 			s->session.overtime_hold = 1;
 			s->session.cars_in_overtime = (int16_t)racing;
@@ -1147,7 +1148,8 @@ session_tick(struct Server *s)
 				log_info("%s overtime: no eligible cars, "
 				    "skipping grace", stype);
 				s->session.ts[5] = now;
-				s->session.ts[6] = now + post_grace_ms(s);
+				s->session.ts[6] = now;
+				s->session.advance_at_ms = now + post_grace_ms(s);
 			}
 		}
 	}
@@ -1219,17 +1221,18 @@ session_tick(struct Server *s)
 			s->session.overtime_hold = 0;
 			s->session.cars_in_overtime = 0;
 			/*
-			 * Collapse the held boundaries like every other
-			 * overtime-release path (skip-grace 1091, leader-finish
-			 * 1170, overtime_car_finished): ts[5]=now ends the
-			 * grace immediately and ts[6]=now+post_grace arms a real
-			 * aftercare end.  Without this the schedule stayed at the
+			 * Collapse the held boundaries: ts[5]=ts[6]=now makes
+			 * compute_phase return PHASE_ADVANCE immediately.
+			 * advance_at_ms defers session_advance for the
+			 * configured post-session grace, mirroring the exe's
+			 * server+0x14180 aftercare counter (FUN_14012e140).
+			 * Without this collapse, the schedule stayed at the
 			 * original far-future ts[5] when sessionOverTimeSeconds
-			 * exceeds the 300 s no-movement window, so the phase
-			 * machine lingered instead of advancing.
+			 * exceeded the 300 s no-movement window.
 			 */
 			s->session.ts[5] = now;
-			s->session.ts[6] = now + post_grace_ms(s);
+			s->session.ts[6] = now;
+			s->session.advance_at_ms = now + post_grace_ms(s);
 		}
 	}
 
@@ -1369,9 +1372,11 @@ session_quali_drop_eligibility(struct Server *s, int car_id)
 		s->session.cars_in_overtime--;
 	if (s->session.cars_in_overtime <= 0 &&
 	    s->session.overtime_hold) {
+		uint64_t t = mono_ms();
 		s->session.overtime_hold = 0;
-		s->session.ts[5] = mono_ms();
-		s->session.ts[6] = s->session.ts[5] + post_grace_ms(s);
+		s->session.ts[5] = t;
+		s->session.ts[6] = t;
+		s->session.advance_at_ms = t + post_grace_ms(s);
 		log_info("quali overtime: all eligible cars done, "
 		    "releasing hold");
 	} else {
