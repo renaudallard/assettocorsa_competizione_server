@@ -312,6 +312,7 @@ struct CarRaceState {
 	int32_t		lap56_ms[ACC_LAP_HISTORY];
 	int32_t		lap56_splits[ACC_LAP_HISTORY][3];
 	uint8_t		lap56_entry_idx[ACC_LAP_HISTORY];
+	uint16_t	lap56_lapstates[ACC_LAP_HISTORY];
 	uint32_t	lap56_count;
 	uint8_t		in_pit;
 	uint8_t		mandatory_pit_served;	/* count of 0x54

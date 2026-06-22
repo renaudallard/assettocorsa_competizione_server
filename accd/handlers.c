@@ -542,6 +542,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 				race->lap56_splits[s56][si] =
 				    race->sector_ms[si];
 			race->lap56_entry_idx[s56] = (uint8_t)c->car_id;
+			race->lap56_lapstates[s56] = car_field;
 			race->lap56_count++;
 		}
 
@@ -2381,8 +2382,6 @@ h_load_setup(struct Server *s, struct Conn *c,
 			    ? total : ACC_LAP_HISTORY;
 			int start = total <= ACC_LAP_HISTORY
 			    ? 0 : total % ACC_LAP_HISTORY;
-			int first_lap = total <= ACC_LAP_HISTORY
-			    ? 1 : total - ACC_LAP_HISTORY + 1;
 			int k;
 
 			if (wr_i16(&out, (int16_t)count) < 0)
@@ -2413,7 +2412,7 @@ h_load_setup(struct Server *s, struct Conn *c,
 				if (wr_u8(&out, src->lap56_entry_idx[idx]) < 0)
 					goto done;
 				if (wr_u16(&out,
-				    (uint16_t)(first_lap + k)) < 0)
+				    src->lap56_lapstates[idx]) < 0)
 					goto done;
 			}
 			laps_emitted = count;
