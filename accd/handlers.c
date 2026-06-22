@@ -530,10 +530,9 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 
 		/*
 		 * Cut-inclusive ring for the 0x56 garage reply: the exe emits
-		 * every lap with a real laptime (cut laps included), each with
-		 * its lap-states low byte as the quality flag.  Record all
-		 * non-out-lap crossings here (out-laps have no countable time),
-		 * keeping the cut bit in the quality byte.
+		 * every lap (cut included).  FUN_140125c60 stores the car's
+		 * entry-list registration index (FUN_140020630 result) at
+		 * Lap+0x4c.  In accd the entry-list slot equals c->car_id.
 		 */
 		if (!is_out_lap && lap_ms > 0) {
 			uint32_t s56 = race->lap56_count % ACC_LAP_HISTORY;
@@ -542,7 +541,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			for (si = 0; si < 3; si++)
 				race->lap56_splits[s56][si] =
 				    race->sector_ms[si];
-			race->lap56_quality[s56] = (uint8_t)car_field;
+			race->lap56_entry_idx[s56] = (uint8_t)c->car_id;
 			race->lap56_count++;
 		}
 
@@ -2302,8 +2301,8 @@ h_mandatory_pitstop_served(struct Server *s, struct Conn *c,
  *         u8    split_count
  *         split_count × u32 split_time_ms
  *         u16   car_id
- *         u8    lap_quality       (0 = clean)
- *         u16   lap_number        (1-based)
+ *         u8    entry_list_idx    (Lap+0x4c: car entry-list slot)
+ *         u16   lap_states        (Lap+0x54: client lapstates flags)
  *     then a trailing single-car leaderboard record (FUN_140034210)
  *     with the cvar8 byte forced to 0.
  *
@@ -2411,7 +2410,7 @@ h_load_setup(struct Server *s, struct Conn *c,
 					    src->lap56_splits[idx][si]) < 0)
 						goto done;
 				if (wr_u16(&out, car->car_id) < 0) goto done;
-				if (wr_u8(&out, src->lap56_quality[idx]) < 0)
+				if (wr_u8(&out, src->lap56_entry_idx[idx]) < 0)
 					goto done;
 				if (wr_u16(&out,
 				    (uint16_t)(first_lap + k)) < 0)
