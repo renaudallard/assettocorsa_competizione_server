@@ -274,6 +274,13 @@ results_write(struct Server *s)
 	fprintf(f, "  \"serverName\": ");
 	fprint_json_str(f, s->server_name);
 	fprintf(f, ",\n");
+	/*
+	 * The exe (FUN_14010ee90) writes sessionType a second time here,
+	 * immediately before sessionResult.  Verified against a real kunos
+	 * wine result file.  JSON parsers take the last occurrence; both
+	 * values are identical so no consumer is affected.
+	 */
+	fprintf(f, "  \"sessionType\": \"%s\",\n", session_type_str(st));
 	fprintf(f, "  \"sessionResult\": {\n");
 	{
 		int32_t best_lap = 0;
