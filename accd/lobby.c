@@ -760,7 +760,23 @@ lobby_sample_session(struct LobbyClient *l, const struct Server *s)
 		}
 		break;
 	case PHASE_SESSION:
-		trem_ms = s->session.time_remaining_ms;
+		/*
+		 * Pre-green race window (ts[4] = UINT64_MAX sentinel):
+		 * time_remaining_ms is 0, but the lobby should show the
+		 * full session duration as the exe does during PRE_SESSION.
+		 * Post-green: use the live countdown.
+		 */
+		if (!s->session.green_fired &&
+		    s->session.session_index < s->session_count &&
+		    s->sessions[s->session.session_index].session_type == 10) {
+			uint64_t dur_ms = (uint64_t)
+			    s->sessions[s->session.session_index]
+				.duration_min * 60000ull;
+			trem_ms = dur_ms > INT32_MAX
+			    ? INT32_MAX : (int32_t)dur_ms;
+		} else {
+			trem_ms = s->session.time_remaining_ms;
+		}
 		break;
 	default:
 		trem_ms = 0;
