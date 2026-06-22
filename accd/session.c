@@ -260,6 +260,7 @@ session_reset(struct Server *s, uint8_t session_index)
 	s->session.phase_started_ms = mono_ms();
 	s->session.ts_valid = 0;
 	s->session.weekend_time_s =
+	    (uint32_t)s->sessions[session_index].date_minute * 60u +
 	    (uint32_t)s->sessions[session_index].hour_of_day * 3600u;
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
@@ -1239,7 +1240,8 @@ session_tick(struct Server *s)
 		uint64_t elapsed = now > active_start
 		    ? now - active_start : 0;
 		s->session.weekend_time_s =
-		    (uint32_t)(def->hour_of_day * 3600 +
+		    (uint32_t)(def->date_minute * 60 +
+		    def->hour_of_day * 3600 +
 		    elapsed / 1000 * def->time_multiplier);
 	}
 
