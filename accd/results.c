@@ -569,8 +569,10 @@ results_write(struct Server *s)
 	 * Top-level penalties[] per handbook §VIII.1.  carId +
 	 * driverIndex name the receiver, reason / penalty / penaltyValue
 	 * describe the kind, violationInLap / clearedInLap track its
-	 * lifecycle (clearedInLap >= 0 means served, the way the original
-	 * server signals it; -1 while the penalty is still open).
+	 * lifecycle.  FUN_140129b10 computes clearedInLap via a loop
+	 * that starts at -1 and breaks when cleared_time < lap_start;
+	 * with cleared_time=-1.0 (unserved sentinel) this yields 0 for
+	 * any car that has at least one lap, so we emit 0 here too.
 	 */
 	fprintf(f, "  \"penalties\": [");
 	{
@@ -627,7 +629,8 @@ results_write(struct Server *s)
 				fprintf(f, " \"violationInLap\": %d,",
 				    p->violation_lap);
 				fprintf(f, " \"clearedInLap\": %d",
-				    p->cleared_lap);
+				    (p->cleared_lap < 0 && p->race_end_tp == 0)
+				    ? 0 : p->cleared_lap);
 				fprintf(f, " }");
 				pen_first = 0;
 			}
