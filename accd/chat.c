@@ -319,10 +319,8 @@ chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 		 * push evicts one, pre lands equal to count and a plain >
 		 * would leave the freshly-enqueued slot unmarked.
 		 */
-		if (pre >= pq->count)
-			pre = pq->count > 0 ? pq->count - 1 : 0;
-		if (pre < 0)
-			pre = 0;
+		if (pre >= pq->count && pq->count >= ACC_MAX_PENALTIES)
+			pre = pq->count - 1;
 		for (pi = pre; pi < pq->count; pi++)
 			pq->slots[pi].admin = 1;
 	}
@@ -1238,10 +1236,8 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				 */
 				/* See handlers.c h_report_penalty -- same
 				 * `pre == count` post-eviction case. */
-				if (pre >= pq->count)
-					pre = pq->count > 0 ? pq->count - 1 : 0;
-				if (pre < 0)
-					pre = 0;
+				if (pre >= pq->count && pq->count >= ACC_MAX_PENALTIES)
+					pre = pq->count - 1;
 				for (pi = pre; pi < pq->count; pi++)
 					pq->slots[pi].admin = 1;
 				char chat[128];

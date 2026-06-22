@@ -209,10 +209,8 @@ cmd_dq(struct Server *s, const char *args)
 	 * admin-issued DQ in the per-car leaderboard prefix.
 	 * Same pattern as chat.c /dq and chat_do_penalty.
 	 */
-	if (pre >= pq->count)
-		pre = pq->count > 0 ? pq->count - 1 : 0;
-	if (pre < 0)
-		pre = 0;
+	if (pre >= pq->count && pq->count >= ACC_MAX_PENALTIES)
+		pre = pq->count - 1;
 	for (pi = pre; pi < pq->count; pi++)
 		pq->slots[pi].admin = 1;
 	snprintf(msg, sizeof(msg),
