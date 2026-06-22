@@ -1370,7 +1370,7 @@ session_quali_drop_eligibility(struct Server *s, int car_id)
 	if (s->session.cars_in_overtime <= 0 &&
 	    s->session.overtime_hold) {
 		s->session.overtime_hold = 0;
-		s->session.ts[5] = mono_ms() + 1000;
+		s->session.ts[5] = mono_ms();
 		s->session.ts[6] = s->session.ts[5] + post_grace_ms(s);
 		log_info("quali overtime: all eligible cars done, "
 		    "releasing hold");
