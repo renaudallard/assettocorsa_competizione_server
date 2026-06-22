@@ -605,6 +605,15 @@ results_write(struct Server *s)
 				    p->laps_remaining > 0)
 					pvalue = p->laps_remaining;
 				/*
+				 * FUN_140129b10 reads penalty+0x70 (laps_remaining)
+				 * as penaltyValue for all kinds.  For admin /dq
+				 * (FUN_14001dae0:248 passes param_7=3) the field is
+				 * 3; for ladder DQ it is zeroed by the caller.
+				 * pen_kind_json hardcodes 0, so override here.
+				 */
+				if (p->kind == PEN_DQ)
+					pvalue = (int)p->laps_remaining;
+				/*
 				 * Mirror FUN_140126b50: served entries write
 				 * penaltyValue=0 (the inner Penalty struct's +0x08
 				 * field is zeroed when served).  Race-end converted
