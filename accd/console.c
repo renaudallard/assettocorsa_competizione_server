@@ -97,6 +97,7 @@ cmd_help(void)
 	reply("  dt <num>         drive-through (dtc)");
 	reply("  sg10 <num>       10s stop-and-go (sg20, sg30 too)");
 	reply("  clear <num>      clear penalties for car");
+	reply("  cleartp <num>    clear post-race time penalties for car");
 	reply("  clear_all        clear all penalties");
 	reply("  ballast <n> <kg> assign ballast");
 	reply("  restrictor <n> %%  assign restrictor");
