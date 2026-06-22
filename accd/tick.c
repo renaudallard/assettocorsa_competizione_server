@@ -587,9 +587,9 @@ broadcast_leaderboard(struct Server *s)
 /*
  * Mark the leaderboard dirty so the tick loop drains the pending
  * flag and runs broadcast_leaderboard_if_changed.  Called from state
- * mutations kunos emits 0x36 for.  Lap-complete and sector-split
- * handlers deliberately do NOT call this (kunos doesn't emit on
- * those events per the 2026-05-09 2-bot pcap).
+ * mutations kunos emits 0x36 for, including lap-complete (0x21).
+ * Sector-split (0x20) does NOT call this; the memcmp gate in
+ * broadcast_leaderboard_if_changed suppresses redundant emits.
  */
 void
 leaderboard_request_emit(struct Server *s)
