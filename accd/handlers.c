@@ -783,15 +783,13 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	 * Build the transformed 0x3b broadcast per-recipient, mirroring
 	 * the exe's FUN_14001ae20 call in the 0x21 dispatcher
 	 * (FUN_1400142f0:475) -- same fan-out as 0x19, 0x3a, 0x3c.
-	 * Field 2 keeps the negative -> LAP_TIME_INVALID guard so a crafted
-	 * 0x21 can't sign-extend into a ~4-billion-ms time on the client.
+	 * Field 2 is the raw split_time cast to u32 (exe relays verbatim).
 	 * Field 4 is a session-relative timestamp normalised per recipient.
 	 * FUN_14001ae20 excludes the sender (conn != param_4 check at
 	 * FUN_14001ae20:29), so we skip the sender in the loop.
 	 */
 	{
-		uint32_t split_wire = split_time < 0
-		    ? LAP_TIME_INVALID : (uint32_t)split_time;
+		uint32_t split_wire = (uint32_t)split_time;
 		/*
 		 * isSessionOver (lap-states bit 0x0400): exe FUN_14012b380
 		 * sets it per car, not as a flat phase gate.  Non-race flags
