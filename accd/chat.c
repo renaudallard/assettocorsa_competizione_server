@@ -888,11 +888,20 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    c->is_admin ? "(admin)" : "(driver)",
 		    (unsigned)c->conn_id, c->car_id, arg);
 		/*
-		 * Mirror exe FUN_14001dae0:187: unicast "reported, thank you"
-		 * back to the sender so the driver knows the report was
-		 * received (exe sends "Car #N reported, thank you").
+		 * Mirror exe FUN_14001dae0:187: unicast "Car #N reported,
+		 * thank you" back to the sender, where N is the reporter's
+		 * race number (from FUN_140003f80(&local_200, L"Car #",
+		 * local_220) + L" reported, thank you").
 		 */
-		chat_reply(s, c, "Reported, thank you", 4);
+		{
+			char reply[64];
+			int rnum = (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
+			    s->cars[c->car_id].used)
+			    ? s->cars[c->car_id].race_number : 0;
+			snprintf(reply, sizeof(reply),
+			    "Car #%d reported, thank you", rnum);
+			chat_reply(s, c, reply, 4);
+		}
 		return 1;
 	}
 
