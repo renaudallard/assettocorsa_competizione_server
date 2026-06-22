@@ -194,9 +194,10 @@ struct PenaltyEntry {
 	uint8_t		race_end_tp;	/* race-end DT/SG->TP30..TP60 conversion target */
 	uint8_t		driver_index;	/* driver active when the penalty was
 					 * incurred; for results.json attribution */
-	int16_t		violation_lap;	/* 1-based lap the penalty was incurred
-					 * on; -1 if unknown */
-	int16_t		cleared_lap;	/* 1-based lap it was served/cleared on;
+	int16_t		violation_lap;	/* 0-based lap index when the penalty was
+					 * incurred (= lap_count at issue time) */
+	int16_t		cleared_lap;	/* 0-based lap index when served/cleared
+					 * (= lap_count at serve/race-end time);
 					 * -1 while still open */
 };
 
