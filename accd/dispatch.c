@@ -529,7 +529,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		if (pc->avg_rtt_ms == 0)
 			log_info("pong: first sample conn=%u rtt=%u ms",
 			    (unsigned)pong_conn, (unsigned)rtt);
-		else if (pc->avg_rtt_ms * 3 < rtt) {
+		else if (pc->avg_rtt_ms <= UINT32_MAX / 3 &&
+		    pc->avg_rtt_ms * 3 < rtt) {
 			uint32_t cap = pc->avg_rtt_ms * 3;
 
 			log_kunos("Received Ping spike from connectionId %u; %u vs. avg %u ms, is capped to %u",
