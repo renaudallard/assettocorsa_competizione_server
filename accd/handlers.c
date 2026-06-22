@@ -1966,6 +1966,7 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	 */
 	{
 		int bci;
+		bb_init(&out);
 		for (bci = 0; bci < ACC_MAX_CARS; bci++) {
 			struct Conn *bc = s->conns[bci];
 			struct CarEntry *bcar;
@@ -1981,14 +1982,14 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 					continue;
 			}
 			bcar = &s->cars[bc->car_id];
-			bb_init(&out);
+			bb_clear(&out);
 			if (wr_u8(&out, SRV_BOP_UPDATE) == 0 &&
 			    wr_u16(&out, bcar->car_id) == 0 &&
 			    wr_u16(&out, (uint16_t)bcar->ballast_kg) == 0 &&
 			    wr_f32(&out, bcar->restrictor) == 0)
 				bcast_send_one(bc, out.data, out.wpos);
-			bb_free(&out);
 		}
+		bb_free(&out);
 	}
 	return 0;
 
@@ -2590,27 +2591,31 @@ h_ctrl_info(struct Server *s, struct Conn *c,
 	    (double)wear, (double)setup_id);
 	(void)scalar_b;
 
-	for (i = 0; i < ACC_MAX_CARS; i++) {
-		struct Conn *dst = s->conns[i];
+	{
 		struct ByteBuf bb;
-
-		if (dst == NULL || dst->state != CONN_AUTH || !dst->is_admin)
-			continue;
-		bb_init(&bb);
 		/*
 		 * Exe framing for this message: EMPTY sender name and
 		 * chat_type 0 (FUN_1400142f0:1438/1456), unlike the type-4
 		 * Race-Control banner used by other server-originated chat
 		 * (which also carries an empty sender).
+		 * Body is identical for all admin conns; build once, fan out.
 		 */
+		bb_init(&bb);
 		if (wr_u8(&bb, SRV_CHAT_OR_STATE) == 0 &&
 		    wr_str_a(&bb, "") == 0 &&
 		    wr_str_a(&bb, off >= 251
 			? "Received ctrl info, but message is too long. "
 			"Please check logs" : chat) == 0 &&
 		    wr_i32(&bb, 0) == 0 &&
-		    wr_u8(&bb, 0) == 0)
-			(void)conn_send_framed(dst, bb.data, bb.wpos);
+		    wr_u8(&bb, 0) == 0) {
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct Conn *dst = s->conns[i];
+				if (dst == NULL || dst->state != CONN_AUTH ||
+				    !dst->is_admin)
+					continue;
+				(void)conn_send_framed(dst, bb.data, bb.wpos);
+			}
+		}
 		bb_free(&bb);
 	}
 
