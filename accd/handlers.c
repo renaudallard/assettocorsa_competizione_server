@@ -1484,19 +1484,14 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	 * disqualified slot.  Drop the gate for byte parity with kunos.
 	 */
 	/*
-	 * Only accept client penalty self-reports during the live race
-	 * (PHASE_SESSION / OVERTIME).  Real client-detected violations
-	 * (cuts, start violations, wrong-way, lights-off) only occur once
-	 * cars are racing; formation / pre-race transitions report via
-	 * 0x3d / 0x19 / 0x20, not 0x41.  The stock server does NOT phase-
-	 * gate 0x41 (FUN_1400142f0 case 0x41 forwards straight to
-	 * FUN_140125f50), but accd drops out-of-race reports defensively so
-	 * a stray pre-green 0x41 can't materialise a penalty before the race
-	 * has started.  This loses no real in-race violation.
+	 * Race-specific pre-green gate: block 0x41 before the green flag
+	 * fires in a race session so a stray formation-lap 0x41 cannot
+	 * materialise a penalty before racing has actually started.  The
+	 * stock server has NO phase gate at all (FUN_1400142f0 case 0x41
+	 * forwards straight to FUN_140125f50), but we keep this one
+	 * defensive measure for race sessions only.  Practice and Qualifying
+	 * accept 0x41 at any phase, matching the exe.
 	 */
-	if (s->session.phase != PHASE_SESSION &&
-	    s->session.phase != PHASE_OVERTIME)
-		return 0;
 	if (session_is_race(s) && !s->session.green_fired)
 		return 0;
 	/*
