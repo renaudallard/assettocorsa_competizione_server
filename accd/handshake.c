@@ -1567,7 +1567,7 @@ write_track_records(struct ByteBuf *bb, struct Server *s)
 	    ? s->session_overtime_s : 120) < 0) return -1;
 		if (wr_u8(bb, 0) < 0) return -1;
 		if (wr_u8(bb, def->session_type) < 0) return -1;
-		if (wr_f32(bb, 1.0f) < 0) return -1;
+		if (wr_f32(bb, def->dynamic_track_multiplier) < 0) return -1;
 	}
 	return 0;
 }
