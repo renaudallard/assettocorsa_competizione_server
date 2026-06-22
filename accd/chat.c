@@ -349,6 +349,7 @@ chat_do_kick(struct Server *s, struct Conn *c, const char *args,
 	int j;
 	char chat[128];
 
+	(void)c;
 	if (chat_parse_int(args, &car_num) < 0)
 		return;
 	car_id = chat_car_by_racenum(s, car_num);
