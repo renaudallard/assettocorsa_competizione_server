@@ -726,7 +726,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 			    wr_str_a(&out, from) == 0 &&
 			    wr_str_a(&out, body_txt) == 0 &&
-			    wr_i32(&out, (int32_t)mono_ms()) == 0 &&
+			    wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
 			    wr_u8(&out, 0) == 0)
 				(void)conn_send_framed(dst,
 				    out.data, out.wpos);
