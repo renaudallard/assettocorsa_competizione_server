@@ -1959,17 +1959,37 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	broadcast_swap_state(s, car);
 
 	/*
-	 * Re-sync this car's BoP to the swapping connection.  The exe swap
-	 * commit (FUN_140012830) re-sends 0x53 to the swap conns even though
-	 * a swap leaves ballast / restrictor unchanged; mirror it.
+	 * Re-sync BoP to the requesting conn and all team companions.
+	 * Exe FUN_140012830 sends 0x53 to both swap conns; accd mirrors
+	 * this by iterating the team group (each companion has its own
+	 * car_id in accd's companion-slot model).
 	 */
-	bb_init(&out);
-	if (wr_u8(&out, SRV_BOP_UPDATE) == 0 &&
-	    wr_u16(&out, car->car_id) == 0 &&
-	    wr_u16(&out, (uint16_t)car->ballast_kg) == 0 &&
-	    wr_f32(&out, car->restrictor) == 0)
-		bcast_send_one(c, out.data, out.wpos);
-	bb_free(&out);
+	{
+		int bci;
+		for (bci = 0; bci < ACC_MAX_CARS; bci++) {
+			struct Conn *bc = s->conns[bci];
+			struct CarEntry *bcar;
+
+			if (bc == NULL || bc->state != CONN_AUTH ||
+			    bc->car_id < 0)
+				continue;
+			if (bc != c) {
+				if (car->team_entry_id < 0)
+					continue;
+				if (s->cars[bc->car_id].team_entry_id !=
+				    car->team_entry_id)
+					continue;
+			}
+			bcar = &s->cars[bc->car_id];
+			bb_init(&out);
+			if (wr_u8(&out, SRV_BOP_UPDATE) == 0 &&
+			    wr_u16(&out, bcar->car_id) == 0 &&
+			    wr_u16(&out, (uint16_t)bcar->ballast_kg) == 0 &&
+			    wr_f32(&out, bcar->restrictor) == 0)
+				bcast_send_one(bc, out.data, out.wpos);
+			bb_free(&out);
+		}
+	}
 	return 0;
 
 reply:
