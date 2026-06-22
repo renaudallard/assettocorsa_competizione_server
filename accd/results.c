@@ -261,7 +261,13 @@ results_write(struct Server *s)
 	fprint_json_str(f, s->track);
 	fprintf(f, ",\n");
 	fprintf(f, "  \"sessionIndex\": %u,\n", (unsigned)sidx);
-	fprintf(f, "  \"raceWeekendIndex\": 0,\n");
+	/*
+	 * raceWeekendIndex: the exe (FUN_14010ee90) reads an int from
+	 * param_1+0x2c.  On wine with a single event.json the stored
+	 * value is -1 (unset weekend sequence).  Our reimpl has no
+	 * weekend-sequence concept, so always emit -1 to match.
+	 */
+	fprintf(f, "  \"raceWeekendIndex\": -1,\n");
 	fprintf(f, "  \"metaData\": ");
 	fprint_json_str(f, s->meta_data);
 	fprintf(f, ",\n");
