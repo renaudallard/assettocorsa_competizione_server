@@ -510,8 +510,8 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 	 * during that window would otherwise read past the in-use
 	 * sessions[] entries.
 	 */
-	idx = s->session.session_index < s->session_count
-	    ? s->session.session_index : 0;
+	idx = (uint8_t)(s->session.session_index < s->session_count
+	    ? s->session.session_index : s->session_count - 1);
 	def = &s->sessions[idx];
 
 	/* First byte: session index (NOT phase). */
