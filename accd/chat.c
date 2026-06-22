@@ -436,7 +436,7 @@ static const char *track_list[] = {
 	"nurburgring", "hungaroring", "zandvoort", "brands_hatch",
 	"zolder", "barcelona", "mount_panorama", "laguna_seca",
 	"suzuka", "kyalami", "oulton_park", "snetterton", "donington",
-	"imola", "watkins_glen", "cota", "indianapolis", "valencia",
+	"imola", "watkins_glen", "cota", "indianapolis", "oval", "valencia",
 	"nurburgring_24h", "red_bull_ring", "paul_ricard_gt4",
 	NULL
 };
