@@ -1497,6 +1497,8 @@ h_report_penalty(struct Server *s, struct Conn *c,
 	if (s->session.phase != PHASE_SESSION &&
 	    s->session.phase != PHASE_OVERTIME)
 		return 0;
+	if (session_is_race(s) && !s->session.green_fired)
+		return 0;
 	/*
 	 * Primer filter.  The client fires 0x41 on every lap / violation
 	 * tick with value=0 as a register-severity heads-up; the exe's
