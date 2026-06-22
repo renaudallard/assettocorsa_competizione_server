@@ -1213,10 +1213,18 @@ tick_run(struct Server *s)
 	 * CSV row.  broadcast_keepalive uses per-conn timers (exe
 	 * FUN_140041e80 stores the stamp at conn+0xa0238), so call it
 	 * every tick; the per-conn gate inside handles the ~1 Hz cadence.
+	 *
+	 * 0xbe stats: exe FUN_14002e8d0 gates on
+	 * 1000.0 < now - param_1[0x140a3] (DAT_14014bd20 = 1000.0),
+	 * i.e. 1 Hz.  Gate here with s->last_stats_udp_ms so we don't
+	 * send 333×/s when serverDiagnosticsUdpPort is configured.
 	 */
 	{
 		broadcast_keepalive(s, SRV_KEEPALIVE_14);
-		broadcast_stats_udp(s);
+		if (now_ms - s->last_stats_udp_ms >= 1000) {
+			broadcast_stats_udp(s);
+			s->last_stats_udp_ms = now_ms;
+		}
 
 		if (s->write_latency_dumps &&
 		    s->latency_dump_fp != NULL && s->nconns > 0) {

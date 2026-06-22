@@ -945,6 +945,7 @@ struct Server {
 	 * Intended for local monitoring tools; never routed off-host.
 	 */
 	int		stats_udp_port;
+	uint64_t	last_stats_udp_ms;	/* mono_ms of last 0xbe emit */
 	/*
 	 * Admin chat toggles mirroring the exe's server struct bytes.
 	 * legacy_netcode at +0x22 (/mp), log_conditions at +0x116
