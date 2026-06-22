@@ -876,11 +876,12 @@ penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count)
 		p->collision = 0;
 		/*
 		 * Mirror FUN_140127440: after converting, exe calls
-		 * FUN_140126b50 to serve the original DT/SG entry, which
-		 * sets cleared_lap to the current lap.  Record that here so
-		 * results.json writes the correct clearedInLap value.
+		 * FUN_140126b50 to serve the original DT/SG entry at
+		 * race-end time T.  FUN_140129b10 then counts how many
+		 * laps started before T: all N completed laps qualify,
+		 * so the loop result is N-1 (0-indexed last lap).
 		 */
-		p->cleared_lap = (int16_t)lap_count;
+		p->cleared_lap = (int16_t)(lap_count - 1);
 		/*
 		 * Preserve laps_remaining — kunos's 0x3e per-car tail
 		 * reads the original DT/SG value (e.g. 3 for a 3-cut
