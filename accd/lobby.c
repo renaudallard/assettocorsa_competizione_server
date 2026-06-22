@@ -130,11 +130,17 @@ uint32_t arc4random_uniform(uint32_t);
 #define LOBBY_RETRY_MS		10000
 #define LOBBY_RETRY_LONG_MS	30000
 /*
- * Max time to wait in CONNECTING / REGISTERING before giving up and
- * reconnecting.  The kson handshake normally completes in ~150 ms, so
- * 10 s is generous while still recovering a silently-stuck handshake.
+ * Max time to wait in CONNECTING before giving up and reconnecting.
+ * The TCP connect normally completes in ~150 ms; 10 s covers high-latency
+ * paths while still recovering a silently-stuck SYN.
  */
 #define LOBBY_HANDSHAKE_TIMEOUT_MS	10000
+/*
+ * Max time to wait in REGISTERING for the 0xef registration ack.
+ * Exe FUN_140048660 case 5 waits 30 s before abandoning.  The 0xef
+ * response can legitimately arrive late under backend load.
+ */
+#define LOBBY_REGISTRATION_TIMEOUT_MS	30000
 #define LOBBY_BACKOFF_MAX_MS	300000
 #define LOBBY_KEEPALIVE_MS	30000
 #define LOBBY_SESSION_UPDATE_MS	20000	/* push at least every 20 s */
@@ -1657,20 +1663,20 @@ lobby_tick(struct LobbyClient *l, struct Server *s)
 			lobby_set_state(l, LOBBY_DISCONNECTED);
 		break;
 	case LOBBY_CONNECTING:
-	case LOBBY_REGISTERING:
 		/*
-		 * The non-blocking connect completion (CONNECTING) and the
-		 * kson registration response (REGISTERING) both arrive via
-		 * the lobby readable/writable path.  If the lobby goes silent
-		 * -- no SYN-ACK, no 0xef response, and no POLLHUP -- neither
-		 * state advances and the client would hang here indefinitely
-		 * (observed: a restart-cooldown left REGISTERING stuck for
-		 * minutes).  Time the handshake out so it reconnects with
-		 * backoff instead of waiting on a connection drop that may
-		 * never come.
+		 * Time out the non-blocking TCP connect.  If no SYN-ACK or
+		 * POLLHUP arrives within 10 s, reconnect with backoff.
 		 */
 		if (now - l->state_entered_ms >= LOBBY_HANDSHAKE_TIMEOUT_MS)
-			lobby_disconnect(l, "handshake/registration timeout");
+			lobby_disconnect(l, "connect timeout");
+		break;
+	case LOBBY_REGISTERING:
+		/*
+		 * Time out the 0xef registration ack.  Exe FUN_140048660
+		 * case 5 waits 30 s; use the same to handle backend slowness.
+		 */
+		if (now - l->state_entered_ms >= LOBBY_REGISTRATION_TIMEOUT_MS)
+			lobby_disconnect(l, "registration ack timeout");
 		break;
 	case LOBBY_REGISTERED:
 		if (l->drivers_dirty) {
