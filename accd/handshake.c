@@ -2433,10 +2433,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 * declared rating (FUN_14002db30).
 		 */
 		if (s->is_cp_server) {
-			const struct SessionDef *cur =
-			    &s->sessions[s->session.session_index];
-
-			if (cur->session_type != 0) {
+			if (session_cur_type(s) != 0) {
 				log_info("rejecting %s: CP server accepts "
 				    "connections only in Free Practice",
 				    steam_buf);
