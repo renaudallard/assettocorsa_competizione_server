@@ -1617,6 +1617,9 @@ lobby_handle_io(struct LobbyClient *l, struct Server *s, short revents)
 						    " disabling lobby client");
 						lobby_set_state(l,
 						    LOBBY_PERMANENTLY_DISABLED);
+						lobby_disconnect(l,
+						    "permanently disabled");
+						return;
 					}
 				}
 				pos += 2 + mlen;
