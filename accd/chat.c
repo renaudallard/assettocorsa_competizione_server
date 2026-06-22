@@ -1483,9 +1483,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    (int)s->legacy_netcode);
 		/*
 		 * Exe FUN_140021680:390 uses goto LAB_14002273f which
-		 * sets cVar20='\0' (FUN_14004cc50 broadcast path).
+		 * sets cVar20='\0' (unicast to admin via FUN_14004cc50).
 		 */
-		chat_broadcast(s, s->legacy_netcode
+		chat_reply(s, c, s->legacy_netcode
 		    ? "Server now uses legacy netcode"
 		    : "Server is now in regular mode", 4);
 	} else if (chat_prefix(text, "/lockprep")) {
