@@ -502,8 +502,9 @@ results_write(struct Server *s)
 		 */
 		fprintf(f, "        \"missingMandatoryPitstop\": %d,\n",
 		    (st == 10 && s->mandatory_pit_count > 0 &&
-			car->race.mandatory_pit_served <
-			    s->mandatory_pit_count) ? 1 : 0);
+			car->race.mandatory_pit_served < s->mandatory_pit_count)
+		    ? (int)(s->mandatory_pit_count -
+			car->race.mandatory_pit_served) : 0);
 		/*
 		 * driverTotalTimes[] per handbook §VIII.1 — per-driver
 		 * accumulated stint time (ms) for endurance / driver-
