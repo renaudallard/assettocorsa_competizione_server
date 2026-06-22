@@ -466,9 +466,10 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 * lap-states mask (FUN_140127850): the lap is rejected from
 		 * "best" if any bit in 0x100f is set (cut 0x01, 0x02, out-lap
 		 * 0x04, in-lap 0x08, hi-byte 0x1000) or the time is outside
-		 * [1, 0x7ffffffe].  This is stricter than `invalid` (cut +
-		 * out-lap only), which still gates lap_count / last_lap /
-		 * lap_history so cut laps keep ticking the counters.
+		 * [1, 0x7ffffffe].  This is stricter than `invalid` which only
+		 * tests cut + out-lap; in-lap completions (0x08 set, no cut or
+		 * out-lap bit) are not `invalid` and still update lap_count and
+		 * lap_history, but they cannot become session-best.
 		 */
 		int valid_for_best = (car_field & 0x100f) == 0 &&
 		    lap_ms >= 1 && lap_ms <= 0x7ffffffe;
