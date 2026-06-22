@@ -450,7 +450,8 @@ conn_drop(struct Server *s, struct Conn *c)
 			if (d_idx < ACC_MAX_DRIVERS_PER_CAR)
 				s->cars[c->car_id].swap_state[d_idx] = 1;
 			for (g = 0; g < ACC_MAX_CARS; g++) {
-				if (s->cars[g].team_entry_id == group)
+				if (s->cars[g].team_entry_id == group &&
+				    s->cars[g].used)
 					broadcast_swap_state(s, &s->cars[g]);
 			}
 		}

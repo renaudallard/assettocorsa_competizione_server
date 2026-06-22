@@ -3242,7 +3242,8 @@ reply:
 				int8_t group = s->cars[c->car_id].team_entry_id;
 				int g;
 				for (g = 0; g < ACC_MAX_CARS; g++) {
-					if (s->cars[g].team_entry_id == group)
+					if (s->cars[g].team_entry_id == group &&
+					    s->cars[g].used)
 						broadcast_swap_state(s,
 						    &s->cars[g]);
 				}
