@@ -3242,7 +3242,7 @@ reply:
 			if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
 			    s->cars[c->car_id].driver_count > 0)
 				ratings_seed_from_client(s,
-				    s->cars[c->car_id].drivers[0].steam_id,
+				    c->steam_id,
 				    wire_sa);
 			s->ratings_dirty = 1;
 			s->ratings_last_emit_ms = 0;
