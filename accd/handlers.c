@@ -2147,30 +2147,50 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 	 */
 	{
 		struct ByteBuf out;
+		double ts_d;
+		size_t ts_off;
 
 		bb_init(&out);
-		if (wr_u8(&out, SRV_DRIVER_STINT_RELAY) == 0 &&
-		    wr_u16(&out, s->cars[c->car_id].car_id) == 0 &&
-		    wr_u8(&out, force) == 0) {
-			if (force) {
-				double ts_d, ts_adj;
-				uint8_t bytes[8];
-				/*
-				 * Wire ts is an IEEE-754 double, not an
-				 * integer.  Reinterpret the bits directly
-				 * (memcpy avoids UB) before adding the
-				 * session clock offset.
-				 */
-				memcpy(&ts_d, &ts_raw, sizeof(ts_d));
+		if (wr_u8(&out, SRV_DRIVER_STINT_RELAY) < 0 ||
+		    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
+		    wr_u8(&out, force) < 0)
+			goto relay_done;
+
+		if (force) {
+			int i;
+			uint8_t placeholder[8] = {0};
+			/*
+			 * force=1 carries an 8-byte IEEE-754 double timestamp
+			 * that must be transformed into each receiver's clock
+			 * frame (exe FUN_14001ae20 calls per-receiver
+			 * FUN_140041fc0 for each peer, same as 0x3c/0x3b/0x19).
+			 * Write a placeholder and patch per-peer below.
+			 */
+			memcpy(&ts_d, &ts_raw, sizeof(ts_d));
+			ts_off = out.wpos;
+			if (bb_append(&out, placeholder, sizeof(placeholder)) < 0)
+				goto relay_done;
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct Conn *peer = s->conns[i];
+				double ts_adj;
+
+				if (peer == NULL ||
+				    peer->state != CONN_AUTH ||
+				    peer->is_smpr ||
+				    peer->conn_id == c->conn_id)
+					continue;
 				ts_adj = ts_d +
-				    (double)conn_clock_offset(s, c);
-				memcpy(bytes, &ts_adj, sizeof(bytes));
-				(void)bb_append(&out, bytes,
-				    sizeof(bytes));
+				    (double)conn_clock_offset(s, peer);
+				memcpy(out.data + ts_off, &ts_adj,
+				    sizeof(ts_adj));
+				(void)bcast_send_one(peer, out.data,
+				    out.wpos);
 			}
+		} else {
 			(void)bcast_all(s, out.data, out.wpos,
 			    c->conn_id);
 		}
+relay_done:
 		bb_free(&out);
 	}
 	return 0;
