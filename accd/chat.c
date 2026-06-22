@@ -887,6 +887,12 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		log_info("report %s conn=%u car=%d: %s",
 		    c->is_admin ? "(admin)" : "(driver)",
 		    (unsigned)c->conn_id, c->car_id, arg);
+		/*
+		 * Mirror exe FUN_14001dae0:187: unicast "reported, thank you"
+		 * back to the sender so the driver knows the report was
+		 * received (exe sends "Car #N reported, thank you").
+		 */
+		chat_reply(s, c, "Reported, thank you", 4);
 		return 1;
 	}
 
