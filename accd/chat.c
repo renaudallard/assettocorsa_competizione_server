@@ -744,12 +744,13 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		if (strcmp(arg, s->admin_password) == 0) {
 			c->is_admin = 1;
 			/*
-			 * Unicast the elevation reply only to the requesting
-			 * conn, matching the exe's FUN_140021680 admin path
-			 * (calls FUN_14004cc50 unicast).  chat_broadcast here
-			 * would announce it to every connected client, exposing
-			 * the elevation.  chat_reply carries the empty sender and
-			 * weekend_time_s timestamp the exe uses.
+			 * Intentional divergence from the exe: the exe
+			 * FUN_140021680 falls through to LAB_140022912
+			 * (cVar20='\0') and broadcasts ALL /admin replies
+			 * (success, wrong-password, wrong-params, not-admin)
+			 * via FUN_14004cc50.  accd unicasts them instead to
+			 * avoid leaking password failures or elevation events
+			 * to all connected drivers.
 			 */
 			chat_reply(s, c, "You are now server admin", 4);
 			log_info("admin: conn=%u elevated to admin",
