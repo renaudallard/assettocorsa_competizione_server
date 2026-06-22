@@ -1317,18 +1317,19 @@ session_overtime_car_finished(struct Server *s, int car_id)
 		s->session.cars_in_overtime--;
 	if (s->session.cars_in_overtime <= 0) {
 		/*
-		 * All remaining cars finished.  If the leader also crossed in
-		 * this same call, preserve the grace window already set above
-		 * so the 2-minute aftercare runs.  If the leader crossed
-		 * earlier, collapse ts[6] to now so the session ends without
-		 * waiting out the grace period again.
+		 * All remaining cars finished.  Three cases:
+		 *  - leader_just_finished=1: ts[6] was set above with grace, keep it.
+		 *  - leader_just_finished=0, armed=0: leader fired in a prior call
+		 *    and already set ts[6]=now+grace; do not overwrite.
+		 *  - leader_just_finished=0, armed=1: leader never crossed (DNF/AFK);
+		 *    collapse ts[6] to now so the session advances immediately.
 		 */
 		s->session.overtime_hold = 0;
 		s->session.ts[5] = now;
-		if (!leader_just_finished)
+		if (!leader_just_finished && s->session.overtime_leader_armed)
 			s->session.ts[6] = now;
 		log_info("overtime: all cars finished%s",
-		    leader_just_finished
+		    (leader_just_finished || !s->session.overtime_leader_armed)
 		    ? ", leader grace active" : ", collapsing to now");
 	} else {
 		log_info("overtime: %d cars still racing",
