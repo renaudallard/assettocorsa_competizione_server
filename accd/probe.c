@@ -413,6 +413,10 @@ main(int argc, char *argv[])
 		if (!(pfd.revents & (POLLIN | POLLHUP)))
 			continue;
 
+		if (rxlen >= sizeof(rxbuf)) {
+			fprintf(stderr, "probe: rx buffer full\n");
+			break;
+		}
 		r = recv(tcp_fd, rxbuf + rxlen,
 		    sizeof(rxbuf) - rxlen, 0);
 		if (r <= 0) {
