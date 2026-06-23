@@ -237,8 +237,22 @@ config_load(struct Server *s, const char *cfg_dir)
 	configuration = load_json(cfg_dir, "configuration.json");
 	if (configuration == NULL)
 		return -1;
-	s->tcp_port = json_obj_get_int(configuration, "tcpPort", s->tcp_port);
-	s->udp_port = json_obj_get_int(configuration, "udpPort", s->udp_port);
+	{
+		int tp = json_obj_get_int(configuration, "tcpPort", s->tcp_port);
+		int up = json_obj_get_int(configuration, "udpPort", s->udp_port);
+		if (tp < 1 || tp > 65535) {
+			log_warn("config: tcpPort %d out of range, keeping %d",
+			    tp, s->tcp_port);
+		} else {
+			s->tcp_port = tp;
+		}
+		if (up < 1 || up > 65535) {
+			log_warn("config: udpPort %d out of range, keeping %d",
+			    up, s->udp_port);
+		} else {
+			s->udp_port = up;
+		}
+	}
 	/*
 	 * Deprecated maxClients (exe FUN_1401030e0:101): read it first as the
 	 * connection cap, log a deprecation notice, then let maxConnections
