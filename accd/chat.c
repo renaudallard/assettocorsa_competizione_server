@@ -657,6 +657,7 @@ chat_do_track(struct Server *s, const char *args,
 
 	snprintf(msg, sizeof(msg), "Event changed to %s", s->track);
 	log_info("admin: %s", msg);
+	chat_broadcast(s, msg, 4);
 
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", msg);
