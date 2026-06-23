@@ -2056,8 +2056,10 @@ handshake_send_stint_sync(struct Conn *new_conn, struct Server *s)
 		if (car->race.stint_start_ms == 0)
 			continue;
 
-		ts_d = (double)(car->race.stint_start_ms -
-		    s->session.phase_started_ms);
+		ts_d = car->race.stint_start_ms >= s->session.phase_started_ms
+		    ? (double)(car->race.stint_start_ms -
+		        s->session.phase_started_ms)
+		    : 0.0;
 		memcpy(ts_bytes, &ts_d, sizeof(ts_bytes));
 
 		bb_init(&out);
