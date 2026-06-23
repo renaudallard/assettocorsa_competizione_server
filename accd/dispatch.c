@@ -36,6 +36,7 @@
 
 #include <sys/socket.h>
 #include <arpa/inet.h>
+#include <math.h>
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -693,7 +694,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		dst = server_find_conn(s, target_conn);
 		log_info("0x5e latency report: %u -> %u = %d ms (chat=%u)",
 		    source_conn, target_conn,
-		    (int)latency_ms, (unsigned)enable_chat);
+		    isfinite(latency_ms) ? (int)latency_ms : 0,
+		    (unsigned)enable_chat);
 		/*
 		 * Refuse the chat relay if the UDP source IP doesn't
 		 * match the source conn's accepted IP -- otherwise any
@@ -722,7 +724,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			}
 			snprintf(body_txt, sizeof(body_txt),
 			    "Latency error: %d ms",
-			    (int)latency_ms);
+			    isfinite(latency_ms) ? (int)latency_ms : 0);
 			bb_init(&out);
 			/*
 			 * chat_type 0 = player-chat lane (renders in the
