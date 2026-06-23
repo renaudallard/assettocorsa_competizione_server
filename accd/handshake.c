@@ -2597,6 +2597,21 @@ handshake_handle(struct Server *s, struct Conn *c,
 					    (unsigned)old->conn_id,
 					    steam_buf);
 					reconnect_slot = old->car_id;
+					{
+						int rdj;
+						struct CarEntry *rc =
+						    &s->cars[reconnect_slot];
+						for (rdj = 0;
+						    rdj < rc->driver_count;
+						    rdj++) {
+							if (strcmp(rc->drivers[rdj]
+							    .steam_id,
+							    steam_buf) == 0) {
+								matched_dj = rdj;
+								break;
+							}
+						}
+					}
 					old->car_id = -1;
 					old->state = CONN_DISCONNECT;
 					break;
@@ -2653,6 +2668,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 						    k, k,
 						    ec->race_number,
 						    steam_buf);
+						matched_dj = dj;
 						reconnect_slot = k;
 						break;
 					}
