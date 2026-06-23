@@ -296,14 +296,14 @@ chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 		uint8_t exe = penalty_exe_kind_of((uint8_t)kind);
 		int32_t val = 3;	/* admin /dt, /sg* default */
 		struct PenaltyQueue *pq = &s->cars[car_id].race.pen;
-		int pre = pq->count;
-		int pi;
+		int slot;
 		if (kind == PEN_TP5)
 			val = 5;
 		else if (kind == PEN_TP15)
 			val = 15;
-		if (penalty_enqueue(s, car_id, exe, 8, val, 0,
-		    collision, REASON_RACE_CONTROL) < 0)
+		slot = penalty_enqueue(s, car_id, exe, 8, val, 0,
+		    collision, REASON_RACE_CONTROL);
+		if (slot < 0)
 			return;
 		/*
 		 * Kunos does NOT surface admin chat-issued penalties in the
@@ -311,19 +311,12 @@ chat_do_penalty(struct Server *s, struct Conn *c, const char *cmd,
 		 * them in the per-car tail bytes: a 1-min race pcap
 		 * (2026-06-20, admin /dt 911) has the tail flip to 0f 03
 		 * (wire 15 = RaceControl DT, value 3) the moment the /dt
-		 * lands, persisting to the race-end 0x3e.  Mark every slot
-		 * freshly enqueued by this call as `admin` so
+		 * lands, persisting to the race-end 0x3e.  Mark the slot
+		 * returned by penalty_enqueue as admin so
 		 * write_car_leaderboard_record skips it in active_pen +
 		 * pq_emit only; the per-car tail still surfaces it.
-		 * Use >= so the post-eviction pre==count case is handled
-		 * too: when the queue is at ACC_MAX_PENALTIES and the new
-		 * push evicts one, pre lands equal to count and a plain >
-		 * would leave the freshly-enqueued slot unmarked.
 		 */
-		if (pre >= pq->count && pq->count >= ACC_MAX_PENALTIES)
-			pre = pq->count - 1;
-		for (pi = pre; pi < pq->count; pi++)
-			pq->slots[pi].admin = 1;
+		pq->slots[slot].admin = 1;
 	}
 	penalty_format_chat(chat, sizeof(chat),
 	    (uint8_t)kind, REASON_RACE_CONTROL, collision, car_num);
@@ -1219,33 +1212,26 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			if (car_id >= 0) {
 				struct PenaltyQueue *pq =
 				    &s->cars[car_id].race.pen;
-				int pre = pq->count;
-				int pi;
-				int already_dq = (s->cars[car_id].race.dtsg_ladder_sev == EXE_DQ);
+				int slot;
 				/*
 		 * Use category 8 (Trolling/RaceControl) per kunos
 		 * penalty.c fallback for non-forced DQ; the dedup
 		 * gate in penalty_enqueue is now per-car so any
 		 * category value is safe, but 8 matches kunos.
 		 */
-		penalty_enqueue(s, car_id, EXE_DQ, 8, 3,
+		slot = penalty_enqueue(s, car_id, EXE_DQ, 8, 3,
 				    1, 0, REASON_RACE_CONTROL);
 				/*
-				 * Mark the freshly enqueued DQ slot(s) as
+				 * Mark the freshly enqueued DQ slot as
 				 * admin so 0x36's active_pen / pq_emit skip
-				 * them -- kunos doesn't surface admin-issued
+				 * it -- kunos doesn't surface admin-issued
 				 * DQ in the per-car prefix.
-				 * Guard: when already DQ'd, penalty_enqueue
-				 * returns early without a new slot push; the
-				 * `pre >= count` branch would fire and mark
-				 * an unrelated pre-existing penalty as admin.
+				 * penalty_enqueue returns -1 when already
+				 * DQ'd (dedup path), so no slot is marked
+				 * in that case.
 				 */
-				if (!already_dq) {
-					if (pre >= pq->count && pq->count >= ACC_MAX_PENALTIES)
-						pre = pq->count - 1;
-					for (pi = pre; pi < pq->count; pi++)
-						pq->slots[pi].admin = 1;
-				}
+				if (slot >= 0)
+					pq->slots[slot].admin = 1;
 				char chat[128];
 				snprintf(chat, sizeof(chat),
 				    "Car #%d was disqualified by Race Control",

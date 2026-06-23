@@ -186,7 +186,6 @@ cmd_dq(struct Server *s, const char *args)
 	int car_num, car_id;
 	char msg[128];
 	struct PenaltyQueue *pq;
-	int pre, pi, already_dq;
 
 	if (chat_parse_int(args, &car_num) < 0) {
 		reply("usage: dq <race_number>");
@@ -200,28 +199,18 @@ cmd_dq(struct Server *s, const char *args)
 	/* category 8 (Trolling): the exe tags every admin-issued penalty
 	 * with cat 8, which the results writer renders as the reason. */
 	pq = &s->cars[car_id].race.pen;
-	pre = pq->count;
-	already_dq = (s->cars[car_id].race.dtsg_ladder_sev == EXE_DQ);
-	penalty_enqueue(s, car_id, EXE_DQ, 8, 3, 1, 0,
-	    REASON_RACE_CONTROL);
-	/*
-	 * Mark the freshly enqueued DQ slot(s) as admin so 0x36's
-	 * active_pen / pq_emit skip them -- kunos does not surface
-	 * admin-issued DQ in the per-car leaderboard prefix.
-	 * Same pattern as chat.c /dq and chat_do_penalty.
-	 *
-	 * Guard: when the car was already DQ'd, penalty_enqueue returns
-	 * early without pushing a new slot (it only zeroes laps_remaining
-	 * on the existing DQ entry).  The `pre >= pq->count` branch below
-	 * was designed for the ring-eviction case (count stays at MAX but
-	 * a new slot replaced the oldest); it incorrectly fires here too
-	 * and would mark an unrelated pre-existing penalty as admin.
-	 */
-	if (!already_dq) {
-		if (pre >= pq->count && pq->count >= ACC_MAX_PENALTIES)
-			pre = pq->count - 1;
-		for (pi = pre; pi < pq->count; pi++)
-			pq->slots[pi].admin = 1;
+	{
+		int slot = penalty_enqueue(s, car_id, EXE_DQ, 8, 3, 1, 0,
+		    REASON_RACE_CONTROL);
+		/*
+		 * Mark the freshly enqueued DQ slot as admin so 0x36's
+		 * active_pen / pq_emit skip it -- kunos does not surface
+		 * admin-issued DQ in the per-car leaderboard prefix.
+		 * penalty_enqueue returns -1 when already DQ'd (dedup
+		 * path), so no slot is marked in that case.
+		 */
+		if (slot >= 0)
+			pq->slots[slot].admin = 1;
 	}
 	snprintf(msg, sizeof(msg),
 	    "Car #%d was disqualified by Race Control", car_num);

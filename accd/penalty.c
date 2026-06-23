@@ -235,7 +235,7 @@ penalty_materialize(struct Server *s, int car_id, uint8_t exe_kind,
  * slots each holding the running total, so penalty_total_ms summed the
  * coarse PEN_TP5/PEN_TP15 buckets instead of the real accumulated time.
  */
-static void
+static int
 penalty_set_tp(struct Server *s, int car_id, int32_t total_sec,
     uint8_t reason, uint8_t category, int collision)
 {
@@ -243,7 +243,7 @@ penalty_set_tp(struct Server *s, int car_id, int32_t total_sec,
 	int i;
 
 	if (car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
-		return;
+		return -1;
 	q = &s->cars[car_id].race.pen;
 	for (i = 0; i < q->count; i++) {
 		struct PenaltyEntry *p = &q->slots[i];
@@ -257,10 +257,11 @@ penalty_set_tp(struct Server *s, int car_id, int32_t total_sec,
 		p->laps_remaining = total_sec;
 		p->issued_ms = mono_ms();
 		leaderboard_request_emit(s);
-		return;
+		return i;
 	}
 	penalty_materialize(s, car_id, EXE_TP, collision, total_sec,
 	    reason, category);
+	return (int)(q->count - 1);
 }
 
 /*
@@ -303,7 +304,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 	if (exe_kind == EXE_RBL) {
 		penalty_materialize(s, car_id, EXE_RBL, collision,
 		    value, reason, category);
-		return 0;
+		return (int)(race->pen.count - 1);
 	}
 
 	/*
@@ -356,7 +357,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			 * so the next tick drains the pending bit.
 			 */
 			leaderboard_request_emit(s);
-			return 0;
+			return -1;
 		}
 		/* Exe FUN_140125f50:146-157: when param_5==EXE_DQ and the DT/SG
 		 * sheet has a non-zero severity byte, FUN_140126b50 is called
@@ -392,7 +393,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		st->issued_ms = now_ms;
 		st->reason = reason;
 		st->counter = value;
-		return 0;
+		return (int)(race->pen.count - 1);
 	}
 
 	/* Post-race time penalty: counter is seconds, threshold 256. */
@@ -414,8 +415,8 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		 * penalty_set_tp keeps it to one slot (the exe's +0x70
 		 * counter), so the post-race time fold reads the true total.
 		 */
-		penalty_set_tp(s, car_id, (int32_t)st->counter, reason,
-		    category, collision);
+		int tp_slot = penalty_set_tp(s, car_id, (int32_t)st->counter,
+		    reason, category, collision);
 		if (st->counter >= 0x100) {
 			log_info("car %d total TP exceeded 256s -> DQ",
 			    car_id);
@@ -452,7 +453,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			 */
 			race->dtsg_ladder_sev = EXE_DQ;
 		}
-		return 0;
+		return tp_slot;
 	}
 
 	/*
@@ -468,6 +469,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		uint8_t old_sev;
 		uint8_t new_sev;
 		uint8_t bVar6;
+		int step_slot = -1;
 
 		old_sev = race->dtsg_ladder_sev;
 		bVar6 = (uint8_t)((force + 2) * 2);
@@ -479,7 +481,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			race->dtsg_ladder_sev = exe_kind;
 			penalty_materialize(s, car_id, exe_kind, collision,
 			    value, reason, category);
-			return 0;
+			return (int)(race->pen.count - 1);
 		}
 
 		/*
@@ -497,11 +499,11 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			break;
 		case EXE_SG30:
 			if (force == 0)
-				return 0;	/* terminal */
+				return -1;	/* terminal */
 			new_sev = EXE_DQ;
 			break;
 		default:
-			return 0;		/* DQ reached, terminal */
+			return -1;		/* DQ reached, terminal */
 		}
 
 		/*
@@ -539,6 +541,7 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 				 * the active_pen prefix and pq_emit array.
 				 */
 				q->slots[i].admin = 0;
+				step_slot = i;
 				break;
 			}
 			(void)collision;
@@ -560,8 +563,8 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 		 * materialize.
 		 */
 		leaderboard_request_emit(s);
+		return step_slot;
 	}
-	return 0;
 }
 
 int
