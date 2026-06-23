@@ -639,6 +639,8 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "preRaceWaitingTimeSeconds", 80);
 			if (prw < 0)
 				prw = 0;
+			if (prw > 65535)
+				prw = 65535;
 			s->pre_race_waiting_s = (uint16_t)prw;
 		}
 		if (s->register_to_lobby) {
