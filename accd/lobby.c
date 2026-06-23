@@ -688,8 +688,8 @@ lobby_send_drivers_update(struct LobbyClient *l, const struct Server *s)
 
 		if (!c->used || c->driver_count == 0)
 			continue;
-		dv = &c->drivers[c->current_driver_index %
-		    ACC_MAX_DRIVERS_PER_CAR];
+		dv = &c->drivers[c->current_driver_index < c->driver_count
+		    ? c->current_driver_index : 0];
 		snprintf(name, sizeof(name), "%s %s",
 		    dv->first_name[0] ? dv->first_name : "Driver",
 		    dv->last_name[0] ? dv->last_name : "");
