@@ -509,14 +509,14 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 {
 	unsigned char pkt[15];
 	int i;
-	uint32_t srv_ms;
+	uint64_t srv_ms;
 	uint16_t avg_ping, max_ping;
 
 	if (s->udp_fd < 0)
 		return;
 
 	compute_server_pings(s, &avg_ping, &max_ping);
-	srv_ms = (uint32_t)mono_ms();
+	srv_ms = mono_ms();
 
 	/*
 	 * Reduce the per-tick CPU-load ring to avg/max percent for wire
@@ -553,8 +553,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		 * (conn+0xa0238) so each conn's 0x14 cadence is
 		 * independent.  Gate here and stamp on send. */
 		if (c->last_keepalive_ms != 0 &&
-		    srv_ms - (uint32_t)c->last_keepalive_ms <
-		    CADENCE_KEEPALIVE_MS)
+		    srv_ms - c->last_keepalive_ms < CADENCE_KEEPALIVE_MS)
 			continue;
 		/* Clamp like build_percar_body does — a stalled link can
 		 * push avg_rtt_ms past 65535 and the silent cast wraps to
@@ -567,7 +566,7 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		(void)sendto(s->udp_fd, pkt, sizeof(pkt), 0,
 		    (const struct sockaddr *)&c->peer,
 		    sizeof(c->peer));
-		c->last_keepalive_ms = (uint64_t)srv_ms;
+		c->last_keepalive_ms = srv_ms;
 	}
 }
 
