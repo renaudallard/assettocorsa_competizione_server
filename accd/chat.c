@@ -1442,6 +1442,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			    cn->car_id < 0)
 				continue;
 			ccar = &s->cars[cn->car_id];
+			if (ccar->current_driver_index >= ccar->driver_count ||
+			    ccar->current_driver_index >= ACC_MAX_DRIVERS_PER_CAR)
+				continue;
 			cdrv = &ccar->drivers[ccar->current_driver_index];
 			snprintf(cdisp, sizeof(cdisp), "%s %s",
 			    cdrv->first_name, cdrv->last_name);
