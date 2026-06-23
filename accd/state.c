@@ -623,7 +623,7 @@ server_alloc_race_number(struct Server *s, int my_slot, int requested)
 		int cand = requested + off;
 		int taken = 0;
 
-		if (cand <= 0)
+		if (cand <= 0 || cand >= 1000)
 			continue;
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			const struct CarEntry *ec = &s->cars[i];
