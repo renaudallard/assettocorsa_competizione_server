@@ -199,9 +199,10 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 		return;
 	{
 		char *end;
-		value = (int)strtol(args, &end, 10);
+		long lv = strtol(args, &end, 10);
 		if (end == args)
 			return;
+		value = (int)(lv > 1000L ? 1000L : lv < -1000L ? -1000L : lv);
 	}
 	car_id = chat_car_by_racenum(s,car_num);
 	if (car_id < 0) {
