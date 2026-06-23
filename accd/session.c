@@ -827,6 +827,22 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (ra->lap_history_count != rb->lap_history_count)
 		return (int)rb->lap_history_count - (int)ra->lap_history_count;
 	/*
+	 * Sector-progress tiebreak (FUN_140120970 Key4): count how many
+	 * sector splits the car has completed in its current (in-progress)
+	 * lap.  More splits = further ahead on track = better position.
+	 * 0x20 only fires for sectors 0 and 1 (the S/F crossing is 0x21);
+	 * sector_ms[2] stays 0 during a live lap so checking all three is
+	 * safe and handles hypothetical tracks with extra splits.
+	 */
+	{
+		int sa = (ra->sector_ms[0] > 0) + (ra->sector_ms[1] > 0) +
+		    (ra->sector_ms[2] > 0);
+		int sb = (rb->sector_ms[0] > 0) + (rb->sector_ms[1] > 0) +
+		    (rb->sector_ms[2] > 0);
+		if (sa != sb)
+			return sb - sa;
+	}
+	/*
 	 * Effective race time = session-clock at last lap crossing +
 	 * explicit TP only (no DT/SG live weight).  Mirrors FUN_140120970
 	 * Key6: kunos adds PostRaceTime_ms (0x0e / TP ledger only) to
