@@ -827,19 +827,17 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (ra->lap_history_count != rb->lap_history_count)
 		return (int)rb->lap_history_count - (int)ra->lap_history_count;
 	/*
-	 * Effective race time = raw cumulative lap time + unserved
-	 * DT/SG converted to +30/+40/+50/+60 s + admin TP5/TP15.
-	 * penalty_total_ms() handles the conversion (penalty.c:358);
-	 * folding it into the comparison here means the position sort
-	 * reflects the spec's post-race classification rule even on the
-	 * live leaderboard, so a driver carrying an unserved DT shows
-	 * behind whoever served theirs in the pit.
+	 * Effective race time = session-clock at last lap crossing +
+	 * explicit TP only (no DT/SG live weight).  Mirrors FUN_140120970
+	 * Key6: kunos adds PostRaceTime_ms (0x0e / TP ledger only) to
+	 * session_clock_last_lap; DT/SG unserved entries carry no sort
+	 * weight in the live race — they are converted to TP at race end.
 	 */
 	{
 		int64_t ea = (int64_t)ra->race_time_ms +
-		    (int64_t)penalty_total_ms(&ra->pen);
+		    (int64_t)penalty_tp_total_ms(&ra->pen);
 		int64_t eb = (int64_t)rb->race_time_ms +
-		    (int64_t)penalty_total_ms(&rb->pen);
+		    (int64_t)penalty_tp_total_ms(&rb->pen);
 		if (ea != eb)
 			return ea < eb ? -1 : 1;
 	}
