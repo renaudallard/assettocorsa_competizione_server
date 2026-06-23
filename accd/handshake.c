@@ -2259,11 +2259,18 @@ handshake_handle(struct Server *s, struct Conn *c,
 		/*
 		 * Guard against malicious / malformed handshake bodies:
 		 * a real ACC 0x09 is ~200 B for a single driver + CarInfo.
-		 * 16 KiB is far beyond any legitimate payload and well
-		 * below any DoS surface.
+		 * 16 KiB is far beyond any legitimate payload.
+		 * Reject rather than clamp: a clamped body sets hs_echo=NULL
+		 * on the accepted slot, which causes write_spawn_def to return
+		 * -1 for that slot and blocks every subsequent joiner's welcome
+		 * trailer until the oversized connection drops.
 		 */
-		if (echo_len > 16384)
-			echo_len = 0;
+		if (echo_len > 16384) {
+			log_warn("handshake: oversized body (%zu B) fd %d",
+			    echo_len, c->fd);
+			free(password);
+			return -1;
+		}
 		c->hs_echo = echo_len > 0 ? malloc(echo_len) : NULL;
 		if (c->hs_echo != NULL) {
 			memcpy(c->hs_echo, r.p, echo_len);
