@@ -323,7 +323,7 @@ smpr_handle_connect(struct Server *s, struct Conn *c,
 void
 smpr_tick_realtime(struct Server *s)
 {
-	uint32_t now = (uint32_t)mono_ms();
+	uint64_t now = mono_ms();
 	int i;
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {

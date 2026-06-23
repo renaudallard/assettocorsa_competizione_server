@@ -911,7 +911,7 @@ struct Conn {
 	uint8_t		smpr_self_contained;	/* sendSelfcontainingLeaderboards */
 	uint8_t		smpr_extended;		/* sendExtendedLeaderboards */
 	uint32_t	smpr_rt_interval_ms;	/* clamped REALTIME cadence */
-	uint32_t	smpr_rt_last_ms;	/* mono_ms of last 0x06 push */
+	uint64_t	smpr_rt_last_ms;	/* mono_ms of last 0x06 push */
 };
 
 /*
