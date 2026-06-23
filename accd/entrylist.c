@@ -304,6 +304,14 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 			    dnode, "nationality", 0);
 		}
 		/*
+		 * Clamp current_driver_index against the actual driver count now
+		 * that driver_count has been set (it was set after the index
+		 * was read from defaultDriverIndex).  A JSON value >= driver_count
+		 * would silently read a zeroed driver slot otherwise.
+		 */
+		if (car->current_driver_index >= car->driver_count)
+			car->current_driver_index = 0;
+		/*
 		 * Derive cup_category from the default driver's category,
 		 * matching the 0x36 leaderboard cup byte: Bronze->Am,
 		 * Silver->ProAm, Gold/Platinum->Pro, else 4.  The exe has no
