@@ -466,10 +466,10 @@ config_load(struct Server *s, const char *cfg_dir)
 		 * earlier would lose their setting to the default.
 		 */
 		{
-			const struct json_node *rl = json_obj_get(settings,
-			    "isRaceLocked");
-			if (rl != NULL && rl->kind == JSON_NUM) {
-				s->is_race_locked = (uint8_t)rl->u.num;
+			int rl_val = json_obj_get_bool(settings,
+			    "isRaceLocked", -1);
+			if (rl_val >= 0) {
+				s->is_race_locked = rl_val ? 1 : 0;
 				s->unsafe_rejoin =
 				    s->is_race_locked ? 0 : 1;
 			} else {
