@@ -1115,15 +1115,14 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	    ? (uint32_t)race->last_lap_ms : LAP_TIME_INVALID) < 0) return -1;
 	/*
 	 * Kunos stores all S/F crossings in its closed-lap vector including
-	 * the formation out-lap, so its lap counter = lap_count + 1 once the
-	 * formation lap has been completed.  race_time_ms is set
-	 * unconditionally on the first 0x21 event (formation or otherwise),
-	 * so it is non-zero exactly when the formation out-lap is done.
-	 * Add the +1 only in a race context to avoid affecting P/Q where
-	 * there is no formation lap and in_race == 0.
+	 * the formation out-lap (race) and the install out-lap (P/Q), so
+	 * its lap counter = lap_count + 1 once any crossing has been done.
+	 * race_time_ms is set unconditionally on the first 0x21 event and
+	 * zeroed by session_reset, so it is non-zero exactly when at least
+	 * one S/F crossing has been recorded.
 	 */
 	if (wr_u16(bb, (uint16_t)(race->lap_count +
-	    (in_race && race->race_time_ms > 0 ? 1 : 0))) < 0) return -1;
+	    (race->race_time_ms > 0 ? 1 : 0))) < 0) return -1;
 	{
 		/*
 		 * Exe (FUN_140128a80:444-455) always emits 0x7fffffff for
