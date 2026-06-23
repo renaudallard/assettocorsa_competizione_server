@@ -818,14 +818,21 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 		return 0;
 	}
 	/*
-	 * Mirror FUN_140127850: count only valid (non-cut, non-out-lap)
-	 * completions for the race leaderboard position key, not total
-	 * crossings.  lap_history_count tracks the same set that the exe's
-	 * INT32_MAX-sentinel lap-vector uses; lap_count would overcount when
-	 * a driver's laps were all cut.
+	 * Mirror FUN_140127850 Key3: count all S/F crossings except the
+	 * formation out-lap.  Kunos counts entries in the closed-lap vector
+	 * where lap_time != 0x7fffffff, and the closed-lap vector stores
+	 * the wire lap_time at +0x28 (never 0x7fffffff for real values);
+	 * the INT32_MAX sentinel lives in the best-splits vector, not here.
+	 * Cut laps and pit-exit out-laps are therefore counted in the sort
+	 * key — a driver who cuts a lap does not drop behind someone with
+	 * the same number of S/F crossings.  Formation out-laps have no
+	 * open lap in kunos so they are not pushed (lap_count excludes them
+	 * after the is_fmn_outlap fix in handlers.c).
+	 * lap_history_count (valid-only) is intentionally NOT used here;
+	 * it drives the 0x36 l2 lap-time list, not the position key.
 	 */
-	if (ra->lap_history_count != rb->lap_history_count)
-		return (int)rb->lap_history_count - (int)ra->lap_history_count;
+	if (ra->lap_count != rb->lap_count)
+		return (int)rb->lap_count - (int)ra->lap_count;
 	/*
 	 * Sector-progress tiebreak (FUN_140120970 Key4): count how many
 	 * sector splits the car has completed in its current (in-progress)
