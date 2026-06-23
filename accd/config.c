@@ -828,6 +828,8 @@ config_load(struct Server *s, const char *cfg_dir)
 				log_info("eventRules.json: driverStintTime "
 				    "(minutes) is deprecated; use "
 				    "driverStintTimeSec (seconds)");
+				if (stint_legacy_min > 86400)
+					stint_legacy_min = 86400;
 				stint_sec = stint_legacy_min * 60;
 			}
 			if (stint_sec < 0)
