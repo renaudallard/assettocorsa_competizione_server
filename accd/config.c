@@ -589,8 +589,15 @@ config_load(struct Server *s, const char *cfg_dir)
 			const char *type;
 			struct SessionDef *d = &s->sessions[i];
 
-			d->duration_min = (uint16_t)json_obj_get_int(sn,
-			    "sessionDurationMinutes", 10);
+			{
+				int dm = json_obj_get_int(sn,
+				    "sessionDurationMinutes", 10);
+				if (dm < 1)
+					dm = 1;
+				if (dm > 65535)
+					dm = 65535;
+				d->duration_min = (uint16_t)dm;
+			}
 			d->hour_of_day = (uint8_t)json_obj_get_int(sn,
 			    "hourOfDay", 12);
 			d->date_minute = (uint8_t)json_obj_get_int(sn,
@@ -653,10 +660,24 @@ config_load(struct Server *s, const char *cfg_dir)
 				ot = 65535;
 			s->session_overtime_s = (uint16_t)ot;
 		}
-		s->post_qualy_s = (uint16_t)json_obj_get_int(
-		    event, "postQualySeconds", s->post_qualy_s);
-		s->post_race_s = (uint16_t)json_obj_get_int(
-		    event, "postRaceSeconds", s->post_race_s);
+		{
+			int pq = json_obj_get_int(event,
+			    "postQualySeconds", (int)s->post_qualy_s);
+			if (pq < 0)
+				pq = 0;
+			if (pq > 65535)
+				pq = 65535;
+			s->post_qualy_s = (uint16_t)pq;
+		}
+		{
+			int pr = json_obj_get_int(event,
+			    "postRaceSeconds", (int)s->post_race_s);
+			if (pr < 0)
+				pr = 0;
+			if (pr > 65535)
+				pr = 65535;
+			s->post_race_s = (uint16_t)pr;
+		}
 		{
 			/*
 			 * Clamp to the exe's event-config ranges
