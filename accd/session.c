@@ -849,6 +849,20 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 		    (rb->sector_ms[2] > 0);
 		if (sa != sb)
 			return sb - sa;
+		/*
+		 * Key5 (kunos FUN_140120970 lines 59-65): when BOTH cars have no
+		 * open lap (sector_count = -1, i.e., in the window between the S/F
+		 * crossing and the very first 0x20 sector split), kunos breaks the
+		 * tie using the car's index in the lobby connection list (param_3[4]
+		 * in FUN_140128a80 = the position of the car's ID in param_7).
+		 * accd maps -1 to sa/sb = 0 (no distinction between "no open lap"
+		 * and "open lap, zero splits").  When both are 0 and race_time_ms
+		 * is also tied to ms precision (essentially never in practice), the
+		 * two would diverge: kunos uses lobby order, accd falls to
+		 * grid_position.  Lobby order and grid_position correlate in almost
+		 * every real session (cars connect in grid order), so no fix is
+		 * applied here.
+		 */
 	}
 	/*
 	 * Effective race time = session-clock at last lap crossing +
