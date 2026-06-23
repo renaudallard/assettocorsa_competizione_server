@@ -138,8 +138,8 @@ bcast.o: bcast.c bcast.h state.h io.h lobby.h msg.h log.h
 chat.o: chat.c bans.h state.h io.h lobby.h msg.h bcast.h chat.h \
  entrylist.h handlers.h handshake.h log.h penalty.h prim.h session.h \
  weather.h
-config.o: config.c config.h state.h io.h lobby.h msg.h entrylist.h \
- json.h log.h weather.h
+config.o: config.c config.h state.h io.h lobby.h msg.h entrylist.h json.h \
+ log.h weather.h
 console.o: console.c chat.h state.h io.h lobby.h msg.h console.h log.h \
  penalty.h session.h
 dispatch.o: dispatch.c bcast.h state.h io.h lobby.h msg.h dispatch.h \
@@ -147,7 +147,8 @@ dispatch.o: dispatch.c bcast.h state.h io.h lobby.h msg.h dispatch.h \
 entrylist.o: entrylist.c entrylist.h state.h io.h lobby.h msg.h json.h \
  log.h
 handlers.o: handlers.c bcast.h state.h io.h lobby.h msg.h chat.h \
- handlers.h handshake.h log.h penalty.h prim.h ratings.h results.h session.h tick.h
+ handlers.h handshake.h log.h penalty.h prim.h ratings.h results.h \
+ session.h tick.h
 handshake.o: handshake.c bcast.h state.h io.h lobby.h msg.h ratings.h \
  bans.h entrylist.h handlers.h handshake.h log.h penalty.h prim.h \
  session.h smpr.h tick.h weather.h
@@ -168,7 +169,7 @@ ratings.o: ratings.c io.h json.h log.h ratings.h state.h lobby.h msg.h
 results.o: results.c io.h log.h penalty.h state.h lobby.h msg.h results.h
 sandbox.o: sandbox.c sandbox.h log.h
 session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \
- handshake.h log.h penalty.h prim.h results.h session.h tick.h
+ handshake.h log.h penalty.h prim.h results.h session.h smpr.h tick.h
 smpr.o: smpr.c bcast.h state.h io.h lobby.h msg.h log.h monitor.h pb.h \
  prim.h smpr.h
 state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h handlers.h \
