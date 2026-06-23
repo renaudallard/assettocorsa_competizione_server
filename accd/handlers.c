@@ -2755,8 +2755,8 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	 * sentinel path).  Car+0x50 (wire +0x07) = (int)(best_rtt + drift).
 	 */
 	if (c->session_clock_seen) {
-		double srv = (double)(int)(uint32_t)mono_ms();
-		double cli = (double)(int)(uint32_t)client_ts_ms;
+		double srv = (double)(int32_t)(uint32_t)mono_ms();
+		double cli = (double)(int32_t)(uint32_t)client_ts_ms;
 
 		if (c->drift_valid)
 			c->drift_ms += (cli - c->drift_prev_client) -
