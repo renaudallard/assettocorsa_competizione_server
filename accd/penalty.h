@@ -83,7 +83,8 @@ uint8_t	penalty_pen_kind_of(uint8_t exe_kind, int collision,
  * materializing a Penalty.  Existing entries accumulate; when the
  * counter crosses 0x100 the function appends a Penalty to the car's
  * PenaltyQueue and steps the severity ladder (DT → SG30/DQ etc.).
- * Returns 0 on success, -1 on invalid car / queue full.
+ * Returns the slot index (>= 0) of the pushed or mutated entry on success,
+ * -1 on invalid car, terminal/dedup path, or no-op.
  */
 int	penalty_enqueue(struct Server *s, int car_id,
 		uint8_t exe_kind, uint8_t category,

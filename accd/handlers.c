@@ -668,7 +668,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 					 */
 					log_info("Car %d failed to serve %s -> DQ",
 					    c->car_id, penalty_name(front->kind));
-					penalty_enqueue(s, c->car_id, EXE_DQ, inherited_cat, 0, 1, 0,
+					(void)penalty_enqueue(s, c->car_id, EXE_DQ, inherited_cat, 0, 1, 0,
 					    inherited);
 					penalty_format_chat(chat, sizeof(chat), PEN_DQ,
 					    inherited, 0,
