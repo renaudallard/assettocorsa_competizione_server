@@ -825,9 +825,10 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	 * the INT32_MAX sentinel lives in the best-splits vector, not here.
 	 * Cut laps and pit-exit out-laps are therefore counted in the sort
 	 * key — a driver who cuts a lap does not drop behind someone with
-	 * the same number of S/F crossings.  Formation out-laps have no
-	 * open lap in kunos so they are not pushed (lap_count excludes them
-	 * after the is_fmn_outlap fix in handlers.c).
+	 * the same number of S/F crossings.  Formation out-laps ARE pushed
+	 * in kunos (addSplit creates an open lap on the first sector), so
+	 * kunos key3 = accd lap_count + 1 for every car simultaneously;
+	 * the constant +1 offset preserves relative sort order.
 	 * lap_history_count (valid-only) is intentionally NOT used here;
 	 * it drives the 0x36 l2 lap-time list, not the position key.
 	 */
