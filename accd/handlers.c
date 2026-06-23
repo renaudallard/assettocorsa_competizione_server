@@ -432,6 +432,13 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		int has_cut = (car_field & 0x0001) != 0;
 		int is_out_lap = (car_field & 0x0004) != 0;
 		/*
+		 * Formation out-lap: the very first lap crossing of a race
+		 * while lap_count is still 0.  Pit-exit out-laps arrive
+		 * later (lap_count > 0) and must increment lap_count so
+		 * the car shows laps completed after a pit stop.
+		 */
+		int is_fmn_outlap = is_out_lap && (race->lap_count == 0);
+		/*
 		 * Trust the client's car_field flags for lap validity.
 		 * Previously accd OR'd in race->out_of_track_latched, which
 		 * meant that ANY 0x3d OUT_OF_TRACK during the lap (typical
@@ -475,23 +482,21 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		    lap_ms >= 1 && lap_ms <= 0x7ffffffe;
 
 		/*
-		 * Kunos pcap (admin_clear, Practice): after an out-lap
-		 * the 0x36 shows lap_count=0 and status=0x0000, proving
-		 * the exe skips both updates for out-laps.  Cut laps and
-		 * other non-out-lap invalids still update car_field and
-		 * lap_count (only is_out_lap gates them).
+		 * Kunos pcap (admin_clear, Practice): after a formation
+		 * out-lap the 0x36 shows lap_count=0 and status=0x0000.
+		 * Pit-exit out-laps must increment lap_count so the car
+		 * shows the correct lap total after returning from the pits.
+		 * Cut laps and other non-out-lap invalids also update.
 		 */
-		if (!is_out_lap) {
+		if (!is_fmn_outlap) {
 			/* Persist the lap-states word for the 0x36 status
 			 * field and the 0x3c relay. */
 			race->car_field = car_field;
 			race->lap_count++;
 		}
-		/* Track last completed lap for 0x36 display: include cut laps,
-		 * exclude only out-laps (exe FUN_140127850 finds the most recent
-		 * entry in the global session history without a cut filter;
-		 * out-laps are excluded because they do not increment lap_count). */
-		if (!is_out_lap && lap_ms > 0) {
+		/* Track last completed lap for 0x36 display: include cut laps
+		 * and pit-exit out-laps; skip only the formation out-lap. */
+		if (!is_fmn_outlap && lap_ms > 0) {
 			race->last_lap_ms = lap_ms;
 			race->completed_lap_flags = car_field;
 		}
@@ -513,7 +518,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 * grew the 0x36 leaderboard payload by 4 B per recorded
 		 * invalid lap and produced visible byte-level divergence
 		 * against the exe.  lap_history_count tracks valid laps;
-		 * lap_count tracks all non-out-lap crossings.
+		 * lap_count tracks all crossings after the formation lap.
 		 */
 		if (!invalid) {
 			uint32_t slot = race->lap_history_count
