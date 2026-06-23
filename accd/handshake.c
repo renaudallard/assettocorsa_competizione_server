@@ -2712,8 +2712,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 *       finishing order (exe's late-qualy path using
 		 *       param_1[0x14180]);
 		 *   (c) the operator set preparation_locked via /lockprep
-		 *       and the current session is still in FORMATION or
-		 *       PRE_SESSION.
+		 *       and the current session is still in FORMATION.
 		 *
 		 * Reconnects skip all three via post_slot_assignment.
 		 */
