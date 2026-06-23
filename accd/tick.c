@@ -767,7 +767,7 @@ broadcast_grid(struct Server *s)
 	 * position from the record sequence.  Cars without a valid
 	 * grid slot trail in car_id order.
 	 */
-	for (g = 0; g <= ACC_MAX_CARS && emitted < n; g++) {
+	for (g = 0; g < ACC_MAX_CARS && emitted < n; g++) {
 		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
 		    i++) {
 			struct CarEntry *car = &s->cars[i];
