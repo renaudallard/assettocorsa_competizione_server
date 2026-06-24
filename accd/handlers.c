@@ -507,7 +507,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		}
 
 		/*
-		 * Per-car valid-only lap history (drives the 0x36 l2 list;
+		 * Per-car valid-only lap history (feeds the monitor display;
 		 * the 0x56 garage reply uses the cut-inclusive lap56 ring).
 		 *
 		 * Invalid laps (cut / out-lap / latched out-of-track) are
