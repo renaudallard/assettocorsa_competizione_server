@@ -1147,7 +1147,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		int l1_n = 0;
 		int l2_n;
 		uint8_t wide_flag = 0;
-		int32_t l2_buf[ACC_LAP_HISTORY];
+		int32_t l2_buf[3];
 
 		/*
 		 * l1 carries the sector splits for the last completed lap.
@@ -1165,31 +1165,23 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 				l1_n = si + 1;
 
 		/*
-		 * l2 carries the per-car lap history.
-		 * FUN_140034210 emits the vector size directly (end-begin)>>2.
-		 * The exe pre-allocates 3 INT32_MAX sentinels at
-		 * LeaderboardLine ctor time (pcap-verified 2026-06-22: kunos
-		 * emits l2_n=3 before any lap is completed on misano, and
-		 * l2_n=3 after the first lap).  The minimum-1 introduced in
-		 * 608be23 was wrong; that commit's matrix compared accd at
-		 * 1-lap state (stadion, 1s formation lap) vs kunos at 0-lap
-		 * state on misano (4161m, formation lap never completed in 30s).
+		 * l2 carries the per-car per-sector personal bests.
+		 * FUN_140128a80 lines 362-363 copy the local_c8 best-sector
+		 * buffer (filled by FUN_140127850 from each car's best splits
+		 * across valid laps) into LeaderboardLine +0x1d8.  Always
+		 * exactly 3 entries (one per sector), INT32_MAX if no valid
+		 * sector time has been set.  The earlier "l2 = lap history"
+		 * reading was wrong; it was only undetected because early pcaps
+		 * had no valid laps and both sides emitted [INT32_MAX x 3].
 		 */
 		{
-			int nh = race->lap_history_count < ACC_LAP_HISTORY
-			    ? race->lap_history_count : ACC_LAP_HISTORY;
-			int start = race->lap_history_count
-			    <= ACC_LAP_HISTORY ? 0
-			    : race->lap_history_count % ACC_LAP_HISTORY;
 			int k;
 
-			l2_n = nh < 3 ? 3 : nh;
-			for (k = 0; k < nh; k++) {
-				int idx = (start + k) % ACC_LAP_HISTORY;
-				l2_buf[k] = race->lap_history_ms[idx];
-			}
-			for (; k < l2_n; k++)
-				l2_buf[k] = LAP_TIME_INVALID;
+			l2_n = 3;
+			for (k = 0; k < 3; k++)
+				l2_buf[k] = race->best_sectors_ms[k] > 0
+				    ? race->best_sectors_ms[k]
+				    : LAP_TIME_INVALID;
 		}
 
 		/*

@@ -307,7 +307,7 @@ struct CarRaceState {
 	 * The exe 0x56 (FUN_1400328f0) emits EVERY lap with a real laptime
 	 * (cut laps included, only the INT32_MAX sentinel filtered) plus a
 	 * per-lap quality byte (lap+0x4c lap-states low byte).  The valid-only
-	 * lap_history_ms ring above feeds the 0x36 l2 list and must stay
+	 * lap_history_ms ring above feeds the monitor display and must stay
 	 * valid-only, so 0x56 keeps a separate ring that records cut laps too.
 	 */
 	int32_t		lap56_ms[ACC_LAP_HISTORY];
