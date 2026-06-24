@@ -271,6 +271,8 @@ bcast_all(struct Server *s, const void *body, size_t len,
 			continue;
 		if (c->state != CONN_AUTH)
 			continue;
+		if (c->car_id < 0)
+			continue;	/* no car assigned yet (spectator) */
 		if (c->is_smpr)
 			continue;	/* SMPR observers, not players */
 		if (c->conn_id == except_conn_id)
@@ -297,6 +299,8 @@ bcast_all_udp(struct Server *s, const void *body, size_t len,
 			continue;
 		if (c->state != CONN_AUTH)
 			continue;
+		if (c->car_id < 0)
+			continue;	/* no car assigned yet (spectator) */
 		if (c->is_smpr)
 			continue;	/* SMPR observers, not players */
 		if (c->conn_id == except_conn_id)
