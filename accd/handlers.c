@@ -1711,6 +1711,16 @@ h_car_dirt(struct Server *s, struct Conn *c,
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	/*
+	 * Exe (FUN_1400142f0 case 0x45) stores each byte as a double via
+	 * (double)((float)v/255.0f) then emits (char)(int)(stored*255.0)
+	 * in FUN_1400327a0.  The float cast loses precision for odd values
+	 * (1->0, 3->2, 5->4, ...).  Apply the same round-trip for
+	 * byte-exact parity.
+	 */
+	for (i = 0; i < 5; i++)
+		dirt[i] = (uint8_t)(int)((double)((float)dirt[i] / 255.0f)
+		    * 255.0);
+	/*
 	 * Store per-car (write_spawn_def reads this array so late joiners
 	 * see accumulated weathering in the welcome spawnDef tail) AND
 	 * relay live to every other client.  The exe (FUN_1400142f0 case
