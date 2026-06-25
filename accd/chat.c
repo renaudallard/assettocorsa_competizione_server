@@ -739,13 +739,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		if (strcmp(arg, s->admin_password) == 0) {
 			c->is_admin = 1;
 			/*
-			 * Intentional divergence from the exe: the exe
-			 * FUN_140021680 falls through to LAB_140022912
-			 * (cVar20='\0') and broadcasts ALL /admin replies
-			 * (success, wrong-password, wrong-params, not-admin)
-			 * via FUN_14004cc50.  accd unicasts them instead to
-			 * avoid leaking password failures or elevation events
-			 * to all connected drivers.
+			 * Exe FUN_140021680 routes /admin replies through
+			 * FUN_14004cc50, which is the unicast function.
+			 * accd uses chat_reply for the same unicast path.
 			 */
 			chat_reply(s, c, "You are now server admin", 4);
 			log_info("admin: conn=%u elevated to admin",
