@@ -134,10 +134,9 @@ handle_tcp_accept(struct Server *s)
 		(void)setsockopt(cfd, SOL_SOCKET, SO_SNDTIMEO,
 		    &tv, sizeof(tv));
 		/*
-		 * Kunos sets TCP_NODELAY on every accepted fd (exe
-		 * FUN_14004e360).  Without it our per-tick small writes
-		 * (0x14 keepalives, 0x1e per-peer broadcasts) get coalesced
-		 * into the 40 ms Nagle window, adding perceptible input
+		 * TCP_NODELAY prevents per-tick small writes (0x14
+		 * keepalives, 0x1e per-peer broadcasts) from being coalesced
+		 * into the 40 ms Nagle window, which adds perceptible input
 		 * latency in-car.
 		 */
 		(void)setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY,
