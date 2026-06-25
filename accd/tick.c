@@ -1661,7 +1661,10 @@ tick_run(struct Server *s)
 	if (now_ms - last_weather_ms >= CADENCE_WEATHER_MS) {
 		struct ByteBuf bb;
 
-		(void)weather_step(s);
+		/* Mirror FUN_1400330e0: skip evolution during qualifying
+		 * when isFixedConditionQualification is set. */
+		if (!s->fixed_condition_qualy || !session_is_qualy(s))
+			(void)weather_step(s);
 		bb_init(&bb);
 		if (weather_build_broadcast(s, &bb) == 0)
 			(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);

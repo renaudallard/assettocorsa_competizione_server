@@ -760,6 +760,8 @@ config_load(struct Server *s, const char *cfg_dir)
 			 */
 			s->simracer_weather = json_obj_get_int(event,
 			    "simracerWeatherConditions", 0) ? 1 : 0;
+			s->fixed_condition_qualy = json_obj_get_int(event,
+			    "isFixedConditionQualification", 0) ? 1 : 0;
 			{
 				uint32_t start_s = 0;
 

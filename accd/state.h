@@ -1030,6 +1030,10 @@ struct Server {
 	uint8_t		simracer_weather;	/* settings.simracerWeatherConditions
 						 * (exe +0x315): "Snowflake" vs
 						 * "Standard" /wt header */
+	uint8_t		fixed_condition_qualy;	/* event.json isFixedConditionQualification
+						 * (exe +0xac): when 1, suppresses
+						 * weather_step during qualifying so
+						 * conditions stay fixed (FUN_1400330e0) */
 	int32_t		competition_rating_min;	/* settings.competitionRatingMin */
 	int32_t		competition_rating_max;	/* settings.competitionRatingMax */
 	uint8_t		is_race_locked;		/* settings.json
