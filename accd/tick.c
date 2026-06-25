@@ -1661,10 +1661,12 @@ tick_run(struct Server *s)
 	if (now_ms - last_weather_ms >= CADENCE_WEATHER_MS) {
 		struct ByteBuf bb;
 
-		/* Mirror FUN_1400330e0: skip evolution during qualifying
+		/* Mirror FUN_140116830 +0x90 isFixed gate: always evolve
+		 * cloud/temp/dryline; suppress only rain during qualifying
 		 * when isFixedConditionQualification is set. */
-		if (!s->fixed_condition_qualy || !session_is_qualy(s))
-			(void)weather_step(s);
+		(void)weather_step(s);
+		if (s->fixed_condition_qualy && session_is_qualy(s))
+			s->weather.current_rain = 0.0f;
 		bb_init(&bb);
 		if (weather_build_broadcast(s, &bb) == 0)
 			(void)bcast_all(s, bb.data, bb.wpos, BCAST_EXCEPT_NONE);
