@@ -646,38 +646,30 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		/* DT/SG serve-deadline countdown.  Three racing laps to
 		 * serve, else auto-DQ.  The exe always DQs a serve miss
 		 * (allowAutoDQ does not soften it). */
-		/* Exe FUN_140125c60 iterates the penalty sheet with no
-		 * disqualified guard; mirror that unconditional check. */
-		if (race->pen.count > 0) {
-			int pi = penalty_first_unserved_dtsg(&race->pen);
-			struct PenaltyEntry *front = pi >= 0
-			    ? &race->pen.slots[pi] : NULL;
-			/*
-			 * In-laps (pit crossings) do not count toward the serve
-			 * deadline.  Exe FUN_140125c60:105 gates the entire
-			 * countdown block on (car_field & 8) == 0.
-			 */
-			if (front != NULL && front->laps_remaining > 0 &&
-			    (car_field & 0x0008) == 0) {
-				front->laps_remaining--;
-				if (front->laps_remaining == 0) {
-					uint8_t inherited = front->reason;
-					uint8_t inherited_cat = front->category;
-					char chat[128];
-					/*
-					 * The exe (FUN_140125c60:109) force-DQs the serve-deadline
-					 * miss unconditionally; allowAutoDQ gates only the fresh
-					 * cutting force, not the serve miss.  The DQ inherits the
-					 * unserved entry's category (the exe passes entry+0x58),
-					 * so the results label matches the original violation;
-					 * value 0 matches the exe (param_7=0).
-					 */
+		/*
+		 * DT/SG serve-deadline countdown.  Exe FUN_140125c60:104
+		 * iterates all penalty-sheet entries and decrements each
+		 * DT/SG entry's laps_remaining by one.  In-laps (bit 3 of
+		 * car_field) are excluded.  When any entry reaches zero the
+		 * entry's category is inherited into a force-DQ.
+		 */
+		if (race->pen.count > 0 && (car_field & 0x0008) == 0) {
+			int pi;
+			for (pi = 0; pi < race->pen.count; pi++) {
+				struct PenaltyEntry *pe = &race->pen.slots[pi];
+				char chat[128];
+				if (!penalty_kind_is_dtsg(pe->kind))
+					continue;
+				pe->laps_remaining--;
+				if (pe->laps_remaining == 0) {
+					uint8_t inherited = pe->reason;
+					uint8_t inherited_cat = pe->category;
 					log_info("Car %d failed to serve %s -> DQ",
-					    c->car_id, penalty_name(front->kind));
-					(void)penalty_enqueue(s, c->car_id, EXE_DQ, inherited_cat, 0, 1, 0,
-					    inherited);
-					penalty_format_chat(chat, sizeof(chat), PEN_DQ,
-					    inherited, 0,
+					    c->car_id, penalty_name(pe->kind));
+					(void)penalty_enqueue(s, c->car_id, EXE_DQ,
+					    inherited_cat, 0, 1, 0, inherited);
+					penalty_format_chat(chat, sizeof(chat),
+					    PEN_DQ, inherited, 0,
 					    s->cars[c->car_id].race_number);
 					chat_broadcast(s, chat, 4);
 				}
