@@ -2224,30 +2224,12 @@ handshake_handle(struct Server *s, struct Conn *c,
 		reason = REJECT_PASSWORD;
 		goto reply;
 	}
-	/* nconns already includes this connection (incremented in
-	 * conn_new at TCP accept time), so compare with > not >=. */
-	if (s->nconns > s->max_connections) {
-		log_info("rejecting connection: server full");
-		reason = REJECT_FULL;
-		/*
-		 * sub=1 marks a spectator-full reject (connection-list
-		 * capacity), matching the exe FUN_14002db30(9, 1, ...);
-		 * drivers keep sub=0.  a/b are the connection count and
-		 * max_connections.
-		 */
-		reject_sub = c->is_spectator ? 1 : 0;
-		reject_a = (uint32_t)s->nconns;
-		reject_b = (uint32_t)s->max_connections;
-		goto reply;
-	}
-
 	/*
 	 * Carless observer (exe FUN_140033980): a spectatorPassword
-	 * connection takes no car slot.  Still parse driver info so
-	 * the steam_id is available for the ban/kick check below —
-	 * exe FUN_140025690:281-338 walks the ban/kick lists before
-	 * reaching the spectator path at line 1269.  The spectator
-	 * exit is placed after those checks, before car allocation.
+	 * connection takes no car slot.  Parse driver info so the
+	 * steam_id is available for the ban/kick/full-server checks
+	 * below — exe FUN_140025690:281-645 walks ban, then kick,
+	 * then full-server in that order before the spectator path.
 	 */
 
 	/*
@@ -2449,7 +2431,31 @@ handshake_handle(struct Server *s, struct Conn *c,
 			goto reply;
 		}
 
-		/* Spectator exit: ban/kick passed, skip car allocation. */
+		/*
+		 * Full-server check: exe FUN_140025690:645 places this
+		 * after ban/kick so banned or kicked drivers receive the
+		 * correct reason even when the server is full.
+		 * nconns already includes this connection (incremented in
+		 * conn_new at TCP accept time), so compare with > not >=.
+		 */
+		if (s->nconns > s->max_connections) {
+			log_info("rejecting connection: server full");
+			reason = REJECT_FULL;
+			/*
+			 * sub=1 marks a spectator-full reject (connection-list
+			 * capacity), matching the exe FUN_14002db30(9, 1, ...);
+			 * drivers keep sub=0.  a/b are the connection count and
+			 * max_connections.
+			 */
+			reject_sub = c->is_spectator ? 1 : 0;
+			reject_a = (uint32_t)s->nconns;
+			reject_b = (uint32_t)s->max_connections;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
+		}
+
+		/* Spectator exit: ban/kick/full-server passed, skip car slot. */
 		if (c->is_spectator) {
 			c->car_id = -1;
 			c->state = CONN_AUTH;
