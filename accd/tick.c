@@ -1601,6 +1601,21 @@ tick_run(struct Server *s)
 					(void)entrylist_save(s, s->cfg_dir);
 				}
 				s->session.results_written = 1;
+				/*
+				 * CP servers (isCPServer or isCPInvServer) in a
+				 * race emit a banner after writing the results
+				 * file (FUN_14002f710 +0x202/+0x203 gate with
+				 * session_type==0x0a).
+				 */
+				if ((s->is_cp_server || s->is_cp_inv_server) &&
+				    s->session_count > 0 &&
+				    s->sessions[s->session.session_index]
+					.session_type == 10) {
+					chat_broadcast(s,
+					    "CP Results are calculating,"
+					    " you can leave the server"
+					    " any time", 4);
+				}
 			}
 			broadcast_session_results(s);
 			/*
