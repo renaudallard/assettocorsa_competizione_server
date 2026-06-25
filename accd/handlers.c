@@ -2623,8 +2623,10 @@ h_ctrl_info(struct Server *s, struct Conn *c,
 		    wr_u8(&bb, 0) == 0) {
 			for (i = 0; i < ACC_MAX_CARS; i++) {
 				struct Conn *dst = s->conns[i];
+				/* Mirror exe FUN_1400142f0:1436-1437:
+				 * FUN_140041640 excludes spectators. */
 				if (dst == NULL || dst->state != CONN_AUTH ||
-				    !dst->is_admin)
+				    dst->is_spectator || !dst->is_admin)
 					continue;
 				(void)conn_send_framed(dst, bb.data, bb.wpos);
 			}
