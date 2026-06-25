@@ -408,8 +408,10 @@ post_grace_ms(const struct Server *s)
 
 	if (session_is_race(s))
 		cfg = s->post_race_s;
-	else
+	else if (session_is_qualy(s))
 		cfg = s->post_qualy_s;
+	else
+		return 0;	/* practice: exe gives 0 ms aftercare */
 	return cfg > 0 ? (uint64_t)cfg * 1000ull : 5000ull;
 }
 
@@ -424,7 +426,9 @@ session_start(struct Server *s)
 	uint64_t ot_ms  = (uint64_t)s->session_overtime_s * 1000ull;
 	uint64_t post_ms = def->session_type == 10
 	    ? (uint64_t)s->post_race_s * 1000ull
-	    : (uint64_t)s->post_qualy_s * 1000ull;
+	    : def->session_type == 4
+	      ? (uint64_t)s->post_qualy_s * 1000ull
+	      : 0ull;	/* practice: exe gives 0 ms aftercare */
 
 	/*
 	 * 7 schedule boundaries matching the exe's sub-objects
