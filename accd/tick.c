@@ -1366,7 +1366,8 @@ tick_run(struct Server *s)
 
 					if (c == NULL ||
 					    c->state != CONN_AUTH ||
-					    c->is_smpr)
+					    c->is_smpr ||
+					    c->car_id < 0)
 						continue;
 					/*
 					 * Extrapolate the client's clock from
