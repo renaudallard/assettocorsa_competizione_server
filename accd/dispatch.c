@@ -391,8 +391,13 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		memset(kc->rtt_ring, -1, sizeof(kc->rtt_ring));
 		kc->rtt_ring_idx = -1;
-		/* avg_rtt_ms and best_rtt_ms are preserved across keepalives
-		 * (exe FUN_140041d90 does not reset conn+0xa0308 / 0xa00a4). */
+		/*
+		 * FUN_140041d90: 8-byte zero write at conn+0xa0304 clears
+		 * both rtt_ring_idx (+0xa0304) and avg_rtt_ms (+0xa0308).
+		 * best_rtt_ms (conn+0xa00a4) is NOT touched by the exe and
+		 * is preserved; it is overwritten naturally on the next pong.
+		 */
+		kc->avg_rtt_ms = 0;
 		kc->session_clock_seen = 0;
 		kc->drift_ms = 0.0;
 		kc->drift_valid = 0;
