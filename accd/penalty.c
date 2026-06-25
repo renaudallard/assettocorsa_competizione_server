@@ -807,42 +807,6 @@ penalty_total_ms(const struct PenaltyQueue *q)
 	return total;
 }
 
-/*
- * Like penalty_total_ms but only counts explicit TP entries (and
- * converted race-end TP from penalty_convert_race_end).  DT/SG carry
- * no weight in the live race sort — mirrors FUN_140120970 Key6 which
- * adds only PostRaceTime_ms (0x0e / TP ledger) to the sort key.
- */
-uint32_t
-penalty_tp_total_ms(const struct PenaltyQueue *q)
-{
-	uint32_t total = 0;
-	int i;
-
-	if (q == NULL)
-		return 0;
-	for (i = 0; i < q->count; i++) {
-		const struct PenaltyEntry *p = &q->slots[i];
-		if (p->race_end_tp != 0) {
-			total += p->race_end_tp_ms;
-			continue;
-		}
-		switch (p->kind) {
-		case PEN_TP5:
-		case PEN_TP15:
-			if (p->laps_remaining > 0)
-				total += (uint32_t)p->laps_remaining * 1000u;
-			break;
-		case PEN_TP30:		total += 30000;		break;
-		case PEN_TP40:		total += 40000;		break;
-		case PEN_TP50:		total += 50000;		break;
-		case PEN_TP60:		total += 60000;		break;
-		default:
-			break;
-		}
-	}
-	return total;
-}
 
 /*
  * Convert every car's unserved DT / SG entries to the corresponding

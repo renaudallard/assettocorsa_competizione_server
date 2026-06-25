@@ -139,14 +139,6 @@ const char *
 uint32_t
 	penalty_total_ms(const struct PenaltyQueue *q);
 
-/*
- * Like penalty_total_ms but counts only explicit TP and converted
- * race-end TP entries; DT/SG unserved entries are excluded.  Mirrors
- * the PostRaceTime component in FUN_140120970 Key6 (race sort):
- * kunos does not include live DT/SG weight in the live standings.
- */
-uint32_t
-	penalty_tp_total_ms(const struct PenaltyQueue *q);
 
 /*
  * Convert every unserved DT/SG entry to the corresponding TP record

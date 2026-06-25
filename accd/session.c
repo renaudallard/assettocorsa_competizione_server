@@ -835,49 +835,13 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (ra->lap_count != rb->lap_count)
 		return (int)rb->lap_count - (int)ra->lap_count;
 	/*
-	 * Sector-progress tiebreak (FUN_140120970 Key4): count how many
-	 * sector splits the car has completed in its current (in-progress)
-	 * lap.  More splits = further ahead on track = better position.
-	 * 0x20 only fires for sectors 0 and 1 (the S/F crossing is 0x21);
-	 * sector_ms[2] stays 0 during a live lap so checking all three is
-	 * safe and handles hypothetical tracks with extra splits.
+	 * Mirrors FUN_140120c90 Key3: session-clock at last S/F crossing.
+	 * The race sort does not add TP (unlike the qualy sort FUN_140120970
+	 * Key6); unserved penalties carry no live sort weight and are
+	 * converted to TP at race end.
 	 */
-	{
-		int sa = (ra->sector_ms[0] > 0) + (ra->sector_ms[1] > 0) +
-		    (ra->sector_ms[2] > 0);
-		int sb = (rb->sector_ms[0] > 0) + (rb->sector_ms[1] > 0) +
-		    (rb->sector_ms[2] > 0);
-		if (sa != sb)
-			return sb - sa;
-		/*
-		 * Key5 (kunos FUN_140120970 lines 59-65): when both cars have no
-		 * open lap (exe sector_count = -1, i.e., between S/F crossing and
-		 * the first 0x20), kunos breaks the tie via the car's index in the
-		 * lobby connection list (param_3[4] / FUN_140128a80 param_7).
-		 * accd uses car_id as a proxy (lower = earlier connection = lower
-		 * lobby index).  Guard on race_time_ms > 0 so the formation phase
-		 * (all race_time_ms == 0) continues to use grid_position instead.
-		 */
-		if (sa == 0 && ra->race_time_ms > 0 && rb->race_time_ms > 0) {
-			if (a->car_id != b->car_id)
-				return a->car_id < b->car_id ? -1 : 1;
-		}
-	}
-	/*
-	 * Effective race time = session-clock at last lap crossing +
-	 * explicit TP only (no DT/SG live weight).  Mirrors FUN_140120970
-	 * Key6: kunos adds PostRaceTime_ms (0x0e / TP ledger only) to
-	 * session_clock_last_lap; DT/SG unserved entries carry no sort
-	 * weight in the live race — they are converted to TP at race end.
-	 */
-	{
-		int64_t ea = (int64_t)ra->race_time_ms +
-		    (int64_t)penalty_tp_total_ms(&ra->pen);
-		int64_t eb = (int64_t)rb->race_time_ms +
-		    (int64_t)penalty_tp_total_ms(&rb->pen);
-		if (ea != eb)
-			return ea < eb ? -1 : 1;
-	}
+	if (ra->race_time_ms != rb->race_time_ms)
+		return ra->race_time_ms < rb->race_time_ms ? -1 : 1;
 	/*
 	 * Race tiebreak: before any lap is complete (and between sector
 	 * splits), lap_count and race_time_ms match for every car.  Fall
