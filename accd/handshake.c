@@ -1496,7 +1496,7 @@ static int
 write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 {
 	float ambient, road;
-	int dyn = s->weather.randomness > 0;
+	int dyn = s->simracer_weather != 0;
 	float rain = dyn ? tanhf(tanhf(s->weather.current_rain) * 0.9f)
 	    : s->weather.current_rain;
 	float clouds = dyn ? tanhf(tanhf(s->weather.clouds) * 0.9f)
@@ -1515,7 +1515,7 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	if (dyn && s->weather.road_current != 0.0f)
 		road = s->weather.road_current;
 
-	if (weather_write_track_conditions_head(bb, &s->grip, 0) < 0)
+	if (weather_write_track_conditions_head(bb, &s->grip, dyn) < 0)
 		return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;

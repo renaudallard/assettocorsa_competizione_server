@@ -853,7 +853,7 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 {
 	struct WeatherStatus *w = &s->weather;
 	float ambient, road;
-	int dyn = w->randomness > 0;
+	int dyn = s->simracer_weather != 0;
 	float rain = dyn ? wx_norm(w->current_rain) : w->current_rain;
 	float clouds = dyn ? wx_norm(w->clouds) : w->clouds;
 	float dry = dyn ? wx_norm(w->dry_line_wetness)
