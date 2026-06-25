@@ -614,7 +614,7 @@ config_load(struct Server *s, const char *cfg_dir)
 				if (hod > 23) hod = 23;
 				if (dow < 1) dow = 1;
 				if (dow > 3) dow = 3;
-				if (tm < 1) tm = 1;
+				if (tm < 0) tm = 0;
 				if (tm > 24) tm = 24;
 				d->hour_of_day = (uint8_t)hod;
 				d->day_of_weekend = (uint8_t)dow;
