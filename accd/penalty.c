@@ -686,6 +686,12 @@ penalty_clear(struct Server *s, int car_id)
 	    EXE_TP * sizeof(*s->cars[car_id].race.pen_state));
 	memset(&s->cars[car_id].race.pen_state[EXE_DQ], 0,
 	    sizeof(*s->cars[car_id].race.pen_state));
+	/*
+	 * Mirror exe FUN_140126b50: after dropping the DQ entry, clear
+	 * the disqualified flag so the comparator stops ranking the car
+	 * last and the standings update reflects the cleared state.
+	 */
+	s->cars[car_id].race.disqualified = 0;
 	leaderboard_request_emit(s);
 }
 
