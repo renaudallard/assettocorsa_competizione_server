@@ -372,13 +372,20 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
 		if (wr_u8(bb, s->pit_refuelling_required) < 0) return -1;
 		if (wr_u8(bb, s->pit_tyre_change_required) < 0) return -1;
 		if (wr_u8(bb, s->mandatory_swap_required) < 0) return -1;
+		/*
+		 * Two hardcoded u8(1) constants emitted by FUN_14011d230
+		 * between mandatorySwapRequired (+0x46) and tyreSetCount
+		 * (+0x48).  No struct field backs them; the exe writes
+		 * literal 1 twice.  Without these the RaceRules block is
+		 * 16 B instead of the exe's 18 B.
+		 */
+		if (wr_u8(bb, 0x01) < 0) return -1;
+		if (wr_u8(bb, 0x01) < 0) return -1;
 		/* Trailing tyreSetCount (u8). */
 		if (wr_u8(bb, s->tyre_set_count) < 0) return -1;
 	}
 
-	/* WeatherRules header (4 u8 + 7 f32 = 32 bytes). */
-	if (wr_u8(bb, 0x01) < 0) return -1;
-	if (wr_u8(bb, 0x32) < 0) return -1;
+	/* WeatherRules header (2 u8 + 7 f32 = 30 bytes). */
 	if (wr_u8(bb, 0x03) < 0) return -1;
 	if (wr_u8(bb, 0x00) < 0) return -1;
 	if (wr_f32(bb, ambient) < 0) return -1;
