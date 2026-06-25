@@ -445,13 +445,6 @@ config_load(struct Server *s, const char *cfg_dir)
 		 */
 		s->is_cp_inv_server = json_obj_get_int(settings,
 		    "isCPInvServer", 0) ? 1 : 0;
-		/*
-		 * simracerWeatherConditions (exe FUN_140104f10:552 -> +0xad,
-		 * copied to server+0x315): selects the "Snowflake weather:" vs
-		 * "Standard weather:" /wt header word.
-		 */
-		s->simracer_weather = json_obj_get_int(settings,
-		    "simracerWeatherConditions", 0) ? 1 : 0;
 		s->competition_rating_min = json_obj_get_int(settings,
 		    "competitionRatingMin", 0);
 		s->competition_rating_max = json_obj_get_int(settings,
@@ -754,6 +747,12 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "weatherBaseMean", 0.4);
 			float wb_dev = (float)json_obj_get_num(event,
 			    "weatherBaseDeviation", 0.3);
+			/*
+			 * simracerWeatherConditions (FUN_140104f10:552):
+			 * selects the dynamic ("Snowflake") grip path.
+			 */
+			s->simracer_weather = json_obj_get_int(event,
+			    "simracerWeatherConditions", 0) ? 1 : 0;
 			{
 				uint32_t start_s = 0;
 
