@@ -1375,14 +1375,24 @@ tick_run(struct Server *s)
 						client_ts_est =
 						    c->last_pong_client_ts;
 					bb_clear(&bb);
-					if (wr_u8(&bb,
-					    SRV_LARGE_STATE_RESPONSE) == 0 &&
-					    write_session_mgr_state(&bb, s,
-						client_ts_est,
-						(uint32_t)((double)c->best_rtt_ms +
-						c->drift_ms)) == 0)
-						(void)conn_send_framed(c,
-						    bb.data, bb.wpos);
+					{
+						double rtt_d =
+						    s->latency_mode != 0
+						    ? (double)c->best_rtt_ms
+						      - 2.0 * c->drift_ms
+						    : (double)c->avg_rtt_ms;
+						uint32_t rtt_arg = rtt_d > 0.0
+						    ? (uint32_t)rtt_d : 0;
+						if (wr_u8(&bb,
+						    SRV_LARGE_STATE_RESPONSE)
+						    == 0 &&
+						    write_session_mgr_state(
+						    &bb, s, client_ts_est,
+						    rtt_arg) == 0)
+							(void)conn_send_framed(
+							    c, bb.data,
+							    bb.wpos);
+					}
 				}
 				bb_free(&bb);
 			}
