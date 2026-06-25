@@ -556,7 +556,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			if (cnt > 0)
 				pc->avg_rtt_ms =
 				    (uint32_t)(sum / (unsigned)cnt);
-			pc->pong_threshold_ms = pc->avg_rtt_ms;
+			if (s->latency_mode == 0)
+				pc->pong_threshold_ms = pc->avg_rtt_ms;
 		}
 		/*
 		 * Averaged-rtt/2 clock offset - the exe's FUN_1400420e0:82
