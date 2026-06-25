@@ -644,19 +644,26 @@ penalty_clear(struct Server *s, int car_id)
 		return;
 	q = &s->cars[car_id].race.pen;
 	/*
-	 * Compact-filter: drop DT/SG/DQ entries, keep TP entries.
-	 * The exe's FUN_140126b50 only iterates the +0x30 DT/SG/DQ
-	 * sheet and never touches the +0x48 TP sheet, so accumulated
-	 * TP queue entries must survive /clear.
+	 * Mirror exe FUN_140126b50: serve unserved DT/SG entries
+	 * (stamp cleared_lap, set served=1) so results.json reports
+	 * clearedInLap.  DQ entries are dropped (terminal, no serve
+	 * semantics).  TP entries are kept untouched.
 	 */
 	for (i = 0; i < q->count; i++) {
-		const struct PenaltyEntry *p = &q->slots[i];
+		struct PenaltyEntry *p = &q->slots[i];
 		int is_tp = p->race_end_tp != 0 ||
 		    p->kind == PEN_TP5  || p->kind == PEN_TP15 ||
 		    p->kind == PEN_TP30 || p->kind == PEN_TP40 ||
 		    p->kind == PEN_TP50 || p->kind == PEN_TP60;
-		if (!is_tp)
-			continue;
+		if (!is_tp && p->kind == PEN_DQ)
+			continue;	/* drop DQ entries */
+		if (!is_tp && !p->served) {
+			/* Serve DT/SG in place so results.json gets clearedInLap. */
+			p->served = 1;
+			p->cleared_lap =
+			    (int16_t)s->cars[car_id].race.lap_count;
+			p->laps_remaining = 0;
+		}
 		if (n != i)
 			q->slots[n] = q->slots[i];
 		n++;
