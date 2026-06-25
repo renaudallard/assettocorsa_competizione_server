@@ -1330,8 +1330,13 @@ session_overtime_car_finished(struct Server *s, int car_id)
 		uint64_t grace = post_grace_ms(s);
 		s->session.overtime_leader_armed = 0;
 		s->session.ts[6] = now + grace;
+		/* FUN_14012ed70 resets SM+0x220 (ts[5]) to now+overtime_s
+		 * so the HUD countdown refreshes for remaining cars. */
+		s->session.ts[5] = now +
+		    (uint64_t)s->session_overtime_s * 1000ull;
 		leader_just_finished = 1;
-		log_info("overtime: leader finished, ts[6]=now+%llums",
+		log_info("overtime: leader finished, ts[5]=now+%us ts[6]=now+%llums",
+		    (unsigned)s->session_overtime_s,
 		    (unsigned long long)grace);
 	}
 
