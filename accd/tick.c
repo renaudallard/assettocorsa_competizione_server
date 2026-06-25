@@ -160,12 +160,12 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 		if (sender != NULL && sender->car_id ==
 		    (int)(car - s->cars)) {
 			/*
-			 * Legacy netcode (default) emits best_rtt+drift here
-			 * (exe FUN_1400419e0:28); regular/non-legacy mode
-			 * (/mp toggle) emits the windowed mean avg_rtt
-			 * (FUN_1400420e0:73-79).
+			 * Mode A (latency_mode != 0): best_rtt + drift
+			 *   (exe FUN_1400419e0:28).
+			 * Mode B default (latency_mode == 0): windowed avg_rtt
+			 *   (exe FUN_1400420e0:73-79).
 			 */
-			sender_tick_seq = s->legacy_netcode
+			sender_tick_seq = (s->latency_mode != 0)
 			    ? (uint16_t)(int)((double)sender->best_rtt_ms +
 			    sender->drift_ms)
 			    : (uint16_t)sender->avg_rtt_ms;
