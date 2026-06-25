@@ -1113,6 +1113,29 @@ config_load(struct Server *s, const char *cfg_dir)
 		s->dump_entry_list = 0;
 	}
 	/*
+	 * FUN_14002aca0 ~line 391: public-MP servers ignore special event
+	 * rules (stint limits, mandatory pit, refuelling restrictions, multi-
+	 * driver constraints).  Reset to the unrestricted defaults so that
+	 * an operator who set non-default eventRules.json fields on a public
+	 * server gets the same wire output as the exe.
+	 */
+	if (s->register_to_lobby && !s->is_cp_server && !s->is_cp_inv_server) {
+		if (s->driver_stint_time_s   != 0 ||
+		    s->mandatory_pit_count   != 0 ||
+		    s->max_total_driving_time_s != 0 ||
+		    !s->refuelling_allowed       ||
+		    s->refuelling_time_fixed     ||
+		    s->max_drivers_count     != 1)
+			log_warn("Ignoring special event rules "
+			    "for public Multiplayer");
+		s->driver_stint_time_s = 0;
+		s->mandatory_pit_count = 0;
+		s->max_total_driving_time_s = 0;
+		s->refuelling_allowed = 1;
+		s->refuelling_time_fixed = 0;
+		s->max_drivers_count = 1;
+	}
+	/*
 	 * Public-MP servers force formationLapType 1 (manual) to 3, matching
 	 * the exe (FUN_140023700:531-543).  "Public MP" = registered to the
 	 * lobby, not a championship server, and not using a forced entry
