@@ -819,19 +819,14 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		log_info("swap: conn=%u requested driver %d on car %u",
 		    (unsigned)c->conn_id, target,
 		    (unsigned)car->car_id);
-
 		/*
-		 * Broadcast the updated swap state via the shared helper
-		 * instead of open-coding 0x47 inline.  Two reasons:
-		 *   * broadcast_swap_state honors do_driver_swap_broadcast
-		 *     (settings.json knob); the open-coded version
-		 *     bypassed it.
-		 *   * For multi-driver team_entry_id groups the caller
-		 *     loops over team mates -- not a concern here since
-		 *     &swap targets a driver in the SAME car, but using
-		 *     the shared path keeps the wire shape canonical.
+		 * Exe FUN_140027990 sends a unicast 0x2b "Trying to hand
+		 * over car" back to the requesting driver on success.
+		 * It does NOT emit a 0x47 swap-state broadcast here;
+		 * broadcast_swap_state is an accd-only helper and is
+		 * not called in this path.
 		 */
-		broadcast_swap_state(s, car);
+		chat_reply(s, c, "Trying to hand over car", 4);
 
 		/*
 		 * Acknowledge the handover request back to the sender
