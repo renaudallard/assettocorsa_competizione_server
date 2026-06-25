@@ -1415,8 +1415,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		/*
 		 * Exe FUN_140021680:1306 walks conns and sends one 0x5d
 		 * frame per connection via UDP unicast to the admin.
-		 * Wire: u8 SRV_CONNECTIONS_LIST_ROW + str_a display_name
-		 *       + u8(1) + u16 car_id.
+		 * Wire: u8 SRV_CONNECTIONS_LIST_ROW + u64(0) (RTT field
+		 * from FUN_140041fc0, which is a no-op returning 0) +
+		 * u8(1) + u16 car_id.
 		 */
 		int j;
 		struct ByteBuf cbb;
@@ -1424,22 +1425,15 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		for (j = 0; j < ACC_MAX_CARS; j++) {
 			struct Conn *cn = s->conns[j];
 			struct CarEntry *ccar;
-			struct DriverInfo *cdrv;
-			char cdisp[ACC_MAX_NAME_LEN * 2 + 2];
+			uint64_t rtt_pad = 0;
 
 			if (cn == NULL || cn->state != CONN_AUTH ||
 			    cn->car_id < 0)
 				continue;
 			ccar = &s->cars[cn->car_id];
-			if (ccar->current_driver_index >= ccar->driver_count ||
-			    ccar->current_driver_index >= ACC_MAX_DRIVERS_PER_CAR)
-				continue;
-			cdrv = &ccar->drivers[ccar->current_driver_index];
-			snprintf(cdisp, sizeof(cdisp), "%s %s",
-			    cdrv->first_name, cdrv->last_name);
 			bb_clear(&cbb);
 			if (wr_u8(&cbb, SRV_CONNECTIONS_LIST_ROW) == 0 &&
-			    wr_str_a(&cbb, cdisp) == 0 &&
+			    bb_append(&cbb, &rtt_pad, sizeof(rtt_pad)) == 0 &&
 			    wr_u8(&cbb, 1) == 0 &&
 			    wr_u16(&cbb, (uint16_t)ccar->car_id) == 0)
 				(void)sendto(s->udp_fd, cbb.data, cbb.wpos,
