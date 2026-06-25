@@ -2181,7 +2181,7 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 		bb_init(&out);
 		if (wr_u8(&out, SRV_DRIVER_STINT_RELAY) < 0 ||
 		    wr_u16(&out, s->cars[c->car_id].car_id) < 0 ||
-		    wr_u8(&out, force) < 0)
+		    wr_u8(&out, force ? 1 : 0) < 0)
 			goto relay_done;
 
 		if (force) {
