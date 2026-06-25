@@ -142,6 +142,13 @@ handle_tcp_accept(struct Server *s)
 		 */
 		(void)setsockopt(cfd, IPPROTO_TCP, TCP_NODELAY,
 		    &yes, sizeof(yes));
+		{
+			int bufsz = 65356; /* mirrors FUN_1400410a0:50-51 */
+			(void)setsockopt(cfd, SOL_SOCKET, SO_RCVBUF,
+			    &bufsz, sizeof(bufsz));
+			(void)setsockopt(cfd, SOL_SOCKET, SO_SNDBUF,
+			    &bufsz, sizeof(bufsz));
+		}
 		/*
 		 * Non-blocking so a slow / stuck client never stalls the
 		 * main loop during a fan-out.  Partial writes and EAGAIN
@@ -340,6 +347,13 @@ main(int argc, char **argv)
 		if (srv.udp_fd >= 0)
 			close(srv.udp_fd);
 		return 1;
+	}
+	{
+		int bufsz = 65356; /* mirrors FUN_1400410a0:50-51 */
+		(void)setsockopt(srv.udp_fd, SOL_SOCKET, SO_RCVBUF,
+		    &bufsz, sizeof(bufsz));
+		(void)setsockopt(srv.udp_fd, SOL_SOCKET, SO_SNDBUF,
+		    &bufsz, sizeof(bufsz));
 	}
 
 	/*
