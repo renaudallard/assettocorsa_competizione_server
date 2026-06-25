@@ -136,7 +136,7 @@ pen_kind_json(uint8_t kind, const char **name, int *value)
 	case PEN_TP50: case PEN_TP60:	*name = "PostRaceTime"; break;
 	case PEN_DQ:			*name = "Disqualified"; break;
 	case PEN_RBL:			*name = "RemoveBestLaptime"; break;
-	default:			*name = "Unknown"; break;
+	default:			*name = "None"; break;
 	}
 }
 
