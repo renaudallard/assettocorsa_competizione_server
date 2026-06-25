@@ -521,6 +521,15 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			    (int64_t)pong_client_ts;
 			pc->best_rtt_ms = rtt;
 			pc->session_clock_seen = 1;
+		}
+		/*
+		 * Drift reset: exe FUN_1400420e0 resets drift in the same
+		 * block as the 0x28 re-emit decision; the threshold is
+		 * mode-dependent (avg_rtt in Mode B, best_rtt in Mode A).
+		 * emit_28 already encodes the correct mode-aware gate, so
+		 * use it here instead of the best-only new_min.
+		 */
+		if (emit_28 && (int32_t)rtt >= 0) {
 			pc->drift_ms = 0.0;
 			pc->drift_valid = 0;
 		}
