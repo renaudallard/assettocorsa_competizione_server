@@ -585,16 +585,17 @@ broadcast_leaderboard(struct Server *s)
 }
 
 /*
- * Mark the leaderboard dirty so the tick loop drains the pending
- * flag and runs broadcast_leaderboard_if_changed.  Called from state
- * mutations kunos emits 0x36 for, including lap-complete (0x21).
- * Sector-split (0x20) does NOT call this; the memcmp gate in
- * broadcast_leaderboard_if_changed suppresses redundant emits.
+ * Called from state mutations kunos emits 0x36 for.  The tick loop
+ * now calls broadcast_leaderboard_if_changed on every tick (matching
+ * the exe's per-tick memcmp), so this is a no-op retained for
+ * call-site documentation.  Sector-split (0x20) still does NOT call
+ * this to match the exe's intent; the memcmp gate suppresses redundant
+ * emits regardless.
  */
 void
 leaderboard_request_emit(struct Server *s)
 {
-	s->session.leaderboard_pending = 1;
+	(void)s;
 }
 
 /*
@@ -1283,35 +1284,22 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * Leaderboard rebroadcast — event-driven.  State mutations that
-	 * change the wire leaderboard call leaderboard_request_emit()
-	 * (handshake fan-out, conn_drop, penalty materialise, phase
-	 * boundary, weekend wrap, and lap completion).  The tick loop
-	 * drains the pending flag and runs the gated broadcast; the
-	 * memcmp cache inside broadcast_leaderboard_if_changed suppresses
-	 * a fan-out when the rebuilt payload is byte-identical.
-	 *
-	 * Lap completion IS a trigger (handlers.c h_sector_split_single):
-	 * the per-car lap count rides only in the 0x36 record (+0x1f4), so
-	 * the HUD timing tower freezes without a re-emit on each lap.  The
-	 * stock server re-emits 0x36 every tick whenever its leaderboard
-	 * deep-compare (FUN_14002f710 -> FUN_140115f60 -> FUN_140126f10,
-	 * offset 0x1f4) detects a per-car lap-count change.  An earlier
-	 * comment here claimed kunos does not emit on lap-complete, citing
-	 * a 2-bot pcap — that capture was corrupted by wine-CPU-starvation
-	 * reconnect churn and closed zero laps, so it could not show the
-	 * per-lap re-emit; the static decomp is authoritative.  Sector
-	 * splits (0x20) still do NOT trigger (they don't change +0x1f4).
-	 * The 75 s async-mode heartbeat stays as a defense-in-depth probe
-	 * for any missed trigger site — only fires when
-	 * use_async_leaderboard=1 (opt-in).
+	 * Leaderboard rebroadcast.  The exe's FUN_14002f710 runs a
+	 * deep memcmp (FUN_140115f60 -> FUN_140126f10) on every server
+	 * tick and emits 0x36 whenever any byte differs.  Mirror that:
+	 * call broadcast_leaderboard_if_changed every tick; its internal
+	 * memcmp cache suppresses fan-out when the payload is identical.
+	 * The per-car lap count rides at +0x1f4 in the 0x36 record, so
+	 * the timing tower updates on each lap without a separate
+	 * lap-complete trigger.  Sector splits (0x20) still do NOT emit
+	 * a new 0x36 because they don't change +0x1f4.
+	 * The 75 s async-mode heartbeat is a defense-in-depth probe for
+	 * missed trigger sites; it only fires when use_async_leaderboard
+	 * is set to 1 (opt-in).
 	 */
-	if (s->session.leaderboard_pending) {
-		s->session.leaderboard_pending = 0;
-		if (broadcast_leaderboard_if_changed(s)) {
-			*last_leaderboard_ms = now_ms;
-			smpr_broadcast_leaderboard(s);
-		}
+	if (broadcast_leaderboard_if_changed(s)) {
+		*last_leaderboard_ms = now_ms;
+		smpr_broadcast_leaderboard(s);
 	}
 	if (s->use_async_leaderboard &&
 	    now_ms - *last_leaderboard_ms >= CADENCE_LEADERBOARD_MS) {
