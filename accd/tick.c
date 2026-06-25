@@ -260,7 +260,7 @@ broadcast_percar_dirty_fast(struct Server *s)
 
 			if (peer == NULL || peer->state != CONN_AUTH)
 				continue;
-			if (peer->is_smpr)
+			if (peer->is_smpr || peer->car_id < 0)
 				continue;
 			if (peer->car_id == i)
 				continue;
@@ -379,7 +379,7 @@ broadcast_percar_dirty_legacy(struct Server *s)
 		int off, ns = 0;
 
 		if (peer == NULL || peer->state != CONN_AUTH ||
-		    peer->is_smpr)
+		    peer->is_smpr || peer->car_id < 0)
 			continue;
 		/* Recipient sees every dirty car except its own. */
 		for (d = 0; d < ndirty; d++)
@@ -547,7 +547,8 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		struct Conn *c = s->conns[i];
 		uint16_t per_conn_ping;
 
-		if (c == NULL || c->state != CONN_AUTH || c->is_smpr)
+		if (c == NULL || c->state != CONN_AUTH ||
+		    c->is_smpr || c->car_id < 0)
 			continue;
 		/* Exe FUN_140041e80 uses a per-connection timer
 		 * (conn+0xa0238) so each conn's 0x14 cadence is
