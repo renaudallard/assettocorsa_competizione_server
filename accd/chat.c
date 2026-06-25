@@ -1465,10 +1465,10 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 				    car_num, (unsigned)cn->conn_id);
 			}
 			/*
-			 * Exe FUN_14001dae0:168 broadcasts "Hellban inactive"
-			 * regardless of whether the car was found.
+			 * Exe FUN_140021680:1253 unicasts "Hellban inactive"
+			 * to the admin conn (FUN_14004cc50, not broadcast).
 			 */
-			chat_broadcast(s, "Hellban inactive", 4);
+			chat_reply(s, c, "Hellban inactive", 4);
 		}
 	} else if (chat_prefix(text, "/latencymode")) {
 		int mode;
