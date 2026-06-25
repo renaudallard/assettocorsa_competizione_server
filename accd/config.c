@@ -867,8 +867,8 @@ config_load(struct Server *s, const char *cfg_dir)
 				stint_sec = 86400;
 			if (pit_count < 0)
 				pit_count = 0;
-			if (pit_count > 255)
-				pit_count = 255;
+			if (pit_count > 99)
+				pit_count = 99;
 			if (max_drvs < 1)
 				max_drvs = 1;
 			if (max_drvs > 255)
