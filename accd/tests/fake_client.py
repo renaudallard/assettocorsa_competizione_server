@@ -404,12 +404,25 @@ def parse_event_entity(r):
     r.u8()
     anchor(r, "EventEntity post graphics")
     # (no CarSet — v0.2.46 layout)
-    # RaceRules: 16 bytes
-    for _ in range(16):
-        r.u8()
+    # RaceRules: 18 bytes (handshake.c write_event_entity_rest)
+    r.u8()   # qualifyStandingType
+    r.u8()   # superpoleMaxCar
+    r.u16()  # pitWindowLengthSec
+    r.u16()  # driverStintTimeSec
+    r.u8()   # isRefuellingAllowedInRace
+    r.u8()   # isRefuellingTimeFixed
+    r.u8()   # maxDriversCount
+    r.u8()   # mandatoryPitstopCount
+    r.u16()  # maxTotalDrivingTime
+    r.u8()   # pitRefuellingRequired
+    r.u8()   # pitTyreChangeRequired
+    r.u8()   # mandatorySwapRequired
+    r.u8()   # literal 0x01 (FUN_14011d230)
+    r.u8()   # literal 0x01 (FUN_14011d230)
+    r.u8()   # tyreSetCount
     anchor(r, "EventEntity post race")
-    # WeatherRules header: 4 u8 + 7 f32 = 32 bytes
-    for _ in range(4):
+    # WeatherRules header: 2 u8 + 7 f32 = 30 bytes
+    for _ in range(2):
         r.u8()
     for _ in range(7):
         r.f32()
