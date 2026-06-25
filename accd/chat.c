@@ -1473,10 +1473,17 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 	} else if (chat_prefix(text, "/latencymode")) {
 		int mode;
 		char line[96];
+		const char *arg = text + 12;
 
-		if (chat_parse_int(text + 12, &mode) < 0) {
+		while (*arg == ' ')
+			arg++;
+		if (*arg == '\0') {
 			chat_reply(s, c, "wrong parameters, please use "
 			    "'latencymode n' (with n between 0 and 1)", 4);
+		} else if (chat_parse_int(text + 12, &mode) < 0) {
+			snprintf(line, sizeof(line),
+			    "wrong parameter, '%s' is not a number", arg);
+			chat_reply(s, c, line, 4);
 		} else if (mode >= 2) {
 			snprintf(line, sizeof(line),
 			    "unknown latency mode %d", mode);
