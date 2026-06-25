@@ -393,7 +393,7 @@ chat_do_kick(struct Server *s, struct Conn *c, const char *args,
 		if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 		    wr_str_a(&out, "") == 0 &&
 		    wr_str_a(&out, reason) == 0 &&
-		    wr_i32(&out, 0) == 0 &&
+		    wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
 		    wr_u8(&out, 5) == 0)
 			(void)bcast_send_one(target, out.data, out.wpos);
 		bb_free(&out);
