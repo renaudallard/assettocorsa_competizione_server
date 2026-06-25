@@ -890,8 +890,8 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    c->is_admin ? "(admin)" : "(driver)",
 		    (unsigned)c->conn_id, c->car_id, arg);
 		/*
-		 * Exe FUN_14001dae0:187 builds "Car #N reported, thank you"
-		 * and falls through to *param_8=1 (line 1060) -> broadcast.
+		 * Exe FUN_14001dae0:177-190 routes the reply via unicast
+		 * (goto skips the *param_8=1 broadcast flag).
 		 */
 		{
 			char reply[64];
@@ -900,7 +900,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			    ? s->cars[c->car_id].race_number : 0;
 			snprintf(reply, sizeof(reply),
 			    "Car #%d reported, thank you", rnum);
-			chat_broadcast(s, reply, 4);
+			chat_reply(s, c, reply, 4);
 		}
 		return 1;
 	}
