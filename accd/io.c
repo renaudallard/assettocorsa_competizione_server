@@ -174,7 +174,7 @@ bb_take_frame(struct ByteBuf *bb,
 	const unsigned char *p;
 
 	avail = bb->wpos;
-	if (avail < 2)
+	if (avail < 3)		/* mirror exe FUN_14004e480: need >= 3 bytes */
 		return 0;
 
 	p = bb->data;
