@@ -362,6 +362,13 @@ chat_do_kick(struct Server *s, struct Conn *c, const char *args,
 		return;
 	}
 	/*
+	 * Exe FUN_14001dae0:744-745 DQs before sending any message so
+	 * the player appears disqualified in session results.  force=0
+	 * mirrors the exe's seventh argument.
+	 */
+	(void)penalty_enqueue(s, car_id, EXE_DQ, 0, 0, 0, 0, 0);
+
+	/*
 	 * Exe FUN_14001dae0 builds the banner as "#<raceNumber> has been
 	 * kicked/banned from the server" (DAT_140149bc4 "#" + the car's
 	 * race number), not the driver name.  car_num is the race number
@@ -372,14 +379,6 @@ chat_do_kick(struct Server *s, struct Conn *c, const char *args,
 	              : "#%d has been kicked from the server",
 	    car_num);
 	chat_broadcast(s, chat, 4);
-
-	/*
-	 * Exe (FUN_14001dae0:745) DQs the car before sending the
-	 * kick/ban message so the player appears disqualified in
-	 * the session results.  force=0 so allow_auto_dq still
-	 * gates it (mirrors the exe's seventh argument = 0).
-	 */
-	(void)penalty_enqueue(s, car_id, EXE_DQ, 0, 0, 0, 0, 0);
 
 	{
 		struct ByteBuf out;
