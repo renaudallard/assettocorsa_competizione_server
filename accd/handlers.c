@@ -192,7 +192,8 @@ h_lap_completed(struct Server *s, struct Conn *c,
 		struct Conn *peer = s->conns[i];
 		int32_t ts_peer;
 
-		if (peer == NULL || peer->state != CONN_AUTH || peer->is_smpr)
+		if (peer == NULL || peer->state != CONN_AUTH ||
+		    peer->is_smpr || peer->car_id < 0)
 			continue;
 		ts_peer = (int32_t)((int64_t)timestamp +
 		    conn_clock_offset(s, peer));
@@ -361,7 +362,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 				struct Conn *peer = s->conns[i];
 				int32_t ts_peer;
 				if (peer == NULL || peer->state != CONN_AUTH ||
-				    peer->is_smpr)
+				    peer->is_smpr || peer->car_id < 0)
 					continue;
 				if (peer->conn_id == c->conn_id)
 					continue;
@@ -857,7 +858,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			struct Conn *peer = s->conns[i];
 			int32_t ts_peer;
 			if (peer == NULL || peer->state != CONN_AUTH ||
-			    peer->is_smpr)
+			    peer->is_smpr || peer->car_id < 0)
 				continue;
 			if (peer->conn_id == c->conn_id)
 				continue;
@@ -1296,7 +1297,8 @@ h_out_of_track(struct Server *s, struct Conn *c,
 		struct Conn *peer = s->conns[i];
 		int32_t ts_peer;
 
-		if (peer == NULL || peer->state != CONN_AUTH || peer->is_smpr)
+		if (peer == NULL || peer->state != CONN_AUTH ||
+		    peer->is_smpr || peer->car_id < 0)
 			continue;
 		if (peer->conn_id == c->conn_id)
 			continue;
@@ -2205,6 +2207,7 @@ h_driver_stint_reset(struct Server *s, struct Conn *c,
 				if (peer == NULL ||
 				    peer->state != CONN_AUTH ||
 				    peer->is_smpr ||
+				    peer->car_id < 0 ||
 				    peer->conn_id == c->conn_id)
 					continue;
 				ts_adj = ts_d +
