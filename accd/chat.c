@@ -1445,7 +1445,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			    wr_str_a(&cbb, cdisp) == 0 &&
 			    wr_u8(&cbb, 1) == 0 &&
 			    wr_u16(&cbb, (uint16_t)ccar->car_id) == 0)
-				(void)conn_send_framed(c, cbb.data, cbb.wpos);
+				(void)sendto(s->udp_fd, cbb.data, cbb.wpos,
+				    0, (const struct sockaddr *)&c->peer,
+				    sizeof(c->peer));
 		}
 		bb_free(&cbb);
 	} else if (chat_prefix(text, "/hellban")) {
