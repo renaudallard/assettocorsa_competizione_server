@@ -925,10 +925,8 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			c->netcar_delta_mode = 2;
 			chat_reply(s, c, "Showing difference between legacy "
 			    "and logstep latency", 4);
-		} else {
-			chat_reply(s, c, "please set the mode to use: default, "
-			    "error or diff", 4);
 		}
+		/* exe FUN_140021680 is silent for unknown sub-commands */
 		return 1;
 	}
 
