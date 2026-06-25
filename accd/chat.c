@@ -786,12 +786,12 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			return 1;
 		}
 		/*
-		 * Exe FUN_140027990:92 only enforces the pit-lane check
-		 * for Practice (session_type & 0xfb == 0); Qualifying
-		 * (session_type = 4) skips it and allows the swap from
-		 * anywhere on track.
+		 * Exe FUN_140027990:92: pit-lane check fires when
+		 * (session_type & 0xfb) == 0.  Both Practice (0) and
+		 * Qualifying (4) satisfy this (0&0xfb=0, 4&0xfb=0);
+		 * Race (10) does not (10&0xfb=10).
 		 */
-		if (cur_type == 0 && !car->race.in_pit) {
+		if (!car->race.in_pit) {
 			log_info("swap: conn=%u rejected — car not in pit lane",
 			    (unsigned)c->conn_id);
 			return 1;
