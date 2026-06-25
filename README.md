@@ -253,10 +253,12 @@
   field is bounds-checked and any desync aborts before touching state, and
   the entry roster is logged but not swapped (the per-entry layout is not
   resolvable with confidence).
-- `randomizeTrackWhenEmpty` picks a new random track each time the last
-  driver leaves a running session, matching the dedicated server.
-  `useIgtDlcTracks` and `useBgtDlcTracks` add the respective GT3 DLC
-  tracks to that random pool (oval and the GT4 layout are never picked).
+- When the last connection leaves a running session accd resets the
+  session to WAITING, matching the stock server.
+  `randomizeTrackWhenEmpty` also picks a new random track on each such
+  reset.  `useIgtDlcTracks` and `useBgtDlcTracks` add the respective
+  GT3 DLC tracks to that random pool (oval and the GT4 layout are never
+  picked).
 
 ---
 
