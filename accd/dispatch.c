@@ -489,15 +489,15 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 */
 		new_min = (!pc->session_clock_seen || rtt < pc->best_rtt_ms);
 		/*
-		 * 0x28 re-emit gate: mirrors exe FUN_1400420e0's stored_threshold
-		 * which is reset to avg_rtt after each ring update.  On the first
-		 * pong (session_clock_seen=0) always emit; thereafter emit when
-		 * the sample beats the previous pong's average (not the absolute
-		 * minimum), so a marginal improvement still refreshes the client's
-		 * time base even when best_rtt_ms is already set.
+		 * 0x28 re-emit gate (FUN_1400420e0):
+		 *   Mode B (default): emit when sample beats the previous
+		 *     pong's rolling average (pong_threshold_ms = avg_rtt).
+		 *   Mode A: emit only on a new-minimum RTT observation,
+		 *     mirroring the exe's min-tracking stored_threshold.
 		 */
-		emit_28 = (!pc->session_clock_seen ||
-		    rtt < pc->pong_threshold_ms);
+		emit_28 = (s->latency_mode == 0)
+		    ? (!pc->session_clock_seen || rtt < pc->pong_threshold_ms)
+		    : new_min;
 		/*
 		 * A future / forged pong_srv_ts makes (now - srv_ts) wrap to
 		 * a huge unsigned value whose signed form is negative.  Never
