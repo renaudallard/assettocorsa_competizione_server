@@ -494,17 +494,19 @@ results_write(struct Server *s)
 		}
 		fprintf(f, "        },\n");
 		/*
-		 * missingMandatoryPitstop only applies to races with a
-		 * configured mandatoryPitstopCount; in practice / qualy
-		 * or a race with pit_count=0 there is nothing to miss, so
-		 * emit 0 to avoid a stats-service bug where every car is
-		 * reported as non-compliant.
+		 * missingMandatoryPitstop: exe stores a bool (0 or 1) at
+		 * LeaderboardLine+0x204 (FUN_1400197b0:174) and emits it
+		 * as a signed uint (FUN_14010f660:39 via FUN_1400f27d0).
+		 * For non-race sessions the ctor default 0xFFFFFFFF
+		 * (FUN_14000d770:48) is never overwritten, so the exe
+		 * emits -1.  For races, emit 1 only if the driver missed
+		 * a mandatory stop; 0 if served or not required.
 		 */
 		fprintf(f, "        \"missingMandatoryPitstop\": %d,\n",
-		    (st == 10 && s->mandatory_pit_count > 0 &&
+		    st != 10 ? -1 :
+		    (s->mandatory_pit_count > 0 &&
 			car->race.mandatory_pit_served < s->mandatory_pit_count)
-		    ? (int)(s->mandatory_pit_count -
-			car->race.mandatory_pit_served) : 0);
+		    ? 1 : 0);
 		/*
 		 * driverTotalTimes[] per handbook §VIII.1 — per-driver
 		 * accumulated stint time (ms) for endurance / driver-
