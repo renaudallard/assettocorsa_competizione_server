@@ -355,8 +355,7 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 		}
 		ts_off = (int)out.wpos;
 		ok = ok && wr_i32(&out, 0) == 0 &&   /* placeholder, patched per peer */
-		    wr_u16(&out, (uint16_t)(car_field |
-			(race->finished ? 0x0400u : 0))) == 0;
+		    wr_u16(&out, (uint16_t)race->car_field) == 0;
 		if (ok) {
 			for (i = 0; i < ACC_MAX_CARS; i++) {
 				struct Conn *peer = s->conns[i];
