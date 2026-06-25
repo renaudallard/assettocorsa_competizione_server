@@ -547,10 +547,11 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 		struct Conn *c = s->conns[i];
 		uint16_t per_conn_ping;
 
-		if (c == NULL || c->state != CONN_AUTH ||
-		    c->is_smpr || c->car_id < 0)
+		if (c == NULL || c->state != CONN_AUTH || c->is_smpr)
 			continue;
-		/* Exe FUN_140041e80 uses a per-connection timer
+		/* Exe FUN_140041e80 sends 0x14 to all CONN_AUTH connections
+		 * except SMPR monitors; spectators (car_id < 0) are included.
+		 * Uses a per-connection timer
 		 * (conn+0xa0238) so each conn's 0x14 cadence is
 		 * independent.  Gate here and stamp on send. */
 		if (c->last_keepalive_ms != 0 &&
