@@ -605,16 +605,23 @@ config_load(struct Server *s, const char *cfg_dir)
 					dm = 65535;
 				d->duration_min = (uint16_t)dm;
 			}
-			d->hour_of_day = (uint8_t)json_obj_get_int(sn,
-			    "hourOfDay", 12);
+			{
+				int hod = json_obj_get_int(sn, "hourOfDay", 12);
+				int dow = json_obj_get_int(sn, "dayOfWeekend", 1);
+				int tm  = json_obj_get_int(sn, "timeMultiplier", 1);
+
+				if (hod < 0) hod = 0;
+				if (hod > 23) hod = 23;
+				if (dow < 1) dow = 1;
+				if (dow > 3) dow = 3;
+				if (tm < 1) tm = 1;
+				if (tm > 24) tm = 24;
+				d->hour_of_day = (uint8_t)hod;
+				d->day_of_weekend = (uint8_t)dow;
+				d->time_multiplier = (uint8_t)tm;
+			}
 			d->date_minute = (uint8_t)json_obj_get_int(sn,
 			    "dateMinute", 0);
-			d->day_of_weekend = (uint8_t)json_obj_get_int(sn,
-			    "dayOfWeekend", 0);
-			d->time_multiplier = (uint8_t)json_obj_get_int(sn,
-			    "timeMultiplier", 1);
-			if (d->time_multiplier == 0)
-				d->time_multiplier = 1;
 			d->dynamic_track_multiplier = (float)json_obj_get_num(sn,
 			    "dynamicTrackMultiplier", 0.0);
 			type = json_obj_get_str(sn, "sessionType");
