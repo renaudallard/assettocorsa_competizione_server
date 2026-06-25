@@ -1973,9 +1973,6 @@ h_execute_driver_swap(struct Server *s, struct Conn *c,
 	/* Broadcast reset swap state. */
 	broadcast_swap_state(s, car);
 
-	/* Trigger leaderboard update so current_driver_index change is reflected. */
-	leaderboard_request_emit(s);
-
 	/*
 	 * Re-sync BoP to the requesting conn and all team companions.
 	 * Exe FUN_140012830 sends 0x53 to both swap conns; accd mirrors
