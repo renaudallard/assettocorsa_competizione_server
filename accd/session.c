@@ -412,7 +412,7 @@ post_grace_ms(const struct Server *s)
 		cfg = s->post_qualy_s;
 	else
 		return 0;	/* practice: exe gives 0 ms aftercare */
-	return cfg > 0 ? (uint64_t)cfg * 1000ull : 5000ull;
+	return (uint64_t)cfg * 1000ull;
 }
 
 void
