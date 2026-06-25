@@ -603,13 +603,30 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			struct ByteBuf bb;
 
 			bb_init(&bb);
-			if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0 &&
-			    write_session_mgr_state(&bb, s,
-				pong_client_ts,
-				(uint32_t)((double)pc->best_rtt_ms +
-				pc->drift_ms)) == 0)
-				(void)conn_send_framed(pc,
-				    bb.data, bb.wpos);
+			{
+				/*
+				 * Mode B (default): pass best_rtt + drift so
+				 * write_session_mgr_state's /2 yields the
+				 * slewed one-way estimate.
+				 * Mode A: exe FUN_1400418b0 returns D_base +
+				 * D_drift = session_now - best_rtt/2 -
+				 * client_ts + drift.  One-way = best_rtt/2 -
+				 * drift, so pass best_rtt - 2*drift so that
+				 * the internal /2 produces the same result.
+				 */
+				double rtt_d = s->latency_mode != 0
+				    ? (double)pc->best_rtt_ms -
+				      2.0 * pc->drift_ms
+				    : (double)pc->best_rtt_ms +
+				      pc->drift_ms;
+				uint32_t rtt_arg =
+				    rtt_d > 0.0 ? (uint32_t)rtt_d : 0;
+				if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0
+				    && write_session_mgr_state(&bb, s,
+					pong_client_ts, rtt_arg) == 0)
+					(void)conn_send_framed(pc,
+					    bb.data, bb.wpos);
+			}
 			bb_free(&bb);
 		}
 		pc->last_pong_client_ts = pong_client_ts;
