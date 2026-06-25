@@ -393,8 +393,8 @@ results_write(struct Server *s)
 		    car->drivers[car->current_driver_index <
 		    car->driver_count ? car->current_driver_index : 0]
 		    .nationality);
-		fprintf(f, "          \"carGuid\": -1,\n");
-		fprintf(f, "          \"teamGuid\": -1,\n");
+		fprintf(f, "          \"carGuid\": 0,\n");
+		fprintf(f, "          \"teamGuid\": 0,\n");
 		fprintf(f, "          \"drivers\": [");
 		{
 			int dj;
