@@ -34,6 +34,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <errno.h>
