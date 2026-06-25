@@ -87,7 +87,7 @@ int	weather_build_broadcast(struct Server *s, struct ByteBuf *bb);
  * the grip integrator state g (G0c..G24).
  */
 int	weather_write_track_conditions_head(struct ByteBuf *bb,
-		const struct GripState *g);
+		const struct GripState *g, int dyn);
 
 /*
  * Initialize the grip integrator state to the exe's FUN_140133ea0 ctor

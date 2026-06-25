@@ -825,22 +825,24 @@ wx_norm(float x)
 }
 
 /*
- * 7-float TrackConditions head built by FUN_1400330e0, RAW path
- * (simracer_weather==0, inner-if +0x315==0).  Reads directly from the
- * grip integrator state: G0c=head[0] grip-now, G10=head[1] grip-green,
- * G14=head[2] wet-top, G18=head[3] wet-sub, G1c=head[4] clamped-wet,
- * G20=head[5], G24=head[6].  Shared by the live 0x37 broadcast and the
- * welcome trailer so the two heads cannot drift.
+ * 7-float TrackConditions head built by FUN_1400330e0.
+ * G0c=head[0], G10=head[1], G14=head[2] wet-top, G18=head[3] wet-sub,
+ * G1c=head[4] clamped-wet, G20=head[5], G24=head[6].
+ * When dyn!=0 (simracer_weather>0), the exe's dynamic path applies
+ * wx_norm to G14/G18/G1c before serializing (FUN_1400330e0 +0x315!=0
+ * branch).  G0c/G10/G20/G24 are raw in both paths.
+ * Shared by the live 0x37 broadcast (dyn from randomness) and the
+ * welcome trailer (always dyn=0) so the two heads cannot drift.
  */
 int
 weather_write_track_conditions_head(struct ByteBuf *bb,
-    const struct GripState *g)
+    const struct GripState *g, int dyn)
 {
 	if (wr_f32(bb, g->G0c) < 0) return -1;	/* head[0] grip-now */
 	if (wr_f32(bb, g->G10) < 0) return -1;	/* head[1] grip-green */
-	if (wr_f32(bb, g->G14) < 0) return -1;	/* head[2] wet-top */
-	if (wr_f32(bb, g->G18) < 0) return -1;	/* head[3] wet-sub */
-	if (wr_f32(bb, g->G1c) < 0) return -1;	/* head[4] clamped-wet */
+	if (wr_f32(bb, dyn ? wx_norm(g->G14) : g->G14) < 0) return -1;
+	if (wr_f32(bb, dyn ? wx_norm(g->G18) : g->G18) < 0) return -1;
+	if (wr_f32(bb, dyn ? wx_norm(g->G1c) : g->G1c) < 0) return -1;
 	if (wr_f32(bb, g->G20) < 0) return -1;	/* head[5] */
 	if (wr_f32(bb, g->G24) < 0) return -1;	/* head[6] */
 	return 0;
@@ -874,7 +876,7 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 		road = ambient + 4.0f;
 
 	/* 17 × f32 body.  See reference_weather_wire_format.md slot table. */
-	if (weather_write_track_conditions_head(bb, &s->grip) < 0)
+	if (weather_write_track_conditions_head(bb, &s->grip, dyn) < 0)
 		return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;

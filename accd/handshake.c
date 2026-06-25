@@ -1515,7 +1515,7 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 	if (dyn && s->weather.road_current != 0.0f)
 		road = s->weather.road_current;
 
-	if (weather_write_track_conditions_head(bb, &s->grip) < 0)
+	if (weather_write_track_conditions_head(bb, &s->grip, 0) < 0)
 		return -1;
 
 	if (wr_f32(bb, ambient) < 0) return -1;
