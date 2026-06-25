@@ -73,14 +73,17 @@ fprint_json_str(FILE *f, const char *s)
 }
 
 static const char *
-session_type_str(uint8_t t)
+session_type_str(uint8_t t, char *buf, size_t bufsz)
 {
 	switch (t) {
 	case 0:		return "FP";
 	case 4:		return "Q";
 	case 9:		return "SP";
 	case 10:	return "R";
-	default:	return "FP";
+	default:
+		/* exe FUN_140129b10: builds "?<value>?" for unknown types */
+		(void)snprintf(buf, bufsz, "?%u?", (unsigned)t);
+		return buf;
 	}
 }
 
@@ -206,6 +209,7 @@ results_write(struct Server *s)
 	char path[512];
 	char tmp_path[520];
 	char ts[32];
+	char stype_buf[8];
 	struct tm tm;
 	time_t now;
 	FILE *f;
@@ -228,7 +232,7 @@ results_write(struct Server *s)
 	localtime_r(&now, &tm);
 	strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm);
 	snprintf(path, sizeof(path), "%s/%s_%s.json",
-	    dir, ts, session_type_str(st));
+	    dir, ts, session_type_str(st, stype_buf, sizeof(stype_buf)));
 	/*
 	 * Two sessions of the same type closing in the same wall-clock
 	 * second (admin DQ chain, force advance) used to overwrite the
@@ -242,7 +246,7 @@ results_write(struct Server *s)
 		for (suffix = 2; suffix < 100 && stat(path, &sb) == 0;
 		    suffix++)
 			snprintf(path, sizeof(path), "%s/%s_%s_%d.json",
-			    dir, ts, session_type_str(st), suffix);
+			    dir, ts, session_type_str(st, stype_buf, sizeof(stype_buf)), suffix);
 	}
 
 	f = atomic_open(tmp_path, sizeof(tmp_path), path, "results");
@@ -250,7 +254,7 @@ results_write(struct Server *s)
 		return -1;
 
 	fprintf(f, "{\n");
-	fprintf(f, "  \"sessionType\": \"%s\",\n", session_type_str(st));
+	fprintf(f, "  \"sessionType\": \"%s\",\n", session_type_str(st, stype_buf, sizeof(stype_buf)));
 	fprintf(f, "  \"trackName\": ");
 	fprint_json_str(f, s->track);
 	fprintf(f, ",\n");
@@ -276,7 +280,7 @@ results_write(struct Server *s)
 	 * wine result file.  JSON parsers take the last occurrence; both
 	 * values are identical so no consumer is affected.
 	 */
-	fprintf(f, "  \"sessionType\": \"%s\",\n", session_type_str(st));
+	fprintf(f, "  \"sessionType\": \"%s\",\n", session_type_str(st, stype_buf, sizeof(stype_buf)));
 	fprintf(f, "  \"sessionResult\": {\n");
 	{
 		int32_t best_lap = 0;
