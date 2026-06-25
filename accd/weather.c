@@ -854,10 +854,11 @@ weather_build_broadcast(struct Server *s, struct ByteBuf *bb)
 	struct WeatherStatus *w = &s->weather;
 	float ambient, road;
 	int dyn = s->simracer_weather != 0;
-	float rain = w->current_rain;
-	float clouds = dyn ? wx_norm(w->clouds) : w->clouds;
-	float dry = dyn ? wx_norm(w->dry_line_wetness)
-	    : w->dry_line_wetness;
+	/* FUN_1400330e0: dynamic path wx_norm's rain (+0x88) but leaves
+	 * clouds (+0x8c) and dry (+0x90) raw. */
+	float rain = dyn ? wx_norm(w->current_rain) : w->current_rain;
+	float clouds = w->clouds;
+	float dry = w->dry_line_wetness;
 
 	if (wr_u8(bb, SRV_WEATHER_STATUS) < 0)
 		return -1;

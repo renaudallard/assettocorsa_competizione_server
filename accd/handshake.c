@@ -1497,11 +1497,12 @@ write_trailer_additional_state(struct ByteBuf *bb, struct Server *s)
 {
 	float ambient, road;
 	int dyn = s->simracer_weather != 0;
-	float rain = s->weather.current_rain;
-	float clouds = dyn ? tanhf(tanhf(s->weather.clouds) * 0.9f)
-	    : s->weather.clouds;
-	float dry = dyn ? tanhf(tanhf(s->weather.dry_line_wetness) * 0.9f)
-	    : s->weather.dry_line_wetness;
+	/* FUN_1400330e0: dynamic path wx_norm's rain but leaves
+	 * clouds and dry raw (mirrors weather_build_broadcast). */
+	float rain = dyn ? tanhf(tanhf(s->weather.current_rain) * 0.9f)
+	    : s->weather.current_rain;
+	float clouds = s->weather.clouds;
+	float dry = s->weather.dry_line_wetness;
 
 	ambient = s->session.ambient_temp > 0
 	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
