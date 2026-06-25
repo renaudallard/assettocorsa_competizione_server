@@ -2064,12 +2064,12 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 	switch (state) {
 	case 2:
 		/*
-		 * Initiate: set the requesting driver's swap state
-		 * to the value the client sent.
+		 * In the exe (FUN_1400142f0) the ownership gate at :160
+		 * ensures sender == primary conn, making the broadcast
+		 * condition (sender != primary) permanently false.  State
+		 * transitions to 2 happen via external paths, not via 0x4a.
 		 */
-		if (car->current_driver_index < car->driver_count)
-			car->swap_state[car->current_driver_index] = state;
-		break;
+		return 0;
 	case 3:
 		/*
 		 * Confirm: kunos's FUN_1400142f0:1105-1194 resets every
@@ -2101,10 +2101,8 @@ h_driver_swap_state_request(struct Server *s, struct Conn *c,
 			car->swap_state[car->current_driver_index] = state;
 		break;
 	case 4:
-		/* Execute: set requesting driver to EXECUTING. */
-		if (car->current_driver_index < car->driver_count)
-			car->swap_state[car->current_driver_index] = 4;
-		break;
+		/* Same as case 2: no-op in exe; state set via FUN_140012830. */
+		return 0;
 	default:
 		log_warn("DriverSwap Request for type %u is not "
 		    "implemented", (unsigned)state);
