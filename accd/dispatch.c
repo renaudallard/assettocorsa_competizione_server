@@ -605,20 +605,21 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			bb_init(&bb);
 			{
 				/*
-				 * Mode B (default): pass best_rtt + drift so
-				 * write_session_mgr_state's /2 yields the
-				 * slewed one-way estimate.
-				 * Mode A: exe FUN_1400418b0 returns D_base +
-				 * D_drift = session_now - best_rtt/2 -
-				 * client_ts + drift.  One-way = best_rtt/2 -
-				 * drift, so pass best_rtt - 2*drift so that
-				 * the internal /2 produces the same result.
+				 * Mode B (default, exe I_fb path): pass
+				 * avg_rtt so write_session_mgr_state's /2
+				 * yields the average one-way estimate,
+				 * matching the exe's slewed I_fb field
+				 * (FUN_1400418b0, conn+0xa00ac) which
+				 * approximates now - avg_rtt/2 - client_ts.
+				 * Mode A: exe returns D_base + D_drift =
+				 * best_rtt/2 - drift one-way; pass
+				 * best_rtt - 2*drift so the internal /2
+				 * produces the same result.
 				 */
 				double rtt_d = s->latency_mode != 0
 				    ? (double)pc->best_rtt_ms -
 				      2.0 * pc->drift_ms
-				    : (double)pc->best_rtt_ms +
-				      pc->drift_ms;
+				    : (double)pc->avg_rtt_ms;
 				uint32_t rtt_arg =
 				    rtt_d > 0.0 ? (uint32_t)rtt_d : 0;
 				if (wr_u8(&bb, SRV_LARGE_STATE_RESPONSE) == 0
