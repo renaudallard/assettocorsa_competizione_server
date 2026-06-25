@@ -424,9 +424,9 @@ config_load(struct Server *s, const char *cfg_dir)
 		if (s->track_medals_required != ACC_RATING_UNSET &&
 		    s->track_medals_required > 3) {
 			log_warn("trackMedalsRequirement %u out of range "
-			    "(0..3), ignoring",
+			    "(0..3), defaulting to 0",
 			    (unsigned)s->track_medals_required);
-			s->track_medals_required = ACC_RATING_UNSET;
+			s->track_medals_required = 0;
 		}
 		/*
 		 * isCPServer + the competition-rating window (FUN_140106300
