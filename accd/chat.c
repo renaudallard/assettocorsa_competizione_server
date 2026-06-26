@@ -781,6 +781,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		if (c->car_id < 0) {
 			log_info("swap: conn=%u has no car",
 			    (unsigned)c->conn_id);
+			/* exe FUN_140027990:56-58. */
+			chat_reply(s, c,
+			    "Command requires being in control of a car", 4);
 			return 1;
 		}
 		car = &s->cars[c->car_id];
@@ -811,6 +814,8 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		if (!car->race.in_pit) {
 			log_info("swap: conn=%u rejected — car not in pit lane",
 			    (unsigned)c->conn_id);
+			/* exe FUN_140027990:94. */
+			chat_reply(s, c, "Swaps only work in the pitlane", 4);
 			return 1;
 		}
 		/*
@@ -820,11 +825,22 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		 * index.  --target is only evaluated once chat_parse_int has
 		 * succeeded, so a non-numeric arg still takes the invalid path.
 		 */
-		if (chat_parse_int(arg, &target) < 0 ||
-		    --target < 0 || target >= car->driver_count) {
+		if (chat_parse_int(arg, &target) < 0) {
+			log_info("swap: non-numeric target from conn=%u",
+			    (unsigned)c->conn_id);
+			/* exe FUN_140027990:266. */
+			chat_reply(s, c,
+			    "Wrong parameters, please use %swap <driver#>", 4);
+			return 1;
+		}
+		if (--target < 0 || target >= car->driver_count) {
 			log_info("swap: invalid target from conn=%u "
 			    "(use 1, 2, 3 dependent on your team)",
 			    (unsigned)c->conn_id);
+			/* exe FUN_140027990:262. */
+			chat_reply(s, c,
+			    "Wrong driver number, use 1, 2, 3 dependent on "
+			    "your team", 4);
 			return 1;
 		}
 		if ((uint8_t)target == car->current_driver_index) {
