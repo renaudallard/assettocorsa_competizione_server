@@ -371,9 +371,12 @@ Show the server weather / track conditions summary to the
 requesting admin.
 .It /go , /start
 Release a held countdown and start racing.
-.It /report Ar text
-Driver-issued: append a free-text report to
-.Pa cfg/reports.txt .
+.It /report Ar raceNumber
+Driver-issued: report the car with the given race number.
+The report is appended to
+.Pa cfg/reports.txt
+keyed on the reported car, with the reporter recorded alongside.
+The race number is required; an unknown car is rejected.
 The only slash command available without admin elevation.
 .It &delta Ar mode
 Driver-issued: set the netcar latency display mode (default, error or

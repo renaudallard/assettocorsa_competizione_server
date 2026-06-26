@@ -903,35 +903,57 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		time_t now = time(NULL);
 		struct tm tm_buf;
 		char ts[32];
+		char reply[64];
+		int target_num, target_id;
 
 		while (*arg == ' ')
 			arg++;
+		/*
+		 * Exe FUN_140021680:1129 requires the raceNumber token
+		 * (token count < 2 -> "missing parameter: raceNumber").
+		 */
+		if (chat_parse_int(arg, &target_num) < 0) {
+			chat_reply(s, c, "missing parameter: raceNumber", 4);
+			return 1;
+		}
+		/*
+		 * Exe FUN_140021680:1135 resolves the typed car by race
+		 * number; on no match the report is not recorded.
+		 */
+		target_id = chat_car_by_racenum(s, target_num);
+		if (target_id < 0) {
+			snprintf(reply, sizeof(reply),
+			    "Couldn't locate car #%d", target_num);
+			chat_reply(s, c, reply, 4);
+			return 1;
+		}
 		(void)localtime_r(&now, &tm_buf);
 		strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm_buf);
 		snprintf(path, sizeof(path), "%s/reports.txt", s->cfg_dir);
 		fp = fopen(path, "a");
 		if (fp != NULL) {
-			fprintf(fp, "%s conn=%u car=%d %s: %s\n",
-			    ts, (unsigned)c->conn_id, c->car_id,
-			    c->is_admin ? "admin" : "driver", arg);
+			/*
+			 * Exe FUN_14001dae0:184 records the report keyed on
+			 * the resolved target car, not the reporter.  Keep the
+			 * reporter columns so the operator still sees who filed
+			 * it.
+			 */
+			fprintf(fp, "%s reported_car=%d reporter_conn=%u "
+			    "reporter_car=%d %s\n",
+			    ts, target_num, (unsigned)c->conn_id, c->car_id,
+			    c->is_admin ? "admin" : "driver");
 			fclose(fp);
 		}
-		log_info("report %s conn=%u car=%d: %s",
+		log_info("report %s conn=%u reporter_car=%d -> car #%d",
 		    c->is_admin ? "(admin)" : "(driver)",
-		    (unsigned)c->conn_id, c->car_id, arg);
+		    (unsigned)c->conn_id, c->car_id, target_num);
 		/*
-		 * Exe FUN_14001dae0:177-190 routes the reply via unicast
-		 * (goto skips the *param_8=1 broadcast flag).
+		 * Exe FUN_14001dae0:177-190 routes the reply via unicast and
+		 * echoes the resolved target car number.
 		 */
-		{
-			char reply[64];
-			int rnum = (c->car_id >= 0 && c->car_id < ACC_MAX_CARS &&
-			    s->cars[c->car_id].used)
-			    ? s->cars[c->car_id].race_number : 0;
-			snprintf(reply, sizeof(reply),
-			    "Car #%d reported, thank you", rnum);
-			chat_reply(s, c, reply, 4);
-		}
+		snprintf(reply, sizeof(reply),
+		    "Car #%d reported, thank you", target_num);
+		chat_reply(s, c, reply, 4);
 		return 1;
 	}
 
