@@ -282,8 +282,12 @@ config_load(struct Server *s, const char *cfg_dir)
 	 * forced accd private, flipping the maxCarSlots clamp, preRaceWaiting
 	 * floor, forceEntryList / allowAutoDQ forcing and formationLapType remap.
 	 */
-	s->register_to_lobby = json_obj_get_int(configuration,
-	    "registerToLobby", s->register_to_lobby);
+	/*
+	 * exe FUN_1401030e0:182 stores the strict boolean (value == 1),
+	 * so any non-1 value (e.g. 2) is treated as private, not truthy.
+	 */
+	s->register_to_lobby = (json_obj_get_int(configuration,
+	    "registerToLobby", s->register_to_lobby) == 1);
 	json_free(configuration);
 
 	settings = load_json(cfg_dir, "settings.json");
