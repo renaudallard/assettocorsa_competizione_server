@@ -553,8 +553,14 @@ wr_str_raw(struct ByteBuf *bb, const char *s)
 	if (s == NULL)
 		s = "";
 	len = strlen(s);
-	if (len > 0xFFFF)
-		len = 0xFFFF;
+	/*
+	 * exe FUN_14004d240 writes the u16 length + body only when the byte
+	 * length is < 0xffff; at 0xffff or above it logs an error and writes
+	 * nothing.  Mirror that guard (0xffff excluded).  Unreachable in
+	 * practice: no kson/raw field approaches 64 KB.
+	 */
+	if (len >= 0xFFFF)
+		return 0;
 	if (wr_u16(bb, (uint16_t)len) < 0)
 		return -1;
 	if (len > 0 && bb_append(bb, s, len) < 0)
