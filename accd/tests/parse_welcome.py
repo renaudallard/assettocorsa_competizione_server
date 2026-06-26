@@ -294,7 +294,7 @@ def main():
 
     # No CarSet on the wire (verified empirically against misano frame 46872).
 
-    print("RaceRules (16 B = 12 fields + tyreSetCount; NO 2-byte literal-1 padding):")
+    print("RaceRules (18 B = 12 fields + 2 literal-1 pad + tyreSetCount):")
     o = base(); v = r.u8();  label(o, 1, "  rr.qualifyStandingType", v)
     o = base(); v = r.u8();  label(o, 1, "  rr.superpoleMaxCar",     f"0x{v:02x}")
     o = base(); v = r.u16(); label(o, 2, "  rr.pitWindowLengthSec",  f"0x{v:04x}")
@@ -307,10 +307,14 @@ def main():
     o = base(); v = r.u8();  label(o, 1, "  rr.isMandatoryPitRefuel", v)
     o = base(); v = r.u8();  label(o, 1, "  rr.isMandatoryPitTyre", v)
     o = base(); v = r.u8();  label(o, 1, "  rr.isMandatoryPitSwap", v)
+    # FUN_14011d230 writes two hardcoded u8(1) constants here (handshake.c
+    # emits the same), making RaceRules 18 B; tyreSetCount follows them.
+    o = base(); v = r.u8();  label(o, 1, "  rr.pad0 (literal 1)",   v)
+    o = base(); v = r.u8();  label(o, 1, "  rr.pad1 (literal 1)",   v)
     o = base(); v = r.u8();  label(o, 1, "  rr.tyreSetCount",        v)
 
-    print("WeatherRules header (32 B = 4 u8 + 7 f32; leading bytes 01 32 03 00):")
-    for k in range(4):
+    print("WeatherRules header (30 B = 2 u8 + 7 f32; leading bytes 03 00):")
+    for k in range(2):
         o = base(); v = r.u8(); label(o, 1, f"  wr.hdr[{k}]", f"0x{v:02x}")
     for nm in ("ambient", "road", "f32_2", "f32_3", "rain", "f32_5", "f32_6"):
         o = base(); v = r.f32(); label(o, 4, f"  wr.{nm}", v)
