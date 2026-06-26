@@ -258,9 +258,8 @@ broadcast_percar_dirty_fast(struct Server *s)
 			struct Conn *peer = s->conns[j];
 			int32_t delta = 0;
 
-			if (peer == NULL || peer->state != CONN_AUTH)
-				continue;
-			if (peer->is_smpr || peer->car_id < 0)
+			if (peer == NULL || peer->state != CONN_AUTH ||
+			    peer->is_smpr)
 				continue;
 			if (peer->car_id == i)
 				continue;
@@ -379,7 +378,7 @@ broadcast_percar_dirty_legacy(struct Server *s)
 		int off, ns = 0;
 
 		if (peer == NULL || peer->state != CONN_AUTH ||
-		    peer->is_smpr || peer->car_id < 0)
+		    peer->is_smpr)
 			continue;
 		/* Recipient sees every dirty car except its own. */
 		for (d = 0; d < ndirty; d++)
