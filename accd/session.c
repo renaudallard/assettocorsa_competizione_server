@@ -65,15 +65,14 @@ uint32_t arc4random_uniform(uint32_t);
 #include "tick.h"
 
 /*
- * Formation / green-flag position gate range.  The exe reads three
- * floats via a virtual deserializer at vtable slot 0x140142b70
- * ("formationTriggerNormalizedRangeStart", "greenFlagTriggerNormalized
- * RangeStart", "greenFlagTriggerNormalizedRangeEnd") and falls back to
- * the compiled-in constants at DAT_14014bccc (0.80) / DAT_14014bcd0
- * (0.89) / DAT_14014bcd8 (0.96) when the JSON is absent.  No per-track
- * file path is used — the same defaults apply to every ACC circuit,
- * overridable via event.json keys of the same names.  The epsilon
- * constant comes from DAT_14014bcac = 0.05.
+ * Formation / green-flag position gate range.  The exe builds a 27-entry
+ * per-track table in FUN_14012c510 keyed by track name and copies the
+ * matched track's formationStart / greenStart / greenEnd floats into the
+ * SessionManager (FUN_140011150, FUN_14002aca0).  accd reproduces that
+ * table in state.c track_zones[] and selects per track via
+ * track_zones_apply().  The 0.80 / 0.89 / 0.96 triple is only the
+ * not-found fallback (server_init), and event.json keys of the same names
+ * still override per session.
  */
 #define FORMATION_PRE_GREEN_EPS	0.05f
 
