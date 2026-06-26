@@ -1399,21 +1399,34 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 		}
 		log_info("lobby: 0xf4 remote DQ for car %d (%s): %s",
 		    target, s1, s2);
-		/* category 8 (Trolling): exe tags admin/remote penalties. */
-		(void)penalty_enqueue(s, target, EXE_DQ, 8, 0, 0, 0,
-		    REASON_RACE_CONTROL);
-		if (target_conn != NULL) {
+		/*
+		 * Exe FUN_1400251b0: sends 0x2b chat to the target
+		 * connection if the reason string is non-empty
+		 * (line 61 checks the kson string length field),
+		 * then issues the DQ via FUN_140125f50 (exe_kind=8,
+		 * cat=0, bucket=6), then sets conn+0xa01d4=3
+		 * (FUN_140041900 returns 1 on next tick = kick).
+		 * Mirror all three steps in the same order.
+		 */
+		if (target_conn != NULL && s2[0] != '\0') {
 			struct ByteBuf out;
 			bb_init(&out);
 			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 			    wr_str_a(&out, "Server") == 0 &&
 			    wr_str_a(&out, s2) == 0 &&
-			    wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
+			    wr_i32(&out,
+			    (int32_t)s->session.weekend_time_s) == 0 &&
 			    wr_u8(&out, 3) == 0)
 				(void)bcast_send_one(target_conn, out.data,
 				    out.wpos);
 			bb_free(&out);
 		}
+		/* category 8 (Trolling): exe tags admin/remote
+		 * penalties. */
+		(void)penalty_enqueue(s, target, EXE_DQ, 8, 0, 0, 0,
+		    REASON_RACE_CONTROL);
+		if (target_conn != NULL)
+			conn_drop(s, target_conn);
 		break;
 	}
 	case 0xf5: {
