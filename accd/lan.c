@@ -111,6 +111,14 @@ lan_open(int *out_fd)
 		log_warn("lan: SO_REUSEADDR: %s", strerror(errno));
 	if (setsockopt(fd, SOL_SOCKET, SO_BROADCAST, &on, sizeof(on)) < 0)
 		log_warn("lan: SO_BROADCAST: %s", strerror(errno));
+	{
+		/* exe FUN_14000bc90:531-532 sets 0x10000 on the 8999 socket. */
+		int bufsz = 65536;
+		(void)setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
+		    &bufsz, sizeof(bufsz));
+		(void)setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
+		    &bufsz, sizeof(bufsz));
+	}
 	memset(&sa, 0, sizeof(sa));
 	sa.sin_family = AF_INET;
 	sa.sin_addr.s_addr = htonl(INADDR_ANY);
