@@ -197,12 +197,12 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	while (*args == ' ')
 		args++;
 	if (*args == '\0')
-		return;
+		goto bad_syntax;
 	{
 		char *end;
 		long lv = strtol(args, &end, 10);
 		if (end == args)
-			return;
+			goto bad_syntax;
 		value = (int)(lv > 1000L ? 1000L : lv < -1000L ? -1000L : lv);
 	}
 	car_id = chat_car_by_racenum(s,car_num);
@@ -273,6 +273,19 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", chat);
 	log_info("admin: %s", chat);
+	return;
+
+bad_syntax:
+	/*
+	 * exe FUN_14001dae0:436-447 (ballast) / 524-535 (restrictor):
+	 * reply with a syntax banner instead of silently ignoring a
+	 * non-numeric value.
+	 */
+	if (reply != NULL)
+		snprintf(reply, replysz,
+		    "Wrong syntax '%s' - please give the %s", args,
+		    is_ballast ? "ballast in kg (0-999)"
+		    : "restrictor in % (0-99)");
 }
 
 void
