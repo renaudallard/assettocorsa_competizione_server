@@ -913,7 +913,14 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 
 		while (*arg == ' ')
 			arg++;
-		if (strcmp(arg, "default") == 0) {
+		if (*arg == '\0') {
+			/*
+			 * Exe FUN_140021680: when no sub-command is given
+			 * (token count < 2) it replies with this prompt.
+			 */
+			chat_reply(s, c, "please set the mode to use: "
+			    "default, error or diff", 4);
+		} else if (strcmp(arg, "default") == 0) {
 			c->netcar_delta_mode = 0;
 			chat_reply(s, c, "Showing regular laptime delta for "
 			    "netcars", 4);
@@ -926,7 +933,7 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			chat_reply(s, c, "Showing difference between legacy "
 			    "and logstep latency", 4);
 		}
-		/* exe FUN_140021680 is silent for unknown sub-commands */
+		/* exe FUN_140021680 is silent for unrecognized sub-commands */
 		return 1;
 	}
 
