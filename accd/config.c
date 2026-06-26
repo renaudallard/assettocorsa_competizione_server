@@ -601,8 +601,9 @@ config_load(struct Server *s, const char *cfg_dir)
 				    "sessionDurationMinutes", 10);
 				if (dm < 1)
 					dm = 1;
-				if (dm > 65535)
-					dm = 65535;
+				/* exe FUN_14011a9d0 clamps to 1440 (24h max). */
+				if (dm > 1440)
+					dm = 1440;
 				d->duration_min = (uint16_t)dm;
 			}
 			{
