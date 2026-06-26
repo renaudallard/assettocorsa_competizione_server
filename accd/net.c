@@ -64,7 +64,7 @@ tcp_listen(int port)
 		close(fd);
 		return -1;
 	}
-	if (listen(fd, 16) < 0) {
+	if (listen(fd, 5) < 0) {	/* exe FUN_14004e5d0:44 backlog 5 */
 		log_err("listen tcp :%d: %s", port, strerror(errno));
 		close(fd);
 		return -1;
