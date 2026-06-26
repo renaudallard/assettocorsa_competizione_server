@@ -282,8 +282,9 @@ weather_init(struct Server *s, float base_clouds, float base_rain,
 
 	w->base_clouds = clamp01(base_clouds);
 	w->base_rain = clamp01(base_rain);
+	/* exe FUN_14011a820 clamps weatherRandomness to [0,10]. */
 	w->randomness = (uint8_t)(randomness < 0 ? 0
-	    : (randomness > 7 ? 7 : randomness));
+	    : (randomness > 10 ? 10 : randomness));
 
 	w->clouds = w->base_clouds;
 	w->current_rain = w->base_rain;
@@ -326,13 +327,13 @@ weather_init(struct Server *s, float base_clouds, float base_rain,
 	w->n_cosine = 0;
 
 	if (w->randomness > 0) {
-		float r = (float)w->randomness * 0.1f;	/* 0..0.7 per JSON map */
+		float r = (float)w->randomness * 0.1f;	/* 0..1.0 per JSON map */
 		uint32_t seed = start_time_s ^ 0x9e3779b9u ^
 		    ((uint32_t)w->randomness << 16);
 
 		/*
 		 * nHarmonics = 4 + floor(weatherRandomness * 10).  For
-		 * JSON 1..7 this is 5..11 sine coefficients, matching exe.
+		 * JSON 1..10 this is 5..14 sine coefficients (<= 16 cap).
 		 */
 		w->n_harmonics = 4 + (int)(r * 10.0f);
 		if (w->n_harmonics > ACCD_WX_MAX_SINE)
