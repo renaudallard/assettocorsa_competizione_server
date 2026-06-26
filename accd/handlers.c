@@ -536,11 +536,13 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 
 		/*
 		 * Cut-inclusive ring for the 0x56 garage reply: the exe emits
-		 * every lap (cut included).  FUN_140125c60 stores the car's
-		 * entry-list registration index (FUN_140020630 result) at
-		 * Lap+0x4c.  In accd the entry-list slot equals c->car_id.
+		 * every lap (out-lap and cut included).  FUN_140125c60 pushes
+		 * the entry unconditionally for any lap_ms > 0 (no out-lap
+		 * filter).  FUN_140125c60 stores the car's entry-list
+		 * registration index (FUN_140020630 result) at Lap+0x4c.
+		 * In accd the entry-list slot equals c->car_id.
 		 */
-		if (!is_out_lap && lap_ms > 0) {
+		if (lap_ms > 0) {
 			uint32_t s56 = race->lap56_count % ACC_LAP_HISTORY;
 			int si;
 			race->lap56_ms[s56] = lap_ms;
