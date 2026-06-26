@@ -658,7 +658,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			for (pi = 0; pi < race->pen.count; pi++) {
 				struct PenaltyEntry *pe = &race->pen.slots[pi];
 				char chat[128];
-				if (!penalty_kind_is_dtsg(pe->kind))
+				if (pe->served || !penalty_kind_is_dtsg(pe->kind))
 					continue;
 				pe->laps_remaining--;
 				if (pe->laps_remaining == 0) {
