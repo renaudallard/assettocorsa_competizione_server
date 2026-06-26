@@ -251,9 +251,12 @@ penalty_set_tp(struct Server *s, int car_id, int32_t total_sec,
 			continue;
 		if (p->kind != PEN_TP5 && p->kind != PEN_TP15)
 			continue;
+		/*
+		 * Exe FUN_140125f50:85-93 updates only kind (+0x59) and
+		 * laps_remaining (+0x70) on an existing TP entry; reason
+		 * (+0x58) and category are left from the initial creation.
+		 */
 		p->kind = penalty_pen_kind_of(EXE_TP, collision, total_sec);
-		p->reason = reason;
-		p->category = category;
 		p->laps_remaining = total_sec;
 		p->issued_ms = mono_ms();
 		leaderboard_request_emit(s);
