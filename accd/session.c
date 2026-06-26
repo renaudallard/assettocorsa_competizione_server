@@ -1724,8 +1724,19 @@ stint_check_violations(struct Server *s)
 			if (skipped >= 0) {
 				log_info("Car %d driver %d never took a "
 				    "stint -> DQ", i, skipped);
+				/*
+				 * kunos materializes this as category 13
+				 * (DriverRanNoStint) but FUN_1400f03b0 has no
+				 * cat-13 DQ entry, so the 0x36 tail byte is 0.
+				 * accd's reason enum is crossed against the
+				 * kunos category labels (see handlers.c 0x41
+				 * map): REASON_EXCEEDED_DRIVER_STINT_LIMIT is
+				 * the one whose PEN_DQ wire value is 0, so it
+				 * is the correct reason here.  Category stays
+				 * 13 for the results.json label.
+				 */
 				(void)penalty_enqueue(s, i, EXE_DQ, 13, 0, 1,
-				    0, REASON_DRIVER_RAN_NO_STINT);
+				    0, REASON_EXCEEDED_DRIVER_STINT_LIMIT);
 				r->race_end_short_circuit = 1;
 				continue;
 			}
@@ -1761,9 +1772,18 @@ stint_check_violations(struct Server *s)
 				}
 			}
 			if (violated) {
+				/*
+				 * kunos materializes this as category 12
+				 * (ExceededDriverStintLimit); FUN_1400f03b0
+				 * cat-12 DQ -> wire 0x1c (28).  accd's crossed
+				 * reason enum yields 28 for PEN_DQ under
+				 * REASON_DRIVER_RAN_NO_STINT, so that is the
+				 * correct reason here.  Category stays 12 for
+				 * the results.json label.
+				 */
 				(void)penalty_enqueue(s, i, EXE_DQ, 12, 0,
 				    1, 0,
-				    REASON_EXCEEDED_DRIVER_STINT_LIMIT);
+				    REASON_DRIVER_RAN_NO_STINT);
 				r->race_end_short_circuit = 1;
 				continue;	/* already DQ'd */
 			}
