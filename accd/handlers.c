@@ -2751,7 +2751,7 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	 * on every 0x1e.
 	 *
 	 * Also update the clock drift accumulator (FUN_1400419e0:20-25).
-	 * drift += (server_delta - client_delta) on each new-seq packet.
+	 * drift += (client_delta - server_delta) on each new-seq packet.
 	 * Only runs after first pong (session_clock_seen).  drift_valid=0
 	 * after a best-pong reset — first packet after reset stores prev
 	 * timestamps without touching drift (mirrors exe's prev_seq=-1
@@ -2762,8 +2762,8 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 		double cli = (double)(int32_t)(uint32_t)client_ts_ms;
 
 		if (c->drift_valid)
-			c->drift_ms += (srv - c->drift_prev_server) -
-			    (cli - c->drift_prev_client);
+			c->drift_ms += (cli - c->drift_prev_client) -
+			    (srv - c->drift_prev_server);
 		c->drift_prev_server = srv;
 		c->drift_prev_client = cli;
 		c->drift_valid = 1;
