@@ -256,7 +256,7 @@ server_init(struct Server *s)
 	s->refuelling_time_fixed = 0;
 	s->pit_refuelling_required = 0;
 	s->pit_tyre_change_required = 0;
-	s->tyre_set_count = 1;
+	s->tyre_set_count = 50;	/* Kunos default; eventRules.json reduces it */
 	snprintf(s->car_group, sizeof(s->car_group), "FreeForAll");
 	lobby_init(&s->lobby);
 	for (int i = 0; i < ACC_MAX_CARS; i++) {

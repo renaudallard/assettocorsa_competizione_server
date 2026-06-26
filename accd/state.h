@@ -1213,7 +1213,7 @@ struct Server {
 	uint8_t			refuelling_time_fixed;	/* 0=variable (default) */
 	uint8_t			pit_refuelling_required;
 	uint8_t			pit_tyre_change_required;
-	uint8_t			tyre_set_count;		/* default 1 */
+	uint8_t			tyre_set_count;		/* default 50 (Kunos) */
 
 	/*
 	 * Per (track, carModel) BoP ballast / restrictor loaded from
