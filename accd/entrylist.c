@@ -24,7 +24,7 @@
  * SUCH DAMAGE.
  */
 /*
- * entrylist.c -- entrylist.json reader.
+ * entrylist.c: entrylist.json reader.
  *
  * Accepts either UTF-16 LE (the format accServer.exe writes) or
  * plain UTF-8 (so the file can be edited by hand).  Detection is
@@ -92,7 +92,7 @@ decode_cfg_bytes(const char *in, size_t inlen)
 	const char *inp;
 	size_t outsz, inrem, outrem;
 
-	/* Optional UTF-8 BOM -- strip it. */
+	/* Optional UTF-8 BOM: strip it. */
 	if (inlen >= 3 &&
 	    (unsigned char)in[0] == 0xef &&
 	    (unsigned char)in[1] == 0xbb &&
@@ -101,7 +101,7 @@ decode_cfg_bytes(const char *in, size_t inlen)
 		inlen -= 3;
 	}
 
-	/* No UTF-16 LE BOM -- return as UTF-8 verbatim. */
+	/* No UTF-16 LE BOM: return as UTF-8 verbatim. */
 	if (inlen < 2 ||
 	    (unsigned char)in[0] != 0xff ||
 	    (unsigned char)in[1] != 0xfe) {
@@ -194,7 +194,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 
 		car->car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
 		/*
-		 * Entrylist entries are templates -- the actual
+		 * Entrylist entries are templates: the actual
 		 * `used` flag is set when a client claims this
 		 * slot via the handshake.  Preloaded driver names,
 		 * ballast, restrictor, etc. survive that
@@ -347,8 +347,8 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 	 * car_model, team_name, drivers[], driver_count, ballast,
 	 * restrictor, ...).  Mirror by replicating the proto slot's
 	 * entry-level state into companion slots starting after the
-	 * last loaded entry.  Each member of the group — anchor and
-	 * companions — has team_entry_id == anchor_slot.  Standalone
+	 * last loaded entry.  Each member of the group (anchor and
+	 * companions) has team_entry_id == anchor_slot.  Standalone
 	 * single-driver entries leave team_entry_id at its -1 default
 	 * so every group-iteration path short-circuits to the legacy
 	 * 1:1 conn->car invariant.
@@ -378,7 +378,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 			 * Pcap (run_swap_multi.sh, 2026-05-13) shows
 			 * kunos's first 0x47 for the anchor car carries
 			 * [2, 2] for a 2-driver team.  Companions
-			 * (below) get [2, 1, 1, ...] — driver 0 at
+			 * (below) get [2, 1, 1, ...]: driver 0 at
 			 * state 2 plus driver 1+ at state 1 (REGISTERED
 			 * but-not-in-this-seat).
 			 */
@@ -437,7 +437,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 
 /*
  * Write a JSON escape of s into out (NUL-terminated).  Enough for
- * the fields we emit (names, steam IDs) — handles ASCII controls,
+ * the fields we emit (names, steam IDs); handles ASCII controls,
  * quote, backslash.  Caller's buffer must be big enough; we cap at
  * roughly 2x input.
  */
@@ -494,7 +494,7 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 		/*
 		 * Team-entry companion slots share the anchor's entry-
 		 * level fields (raceNumber, car_model, drivers[], ...).
-		 * Emit only once per group — at the anchor — so the next
+		 * Emit only once per group (at the anchor) so the next
 		 * load doesn't see each companion as a fresh entry.
 		 * team_entry_id == self means anchor; > anchor means
 		 * companion.

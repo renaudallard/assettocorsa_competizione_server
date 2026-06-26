@@ -24,7 +24,7 @@
  * SUCH DAMAGE.
  */
 /*
- * ratings.c -- local Safety / Trust rating store (see ratings.h).
+ * ratings.c: local Safety / Trust rating store (see ratings.h).
  */
 
 #define _POSIX_C_SOURCE 200809L
