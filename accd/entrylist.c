@@ -222,8 +222,9 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		car->forced_car_model = car->car_model;
 		if (car->car_model == 0xff)
 			car->car_model = 0;
+		/* exe ctor FUN_140103f90 seeds +0x6d to 1 (default on). */
 		car->override_car_model_custom = (uint8_t)
-		    (json_obj_get_int(e, "overrideCarModelForCustomCar", 0)
+		    (json_obj_get_int(e, "overrideCarModelForCustomCar", 1)
 		    != 0);
 		{
 			/*
