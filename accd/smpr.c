@@ -286,12 +286,9 @@ smpr_handle_connect(struct Server *s, struct Conn *c,
 	(void)register_all;	/* not used yet */
 	/*
 	 * Move out of CONN_UNAUTH so main.c's 30 s unauth-reaper
-	 * doesn't kill the connection.  SMPR clients never claim a
-	 * car slot (car_id stays -1) so gameplay broadcast loops
-	 * that gate on `c->car_id >= 0` already skip them; the few
-	 * loops that gate only on `c->state == CONN_AUTH` need an
-	 * additional `!c->is_smpr` filter (audited in tick.c +
-	 * bcast.c).
+	 * doesn't kill the connection.  SMPR clients are excluded from
+	 * gameplay broadcasts via the `!c->is_smpr` filter in bcast_all
+	 * and the periodic tick.c fan-out loops.
 	 */
 	c->state = CONN_AUTH;
 
