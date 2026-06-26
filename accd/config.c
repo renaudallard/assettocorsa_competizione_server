@@ -704,7 +704,7 @@ config_load(struct Server *s, const char *cfg_dir)
 			 * intermediates so an out-of-range JSON value is
 			 * clamped, not wrapped by the uint8_t cast.
 			 */
-			int at = json_obj_get_int(event, "ambientTemp", 22);
+			int at = json_obj_get_int(event, "ambientTemp", 26);
 			int tt = json_obj_get_int(event, "trackTemp", 0);
 
 			if (at < 12)
