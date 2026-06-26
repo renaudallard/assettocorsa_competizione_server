@@ -2681,16 +2681,6 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	car = &s->cars[c->car_id];
 	rt = &car->rt;
 
-	/* Mirror exe FUN_140042900:71-80: warn when the client clock
-	 * is ahead of the server clock by more than the threshold. */
-	{
-		uint32_t server_now32 = (uint32_t)mono_ms();
-		int threshold = s->legacy_netcode ? 25 : 5;
-		if ((int32_t)(client_ts_ms - server_now32) > threshold)
-			log_warn("onCarUpdate: timestamp %d ms in future",
-			    (int32_t)(client_ts_ms - server_now32));
-	}
-
 	/*
 	 * Drop outdated packets, mirroring exe FUN_140042900:
 	 *
@@ -2738,6 +2728,23 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 			    (unsigned)rt->last_timestamp_ms);
 			return 0;
 		}
+	}
+
+	/*
+	 * Mirror exe FUN_140042900:68-79: warn when the client clock,
+	 * adjusted by the connection RTT, is ahead of the server clock by
+	 * more than the threshold.  Placed after the outdated-drop gate so a
+	 * dropped packet never future-warns (the exe's drop gate returns
+	 * before this check), and the RTT term matches the exe's
+	 * uVar17 = client_ts + FUN_1400418b0(conn).  Log-only.
+	 */
+	{
+		int32_t server_now32 = (int32_t)mono_ms();
+		int32_t client_adj = (int32_t)(client_ts_ms + c->avg_rtt_ms);
+		int threshold = s->legacy_netcode ? 25 : 5;
+		if (client_adj - server_now32 > threshold)
+			log_warn("onCarUpdate: timestamp %d ms in future",
+			    client_adj - server_now32);
 	}
 
 	rt->packet_seq = seq;
