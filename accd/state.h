@@ -1243,9 +1243,9 @@ struct Server {
 	 * ServerState+0x14185 reduced ~1 Hz into +0xa0c14 (Avg Cpu) and
 	 * +0xa0c18 (Max Cpu).  Each sample = tick_run work_us / tick
 	 * interval; reduced to percent (x100) at keepalive time.  Window is
-	 * the last <=41 ticks like the exe (trimmed to 0x29).
+	 * the last <=40 ticks like the exe (trimmed to 0x28).
 	 */
-	float		cpu_ring[41];
+	float		cpu_ring[40];
 	uint8_t		cpu_ring_count;
 	uint8_t		cpu_ring_head;
 	uint8_t		cpu_avg_pct;
