@@ -200,8 +200,13 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		 * ballast, restrictor, etc. survive that
 		 * transition.
 		 */
-		car->race_number = json_obj_get_int(e, "raceNumber",
-		    (int)i);
+		/*
+		 * The exe ServerEntryListItem ctor (FUN_140103f90:74) seeds
+		 * raceNumber to -1 and keeps it when the key is absent.  A
+		 * forceEntryList slot missing raceNumber therefore emits
+		 * 0xffff on the wire, not the slot index.
+		 */
+		car->race_number = json_obj_get_int(e, "raceNumber", -1);
 		{
 			/*
 			 * The exe keeps forcedCarModel as a 32-bit value; we
