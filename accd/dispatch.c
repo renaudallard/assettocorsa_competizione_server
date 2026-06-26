@@ -758,6 +758,14 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			snprintf(body_txt, sizeof(body_txt),
 			    "Latency error: %d ms",
 			    isfinite(latency_ms) ? (int)latency_ms : 0);
+			/*
+			 * The exe (FUN_140027f80:504,526) stamps this chat
+			 * record with the server game clock (ms), not the
+			 * session start time; mirror with the session-relative
+			 * ms used by accd's other game_ms sites.
+			 */
+			int32_t game_ms = (int32_t)(mono_ms() -
+			    s->session.phase_started_ms);
 			bb_init(&out);
 			/*
 			 * chat_type 0 = player-chat lane (renders in the
@@ -769,7 +777,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 			if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
 			    wr_str_a(&out, from) == 0 &&
 			    wr_str_a(&out, body_txt) == 0 &&
-			    wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
+			    wr_i32(&out, game_ms) == 0 &&
 			    wr_u8(&out, 0) == 0)
 				(void)conn_send_framed(dst,
 				    out.data, out.wpos);
