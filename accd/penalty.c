@@ -445,6 +445,29 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 			 * sets local_res20='\b' on the 256 s threshold cross
 			 * (FUN_140125f50:99) before materialising the DQ.
 			 */
+			/*
+			 * Exe FUN_140125f50:96 calls FUN_140126b50 on the
+			 * DT/SG sheet before materialising the DQ.
+			 * FUN_140126b50 serves the active DT/SG entry (zeroes
+			 * the category/severity in the PenaltySheet header).
+			 * Mirror: mark all unserved DT/SG entries served so
+			 * penalty_total_ms does not double-count them as
+			 * post-race time and the ladder is reset.
+			 */
+			{
+				int j;
+				for (j = 0; j < race->pen.count; j++) {
+					struct PenaltyEntry *pe =
+					    &race->pen.slots[j];
+					if (!pe->served &&
+					    penalty_kind_is_dtsg(pe->kind)) {
+						pe->served = 1;
+						pe->laps_remaining = 0;
+					}
+				}
+			}
+			race->dtsg_ladder_sev = 0;
+			race->dtsg_ladder_cat = 0;
 			penalty_materialize(s, car_id, EXE_DQ, 0, 0,
 			    REASON_RACE_CONTROL, 8);
 			race->pen_state[EXE_DQ].severity = EXE_DQ;
