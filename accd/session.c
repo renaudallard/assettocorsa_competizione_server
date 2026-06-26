@@ -813,8 +813,9 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 			return -1;
 		if (la != lb)
 			return la < lb ? -1 : 1;
-		/* Exe FUN_140120c90:74 tiebreaks by session-time-of-best:
-		 * the lap set earlier ranks higher. */
+		/* Exe qualy comparator FUN_140120970 tiebreaks by
+		 * session-time-of-best: the lap set earlier ranks higher.
+		 * (FUN_140120c90 is the race comparator.) */
 		if (ra->best_lap_set_at_ms != rb->best_lap_set_at_ms)
 			return ra->best_lap_set_at_ms < rb->best_lap_set_at_ms
 			    ? -1 : 1;
