@@ -1402,6 +1402,14 @@ tick_run(struct Server *s)
 				s->session.last_emit_ts[k] =
 				    s->session.ts[k];
 			s->session.last_emit_valid = 1;
+			/*
+			 * Exe FUN_14002f710:772 sets the weather-emit timer
+			 * to -1.0 inside the 0x28 change block, forcing an
+			 * immediate 0x37 on the next tick.  This applies on
+			 * any change-driven emit, not only phase transitions.
+			 */
+			if (changed)
+				last_weather_ms = now_ms - CADENCE_WEATHER_MS;
 			last_state28_ms = now_ms;
 		}
 	}
