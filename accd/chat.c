@@ -651,7 +651,11 @@ chat_do_track(struct Server *s, const char *args,
 
 	snprintf(msg, sizeof(msg), "Event changed to %s", s->track);
 	log_info("admin: %s", msg);
-	chat_broadcast(s, msg, 4);
+	/*
+	 * The exe /track handler (FUN_140021680:566-596) only logs and
+	 * sends the unicast reply; clients learn of the change from the
+	 * weekend reset + welcome redelivery, not a 0x2b banner.
+	 */
 
 	if (reply != NULL)
 		snprintf(reply, replysz, "%s", msg);
