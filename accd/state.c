@@ -624,7 +624,14 @@ server_alloc_race_number(struct Server *s, int my_slot, int requested)
 		int cand = requested + off;
 		int taken = 0;
 
-		if (cand <= 0 || cand >= 1000)
+		/*
+		 * The exe offset loop (FUN_140025690:700-714) has only a >0
+		 * guard and no upper bound, so requested+off may land on
+		 * 1000..1008 and the exe accepts it.  requested is clamped to
+		 * <=999 above, so cand maxes at 1008 and fits the u16 wire
+		 * field with no overflow.
+		 */
+		if (cand <= 0)
 			continue;
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			const struct CarEntry *ec = &s->cars[i];
