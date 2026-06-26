@@ -122,8 +122,12 @@ penalty_category_label(uint8_t category)
 
 /*
  * Map a penalty_kind to the results.json penalty name.
- * penaltyValue (PenaltySheet+0x5c = param_3 in FUN_140125f50) is
- * always 0 in the exe; all callers pass 0 for param_3.
+ * penaltyValue is the dump-record +0x70 field (FUN_14010f470:46), fed
+ * from PenaltyEntry +0x70 = param_7 of FUN_140125f50, not +0x5c/param_3.
+ * For a post-race DT/SG->TP conversion FUN_140127440 passes
+ * param_7 = timeMultiplier * {30,40,50,60} seconds; the caller supplies
+ * that value.  This helper defaults it to 0 for the live penalties[]
+ * case, which accd does not reconstruct.
  */
 static void
 pen_kind_json(uint8_t kind, const char **name, int *value)
@@ -665,6 +669,12 @@ results_write(struct Server *s)
 				if (p->race_end_tp == 0)
 					continue;
 				pen_kind_json(p->race_end_tp, &pname, &pvalue);
+				/*
+				 * The exe emits the converted time penalty in
+				 * seconds (FUN_140127440 param_7); accd stores
+				 * it in ms, so divide by 1000.
+				 */
+				pvalue = (int)(p->race_end_tp_ms / 1000);
 				if (!prp_first)
 					fprintf(f, ",");
 				fprintf(f, "\n    {");
