@@ -647,10 +647,12 @@ penalty_clear(struct Server *s, int car_id)
 		return;
 	q = &s->cars[car_id].race.pen;
 	/*
-	 * Mirror exe FUN_140126b50: serve unserved DT/SG entries
+	 * Mirror exe FUN_140126b50: serve unserved DT/SG and DQ entries
 	 * (stamp cleared_lap, set served=1) so results.json reports
-	 * clearedInLap.  DQ entries are dropped (terminal, no serve
-	 * semantics).  TP entries are kept untouched.
+	 * clearedInLap.  Served DQ entries stay in the queue; the 0x36
+	 * tail scan in handshake.c skips served entries, so the wire
+	 * reflects no active penalty after the clear.  TP entries are
+	 * kept untouched.
 	 */
 	for (i = 0; i < q->count; i++) {
 		struct PenaltyEntry *p = &q->slots[i];
@@ -658,10 +660,8 @@ penalty_clear(struct Server *s, int car_id)
 		    p->kind == PEN_TP5  || p->kind == PEN_TP15 ||
 		    p->kind == PEN_TP30 || p->kind == PEN_TP40 ||
 		    p->kind == PEN_TP50 || p->kind == PEN_TP60;
-		if (!is_tp && p->kind == PEN_DQ)
-			continue;	/* drop DQ entries */
 		if (!is_tp && !p->served) {
-			/* Serve DT/SG in place so results.json gets clearedInLap. */
+			/* Serve DT/SG/DQ in place so results.json gets clearedInLap. */
 			p->served = 1;
 			p->cleared_lap =
 			    (int16_t)s->cars[car_id].race.lap_count;
@@ -690,7 +690,7 @@ penalty_clear(struct Server *s, int car_id)
 	memset(&s->cars[car_id].race.pen_state[EXE_DQ], 0,
 	    sizeof(*s->cars[car_id].race.pen_state));
 	/*
-	 * Mirror exe FUN_140126b50: after dropping the DQ entry, clear
+	 * Mirror exe FUN_140126b50: after serving the DQ entry, clear
 	 * the disqualified flag so the comparator stops ranking the car
 	 * last and the standings update reflects the cleared state.
 	 */
