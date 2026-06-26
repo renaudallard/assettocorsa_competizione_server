@@ -390,6 +390,13 @@ weather_eval(const struct WeatherStatus *w, uint32_t time_s,
 	 */
 	accum = w->base_rain;
 	new_cloud = w->base_clouds;
+	/*
+	 * Exe FUN_140116830 static path (lines 28-32): reads param_3+0x38
+	 * (pre-set to base_rain by the caller) as rain directly, with no
+	 * cloud->rain gate.  Mirror: initialise new_rain to base_rain so the
+	 * static path returns the configured value unchanged.
+	 */
+	new_rain = w->base_rain;
 	if (w->n_harmonics > 0 && w->n_sine > 0) {
 		int k;
 		float cos0 = w->cosine_coeffs[0];
@@ -408,17 +415,16 @@ weather_eval(const struct WeatherStatus *w, uint32_t time_s,
 		}
 		accum += dt * w->sine_coeffs[0] * WX_LIN_DRIFT;
 		new_cloud = clamp01(accum + w->base_clouds);
-	}
-
-	/* === Cloud → rain mapping */
-	if (new_cloud <= 0.6f || !w->is_dynamic) {
-		new_rain = 0.0f;
-	} else {
-		new_rain = (new_cloud - 0.6f) * 1.4875001f + 0.15f;
-		if (accum <= new_rain && accum <= 0.0f)
+		/* Cloud->rain gate: exe FUN_140116830:63-71, dynamic path only */
+		if (new_cloud <= 0.6f) {
 			new_rain = 0.0f;
-		else if (accum <= new_rain)
-			new_rain = accum;
+		} else {
+			new_rain = (new_cloud - 0.6f) * 1.4875001f + 0.15f;
+			if (accum <= new_rain && accum <= 0.0f)
+				new_rain = 0.0f;
+			else if (accum <= new_rain)
+				new_rain = accum;
+		}
 	}
 
 	/* === Ambient temperature */
