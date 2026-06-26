@@ -151,7 +151,7 @@ build_percar_body(struct ByteBuf *bb, struct CarEntry *car,
 	 * Car+0x50 is set by FUN_1400419e0:29 on each 0x1e ingest:
 	 *   Car+0x50 = (int)((double)best_rtt_ms + drift_ms)
 	 * where best_rtt_ms = RTT at the best pong (conn[0x280c3])
-	 * and drift_ms accumulates (client_delta - server_delta)
+	 * and drift_ms accumulates (server_delta - client_delta)
 	 * per 0x1e packet (conn[0x280d0]), reset on new best pong.
 	 * Receivers use this for the per-car ping HUD column.
 	 */
