@@ -1377,6 +1377,20 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		chat_reply(s, c,
 		    "This cmd was replaced by the formationLapType setting",
 		    4);
+	} else if (chat_prefix(text, "/manual")) {
+		/*
+		 * Bare "/manual" or "/manual <unknown>" handling from
+		 * FUN_140021680: token count < 2 -> "too few parameters";
+		 * unrecognized subcommand -> "unknown parameter".
+		 */
+		const char *arg = text + 7;
+		while (*arg == ' ')
+			arg++;
+		if (*arg == '\0') {
+			chat_reply(s, c, "too few parameters", 4);
+		} else {
+			chat_reply(s, c, "unknown parameter", 4);
+		}
 	} else if (chat_prefix(text, "/controllers")) {
 		/*
 		 * Send a 1-byte 0x5b probe to every authenticated
