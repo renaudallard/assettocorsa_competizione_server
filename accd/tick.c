@@ -72,6 +72,7 @@
 #include "smpr.h"
 #include "state.h"
 #include "tick.h"
+#include "handlers.h"
 #include "weather.h"
 
 /*
@@ -93,6 +94,7 @@
 #define CADENCE_WEATHER_MS		5000	/* 0x37 every 5 s */
 #define CADENCE_LEADERBOARD_MS		75000	/* 0x36 async-coalesce */
 #define CADENCE_RATINGS_MS		81000	/* 0x4e debounce (.rdata) */
+#define CADENCE_SWAP_SYNC_MS		10000	/* swap-state re-sync */
 
 /*
  * Write the 63-byte per-car body used by both 0x1e and each
@@ -1675,6 +1677,25 @@ tick_run(struct Server *s)
 	 * drives the client's in-game clock, so it must be sent
 	 * unconditionally (matching the Kunos 5-second cadence).
 	 */
+	/*
+	 * Periodic swap-state re-sync for multi-driver team entries.
+	 * Exe FUN_14002e8d0:173-181 re-broadcasts 0x47 every 10 s for
+	 * every connection with an assigned car slot when any team
+	 * entry list is non-empty.  accd's broadcast_swap_state gates
+	 * on driver_count > 1, so single-driver slots are silent.
+	 */
+	{
+		static uint64_t last_swap_sync_ms = 0;
+		if (now_ms - last_swap_sync_ms >= CADENCE_SWAP_SYNC_MS) {
+			int si;
+			for (si = 0; si < ACC_MAX_CARS; si++) {
+				if (s->cars[si].used)
+					broadcast_swap_state(s, &s->cars[si]);
+			}
+			last_swap_sync_ms = now_ms;
+		}
+	}
+
 	if (now_ms - last_weather_ms >= CADENCE_WEATHER_MS) {
 		struct ByteBuf bb;
 
