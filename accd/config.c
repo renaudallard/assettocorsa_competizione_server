@@ -476,10 +476,11 @@ config_load(struct Server *s, const char *cfg_dir)
 		}
 		s->randomize_track_when_empty = (uint8_t)json_obj_get_int(
 		    settings, "randomizeTrackWhenEmpty", 0);
+		/* exe ServerSettings ctor seeds both DLC-track flags = 1. */
 		s->use_igt_dlc_tracks = (uint8_t)json_obj_get_int(
-		    settings, "useIgtDlcTracks", 0);
+		    settings, "useIgtDlcTracks", 1);
 		s->use_bgt_dlc_tracks = (uint8_t)json_obj_get_int(
-		    settings, "useBgtDlcTracks", 0);
+		    settings, "useBgtDlcTracks", 1);
 		log_info("settings.json: randomizeTrackWhenEmpty=%d "
 		    "useIgtDlcTracks=%d useBgtDlcTracks=%d",
 		    s->randomize_track_when_empty, s->use_igt_dlc_tracks,
