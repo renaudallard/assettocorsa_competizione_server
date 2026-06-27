@@ -893,8 +893,13 @@ config_load(struct Server *s, const char *cfg_dir)
 			s->driver_stint_time_s = (uint32_t)stint_sec;
 			s->mandatory_pit_count = (uint8_t)pit_count;
 			s->mandatory_swap_required = swap_req ? 1 : 0;
+			/*
+			 * exe stores qualifyStandingType raw; the handbook
+			 * documents 2 (average lap, Endurance multi-Q).  Accept
+			 * 0..2 instead of forcing 2 down to 1.
+			 */
 			s->qualify_standing_type = (uint8_t)
-			    (qst >= 0 && qst <= 1 ? qst : 1);
+			    (qst >= 0 && qst <= 2 ? qst : 1);
 			s->pit_window_length_s = pit_window;
 			s->max_total_driving_time_s = max_drv_time;
 			s->max_drivers_count = (uint8_t)max_drvs;
