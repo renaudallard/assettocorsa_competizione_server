@@ -371,7 +371,7 @@ the server browser will show 24, not 30.
     "allowAutoDQ": 1,
     "lanDiscovery": 1,
     "useAsyncLeaderboard": 0,
-    "unsafeRejoin": 1,
+    "unsafeRejoin": 0,
     "ignorePrematureDisconnects": 0,
     "dumpLeaderboards": 0,
     "configVersion": 1
@@ -387,10 +387,10 @@ the server browser will show 24, not 30.
 | `registerToLobby` | `0` | `1` lists the server publicly in the ACC browser. |
 | `lanDiscovery` | `1` | `0` closes the UDP 8999 discovery responder, so the server is invisible to the client's LAN and direct-IP find; it stays reachable via lobby registration or a known address and port. |
 | `useAsyncLeaderboard` | `0` | Leaderboard fan-out is event-driven (every standings change) in both modes; `1` also runs a 75 s heartbeat on top as a defense-in-depth refresh. |
-| `unsafeRejoin` | `1` | `0` refuses fresh mid-race handshakes. |
+| `unsafeRejoin` | `0` | Default refuses fresh mid-race handshakes (race locked), matching the exe; `1` allows them.  Inverse of `isRaceLocked`, which overrides it when present. |
 | `formationLapType` | `3` | Race-start variant (matches exe ctor default). `3` / `5` = silent path (`FUN_14012f300`, 1000 ms phase-4 window, no chat — public-server default). `1` / `4` = verbose path (`FUN_14012f4a0`, random 3000-5500 ms window, "Race start initialized" chat — private servers only; the exe force-downgrades `1` to `3` on public). `2` is rejected and snapped to `3` by both the exe and accd. |
 | `isPrepPhaseLocked` | `0` | `1` freezes the preparation phase; returning drivers still pass (same knob as the `/lockprep` admin command). |
-| `shortFormationLap` | `0` | `1` shortens the formation lap (parsed and passed through; exe forces `1` on public servers). |
+| `shortFormationLap` | `1` | Shortens the formation lap (parsed and passed through; exe forces `1` on public servers). |
 | `writeLatencyFileDumps` | `0` | `1` writes `results/latency_<timestamp>_<P|Q|R>.csv` — per-keepalive row per authenticated conn with `mono_ms,conn_id,steam_id,avg_rtt_ms,clock_offset_ms`.  Rotates at each session boundary. |
 | `latencyStrategy` | `0` | Relay-timestamp projection mode: `0` = slewed average-RTT (Mode B, the dedicated-server default), non-zero = min-RTT (Mode A).  Runtime-togglable via `/latencymode`. |
 | `doDriverSwapBroadcast` | `1` | `0` suppresses the 0x47 driver-swap-state fan-out; swap progress stays on the swapping car. |

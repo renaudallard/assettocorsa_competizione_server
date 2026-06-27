@@ -100,10 +100,10 @@ Server identity, access control, and policy toggles.
     "allowAutoDQ": 1,
     "lanDiscovery": 1,
     "useAsyncLeaderboard": 0,
-    "unsafeRejoin": 1,
+    "unsafeRejoin": 0,
     "formationLapType": 3,
     "isPrepPhaseLocked": 0,
-    "shortFormationLap": 0,
+    "shortFormationLap": 1,
     "writeLatencyFileDumps": 0,
     "latencyStrategy": 0,
     "doDriverSwapBroadcast": 1,
@@ -135,10 +135,12 @@ the exe's fire-on-dirty behaviour).
 Set 1 to coalesce the broadcast to a periodic cadence, trading
 fan-out CPU for up to 75 s of stale standings on slow clients.
 .It Va unsafeRejoin
-Default 1.
+Default 0 (race locked, matching the exe isRaceLocked default).
 When 0, fresh handshakes during an active race are rejected with
-REJECT_BAD_SESSION.
+REJECT_BAD_SESSION; 1 allows them.
 Returning drivers (matching Steam ID) always pass.
+.Va isRaceLocked
+overrides this when present.
 .It Va formationLapType
 Default 3 (matches exe ctor FUN_14000de10).
 Race-start variant.
@@ -161,7 +163,7 @@ rejected; same state as the
 .Ic /lockprep
 admin command.
 .It Va shortFormationLap
-Default 0.
+Default 1.
 Parsed and stored; the exe forces 1 on public servers.
 .It Va writeLatencyFileDumps
 Default 0.
