@@ -231,7 +231,9 @@ config_load(struct Server *s, const char *cfg_dir)
 	s->password[0] = '\0';
 	s->admin_password[0] = '\0';
 	s->spectator_password[0] = '\0';
-	snprintf(s->server_name, sizeof(s->server_name), "accd");
+	/* exe ServerSettings ctor default (also the Kunos sample value). */
+	snprintf(s->server_name, sizeof(s->server_name),
+	    "ACC Server (please edit settings.json)");
 	snprintf(s->track, sizeof(s->track), "monza");
 
 	configuration = load_json(cfg_dir, "configuration.json");
