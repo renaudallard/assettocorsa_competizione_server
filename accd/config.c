@@ -882,8 +882,13 @@ config_load(struct Server *s, const char *cfg_dir)
 				pit_count = 0;
 			if (pit_count > 99)
 				pit_count = 99;
-			if (max_drvs < 1)
-				max_drvs = 1;
+			/*
+			 * exe stores maxDriversCount raw with no lower bound;
+			 * the field is wire-only (RaceRules emit), so mirror it.
+			 * Keep the upper cap at 255 since accd stores it as u8.
+			 */
+			if (max_drvs < 0)
+				max_drvs = 0;
 			if (max_drvs > 255)
 				max_drvs = 255;
 			if (tyre_sets < 1)
