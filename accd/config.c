@@ -751,8 +751,9 @@ config_load(struct Server *s, const char *cfg_dir)
 			    "cloudLevel", 0.3);
 			float rain = (float)json_obj_get_num(event,
 			    "rain", 0.0);
+			/* exe event-config ctor seeds weatherRandomness = 1. */
 			int randomness = json_obj_get_int(event,
-			    "weatherRandomness", 0);
+			    "weatherRandomness", 1);
 			float ws_mean = (float)json_obj_get_num(event,
 			    "windSpeedMean", 0.0);
 			float ws_dev = (float)json_obj_get_num(event,
