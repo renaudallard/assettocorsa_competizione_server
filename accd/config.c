@@ -746,8 +746,9 @@ config_load(struct Server *s, const char *cfg_dir)
 			 * value or the default if the key is absent or
 			 * not numeric.
 			 */
+			/* exe event-config ctor seeds cloudLevel = 0.3. */
 			float clouds = (float)json_obj_get_num(event,
-			    "cloudLevel", 0.0);
+			    "cloudLevel", 0.3);
 			float rain = (float)json_obj_get_num(event,
 			    "rain", 0.0);
 			int randomness = json_obj_get_int(event,
