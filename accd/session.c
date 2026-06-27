@@ -1140,11 +1140,15 @@ session_tick(struct Server *s)
 				}
 				/* Exe FUN_140042890 (param_2==0 path):
 				 * eligible requires Track flag AND no
-				 * HasCut (car+0x1e8 & 1 == 0); a car
-				 * already cut cannot convert its lap. */
+				 * HasCut (car+0x1e8 & 1 == 0) AND the
+				 * car+0x1ec lap-progress counter <= 10000
+				 * (the third conjunct, an unsigned-wrap test
+				 * on the trailing 0x1e int16); a car already
+				 * cut or past the counter cannot convert. */
 				if (car->race.on_track &&
 				    !car->race.in_pit &&
-				    !(car->race.car_field & 0x0001)) {
+				    !(car->race.car_field & 0x0001) &&
+				    car->rt.scalar_1ec <= 10000) {
 					car->race.quali_eligible_to_finish = 1;
 					eligible++;
 				} else {
@@ -1223,11 +1227,12 @@ session_tick(struct Server *s)
 					still_racing++;
 			} else {
 				/* Exe FUN_140042890 (param_2==0, non-race):
-				 * eligible iff on_track && !(car+0x1e8 & 1).
-				 * in_pit is redundant (in-pit cars have
-				 * on_track=0). */
+				 * eligible iff on_track && !(car+0x1e8 & 1)
+				 * && car+0x1ec <= 10000.  in_pit is redundant
+				 * (in-pit cars have on_track=0). */
 				if (car->race.on_track &&
-				    !(car->race.car_field & 0x0001))
+				    !(car->race.car_field & 0x0001) &&
+				    car->rt.scalar_1ec <= 10000)
 					still_racing++;
 			}
 		}
