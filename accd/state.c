@@ -233,7 +233,7 @@ server_init(struct Server *s)
 	s->lan_fd = -1;
 	s->allow_auto_dq = 1;
 	s->use_async_leaderboard = 0;
-	s->unsafe_rejoin = 1;
+	s->unsafe_rejoin = 0;	/* exe isRaceLocked default 1 (locked) */
 	s->legacy_netcode = 1;
 	s->ignore_premature_disconnects = 1;
 	s->formation_trigger_start = 0.80f;
