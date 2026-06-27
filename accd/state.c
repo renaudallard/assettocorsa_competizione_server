@@ -240,7 +240,7 @@ server_init(struct Server *s)
 	s->green_trigger_start = 0.89f;
 	s->green_trigger_end = 0.96f;
 	s->formation_lap_type = 3;
-	s->short_formation_lap = 0;
+	s->short_formation_lap = 1;	/* exe ServerSettings ctor default */
 	s->write_latency_dumps = 0;
 	s->do_driver_swap_broadcast = 1;
 	s->session_overtime_s = 120;
