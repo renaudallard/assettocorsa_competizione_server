@@ -273,8 +273,9 @@ config_load(struct Server *s, const char *cfg_dir)
 	    "lanDiscovery", s->lan_discovery);
 	s->stats_udp_port = json_obj_get_int(configuration,
 	    "serverDiagnosticsUdpPort", 0);
+	/* exe ServerConfiguration ctor seeds configVersion = 1. */
 	s->configuration_version = (uint32_t)json_obj_get_int(
-	    configuration, "configVersion", 0);
+	    configuration, "configVersion", 1);
 	/*
 	 * registerToLobby lives in configuration.json (exe FUN_1401030e0:165);
 	 * the settings.json reader FUN_140106300 never looks at it.  Reading it
