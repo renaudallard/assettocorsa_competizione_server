@@ -1067,10 +1067,22 @@ config_load(struct Server *s, const char *cfg_dir)
 
 		assist = load_json(cfg_dir, "assistRules.json");
 		if (assist != NULL) {
-			s->assist.stability_control_max = (uint8_t)
-			    json_obj_get_int(assist,
-				"stabilityControlLevelMax",
-				s->assist.stability_control_max);
+			{
+				/*
+				 * exe clamps the stabilityControlLevelMax / 100
+				 * ratio to [0.0, 1.0] (FUN_14002aca0:457-465);
+				 * clamp the percentage to [0,100] on load so a
+				 * value > 100 does not emit > 1.0f on the wire.
+				 */
+				int sc = json_obj_get_int(assist,
+				    "stabilityControlLevelMax",
+				    s->assist.stability_control_max);
+				if (sc < 0)
+					sc = 0;
+				if (sc > 100)
+					sc = 100;
+				s->assist.stability_control_max = (uint8_t)sc;
+			}
 			s->assist.disable_autosteer = (uint8_t)
 			    json_obj_get_int(assist, "disableAutosteer",
 				s->assist.disable_autosteer);
