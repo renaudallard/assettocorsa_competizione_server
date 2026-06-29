@@ -692,6 +692,7 @@ weather_track_base_grip(const char *track)
 		{ "silverstone",     0.97f },
 		{ "barcelona",       0.97f },
 		{ "kyalami",         0.97f },
+		{ "red_bull_ring",   0.97f },
 		{ "oulton_park",     0.97f },
 		{ "snetterton",      0.97f },
 		{ "nurburgring_24h", 0.97f },
