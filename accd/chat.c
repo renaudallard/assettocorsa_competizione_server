@@ -388,10 +388,13 @@ chat_do_kick(struct Server *s, struct Conn *c, const char *args,
 	(void)penalty_enqueue(s, car_id, EXE_DQ, 0, 0, 0, 0, 0);
 
 	/*
-	 * Exe FUN_14001dae0 builds the banner as "#<raceNumber> has been
-	 * kicked/banned from the server" (DAT_140149bc4 "#" + the car's
-	 * race number), not the driver name.  car_num is the race number
-	 * the admin typed, which resolved to this car.
+	 * Exe FUN_14001dae0 builds the banner as "#<raceNumber>
+	 * <DriverInfo> has been kicked/banned from the server" — it appends
+	 * a driver-info name segment (FUN_14000d110 from the conn driver
+	 * block) between the race number and "has been".  accd emits only
+	 * "#<raceNumber> has been ..."; the exe's DriverInfo format is not
+	 * pinned from the decomp, so the name segment is omitted rather than
+	 * guessed.  car_num is the race number the admin typed.
 	 */
 	snprintf(chat, sizeof(chat),
 	    permanent ? "#%d has been banned from the server"
