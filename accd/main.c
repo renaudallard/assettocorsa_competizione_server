@@ -230,8 +230,9 @@ handle_udp(struct Server *s)
 	 * car updates at ~18 Hz plus 0x13/0x16 keepalives, so the
 	 * UDP socket can accumulate dozens of packets between two
 	 * polls; reading one and looping back adds a poll roundtrip
-	 * per packet and pushes the fan-out latency up.  Cap at 256
-	 * to avoid starving TCP and the tick during a UDP flood.
+	 * per packet and pushes the fan-out latency up.  Cap at 50
+	 * (the exe's per-cycle UDP drain cap) to avoid starving TCP and
+	 * the tick during a UDP flood.
 	 */
 	for (;;) {
 		socklen_t fromlen = sizeof(from);
