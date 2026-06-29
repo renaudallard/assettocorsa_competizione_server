@@ -501,6 +501,12 @@ build_keepalive_pkt(unsigned char pkt[15], uint8_t msg_id,
 	pkt[10] = (unsigned char)((max_ping >> 8) & 0xff);
 	pkt[11] = cpu_avg;
 	pkt[12] = cpu_max;
+	/*
+	 * Bytes 13/14 are the avg/min connection-QoS percentages.  The exe
+	 * derives them per-conn (FUN_140042790) and aggregates; accd does not
+	 * track QoS, so it emits a fixed 100 (= perfect) stub.  Intentional:
+	 * QoS is an informational HUD field with no gameplay effect.
+	 */
 	pkt[13] = 100;
 	pkt[14] = 100;
 }
