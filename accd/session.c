@@ -337,6 +337,15 @@ session_reset(struct Server *s, uint8_t session_index)
 		 * defaultGridPosition when no qualifying precedes the race,
 		 * never the practice finish order.
 		 */
+		/*
+		 * Clear stale grid slots first so the defaultGridPosition
+		 * collision check (server_validate_default_grid) only sees
+		 * slots assigned earlier in this pass, mirroring the exe's
+		 * per-join scan instead of false-matching last session's grid.
+		 */
+		for (i = 0; i < ACC_MAX_CARS; i++)
+			if (s->cars[i].driver_count > 0)
+				s->cars[i].race.grid_position = -1;
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct CarEntry *car = &s->cars[i];
 			int16_t g = -1;
@@ -350,7 +359,8 @@ session_reset(struct Server *s, uint8_t session_index)
 			}
 			if (g < 0 && prior < 0 &&
 			    car->default_grid_position >= 0)
-				g = (int16_t)car->default_grid_position;
+				g = (int16_t)server_validate_default_grid(s, i,
+				    car->default_grid_position);
 			car->race.grid_position = g;
 		}
 		for (i = 0; i < ACC_MAX_CARS; i++) {

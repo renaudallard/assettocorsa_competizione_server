@@ -598,6 +598,49 @@ server_find_grid_slot(struct Server *s)
 	return -1;
 }
 
+/*
+ * Validate an entrylist defaultGridPosition (0-based) against the live grid,
+ * mirroring the exe FUN_140025690:612-637.  Returns dgp when it is free (no
+ * other used car with a different race number already holds that slot) and
+ * within the track's private pit count; otherwise -1 so the caller falls back
+ * to server_find_grid_slot.  car_id is the joining car's slot index.
+ */
+int
+server_validate_default_grid(struct Server *s, int car_id, int dgp)
+{
+	int i, is_private, pit, my_num;
+
+	if (dgp < 0 || car_id < 0 || car_id >= ACC_MAX_CARS)
+		return -1;
+	my_num = s->cars[car_id].race_number;
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		const struct CarEntry *ce = &s->cars[i];
+
+		if (i == car_id || !ce->used)
+			continue;
+		/*
+		 * exe :620 — another car on this slot with a different race
+		 * number (or this car has none) means the slot is taken.
+		 */
+		if (ce->race.grid_position == dgp &&
+		    (ce->race_number != my_num || my_num < 0)) {
+			log_warn("EntryList defaultGridPosition %d for race "
+			    "number %d is already occupied", dgp, my_num);
+			return -1;
+		}
+	}
+	/* exe :632-637 — clamp to the track's private pit count. */
+	is_private = !s->register_to_lobby || s->is_cp_server ||
+	    s->is_cp_inv_server;
+	pit = track_pit_count(s->track, is_private);
+	if (dgp > pit) {
+		log_warn("EntryList defaultGridPosition %d for car %d exceeded "
+		    "the track's pit count %d", dgp, car_id, pit);
+		return -1;
+	}
+	return dgp;
+}
+
 int
 server_alloc_race_number(struct Server *s, int my_slot, int requested)
 {

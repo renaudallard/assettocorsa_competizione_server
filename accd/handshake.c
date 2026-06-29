@@ -3090,14 +3090,19 @@ post_slot_assignment:
 		 * (server_find_grid_slot).
 		 */
 		if (car->race.grid_position < 0) {
-			if (car->default_grid_position >= 0) {
-				car->race.grid_position =
-				    (int16_t)car->default_grid_position;
-			} else {
-				int g = server_find_grid_slot(s);
-				if (g >= 0)
-					car->race.grid_position = (int16_t)g;
-			}
+			/*
+			 * exe FUN_140025690:612-637 validates the configured
+			 * defaultGridPosition (collision + pit-count) and falls
+			 * back to server_find_grid_slot when it is unset, taken,
+			 * or out of range.
+			 */
+			int g = server_validate_default_grid(s,
+			    (int)(car - s->cars),
+			    car->default_grid_position);
+			if (g < 0)
+				g = server_find_grid_slot(s);
+			if (g >= 0)
+				car->race.grid_position = (int16_t)g;
 		}
 		/* accweb regex: ^\s*Car (\d+) Pos (\d+)$  -- grid slot.
 		 * Emit unconditionally on successful handshake; the

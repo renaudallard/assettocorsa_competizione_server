@@ -1335,6 +1335,7 @@ int	server_used_car_count(const struct Server *s);
  * accServer.exe FUN_140021090.
  */
 int	server_find_grid_slot(struct Server *s);
+int	server_validate_default_grid(struct Server *s, int car_id, int dgp);
 
 /*
  * Pick a unique race number for a joining car.  Mirrors the loop
