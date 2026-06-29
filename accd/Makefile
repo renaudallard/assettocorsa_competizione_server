@@ -155,7 +155,7 @@ handshake.o: handshake.c bcast.h state.h io.h lobby.h msg.h ratings.h \
 io.o: io.c io.h log.h
 json.o: json.c json.h
 lan.o: lan.c io.h lan.h state.h lobby.h msg.h log.h prim.h
-lobby.o: lobby.c bcast.h state.h io.h lobby.h msg.h chat.h log.h \
+lobby.o: lobby.c bans.h state.h io.h lobby.h msg.h bcast.h chat.h log.h \
  penalty.h prim.h session.h
 log.o: log.c log.h
 monitor.o: monitor.c bcast.h state.h io.h lobby.h msg.h log.h monitor.h \
