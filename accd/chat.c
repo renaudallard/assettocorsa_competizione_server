@@ -181,7 +181,7 @@ void
 chat_do_bop(struct Server *s, const char *args, int is_ballast,
     char *reply, size_t replysz)
 {
-	int car_num, value, car_id;
+	int car_num, value, raw_value, car_id;
 	struct CarEntry *car;
 	struct ByteBuf out;
 	char chat[128];
@@ -204,6 +204,12 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 		if (end == args)
 			goto bad_syntax;
 		value = (int)(lv > 1000L ? 1000L : lv < -1000L ? -1000L : lv);
+		/*
+		 * The exe's "Assigned ..." reply echoes the raw typed value
+		 * (FUN_14001dae0:493 uses local_258[0]), while the clamped
+		 * value is what it stores and sends in the 0x53 BoP update.
+		 */
+		raw_value = value;
 	}
 	car_id = chat_car_by_racenum(s,car_num);
 	if (car_id < 0) {
@@ -219,14 +225,14 @@ chat_do_bop(struct Server *s, const char *args, int is_ballast,
 		if (value < -40) value = -40;
 		car->ballast_kg = (int8_t)value;
 		snprintf(chat, sizeof(chat),
-		    "Assigned %d kg to car #%d", value, car_num);
+		    "Assigned %d kg to car #%d", raw_value, car_num);
 	} else {
 		/* Handbook V: restrictor 0..20 %. */
 		if (value > 20) value = 20;
 		if (value < 0) value = 0;
 		car->restrictor = (float)value / 100.0f;
 		snprintf(chat, sizeof(chat),
-		    "Assigned %d %% to car #%d", value, car_num);
+		    "Assigned %d %% to car #%d", raw_value, car_num);
 	}
 
 	/*
