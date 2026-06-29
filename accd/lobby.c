@@ -108,6 +108,7 @@ uint32_t arc4random_uniform(uint32_t);
 #endif
 #include <time.h>
 
+#include "bans.h"
 #include "bcast.h"
 #include "chat.h"
 #include "io.h"
@@ -1349,6 +1350,16 @@ lobby_dispatch_message(struct LobbyClient *l, struct Server *s,
 			log_warn("lobby: 0xf4 body parse failed (%zu B)", len);
 			break;
 		}
+		/*
+		 * exe FUN_1400251b0:44-48 pushes the steam_id into the
+		 * persistent block-set unconditionally (before the car
+		 * lookup), and FUN_140025690:281,296 screens that set on
+		 * every join ("player was banned").  Persist the ban first so
+		 * an offline / about-to-reconnect player is screened out even
+		 * when no live car currently matches.
+		 */
+		if (bans_add(&s->bans, s1) == 0)
+			bans_save(&s->bans, s->cfg_dir);
 		/*
 		 * Two-pass match.  Pass 1: a slot whose drivers[0] (the
 		 * connecting driver, written by handshake) has this
