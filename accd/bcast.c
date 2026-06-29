@@ -127,12 +127,12 @@ conn_send_framed(struct Conn *c, const void *body, size_t len)
 
 	/*
 	 * Fast path: queue is empty, push header + body in one
-	 * writev() syscall.  The Kunos exe chunks outbound TCP via
-	 * a 256-byte send() loop (FUN_14004e400 is its sole send
-	 * call site, invoked repeatedly per frame); writev coalesces
-	 * hdr + body into a single kernel entry with identical wire
-	 * semantics.  On EAGAIN or short write, queue the remainder
-	 * in c->tx for drain-on-POLLOUT.
+	 * writev() syscall.  The Kunos exe sends each length-prefixed
+	 * frame with a single send() (FUN_14004eb00, whose sole caller
+	 * is the framer FUN_14004cc50 — one send per frame, not a loop);
+	 * accd's writev of [hdr][body] in one syscall is wire-identical.
+	 * On EAGAIN or short write, queue the remainder in c->tx for
+	 * drain-on-POLLOUT.
 	 */
 	if (queued_before == 0) {
 		struct iovec iov[2];
