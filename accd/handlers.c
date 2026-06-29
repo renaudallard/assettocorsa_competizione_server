@@ -2732,15 +2732,17 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 
 	/*
 	 * Mirror exe FUN_140042900:68-79: warn when the client clock,
-	 * adjusted by the connection RTT, is ahead of the server clock by
-	 * more than the threshold.  Placed after the outdated-drop gate so a
-	 * dropped packet never future-warns (the exe's drop gate returns
-	 * before this check), and the RTT term matches the exe's
-	 * uVar17 = client_ts + FUN_1400418b0(conn).  Log-only.
+	 * projected to server time, is ahead of the server clock by more
+	 * than the threshold.  The exe's projection term is
+	 * uVar17 = client_ts + FUN_1400418b0(conn), and FUN_1400418b0
+	 * returns drift + session-base-offset (NOT the round-trip time),
+	 * the same value session_clock_offset_ms + drift_ms holds here.
+	 * Log-only.
 	 */
 	{
 		int32_t server_now32 = (int32_t)mono_ms();
-		int32_t client_adj = (int32_t)(client_ts_ms + c->avg_rtt_ms);
+		int32_t client_adj = (int32_t)((int64_t)client_ts_ms +
+		    c->session_clock_offset_ms + (int64_t)c->drift_ms);
 		int threshold = s->legacy_netcode ? 25 : 5;
 		if (client_adj - server_now32 > threshold)
 			log_warn("onCarUpdate: timestamp %d ms in future",
