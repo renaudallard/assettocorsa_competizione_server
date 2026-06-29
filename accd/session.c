@@ -798,7 +798,8 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 
 	/*
 	 * DQ'd cars always sort last regardless of lap count.
-	 * Mirrors FUN_140120c90 key 1: FUN_140117300 bitmask check on
+	 * Mirrors the first key of both FUN_140120970 (race) and
+	 * FUN_140120c90 (qualy/practice): FUN_140117300 bitmask check on
 	 * the active penalty wire code.  accd's disqualified flag is set
 	 * by penalty_enqueue when exe_kind == EXE_DQ, which is the same
 	 * condition the exe's bitmask tests for.
@@ -808,8 +809,8 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 
 	/*
 	 * Retired cars sort after active cars, for both race and P/Q.
-	 * Mirrors key 2 in both FUN_140120c90 (race) and FUN_140120970
-	 * (qualy): bit 6 (0x40) of the per-car race flags byte, applied
+	 * Mirrors key 2 in both FUN_140120970 (race) and FUN_140120c90
+	 * (qualy/practice): bit 6 (0x40) of the per-car race flags byte, applied
 	 * before any timing key.
 	 */
 	{
@@ -831,9 +832,9 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 			return -1;
 		if (la != lb)
 			return la < lb ? -1 : 1;
-		/* Exe qualy comparator FUN_140120970 tiebreaks by
+		/* Exe qualy comparator FUN_140120c90 tiebreaks by
 		 * session-time-of-best: the lap set earlier ranks higher.
-		 * (FUN_140120c90 is the race comparator.) */
+		 * (FUN_140120970 is the race comparator.) */
 		if (ra->best_lap_set_at_ms != rb->best_lap_set_at_ms)
 			return ra->best_lap_set_at_ms < rb->best_lap_set_at_ms
 			    ? -1 : 1;
@@ -857,10 +858,12 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (ra->lap_count != rb->lap_count)
 		return (int)rb->lap_count - (int)ra->lap_count;
 	/*
-	 * Mirrors FUN_140120c90 Key3: session-clock at last S/F crossing.
-	 * The race sort does not add TP (unlike the qualy sort FUN_140120970
-	 * Key6); unserved penalties carry no live sort weight and are
-	 * converted to TP at race end.
+	 * Mirrors FUN_140120970 KEY[5]: session-clock at last S/F crossing.
+	 * The exe race sort folds unserved TP into this tiebreak; accd
+	 * deliberately does not - penalties carry no live sort weight and are
+	 * converted to TP at race end (a documented simplification, along with
+	 * the exe's mid-lap split-progress key that accd omits before this
+	 * race-time tiebreak).  The qualy comparator is FUN_140120c90.
 	 */
 	if (ra->race_time_ms != rb->race_time_ms)
 		return ra->race_time_ms < rb->race_time_ms ? -1 : 1;
