@@ -2768,7 +2768,13 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	 * on every 0x1e.
 	 *
 	 * Also update the clock drift accumulator (FUN_1400419e0:20-25).
-	 * drift += (client_delta - server_delta) on each new-seq packet.
+	 * drift += (client_delta - server_delta).  The exe runs this before
+	 * its drop gate, gated on a seq change; accd runs it after the
+	 * outdated-drop gate above, which only passes strictly-newer
+	 * timestamps, so drift accumulates on the same new-timestamp (hence
+	 * new-seq) packets for in-order traffic.  The only divergence is a
+	 * reordered/outdated packet, which the exe would still fold into
+	 * drift but accd skips (cleaner, no late-packet drift noise).
 	 * Only runs after first pong (session_clock_seen).  drift_valid=0
 	 * after a best-pong reset — first packet after reset stores prev
 	 * timestamps without touching drift (mirrors exe's prev_seq=-1
