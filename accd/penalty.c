@@ -871,6 +871,19 @@ penalty_convert_race_end(struct PenaltyQueue *q, int16_t lap_count,
 	if (q == NULL)
 		return;
 	/*
+	 * KNOWN DIVERGENCE (not mirrored): the exe FUN_140127440 routes each
+	 * converted DT/SG through the live TP accumulator (FUN_140125f50
+	 * param_5=5), so a converted race-end TP folds onto any prior TP and
+	 * can cross the 256 s threshold to escalate into a DQ.  accd keeps the
+	 * conversion in-place (race_end_tp on the original entry) and does NOT
+	 * feed pen_state[EXE_TP].counter, so that escalation is skipped.
+	 * Routing it through the accumulator here would double-count the
+	 * post-race time (penalty_total_ms reads both race_end_tp and the TP
+	 * slot); fixing it correctly needs the penalty pcap harness
+	 * (run_tp_accum.sh / run_race_end.sh).  Only reachable with 256 s+ of
+	 * combined penalties, where the car finishes last either way.
+	 */
+	/*
 	 * An unserved DT/SG with laps_remaining == 0 has two sources.  The
 	 * serve-deadline countdown reaching 0 force-DQs the car (handlers.c),
 	 * so that DT/SG is superseded by the DQ and must NOT convert.  A
