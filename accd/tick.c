@@ -537,8 +537,9 @@ broadcast_keepalive(struct Server *s, uint8_t msg_id)
 				mx = f;
 		}
 		if (n > 0) {
-			int a = (int)(sum / (float)n * 100.0f + 0.5f);
-			int m = (int)(mx * 100.0f + 0.5f);
+			/* exe FUN_1400336d0 truncates: (char)(int)(x*100.0). */
+			int a = (int)(sum / (float)n * 100.0f);
+			int m = (int)(mx * 100.0f);
 			s->cpu_avg_pct = (uint8_t)(a < 0 ? 0 : a > 255 ? 255 : a);
 			s->cpu_max_pct = (uint8_t)(m < 0 ? 0 : m > 255 ? 255 : m);
 		}
