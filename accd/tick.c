@@ -1283,32 +1283,6 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * Leaderboard rebroadcast.  The exe's FUN_14002f710 runs a
-	 * deep memcmp (FUN_140115f60 -> FUN_140126f10) on every server
-	 * tick and emits 0x36 whenever any byte differs.  Mirror that:
-	 * call broadcast_leaderboard_if_changed every tick; its internal
-	 * memcmp cache suppresses fan-out when the payload is identical.
-	 * The per-car lap count rides at +0x1f4 in the 0x36 record, so
-	 * the timing tower updates on each lap without a separate
-	 * lap-complete trigger.  Sector splits (0x20) still do NOT emit
-	 * a new 0x36 because they don't change +0x1f4.
-	 * The 75 s async-mode heartbeat is a defense-in-depth probe for
-	 * missed trigger sites; it only fires when use_async_leaderboard
-	 * is set to 1 (opt-in).
-	 */
-	if (broadcast_leaderboard_if_changed(s)) {
-		*last_leaderboard_ms = now_ms;
-		smpr_broadcast_leaderboard(s);
-	}
-	if (s->use_async_leaderboard &&
-	    now_ms - *last_leaderboard_ms >= CADENCE_LEADERBOARD_MS) {
-		if (broadcast_leaderboard_if_changed(s)) {
-			*last_leaderboard_ms = now_ms;
-			smpr_broadcast_leaderboard(s);
-		}
-	}
-
-	/*
 	 * 0x28 session state broadcast.  Two triggers:
 	 *
 	 *   1. Phase or descriptor change (event-driven), so phase
@@ -1413,6 +1387,29 @@ tick_run(struct Server *s)
 			if (changed)
 				last_weather_ms = now_ms - CADENCE_WEATHER_MS;
 			last_state28_ms = now_ms;
+		}
+	}
+
+	/*
+	 * Leaderboard rebroadcast, emitted AFTER 0x28 to match the exe
+	 * per-tick order (FUN_14002f710 fans out 0x28 then 0x36).  The exe
+	 * runs a deep memcmp (FUN_140115f60 -> FUN_140126f10) every tick and
+	 * emits 0x36 whenever any byte differs; broadcast_leaderboard_if_changed
+	 * mirrors that with its internal memcmp cache.  The per-car lap count
+	 * rides at +0x1f4 so the timing tower updates each lap without a
+	 * separate lap-complete trigger; sector splits (0x20) do not change
+	 * +0x1f4 so they do not emit a new 0x36.  The 75 s async-mode heartbeat
+	 * is a defense-in-depth probe, opt-in via use_async_leaderboard.
+	 */
+	if (broadcast_leaderboard_if_changed(s)) {
+		*last_leaderboard_ms = now_ms;
+		smpr_broadcast_leaderboard(s);
+	}
+	if (s->use_async_leaderboard &&
+	    now_ms - *last_leaderboard_ms >= CADENCE_LEADERBOARD_MS) {
+		if (broadcast_leaderboard_if_changed(s)) {
+			*last_leaderboard_ms = now_ms;
+			smpr_broadcast_leaderboard(s);
 		}
 	}
 
