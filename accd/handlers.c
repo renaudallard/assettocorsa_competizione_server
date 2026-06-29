@@ -621,8 +621,14 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			 * as the finishing time in 0x3e results.
 			 */
 			if (c->session_clock_seen) {
+				/*
+				 * exe FUN_140042000 = drift + session-base-
+				 * offset + raw_ts; accd had only the base
+				 * offset, so add the drift term too.
+				 */
 				int64_t adj = (int64_t)lap_time +
-				    c->session_clock_offset_ms;
+				    c->session_clock_offset_ms +
+				    (int64_t)c->drift_ms;
 				race->race_time_ms = adj > 0
 				    ? (int32_t)adj : 0;
 			} else {
