@@ -965,12 +965,14 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		    c->is_admin ? "(admin)" : "(driver)",
 		    (unsigned)c->conn_id, c->car_id, target_num);
 		/*
-		 * Exe FUN_14001dae0:177-190 routes the reply via unicast and
-		 * echoes the resolved target car number.
+		 * The report ack is broadcast to all clients: the exe's
+		 * /report block (FUN_14001dae0:184-190) builds the reply and
+		 * falls through to the shared *param_8 = 1 tail (line 667),
+		 * which the caller FUN_140021680 routes via the broadcast path.
 		 */
 		snprintf(reply, sizeof(reply),
 		    "Car #%d reported, thank you", target_num);
-		chat_reply(s, c, reply, 4);
+		chat_broadcast(s, reply, 4);
 		return 1;
 	}
 
