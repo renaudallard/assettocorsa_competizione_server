@@ -176,8 +176,9 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		return -1;
 	}
 
+	/* exe FUN_140103f90:115 stores (0 < value), not raw truthiness. */
 	s->force_entry_list = json_obj_get_int(root,
-	    "forceEntryList", 0);
+	    "forceEntryList", 0) > 0;
 	s->entrylist_version = (uint32_t)json_obj_get_int(root,
 	    "configVersion", 0);
 
@@ -222,10 +223,13 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		car->forced_car_model = car->car_model;
 		if (car->car_model == 0xff)
 			car->car_model = 0;
-		/* exe ctor FUN_140103f90 seeds +0x6d to 1 (default on). */
+		/*
+		 * exe ctor FUN_140103f90 seeds +0x6d to 1 (default on); the
+		 * reader FUN_140104340:414 stores (0 < value), not != 0.
+		 */
 		car->override_car_model_custom = (uint8_t)
 		    (json_obj_get_int(e, "overrideCarModelForCustomCar", 1)
-		    != 0);
+		    > 0);
 		{
 			/*
 			 * Normalise defaultGridPosition to 0-based, matching
