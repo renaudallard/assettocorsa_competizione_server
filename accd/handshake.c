@@ -2181,6 +2181,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 	uint8_t msg_id;
 	uint16_t client_version;
 	char *password = NULL;
+	int pw_bad = 0;		/* wrong password; reject deferred past ban/kick/full */
 	enum reject_reason reason = REJECT_OK;
 	uint32_t reject_sub = 0, reject_a = 0, reject_b = 0;
 	int is_reconnect = 0;
@@ -2226,10 +2227,17 @@ handshake_handle(struct Server *s, struct Conn *c,
 		c->is_spectator = 1;
 		log_info("handshake: spectator join from fd %d", c->fd);
 	} else {
-		log_info("rejecting connection: bad password from fd %d",
-		    c->fd);
-		reason = REJECT_PASSWORD;
-		goto reply;
+		/*
+		 * Wrong password: defer the reject until after the ban, kick
+		 * and full-server checks.  The exe (FUN_140025690) validates
+		 * the password match early but only emits REJECT_PASSWORD at
+		 * the end, so a banned/kicked/full client that also mistypes
+		 * the password still receives the correct reason.  Treated as
+		 * a non-spectator (driver) for the full-server check, as the
+		 * exe does.
+		 */
+		c->is_spectator = 0;
+		pw_bad = 1;
 	}
 	/*
 	 * Carless observer (exe FUN_140033980): a spectatorPassword
@@ -2457,6 +2465,20 @@ handshake_handle(struct Server *s, struct Conn *c,
 			reject_sub = c->is_spectator ? 1 : 0;
 			reject_a = (uint32_t)s->nconns;
 			reject_b = (uint32_t)s->max_connections;
+			free(first); free(last); free(sname);
+			free(steam); free(team);
+			goto reply;
+		}
+
+		/*
+		 * Deferred wrong-password reject (exe order: after ban, kick
+		 * and full-server).  A banned/kicked/full client was already
+		 * rejected above with its specific reason.
+		 */
+		if (pw_bad) {
+			log_info("rejecting connection: bad password from fd %d",
+			    c->fd);
+			reason = REJECT_PASSWORD;
 			free(first); free(last); free(sname);
 			free(steam); free(team);
 			goto reply;
