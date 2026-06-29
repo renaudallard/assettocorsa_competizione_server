@@ -226,7 +226,7 @@ config_load(struct Server *s, const char *cfg_dir)
 	s->tcp_port = 9232;
 	s->udp_port = 9231;
 	s->max_connections = 30;	/* exe ctor default; ACC_MAX_CARS is the array bound */
-	s->max_car_slots = 10;
+	s->max_car_slots = 30;		/* exe ServerSettings ctor default (FUN_14000de10 +0xbd) */
 	s->lan_discovery = 1;
 	s->password[0] = '\0';
 	s->admin_password[0] = '\0';
@@ -364,7 +364,7 @@ config_load(struct Server *s, const char *cfg_dir)
 		    (unsigned)s->do_driver_swap_broadcast,
 		    (unsigned)s->preparation_locked);
 		s->max_car_slots = json_obj_get_int(settings,
-		    "maxCarSlots", 10);
+		    "maxCarSlots", 30);	/* exe absent-key default = ctor 30 */
 		{
 			int dflt_monitors = s->max_connections / 4;
 			if (dflt_monitors < 2)
