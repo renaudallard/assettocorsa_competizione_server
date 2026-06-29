@@ -1188,7 +1188,7 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 			for (k = 0; k < 3; k++)
 				l2_buf[k] = race->best_sectors_ms[k] > 0
 				    ? race->best_sectors_ms[k]
-				    : LAP_TIME_INVALID;
+				    : (int32_t)LAP_TIME_INVALID;
 		}
 
 		/*
