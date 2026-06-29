@@ -756,8 +756,6 @@ weather_grip_forecast(struct Server *s, uint32_t target_s)
 	struct WeatherStatus *w = &s->weather;
 	uint32_t t = s->grip_forecast_s;
 	float rain, cloud, ambient, road, dryline;
-	float amb_cfg = s->session.ambient_temp > 0
-	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
 
 	if (t >= target_s)
 		return;
@@ -766,15 +764,11 @@ weather_grip_forecast(struct Server *s, uint32_t target_s)
 	if (target_s - t > 259200u)
 		t = target_s - 259200u;
 
-	/* Seed the held weather sample for the first iteration. */
-	if (w->randomness == 0) {
-		rain = w->current_rain;
-		cloud = w->clouds;
-		ambient = amb_cfg;
-		dryline = w->dry_line_wetness;
-	} else {
-		weather_eval(w, t, &cloud, &rain, &ambient, &road, &dryline);
-	}
+	/* Seed the held weather sample.  weather_eval returns constant base
+	 * cloud/rain for static weather (n_harmonics == 0) and the
+	 * time-varying dry line for both modes, mirroring the per-step
+	 * FUN_140116830 sample the exe forecast takes (FUN_14011eec0). */
+	weather_eval(w, t, &cloud, &rain, &ambient, &road, &dryline);
 
 	while (t < target_s) {
 		float traffic = 0.0f;
@@ -782,9 +776,10 @@ weather_grip_forecast(struct Server *s, uint32_t target_s)
 		uint32_t day_idx;
 
 		t++;
-		/* Re-sample dynamic weather once a minute (it changes slowly;
-		 * static weather is constant so no re-sample is needed). */
-		if (w->randomness != 0 && (t % 60u) == 0u)
+		/* Re-sample once a minute (cloud/rain/ambient/dryline evolve
+		 * slowly; cheap for static where only the dry-line cosine
+		 * moves and cloud/rain stay at base). */
+		if ((t % 60u) == 0u)
 			weather_eval(w, t, &cloud, &rain, &ambient, &road,
 			    &dryline);
 
@@ -807,8 +802,11 @@ weather_grip_forecast(struct Server *s, uint32_t target_s)
 			traffic = base * (1.0f - fv);
 		}
 
-		weather_grip_step(g, 1.0f, rain, cloud, ambient, dryline,
-		    traffic);
+		/* The forecast feeds dryLineWet through 2*(x-0.5) before the
+		 * step (FUN_14011f6f0:60); the live step (weather_grip_live)
+		 * uses it raw (FUN_14011fa40). */
+		weather_grip_step(g, 1.0f, rain, cloud, ambient,
+		    2.0f * (dryline - 0.5f), traffic);
 	}
 	s->grip_forecast_s = target_s;
 }
