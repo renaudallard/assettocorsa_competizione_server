@@ -316,13 +316,18 @@ monitor_build_realtime_update(struct ByteBuf *bb,
 		if (pb_w_int32(bb, PB_RCS_LEGACY_LATENCY_OFFSET,
 		    o->clock_offset_ms) < 0)
 			return -1;
-		/* lockstep fields (5-7) not tracked; emit 0 */
+		/*
+		 * Kunos parser FUN_14003ed10: field 5 (REF_PING) is varint
+		 * (tag 0x28), but fields 6-8 are fixed64 (tags 0x31/0x39/0x41,
+		 * read via the 8-byte FUN_140036d60).  Lockstep fields 6-7 are
+		 * not tracked (emit 0.0); field 8 carries last_udp_server_ms.
+		 */
 		if (pb_w_int32(bb, PB_RCS_LOCKSTEP_REF_PING, 0) < 0 ||
-		    pb_w_int32(bb, PB_RCS_LOCKSTEP_LAT_OFFSET, 0) < 0 ||
-		    pb_w_int32(bb, PB_RCS_LOCKSTEP_ACC_ERR, 0) < 0)
+		    pb_w_double(bb, PB_RCS_LOCKSTEP_LAT_OFFSET, 0.0) < 0 ||
+		    pb_w_double(bb, PB_RCS_LOCKSTEP_ACC_ERR, 0.0) < 0)
 			return -1;
-		if (pb_w_int32(bb, PB_RCS_LAST_UDP_RECV,
-		    (int32_t)o->last_udp_server_ms) < 0)
+		if (pb_w_double(bb, PB_RCS_LAST_UDP_RECV,
+		    (double)o->last_udp_server_ms) < 0)
 			return -1;
 		if (pb_sub_end(bb, sub_start) < 0)
 			return -1;

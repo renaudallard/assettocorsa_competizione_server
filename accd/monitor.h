@@ -109,10 +109,10 @@
 #define PB_RCS_LAST_PING		2
 #define PB_RCS_AVG_PING			3
 #define PB_RCS_LEGACY_LATENCY_OFFSET	4
-#define PB_RCS_LOCKSTEP_REF_PING	5
-#define PB_RCS_LOCKSTEP_LAT_OFFSET	6
-#define PB_RCS_LOCKSTEP_ACC_ERR		7
-#define PB_RCS_LAST_UDP_RECV		8
+#define PB_RCS_LOCKSTEP_REF_PING	5	/* varint */
+#define PB_RCS_LOCKSTEP_LAT_OFFSET	6	/* fixed64 (FUN_14003ed10) */
+#define PB_RCS_LOCKSTEP_ACC_ERR		7	/* fixed64 */
+#define PB_RCS_LAST_UDP_RECV		8	/* fixed64 (double ms) */
 /* field 9 = repeated TimedValue (unknown); not emitted */
 
 /* ----- ServerMonitorRealtimeCarState (sub of RTU field 4) -------- */
