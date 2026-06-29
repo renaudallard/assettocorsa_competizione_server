@@ -586,6 +586,10 @@ chat_weekend_reset_broadcast(struct Server *s)
 
 	log_info("weather: resetting weekend to friday night");
 
+	/* Rewind the grip to the green track for friday night; the forecast
+	 * below rebuilds rubber up to the current session (FUN_14002e670). */
+	weather_grip_reset(s);
+
 	/* Phase 1: re-draw + friday-night 0x40, with rule retry. */
 	for (;;) {
 		attempt++;
@@ -606,6 +610,7 @@ chat_weekend_reset_broadcast(struct Server *s)
 
 	/* Phase 2: advance to the first session + final 0x40. */
 	s->session.weekend_time_s = first_session_time;
+	weather_grip_forecast_session(s, &s->sessions[s->session.session_index]);
 	(void)weather_step(s);
 	weekend_emit_weather_reset(s);
 

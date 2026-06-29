@@ -63,6 +63,7 @@ uint32_t arc4random_uniform(uint32_t);
 #include "smpr.h"
 #include "state.h"
 #include "tick.h"
+#include "weather.h"
 
 /*
  * Formation / green-flag position gate range.  The exe builds a 27-entry
@@ -271,6 +272,13 @@ session_reset(struct Server *s, uint8_t session_index)
 	s->session.weekend_time_s =
 	    (uint32_t)s->sessions[session_index].date_minute * 60u +
 	    (uint32_t)s->sessions[session_index].hour_of_day * 3600u;
+
+	/*
+	 * Run the weekend grip forecast forward to this session's start
+	 * (FUN_14002e670 mirror): the joining client sees the exe's predicted
+	 * track state, with rubber built up by simulated weekend traffic.
+	 */
+	weather_grip_forecast_session(s, &s->sessions[session_index]);
 
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarRaceState *r = &s->cars[i].race;

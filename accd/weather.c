@@ -39,6 +39,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "io.h"
 #include "log.h"
@@ -344,13 +345,15 @@ weather_init(struct Server *s, float base_clouds, float base_rain,
 
 	/*
 	 * Grip integrator: constructed once at server start per exe
-	 * FUN_14000bc90:409-411.  The exe never resets it across sessions;
-	 * guard on G04==0 (the memset-zero sentinel; after init G04=0.96)
-	 * so a weather_redraw or a multi-session weekend doesn't wipe
-	 * accumulated rubber.
+	 * FUN_14000bc90:409-411.  weather_grip_reset() loads the per-track
+	 * base grip and rewinds the forecast clock; session_reset() then runs
+	 * the weekend forecast up to the first session.  Guard on G04==0 (the
+	 * memset-zero sentinel; after init G04 is 0.95..0.98) so a
+	 * weather_redraw or a multi-session weekend doesn't wipe accumulated
+	 * rubber.  The explicit weekend reset re-resets via weather_grip_reset.
 	 */
 	if (s->grip.G04 == 0.0f)
-		weather_grip_init(&s->grip);
+		weather_grip_reset(s);
 }
 
 /* ================================================================== */
@@ -473,7 +476,14 @@ weather_step(struct Server *s)
 	float prev_rain = w->current_rain;
 
 	if (w->randomness == 0) {
-		/* Static weather: hold all fields at init values. */
+		/*
+		 * Static weather: fields held at base.  The grip integrator
+		 * still advances with the real summed car speed (the exe does
+		 * not gate it on weatherRandomness), so a populated
+		 * static-weather race rubbers in; an empty grid sees traffic 0
+		 * and the head stays at the forecast value.
+		 */
+		weather_grip_live(s, 5.0f);
 		return 0;
 	}
 
@@ -488,12 +498,11 @@ weather_step(struct Server *s)
 	w->road_current = road;
 
 	/*
-	 * Advance the grip integrator.  dt_s = 5.0 matches CADENCE_WEATHER.
-	 * traffic_speed = 0 until accd tracks per-car speed; at empty grid
-	 * the exe also sees ~0 so head values are stable with no rubber.
+	 * Advance the grip integrator with the real summed car speed
+	 * (FUN_14002f710:820 -> FUN_14011fa40).  dt_s = 5.0 matches the
+	 * weather cadence; the rubber integral is dt-linear.
 	 */
-	weather_grip_step(&s->grip, 5.0f, rain, cloud, ambient,
-	    dryline, 0.0f);
+	weather_grip_live(s, 5.0f);
 
 	/* === Wind speed / direction (live-only, not part of validation) */
 	dt = (float)((double)s->session.weekend_time_s -
@@ -670,11 +679,45 @@ weather_validate(struct Server *s)
 /* evolved every weather tick (5 s cadence, matching accd's cadence).  */
 /* ================================================================== */
 
-void
-weather_grip_init(struct GripState *g)
+/*
+ * Per-track base grip G04, the +0x54 column of the exe's 27-entry track
+ * table (FUN_14012c510 -> FUN_14012c270 param_10).  Verified by decoding
+ * the table and matching the captured misano head (G10 = G04 = 0.97).
+ */
+float
+weather_track_base_grip(const char *track)
 {
-	/* FUN_140133ea0 field initializer constants (140133ea0.c). */
-	g->G04 = 0.96f;
+	static const struct { const char *name; float g04; } tbl[] = {
+		{ "misano",          0.97f },
+		{ "silverstone",     0.97f },
+		{ "barcelona",       0.97f },
+		{ "kyalami",         0.97f },
+		{ "oulton_park",     0.97f },
+		{ "snetterton",      0.97f },
+		{ "nurburgring_24h", 0.97f },
+		{ "donington",       0.98f },
+		{ "paul_ricard",     0.965f },
+		{ "paul_ricard_gt4", 0.965f },
+		{ "laguna_seca",     0.95f },
+	};
+	size_t i;
+
+	if (track != NULL) {
+		for (i = 0; i < sizeof(tbl) / sizeof(tbl[0]); i++) {
+			if (strcmp(track, tbl[i].name) == 0)
+				return tbl[i].g04;
+		}
+	}
+	return 0.96f;	/* table default (most tracks) */
+}
+
+void
+weather_grip_init(struct GripState *g, float base_grip)
+{
+	/* FUN_140133ea0 field initializer constants (140133ea0.c), with the
+	 * per-track base grip written into G04 (the exe copies G04 from the
+	 * track table via FUN_14011f9d0's 8-byte store). */
+	g->G04 = base_grip;
 	g->G08 = 1.0f;
 	g->G0c = 1.0f;
 	g->G10 = 0.5f;
@@ -690,6 +733,121 @@ weather_grip_init(struct GripState *g)
 	g->G38 = 0.0f;
 	g->G3c = 0.0f;
 	g->G40 = 0.0f;	/* last-tick seed; FUN_14011fa40 seeds on first call */
+}
+
+void
+weather_grip_reset(struct Server *s)
+{
+	float base = weather_track_base_grip(s->track);
+
+	/* Green-track reset (exe FUN_14011f9e0 head[0]=G04, FUN_140133f10
+	 * G38=(G0c-G04)*20=0): start the head at the base grip with no
+	 * rubber, then the weekend forecast builds it up from friday night. */
+	weather_grip_init(&s->grip, base);
+	s->grip.G0c = base;
+	s->grip_forecast_s = 0;
+}
+
+void
+weather_grip_forecast(struct Server *s, uint32_t target_s)
+{
+	struct GripState *g = &s->grip;
+	struct WeatherStatus *w = &s->weather;
+	uint32_t t = s->grip_forecast_s;
+	float rain, cloud, ambient, road, dryline;
+	float amb_cfg = s->session.ambient_temp > 0
+	    ? (float)s->session.ambient_temp : (float)ACC_DEFAULT_AMBIENT_C;
+
+	if (t >= target_s)
+		return;
+	/* The exe rejects forecasts longer than 2 days (FUN_14011f6f0);
+	 * clamp the span so a far-future session start stays bounded. */
+	if (target_s - t > 259200u)
+		t = target_s - 259200u;
+
+	/* Seed the held weather sample for the first iteration. */
+	if (w->randomness == 0) {
+		rain = w->current_rain;
+		cloud = w->clouds;
+		ambient = amb_cfg;
+		dryline = w->dry_line_wetness;
+	} else {
+		weather_eval(w, t, &cloud, &rain, &ambient, &road, &dryline);
+	}
+
+	while (t < target_s) {
+		float traffic = 0.0f;
+		float fhour, fv, base;
+		uint32_t day_idx;
+
+		t++;
+		/* Re-sample dynamic weather once a minute (it changes slowly;
+		 * static weather is constant so no re-sample is needed). */
+		if (w->randomness != 0 && (t % 60u) == 0u)
+			weather_eval(w, t, &cloud, &rain, &ambient, &road,
+			    &dryline);
+
+		/* FUN_14011f6f0 simulated weekend traffic schedule. */
+		day_idx = t / 86400u;
+		fhour = (float)(t % 86400u) * 0.00027777778f;
+		if (fhour <= 10.0f || fhour >= 18.0f) {
+			traffic = -10.0f;	/* track degrades overnight */
+		} else if ((float)(target_s - t) * (1.0f / 60.0f) > 5.0f) {
+			if (day_idx == 0) {
+				base = 410.0f; fv = 2.5f;
+			} else if (day_idx == 1) {
+				base = 615.0f; fv = 1.3333334f;
+			} else {
+				base = 615.0f; fv = 1.0309278f;
+			}
+			fv = fv * g->G24;
+			if (fv < 0.0f) fv = 0.0f;
+			if (fv > 1.0f) fv = 1.0f;
+			traffic = base * (1.0f - fv);
+		}
+
+		weather_grip_step(g, 1.0f, rain, cloud, ambient, dryline,
+		    traffic);
+	}
+	s->grip_forecast_s = target_s;
+}
+
+void
+weather_grip_forecast_session(struct Server *s, const struct SessionDef *sd)
+{
+	uint32_t day = sd->day_of_weekend > 0
+	    ? (uint32_t)sd->day_of_weekend - 1u : 0u;
+
+	weather_grip_forecast(s, day * 86400u +
+	    (uint32_t)sd->hour_of_day * 3600u +
+	    (uint32_t)sd->date_minute * 60u);
+}
+
+void
+weather_grip_live(struct Server *s, float dt_s)
+{
+	struct WeatherStatus *w = &s->weather;
+	float traffic = 0.0f;
+	float ambient;
+	int i;
+
+	/* Sum |vec_c| (m/s) over occupied slots; the exe sums every car's
+	 * speed (FUN_14011fa40), and a stationary car contributes ~0. */
+	for (i = 0; i < ACC_MAX_CARS; i++) {
+		const float *v;
+
+		if (!s->cars[i].used)
+			continue;
+		v = s->cars[i].rt.vec_c;
+		traffic += sqrtf(v[0] * v[0] + v[1] * v[1] + v[2] * v[2]);
+	}
+	ambient = (w->randomness != 0 && w->ambient_current != 0.0f)
+	    ? w->ambient_current
+	    : (s->session.ambient_temp > 0
+	        ? (float)s->session.ambient_temp
+	        : (float)ACC_DEFAULT_AMBIENT_C);
+	weather_grip_step(&s->grip, dt_s, w->current_rain, w->clouds,
+	    ambient, w->dry_line_wetness, traffic);
 }
 
 /*

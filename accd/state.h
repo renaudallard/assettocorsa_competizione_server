@@ -1190,6 +1190,7 @@ struct Server {
 	struct WeatherRules	weather_rules;	/* cfg/weatherRules.json (optional) */
 	uint32_t		weather_draw_seq;	/* increments per weekend re-draw to vary the seed */
 	struct GripState	grip;		/* track grip integrator; persists across sessions */
+	uint32_t		grip_forecast_s;	/* weekend seconds the grip forecast has reached; rewound to 0 on weekend reset */
 	struct AssistRules	assist;
 	struct BanList		bans;
 	struct BanList		kicks;	/* ephemeral; cleared on weekend wrap */

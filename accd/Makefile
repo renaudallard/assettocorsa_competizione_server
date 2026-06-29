@@ -169,7 +169,8 @@ ratings.o: ratings.c io.h json.h log.h ratings.h state.h lobby.h msg.h
 results.o: results.c io.h log.h penalty.h state.h lobby.h msg.h results.h
 sandbox.o: sandbox.c sandbox.h log.h
 session.o: session.c bans.h state.h io.h lobby.h msg.h bcast.h \
- handshake.h log.h penalty.h prim.h results.h session.h smpr.h tick.h
+ handshake.h log.h penalty.h prim.h results.h session.h smpr.h tick.h \
+ weather.h
 smpr.o: smpr.c bcast.h state.h io.h lobby.h msg.h log.h monitor.h pb.h \
  prim.h smpr.h
 state.o: state.c bcast.h state.h io.h lobby.h msg.h ratings.h handlers.h \

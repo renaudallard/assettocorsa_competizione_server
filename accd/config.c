@@ -789,6 +789,15 @@ config_load(struct Server *s, const char *cfg_dir)
 				    start_s, ws_mean, ws_dev,
 				    wb_mean, wb_dev);
 				s->session.weekend_time_s = start_s;
+				/*
+				 * Forecast the grip up to the first session so
+				 * the very first welcome carries the rubbered-in
+				 * track state; session_reset() re-runs this
+				 * idempotently once the tick loop starts.
+				 */
+				if (s->session_count > 0)
+					weather_grip_forecast_session(s,
+					    &s->sessions[0]);
 			}
 		}
 

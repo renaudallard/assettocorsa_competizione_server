@@ -143,6 +143,12 @@
   (`/resetWeekend` or `/track`) re-draws the forecast and broadcasts
   the two-phase `0x40` weekend-reset pair (friday night then first
   session), optionally validated against `weatherRules.json`.
+- **Track grip model** — the `0x37` track-conditions head is the
+  rubbered-in track state: each session starts from a per-track base
+  grip and runs the weekend grip forecast (simulated friday-to-session
+  traffic, day/night cycles) up to the session time, then evolves with
+  the real summed car speed as the race runs.  Reproduces the exe head
+  byte-for-byte to within float-accumulation noise.
 - **Driver swap** — full endurance-style swap state machine
   (`&swap`, `0x47`/`0x48`/`0x4a`/`0x58`) for multi-driver entries.
 - **Live track change** — `/track <name>` swaps the track

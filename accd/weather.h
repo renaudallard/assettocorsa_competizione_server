@@ -90,11 +90,52 @@ int	weather_write_track_conditions_head(struct ByteBuf *bb,
 		const struct GripState *g, int dyn);
 
 /*
- * Initialize the grip integrator state to the exe's FUN_140133ea0 ctor
- * constants.  Call once at server start from weather_init().  The state
- * persists across all sessions (no per-session reset in the exe).
+ * Per-track base grip (G04), the +0x54 column of the exe's 27-entry track
+ * table FUN_14012c510.  Most tracks 0.96; a few 0.95..0.98.  Unknown track
+ * names fall back to 0.96.
  */
-void	weather_grip_init(struct GripState *g);
+float	weather_track_base_grip(const char *track);
+
+/*
+ * Initialize the grip integrator state to the exe's FUN_140133ea0 ctor
+ * constants, with the per-track base grip in G04 (the exe writes G04 from
+ * the track table via FUN_14011f9d0).  The head is reset to the green
+ * state (G0c = base_grip, no rubber).
+ */
+void	weather_grip_init(struct GripState *g, float base_grip);
+
+/*
+ * Reset the grip to the green state for the current track and rewind the
+ * forecast clock.  Call at server start and on every weekend reset (the
+ * exe re-runs the weekend grip forecast from friday night each reset).
+ */
+void	weather_grip_reset(struct Server *s);
+
+/*
+ * Run the exe's weekend grip forecast (FUN_14011f6f0): step the integrator
+ * at 1 s intervals from the last forecast point up to target_s (weekend
+ * seconds = (day-1)*86400 + hour*3600 + minute*60), driving it with
+ * simulated weekend traffic (410 friday / 615 saturday+ during 10:00-18:00,
+ * -10 at night) and the forecast weather.  Sets the session-start track
+ * state the joining client sees.  Idempotent once target_s is reached.
+ */
+void	weather_grip_forecast(struct Server *s, uint32_t target_s);
+
+/*
+ * Convenience wrapper: forecast forward to a session's start, computing the
+ * weekend target from its day/hour/minute (the day term, which weekend_time_s
+ * omits, sets the friday-vs-saturday traffic rate and night cycles).
+ */
+void	weather_grip_forecast_session(struct Server *s,
+		const struct SessionDef *sd);
+
+/*
+ * Live grip step: advance the integrator by dt_s seconds using the real
+ * summed car speed (sum of |vec_c| over occupied slots, m/s), with the
+ * current live weather.  Mirrors the exe per-tick FUN_14011fa40; runs for
+ * static and dynamic weather alike.
+ */
+void	weather_grip_live(struct Server *s, float dt_s);
 
 /*
  * Advance the grip integrator by dt_s seconds.  Port of FUN_140133f90.
