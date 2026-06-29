@@ -799,18 +799,22 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		uint32_t split_wire = (uint32_t)split_time;
 		/*
 		 * isSessionOver (lap-states bit 0x0400): exe FUN_14012b380
-		 * sets it per car, not as a flat phase gate.  Non-race flags
-		 * the lap once the session has fully ended, i.e. strictly past
-		 * the overtime grace window (exe gates on 5 < phase, not >=).
-		 * Race flags a car that already finished (race.finished
-		 * mirrors the exe's car+0x1d1 latch) and, after the session
-		 * completes, any car still running on the leader's lap.
+		 * sets it per car, not as a flat phase gate.  The exe caller
+		 * (FUN_1400142f0) passes param_7 = (5 < exe_phase_level); the
+		 * exe 7-level model maps level 5 = accd PHASE_SESSION (4),
+		 * level 6 = accd PHASE_OVERTIME (5), level 7 = PHASE_COMPLETED
+		 * (6), so exe "level > 5" == accd "phase >= PHASE_OVERTIME".
+		 * Non-race flags the lap once the session reaches the overtime
+		 * grace window (>= PHASE_OVERTIME).  Race flags a car that
+		 * already finished (race.finished mirrors the exe's car+0x1d1
+		 * latch) and, from overtime on, any car still running on the
+		 * leader's lap.
 		 */
 		uint16_t relay_cf = car_field;
 		if (session_is_race(s)) {
 			int sess_over = s->cars[c->car_id].race.finished;
 			if (!sess_over &&
-			    s->session.phase > PHASE_OVERTIME) {
+			    s->session.phase >= PHASE_OVERTIME) {
 				uint32_t leader_laps = 0;
 				int leader_finished = 0;
 				int k;
@@ -839,7 +843,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			}
 			if (sess_over)
 				relay_cf |= 0x0400;
-		} else if (s->session.phase > PHASE_OVERTIME) {
+		} else if (s->session.phase >= PHASE_OVERTIME) {
 			relay_cf |= 0x0400;
 		}
 		int ts_off, i;
