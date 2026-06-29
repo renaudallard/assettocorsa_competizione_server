@@ -809,6 +809,9 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			log_info("swap: conn=%u rejected — session_type=%u "
 			    "(only P/Q allowed)",
 			    (unsigned)c->conn_id, (unsigned)cur_type);
+			/* exe FUN_140027990:90 (verbatim string). */
+			chat_reply(s, c, "Swaps are only possible in P and Q "
+			    "sessions in 1.3.3", 4);
 			return 1;
 		}
 		/*
