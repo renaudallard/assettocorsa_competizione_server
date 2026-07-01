@@ -521,8 +521,23 @@ session_start(struct Server *s)
 			uint8_t preset = (s->formation_lap_type != 0) ? 1 : 0;
 			int i;
 
-			for (i = 0; i < ACC_MAX_CARS; i++)
+			for (i = 0; i < ACC_MAX_CARS; i++) {
 				s->cars[i].race.formation_mid_passed = preset;
+				/*
+				 * Seed on_track for cars already on the grid.
+				 * The green-flag leader gate (tick.c) requires
+				 * on_track, but the client only sends a 0x32
+				 * CAR_LOCATION_UPDATE on a location CHANGE — a
+				 * car spawned already on the race grid never
+				 * emits a Track transition, so on_track would
+				 * stay 0, no leader is ever picked, and the
+				 * green flag never fires (issue #16).  A car
+				 * that later reports Pitlane via 0x32 still
+				 * flips on_track=0 and is correctly skipped.
+				 */
+				if (s->cars[i].used)
+					s->cars[i].race.on_track = 1;
+			}
 		}
 	} else {
 		s->session.ts[3] = s->session.ts[2];

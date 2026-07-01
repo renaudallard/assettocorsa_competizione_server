@@ -2047,10 +2047,18 @@ int main(int argc, char **argv)
 		}
 
 		/* 0x32 location updates go over TCP (framed); only 0x1e
-		 * car_update + keepalives + pong travel on UDP. */
-		if (tick % 5 == 0) {
-			size_t n = pkt_location(pkt, (uint16_t)car_id, loc);
-			send_tcp_framed(tcp_fd, pkt, n);
+		 * car_update + keepalives + pong travel on UDP.
+		 * BOT_NO_LOCATION suppresses these so a test can simulate a
+		 * grid car that never reports carLocation=Track. */
+		{
+			static int no_loc = -1;
+			if (no_loc < 0)
+				no_loc = (getenv("BOT_NO_LOCATION") != NULL);
+			if (!no_loc && tick % 5 == 0) {
+				size_t n = pkt_location(pkt, (uint16_t)car_id,
+				    loc);
+				send_tcp_framed(tcp_fd, pkt, n);
+			}
 		}
 
 		{
