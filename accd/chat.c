@@ -1104,52 +1104,15 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		 * Exe FUN_140021680 /next handler (line 373-374):
 		 *   FUN_14012e140(session_mgr, now+1ms);   // release hold
 		 *   param_1[0x14180] = -large;              // advance_at expired
-		 * It does NOT call session_advance directly.  Instead it
-		 * collapses the schedule so the normal tick-tail's phase-7
-		 * one-shot fires first (results_write + broadcast_session_results
-		 * + session_archive_snapshot + ratings_save), then
-		 * session_advance fires when advance_at elapses.
-		 *
-		 * Mirror that: collapse ts[4..6] and advance_at_ms to zero
-		 * so compute_phase returns PHASE_ADVANCE on the next tick,
-		 * the one-shot block runs, and session_advance fires in the
-		 * same tick (advance_at_ms == 0 means "fire immediately").
-		 * This preserves: stint checks, standings recompute, TP
-		 * conversion, 0x3e broadcast, archive, and ratings save.
+		 * It does NOT call session_advance directly; it collapses the
+		 * schedule so the tick-tail's phase-7 one-shot fires first
+		 * (results_write + broadcast_session_results + archive +
+		 * ratings_save), then session_advance fires when advance_at
+		 * elapses.  session_advance_now() mirrors that.
 		 */
 		log_info("admin: /next");
 		chat_broadcast(s, "Forwarding to next session", 4);
-		if (s->session.ts_valid) {
-			uint64_t now_ms = mono_ms();
-
-			s->session.overtime_hold = 0;
-			s->session.overtime_leader_armed = 0;
-			s->session.cars_in_overtime = 0;
-			/*
-			 * Collapse every boundary before ts[6] to force
-			 * compute_phase past SESSION, OVERTIME, and COMPLETED
-			 * in one step, landing at PHASE_ADVANCE.
-			 */
-			if (s->session.ts[4] > now_ms)
-				s->session.ts[4] = now_ms;
-			if (s->session.ts[5] > now_ms)
-				s->session.ts[5] = now_ms;
-			if (s->session.ts[6] > now_ms)
-				s->session.ts[6] = now_ms;
-			/*
-			 * advance_at_ms == 0: "fire immediately" (see
-			 * tick.c PHASE_ADVANCE gate).  The one-shot block
-			 * runs first in the same tick_run(), then
-			 * session_advance() fires within the same call.
-			 */
-			s->session.advance_at_ms = 0;
-		} else {
-			/*
-			 * Session not started yet (no drivers): advance
-			 * directly — there is no state to archive.
-			 */
-			session_advance(s);
-		}
+		session_advance_now(s);
 	} else if (chat_prefix(text, "/debug")) {
 		/*
 		 * /debug <sub>: toggle a server-side log-verbosity flag.

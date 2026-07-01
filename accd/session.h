@@ -68,6 +68,13 @@ void	session_start(struct Server *s);
 void	session_advance(struct Server *s);
 
 /*
+ * Force-advance body shared by the /next admin command (chat and
+ * console): collapse the schedule so the next tick reaches
+ * PHASE_ADVANCE and session_advance fires after the results one-shot.
+ */
+void	session_advance_now(struct Server *s);
+
+/*
  * Recompute standings for every used car based on the current
  * session phase (race vs P/Q ordering).  Writes the new ordering
  * to car.race.position; the leaderboard broadcast picks the change

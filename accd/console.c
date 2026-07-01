@@ -304,21 +304,7 @@ console_dispatch(struct Server *s, const char *line)
 	} else if (chat_prefix(p, "next")) {
 		chat_broadcast(s, "Forwarding to next session", 4);
 		reply("forwarding to next session");
-		if (s->session.ts_valid) {
-			uint64_t now_ms = mono_ms();
-			s->session.overtime_hold = 0;
-			s->session.overtime_leader_armed = 0;
-			s->session.cars_in_overtime = 0;
-			if (s->session.ts[4] > now_ms)
-				s->session.ts[4] = now_ms;
-			if (s->session.ts[5] > now_ms)
-				s->session.ts[5] = now_ms;
-			if (s->session.ts[6] > now_ms)
-				s->session.ts[6] = now_ms;
-			s->session.advance_at_ms = 0;
-		} else {
-			session_advance(s);
-		}
+		session_advance_now(s);
 	} else if (chat_prefix(p, "restart")) {
 		session_reset(s, s->session.session_index);
 		chat_broadcast(s,

@@ -1603,6 +1603,40 @@ session_advance(struct Server *s)
 }
 
 /*
+ * Force the current session to end and advance on the next tick — the
+ * shared body of the /next admin command (chat + console).  Collapses
+ * every schedule boundary from ts[1] on to now so compute_phase reaches
+ * PHASE_ADVANCE even when the session has not started its active clock:
+ * a race held in PHASE_PRE_SESSION keeps ts[2]/ts[3] at UINT64_MAX until
+ * the green flag, so collapsing only ts[4..6] left /next a no-op on a
+ * pre-green race (issue #17).  Mirrors the exe's FUN_14012e140, which
+ * clamps every session-manager slot to now.  The tick's phase-transition
+ * one-shot (results write + 0x3e broadcast + archive + ratings save) runs
+ * first, then session_advance fires in the same tick (advance_at_ms == 0).
+ *
+ * With no schedule yet (no drivers) there is nothing to archive: advance
+ * directly.
+ */
+void
+session_advance_now(struct Server *s)
+{
+	if (s->session.ts_valid) {
+		uint64_t now_ms = mono_ms();
+		int k;
+
+		s->session.overtime_hold = 0;
+		s->session.overtime_leader_armed = 0;
+		s->session.cars_in_overtime = 0;
+		for (k = 1; k < 7; k++)
+			if (s->session.ts[k] > now_ms)
+				s->session.ts[k] = now_ms;
+		s->session.advance_at_ms = 0;
+	} else {
+		session_advance(s);
+	}
+}
+
+/*
  * Driver-stint tracker — matches FUN_14012ae10 on a per-car,
  * per-driver basis.  Accumulates on-track time into
  * driver_stint_ms[current_driver_index] and enqueues a DQ at
