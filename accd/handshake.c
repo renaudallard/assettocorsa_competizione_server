@@ -437,9 +437,9 @@ write_event_entity_rest(struct ByteBuf *bb, struct Server *s)
  */
 int
 write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
-    uint16_t session_overtime_s)
+    uint16_t session_overtime_s, uint16_t pre_race_s)
 {
-	uint16_t sched_field = def->session_type == 10 ? 80 : 3;
+	uint16_t sched_field = def->session_type == 10 ? pre_race_s : 3;
 	uint32_t duration_s = (uint32_t)def->duration_min * 60u;
 
 	if (wr_u8(bb, def->hour_of_day) < 0) return -1;
@@ -466,8 +466,9 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
  *   u8  dateMinute         (from event.json, default 0)
  *   u8  dayOfWeekend - 1   (P=0, Q=1, R=2 in the typical schedule)
  *   f32 timeMultiplier     (from event.json)
- *   u16 sched_field        (P=3, Q=3, R=80 -- exe FUN_140034f60
- *                           sched_field; NOT the AC2-internal enum)
+ *   u16 sched_field        (P=3, Q=3, R=preRaceWaitingTimeSeconds --
+ *                           exe FUN_140034f60 sched_field; NOT the
+ *                           AC2-internal enum)
  *   u32 duration_seconds   (duration_min * 60)
  *   u32 overtime_seconds   (sessionOverTimeSeconds)
  *   u8  0                  (always)
@@ -479,7 +480,8 @@ write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
  */
 int
 write_session_result_header(struct ByteBuf *bb,
-    const struct SessionDef *def, uint16_t session_overtime_s)
+    const struct SessionDef *def, uint16_t session_overtime_s,
+    uint16_t pre_race_s)
 {
 	uint32_t duration_s = (uint32_t)def->duration_min * 60u;
 	uint8_t dow_minus_one = def->day_of_weekend > 0
@@ -490,7 +492,8 @@ write_session_result_header(struct ByteBuf *bb,
 	if (wr_u8(bb, dow_minus_one) < 0) return -1;
 	if (wr_f32(bb, (float)(def->time_multiplier > 0
 	    ? def->time_multiplier : 1)) < 0) return -1;
-	if (wr_u16(bb, def->session_type == 10 ? 80 : 3) < 0) return -1;
+	if (wr_u16(bb, def->session_type == 10 ? pre_race_s : 3) < 0)
+		return -1;
 	if (wr_u32(bb, duration_s) < 0) return -1;
 	if (wr_u32(bb, session_overtime_s > 0 ? session_overtime_s : 120) < 0)
 		return -1;
@@ -583,7 +586,8 @@ write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
 			if (wr_u8(bb, 0) < 0) return -1;
 	}
 
-	return write_session_tail(bb, def, s->session_overtime_s);
+	return write_session_tail(bb, def, s->session_overtime_s,
+	    s->pre_race_waiting_s);
 }
 
 /*
@@ -1559,7 +1563,7 @@ write_track_records(struct ByteBuf *bb, struct Server *s)
 	for (k = 0; k < (int)n && k < ACC_MAX_SESSIONS; k++) {
 		const struct SessionDef *def = &s->sessions[k];
 		uint16_t sched_field =
-		    def->session_type == 10 ? 80 : 3;
+		    def->session_type == 10 ? s->pre_race_waiting_s : 3;
 		uint32_t duration_s =
 		    (uint32_t)def->duration_min * 60u;
 

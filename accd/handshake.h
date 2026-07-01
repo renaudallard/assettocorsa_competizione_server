@@ -82,17 +82,18 @@ int	write_session_mgr_state(struct ByteBuf *bb, struct Server *s,
  * session before each per-car leaderboard record.
  */
 int	write_session_tail(struct ByteBuf *bb, const struct SessionDef *def,
-		uint16_t session_overtime_s);
+		uint16_t session_overtime_s, uint16_t pre_race_s);
 
 /*
  * 23-byte session result header emitted inside 0x3e
  * SRV_SESSION_RESULTS.  Pcap-verified against kunos race-end emit;
  * differs from write_session_tail at byte +0x30 (dayOfWeekend-1 vs
- * timeMultiplier-1) and the u16 sched_field (P/Q=3, R=80 per
- * FUN_140034f60; NOT def->session_type 0/4/10).
+ * timeMultiplier-1) and the u16 sched_field (P/Q=3, R=preRaceWaiting
+ * per FUN_140034f60; NOT def->session_type 0/4/10).
  */
 int	write_session_result_header(struct ByteBuf *bb,
-		const struct SessionDef *def, uint16_t session_overtime_s);
+		const struct SessionDef *def, uint16_t session_overtime_s,
+		uint16_t pre_race_s);
 
 /*
  * 0x36 leaderboard section parameterised by session type.  Default

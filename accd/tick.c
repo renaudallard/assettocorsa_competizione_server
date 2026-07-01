@@ -899,7 +899,7 @@ broadcast_session_results(struct Server *s)
 		int cur = s->session.session_index;
 
 		ok = ok && write_session_result_header(&bb,
-		    sd, s->session_overtime_s) == 0;
+		    sd, s->session_overtime_s, s->pre_race_waiting_s) == 0;
 		ok = ok && write_session_leaderboard_section(&bb, s,
 		    sd->session_type,
 		    n != cur,
