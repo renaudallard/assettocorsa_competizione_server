@@ -442,6 +442,10 @@ the server browser will show 24, not 30.
 
 Session types: `P` (Practice), `Q` (Qualifying), `R` (Race).
 
+`preRaceWaitingTimeSeconds` sets the pre-session countdown before the
+**race** only; practice and qualifying use a fixed 3 s pre-session
+window, matching the stock server.
+
 The three `formationTrigger*` / `greenFlag*` keys override the built-in
 defaults for the position-based race-start gate (normalized track
 positions 0..1).  Shown above at the exe's compiled-in fallback

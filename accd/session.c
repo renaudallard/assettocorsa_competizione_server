@@ -402,7 +402,7 @@ session_reset(struct Server *s, uint8_t session_index)
  * Populate the 7 schedule timestamps when the first driver
  * connects.  Matches FUN_14012e970 (startSession) in the exe:
  *   ts[0] = now - 1
- *   ts[1] = ts[0] + pre_ms        (pre_race_waiting_s for all session types)
+ *   ts[1] = ts[0] + pre_ms        (pre_race_waiting_s for race; 3 s for P/Q)
  *   ts[2] = ts[1]                 (non-race; race holds ts[2..6] until
  *                                  the position-triggered formation/green)
  *   ts[3] = ts[2]                 (non-race; race = green-cross time)
@@ -438,7 +438,17 @@ session_start(struct Server *s)
 	const struct SessionDef *def =
 	    &s->sessions[s->session.session_index];
 	uint64_t now = mono_ms();
-	uint64_t pre_ms = (uint64_t)s->pre_race_waiting_s * 1000ull;
+	/*
+	 * Pre-session ("SESSION START") countdown.  The exe's SessionDef
+	 * builder (FUN_14011abb0) applies preRaceWaitingTimeSeconds to the
+	 * race only (type 10) and hardcodes a fixed 3 s window for practice
+	 * and qualifying.  Applying the full pre-race wait to P/Q produced a
+	 * visible ~80 s countdown before qualifying that stock servers never
+	 * show (issue #18).
+	 */
+	uint64_t pre_ms = def->session_type == 10
+	    ? (uint64_t)s->pre_race_waiting_s * 1000ull
+	    : 3000ull;
 	uint64_t dur_ms = (uint64_t)def->duration_min * 60000ull;
 	uint64_t ot_ms  = (uint64_t)s->session_overtime_s * 1000ull;
 	uint64_t post_ms = def->session_type == 10
