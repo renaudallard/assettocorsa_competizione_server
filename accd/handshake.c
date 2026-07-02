@@ -807,6 +807,41 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 }
 
 /*
+ * Map a driver category to the cup class the stock server puts on the wire
+ * (FUN_140025690): Bronze to Am, Silver to ProAm, Gold and Platinum to Pro.
+ * The exe derives the cup from the driver's category, not from the cup byte
+ * the client sent, and uses it for both the 0x36 leaderboard record and the
+ * welcome CarInfo.
+ */
+static uint8_t
+cup_from_driver_category(uint8_t dc)
+{
+	switch (dc) {
+	case 0:		return 2;	/* Bronze -> Am */
+	case 1:		return 3;	/* Silver -> ProAm */
+	case 2:
+	case 3:		return 0;	/* Gold / Platinum -> Pro */
+	default:	return 4;
+	}
+}
+
+/*
+ * Overwrite the CarInfo cup byte in a connection's cached handshake echo
+ * with the driver-category-derived value.  The welcome spawnDef echoes
+ * hs_echo verbatim, so this makes the entry-list cup match the exe (and the
+ * 0x36 record).  Call right after the parser reads the wire cup byte:
+ * `remaining` is rd_remaining() at that point, so the cup byte sits at
+ * hs_echo_len - remaining - 1.
+ */
+static void
+hs_echo_derive_cup(struct Conn *c, size_t remaining, uint8_t driver_category)
+{
+	if (c->hs_echo != NULL && remaining < c->hs_echo_len)
+		c->hs_echo[c->hs_echo_len - remaining - 1] =
+		    cup_from_driver_category(driver_category);
+}
+
+/*
  * Per-car leaderboard record, byte-exact to FUN_140034210 in
  * accServer.exe.  Extracted from write_leaderboard_section so the
  * 0x56 garage reply can append a single-car record at its tail the
@@ -881,15 +916,8 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 		 */
 		uint8_t di = ec->current_driver_index < ACC_MAX_DRIVERS_PER_CAR
 		    ? ec->current_driver_index : 0;
-		uint8_t dc = ec->drivers[di].driver_category;
-		uint8_t cup;
-		switch (dc) {
-		case 0:	cup = 2; break;
-		case 1:	cup = 3; break;
-		case 2: case 3:	cup = 0; break;
-		default:	cup = 4; break;
-		}
-		if (wr_u8(bb, cup) < 0) return -1;
+		if (wr_u8(bb, cup_from_driver_category(
+		    ec->drivers[di].driver_category)) < 0) return -1;
 	}
 	/*
 	 * Per-car status / lap-states word (exe LeaderboardLine +0x1d0).
@@ -2385,6 +2413,13 @@ handshake_handle(struct Server *s, struct Conn *c,
 			(void)rd_skip(&r, 3);		/* nat + templateKey */
 			(void)rd_u8(&r, &cmodel);	/* carModelType */
 			(void)rd_u8(&r, &ccup);
+			/*
+			 * The stock server puts the driver-category-derived cup
+			 * on the wire, not the cup byte the client sent, so
+			 * patch the hs_echo copy the welcome spawnDef echoes
+			 * verbatim.  The reader is now one past the cup byte.
+			 */
+			hs_echo_derive_cup(c, (size_t)rd_remaining(&r), cat);
 		} else {
 			/*
 			 * Simple format (probe / test client):
@@ -2402,6 +2437,8 @@ handshake_handle(struct Server *s, struct Conn *c,
 			(void)rd_i32(&r, &rnum);
 			(void)rd_u8(&r, &cmodel);
 			(void)rd_u8(&r, &ccup);
+			/* Derive the cup for the welcome echo (see above). */
+			hs_echo_derive_cup(c, (size_t)rd_remaining(&r), cat);
 			(void)rd_str_a(&r, &team);
 		}
 
