@@ -1652,6 +1652,37 @@ session_advance_now(struct Server *s)
 }
 
 /*
+ * Restart the current session in place — the shared body of the
+ * /restart admin command (chat + console).  Unlike /next this does NOT
+ * advance the session index and does NOT write results: it re-arms the
+ * same session from scratch, mirroring the exe's /restart handler
+ * (FUN_140021680:320-337 → FUN_14012ef20 rebuild phase descriptors +
+ * FUN_14012af40 clear the per-car lap/results lists + FUN_14012e230
+ * refresh the 0x28 snapshot), which never calls the advance function
+ * FUN_14012e140.  session_reset re-arms the current index and clears
+ * the per-car race state; the force emits + broadcasts match the
+ * within-weekend boundary tail of session_advance so the client sees
+ * the reset immediately.  With no schedule yet (no drivers) session_reset
+ * leaves ts_valid=0 and the next tick auto-starts once a car is present.
+ */
+void
+session_restart_current(struct Server *s)
+{
+	uint8_t cur = s->session.session_index;
+
+	if (cur >= s->session_count) {
+		session_advance(s);
+		return;
+	}
+	session_reset(s, cur);
+	(void)broadcast_leaderboard_force(s);
+	broadcast_session_mgr_state_all(s);
+	smpr_broadcast_session_state(s);
+	if (server_used_car_count(s) > 0)
+		session_start(s);
+}
+
+/*
  * Driver-stint tracker — matches FUN_14012ae10 on a per-car,
  * per-driver basis.  Accumulates on-track time into
  * driver_stint_ms[current_driver_index] and enqueues a DQ at

@@ -306,9 +306,9 @@ console_dispatch(struct Server *s, const char *line)
 		reply("forwarding to next session");
 		session_advance_now(s);
 	} else if (chat_prefix(p, "restart")) {
-		session_reset(s, s->session.session_index);
 		chat_broadcast(s,
 		    "Session restarted by administrator", 4);
+		session_restart_current(s);
 		reply("session restarted");
 	} else if (chat_prefix(p, "start") || chat_prefix(p, "go")) {
 		chat_broadcast(s, "Session started by administrator", 4);

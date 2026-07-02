@@ -1220,29 +1220,17 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 		}
 	} else if (chat_prefix(text, "/restart")) {
 		/*
-		 * Exe FUN_140021680:328-333: clears lap list and sub-objects,
-		 * then sets advance_at = -4.0 which fires session_advance on
-		 * the next tick - same mechanism as /next.  The message text
-		 * differs but the session transition is identical.
+		 * Exe FUN_140021680:320-337 restarts the CURRENT session in
+		 * place (rebuild its phase descriptors, wipe the per-car lap
+		 * lists, refresh the 0x28); it does NOT advance to the next
+		 * session — that is /next.  session_restart_current mirrors
+		 * that.  The old inline body collapsed only ts[4..6], which
+		 * advanced a qualy but was a no-op on a pre-green race (its
+		 * ts[2]/ts[3] are still UINT64_MAX) — issue #19.
 		 */
 		log_info("admin: /restart");
 		chat_broadcast(s, "Session restarted by administrator", 4);
-		if (s->session.ts_valid) {
-			uint64_t now_ms = mono_ms();
-
-			s->session.overtime_hold = 0;
-			s->session.overtime_leader_armed = 0;
-			s->session.cars_in_overtime = 0;
-			if (s->session.ts[4] > now_ms)
-				s->session.ts[4] = now_ms;
-			if (s->session.ts[5] > now_ms)
-				s->session.ts[5] = now_ms;
-			if (s->session.ts[6] > now_ms)
-				s->session.ts[6] = now_ms;
-			s->session.advance_at_ms = 0;
-		} else {
-			session_advance(s);
-		}
+		session_restart_current(s);
 	} else if (chat_prefix(text, "/resetWeekend") ||
 	           chat_prefix(text, "/resetweekend")) {
 		log_info("admin: /resetWeekend");
