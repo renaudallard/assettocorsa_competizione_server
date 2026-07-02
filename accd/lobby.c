@@ -72,18 +72,6 @@
 
 #define _POSIX_C_SOURCE 200809L
 
-/*
- * arc4random_uniform lives in libc on both platforms but the prototype
- * is feature-gated.  On Linux (glibc) it's only exposed through libbsd's
- * <bsd/stdlib.h>.  On OpenBSD it sits behind __BSD_VISIBLE, which
- * _POSIX_C_SOURCE forces to 0 via sys/cdefs.h — so we declare the
- * prototype by hand.  The symbol is always present in libc so linking
- * works either way; this just silences the implicit-declaration warning.
- */
-#ifdef __linux__
-#include <bsd/stdlib.h>
-#endif
-
 #include <sys/socket.h>
 #include <sys/uio.h>
 #include <netinet/in.h>
@@ -98,14 +86,18 @@
 #include <stdlib.h>
 #include <stdio.h>
 
-#if defined(__OpenBSD__) || defined(__APPLE__)
-/* See header comment: __BSD_VISIBLE is forced off by _POSIX_C_SOURCE
- * so <stdlib.h> hides arc4random_uniform even though libc has it.
- * macOS's libSystem has arc4random_uniform too, but its <stdlib.h>
- * also gates the prototype on feature macros that _POSIX_C_SOURCE
- * suppresses — same problem, same fix. */
+/*
+ * arc4random_uniform lives in libc on every target we build for, but
+ * _POSIX_C_SOURCE (set above) hides the prototype: glibc only declares it
+ * under _DEFAULT_SOURCE (and glibc < 2.36 ships the symbol solely in
+ * libbsd, linked via -lbsd by the Makefile), OpenBSD hides it behind
+ * __BSD_VISIBLE, and macOS gates it the same way.  The symbol is present
+ * at link time on all of them, so a hand prototype just silences the
+ * implicit-declaration warning.  Mirrors state.c.  Including <bsd/stdlib.h>
+ * on Linux instead would break the build on glibc >= 2.36 hosts that lack
+ * libbsd-dev even though libc already provides the symbol.
+ */
 uint32_t arc4random_uniform(uint32_t);
-#endif
 #include <time.h>
 
 #include "bans.h"

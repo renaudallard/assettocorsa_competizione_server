@@ -41,15 +41,10 @@
 #include <string.h>
 #include <time.h>
 
-#ifdef __linux__
-#include <bsd/stdlib.h>
-#endif
-#if defined(__OpenBSD__) || defined(__APPLE__)
-/* See lobby.c header comment: __BSD_VISIBLE is forced off by
- * _POSIX_C_SOURCE so <stdlib.h> hides arc4random_uniform even
- * though libc has it.  macOS has the same gating problem. */
+/* See lobby.c: _POSIX_C_SOURCE hides arc4random_uniform on glibc, OpenBSD,
+ * and macOS even though libc has it, so declare it by hand.  glibc < 2.36
+ * pulls the symbol from libbsd (-lbsd via the Makefile). */
 uint32_t arc4random_uniform(uint32_t);
-#endif
 
 #include "bans.h"
 #include "bcast.h"
