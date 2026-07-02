@@ -1050,7 +1050,6 @@ tick_run(struct Server *s)
 	static uint64_t last_ifb_slew_ms = 0;
 	uint64_t *last_leaderboard_ms = &s->session.last_leaderboard_ms;
 	static uint64_t last_weather_ms = 0;
-	static uint64_t last_state28_ms = 0;
 	/*
 	 * Tick-rate probe.  Every 60 s of wall-clock, log the observed
 	 * tick rate so we can confirm the main-loop busy-wait is
@@ -1290,22 +1289,18 @@ tick_run(struct Server *s)
 	}
 
 	/*
-	 * 0x28 session state broadcast.  Two triggers:
-	 *
-	 *   1. Phase or descriptor change (event-driven), so phase
-	 *      transitions reach the client with ~3 ms latency.
-	 *   2. 1 Hz cadence — even with frozen ts[] deadlines, the body
-	 *      carries per-conn projected client timestamps that advance
-	 *      with server time.  Without the cadence, the client's
-	 *      countdown widgets stop refreshing during steady-state
-	 *      session play.  Verified against a 583 s 2-bot kunos pcap
-	 *      where 0x28 fired 599 times (1.03 Hz / conn) with body
-	 *      bytes changing every emit.
+	 * 0x28 session state broadcast, change-driven only, matching the exe
+	 * tick (FUN_14002f710 emits 0x28 solely on a session-index,
+	 * session-manager-state, or phase change, with no wall-clock cadence).
+	 * The steady-state ~1 Hz refresh of each client's projected countdown
+	 * timestamps comes from the pong handler (dispatch.c emits 0x28 on the
+	 * first pong and on a new best RTT, mirroring the exe), and session
+	 * advance / reset fan out their own 0x28.  A separate 1 Hz cadence here
+	 * double-emitted (~2 Hz vs the exe's ~1 Hz), so it was removed.
 	 */
 	{
 		uint8_t cur_phase = s->session.phase;
 		int changed = !s->session.last_emit_valid;
-		int cadence_28 = now_ms - last_state28_ms >= 1000;
 		int k;
 
 		if (!changed && cur_phase != s->session.last_emit_phase)
@@ -1316,7 +1311,7 @@ tick_run(struct Server *s)
 			if (s->session.ts[k] != s->session.last_emit_ts[k])
 				changed = 1;
 
-		if (changed || cadence_28) {
+		if (changed) {
 			if (s->nconns > 0) {
 				struct ByteBuf bb;
 				int i;
@@ -1391,9 +1386,7 @@ tick_run(struct Server *s)
 			 * immediate 0x37 on the next tick.  This applies on
 			 * any change-driven emit, not only phase transitions.
 			 */
-			if (changed)
-				last_weather_ms = now_ms - CADENCE_WEATHER_MS;
-			last_state28_ms = now_ms;
+			last_weather_ms = now_ms - CADENCE_WEATHER_MS;
 		}
 	}
 
