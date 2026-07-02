@@ -1433,22 +1433,35 @@ tick_run(struct Server *s)
 		 */
 		last_weather_ms = now_ms - CADENCE_WEATHER_MS;
 		/*
-		 * 0x3f grid positions fire once per race, at the
-		 * PRE_SESSION (countdown) transition.  The exe instead
-		 * emits it at the END of a Qualifying session: FUN_14002f710
-		 * gates on `(iVar11 != 0) && (local_5a0 == 0x04)` inside the
-		 * session-over branch, where local_5a0 is the ENDING
-		 * session's TYPE (4 = Qualifying), not a phase.  For the
-		 * standard P->Q->R weekend both deliver the same grid before
-		 * green; the trigger edge differs only for degenerate layouts
-		 * (P->R emits one extra, Q-only one fewer), so we keep the
-		 * Race-start trigger.
+		 * 0x3f grid positions.  The exe emits this at the END of a
+		 * Qualifying session: FUN_14002f710 gates on the ending
+		 * session's TYPE == 0x04 (Qualifying) inside the session-over
+		 * branch, so the race grid is broadcast only when it derives
+		 * from a preceding qualy.  A weekend with no qualy (Practice
+		 * to Race) never triggers it.  We fire at the race PRE_SESSION
+		 * transition instead, but only when a qualifying session
+		 * precedes this race, scanning the schedule the same way the
+		 * grid builder does (session.c).  This suppresses the spurious
+		 * frame accd used to send on a Practice to Race weekend while
+		 * still sending one grid before green on the normal P/Q/R
+		 * weekend.
 		 */
 		if (s->session.phase == PHASE_PRE_SESSION &&
 		    s->session_count > 0 &&
 		    s->sessions[s->session.session_index]
-			.session_type == 10)
-			broadcast_grid(s);
+			.session_type == 10) {
+			int k, has_qualy = 0;
+
+			for (k = (int)s->session.session_index - 1;
+			    k >= 0; k--) {
+				if (s->sessions[k].session_type == 4) {
+					has_qualy = 1;
+					break;
+				}
+			}
+			if (has_qualy)
+				broadcast_grid(s);
+		}
 		if ((s->session.phase == PHASE_COMPLETED ||
 		    s->session.phase == PHASE_ADVANCE) &&
 		    !s->session.results_written) {
