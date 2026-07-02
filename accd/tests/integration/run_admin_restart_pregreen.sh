@@ -10,11 +10,13 @@
 # restarts the CURRENT session in place — it does NOT advance — so
 # session_restart_current now re-arms the same session index.
 #
-# This reuses the single-Race weekend (cfg_next_race): the bot connects, the
-# race enters its pre-green window, and an admin /restart issued there must
-# re-arm the race (a second session_start) WITHOUT advancing/wrapping the
-# weekend (which is what /next does).  run_admin_restart.sh separately pins
-# the 0x2b banner wire; this pins the session transition.
+# This reuses cfg_next_race, a Practice(1 min) -> Race weekend (the stock
+# server refuses a race-only weekend).  Practice auto-advances into the race
+# (rolling its first green trigger) around 68 s; an admin /restart issued in
+# the pre-green race window must re-arm the race in place (a SECOND green
+# trigger roll) WITHOUT advancing/wrapping the weekend (which is what /next
+# does).  run_admin_restart.sh separately pins the 0x2b banner wire; this
+# pins the session transition.
 set -e
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE"
@@ -40,19 +42,20 @@ for i in 1 2 3 4 5 6; do
     sleep 0.3
 done
 
-# Bot elevates with /admin admin then issues /restart while the race is still
-# in its pre-green window.  chat-start-tick 200 (~6.7s at 30 Hz) lands after
-# the 5s pre-race wait, so the race is in PRE_SESSION/SESSION with ts[2]/ts[3]
-# still UINT64_MAX — the exact window the old /restart no-op'd on.
+# Bot elevates with /admin admin then issues /restart while the RACE is still
+# pre-green.  chat-start-tick 2340 (~78 s at 30 Hz) lands well after the 1 min
+# practice has auto-advanced into the race but before the bot drives a
+# formation lap to the green flag, so ts[2]/ts[3] are still UINT64_MAX: the
+# exact window the old /restart no-op'd on.
 echo "==> spawn bot with /admin admin + /restart during pre-green race"
 "$BOT" --host 127.0.0.1 --tcp 9312 \
     --race 911 --grid 1 --name "BotAdmin" \
-    --chat-start-tick 200 \
+    --chat-start-tick 2340 \
     --chat /admin_admin \
     --chat /restart >bot_restart_race.log 2>&1 &
 BOT_PIDS="$BOT_PIDS $!"
 
-sleep 12
+sleep 95
 
 for pid in $BOT_PIDS; do kill -TERM "$pid" 2>/dev/null || true; done
 kill -TERM "$ACCD_PID" 2>/dev/null || true

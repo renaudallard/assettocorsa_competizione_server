@@ -44,9 +44,12 @@ BOT_NO_LOCATION=1 "$BOT" --host 127.0.0.1 --tcp 9332 \
     --race 911 --grid 1 --name "BotNoLoc" >bot_no_loc.log 2>&1 &
 BOT_PID=$!
 
-echo "==> waiting up to 60 s for the green flag..."
+# The weekend is Practice(1 min) -> Race, so the race (and its green flag)
+# only begins after practice ends (~63 s); wait long enough to cover the
+# practice, the race pre-race countdown, and the bot's formation lap.
+echo "==> waiting up to 140 s for the green flag..."
 green=""
-for i in $(seq 1 60); do
+for i in $(seq 1 140); do
     if grep -q 'green flag' race_no_loc.log 2>/dev/null; then
         green="yes"
         echo "  green fired after ~${i}s"

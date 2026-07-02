@@ -1,14 +1,14 @@
 #!/bin/sh
 # Admin /next on a pre-green RACE session — issue #17 regression.
 #
-# A single-Race weekend.  The bot connects, so the race enters its
-# pre-race waiting window (PHASE_FORMATION) and then PRE_SESSION, holding
-# ts[2]/ts[3] at UINT64_MAX until the green flag.  An admin /next issued
-# in that window must still advance: before the fix, /next collapsed only
-# ts[4..6], so compute_phase stayed stuck below PHASE_ADVANCE and /next
-# was a silent no-op on the last (race) session.  session_advance_now()
-# now collapses ts[1..6], so the phase jumps straight to ADVANCE and the
-# weekend wraps back to session 0.
+# A Practice(1 min) -> Race weekend (the stock server refuses a race-only
+# weekend, so a non-race session must precede the race).  Practice ends
+# around 63 s; the race then holds ts[2]/ts[3] at UINT64_MAX until the green
+# flag.  An admin /next issued in that pre-green race window must still
+# advance: before the fix, /next collapsed only ts[4..6], so compute_phase
+# stayed stuck below PHASE_ADVANCE and /next was a silent no-op on the race.
+# session_advance_now() now collapses ts[1..6], so the phase jumps straight
+# to ADVANCE and the weekend wraps back to session 0.
 #
 # Asserts: the '/next' is processed AND the schedule reaches ADVANCE AND
 # the weekend wraps (session_advance actually fired).
@@ -37,17 +37,19 @@ for i in 1 2 3 4 5 6; do
     sleep 0.3
 done
 
-# Bot elevates with /admin admin then issues /next while the race is still
-# in its pre-green window (chat starts ~2s in, pre-race wait is 5s).
+# Bot elevates with /admin admin then issues /next while the RACE is still
+# pre-green.  chat-start-tick 2340 (~78 s at 30 Hz) lands well after the
+# 1 min practice has auto-advanced into the race but before the bot has
+# driven a formation lap to the green flag.
 echo "==> spawn bot with /admin admin + /next during pre-green race"
 "$BOT" --host 127.0.0.1 --tcp 9312 \
     --race 911 --grid 1 --name "BotAdmin" \
-    --chat-start-tick 60 \
+    --chat-start-tick 2340 \
     --chat /admin_admin \
     --chat /next >bot_next_race.log 2>&1 &
 BOT_PIDS="$BOT_PIDS $!"
 
-sleep 12
+sleep 95
 
 for pid in $BOT_PIDS; do kill -TERM "$pid" 2>/dev/null || true; done
 kill -TERM "$ACCD_PID" 2>/dev/null || true

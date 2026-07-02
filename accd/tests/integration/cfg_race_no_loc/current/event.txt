@@ -10,6 +10,13 @@
     "configVersion": 1,
     "sessions": [
         {
+            "hourOfDay": 13,
+            "dayOfWeekend": 1,
+            "timeMultiplier": 1,
+            "sessionType": "P",
+            "sessionDurationMinutes": 1
+        },
+        {
             "hourOfDay": 14,
             "dayOfWeekend": 1,
             "timeMultiplier": 1,

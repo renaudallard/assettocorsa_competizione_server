@@ -804,6 +804,35 @@ config_load(struct Server *s, const char *cfg_dir)
 		json_free(event);
 	}
 
+	/*
+	 * Reject a Race-only weekend, matching the stock server, which logs
+	 * "There must be at least one non-Race-Session configured. Server
+	 * will close." and exit(1)s (FUN_140023700).  A Practice (0) or
+	 * Qualify (4) session must precede the Race (10) so a grid can form.
+	 * session_count is 0 when no event.json was loaded; that is left to
+	 * the existing empty-session handling, so validate only when sessions
+	 * were configured.
+	 */
+	if (s->session_count > 0) {
+		int has_non_race = 0;
+		int i;
+
+		for (i = 0; i < s->session_count; i++) {
+			if (s->sessions[i].session_type != 10) {
+				has_non_race = 1;
+				break;
+			}
+		}
+		if (!has_non_race) {
+			log_kunos("==ERR: There must be at least one "
+			    "non-Race-Session configured. Server will close.");
+			log_err("event.json: race-only weekend rejected; "
+			    "configure at least one Practice or Qualify "
+			    "session");
+			return -1;
+		}
+	}
+
 	{
 		/*
 		 * eventRules.json — optional.  Consume the two fields
