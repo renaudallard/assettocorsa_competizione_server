@@ -650,6 +650,27 @@ session_advance_race_triggers(struct Server *s, float leader_pos)
 
 		if (pre_green < 0.0f)
 			pre_green += 1.0f;
+		/*
+		 * Degenerate-track guard (issue #16, nurburgring_24h).  When the
+		 * transformed formation-end zone no longer covers the grid spawn
+		 * (raw formation_start), a car held on the grid sits just past
+		 * the zone, can never satisfy the position gate, and formation_end
+		 * never fires, so the AC2 client keeps the car locked forever.
+		 * This hits only nurburgring_24h of the 27 shipped tracks:
+		 * green_start - 0.05 (0.9433) falls just below formation_start
+		 * (0.9434) with green_start high and unwrapped, so a transformed
+		 * effective_formation_start (formationLapType other than 3/5)
+		 * builds a normal zone the grid is past.  The stock exe deadlocks
+		 * here too; accd deliberately diverges to stay robust by falling
+		 * back to the untransformed formation_start, which inverts the
+		 * zone to near-whole-lap so it covers the grid, exactly as
+		 * formationLapType 3 already does.  Non-degenerate tracks (the
+		 * transformed zone still covers the grid, e.g. spa where the
+		 * green zone wraps past the S/F line) are unaffected.
+		 */
+		if (!wrapped_range_contains(s->formation_trigger_start, fstart,
+		    pre_green))
+			fstart = s->formation_trigger_start;
 		if (wrapped_range_contains(leader_pos, fstart, pre_green)) {
 			ss->formation_ended = 1;
 			/*

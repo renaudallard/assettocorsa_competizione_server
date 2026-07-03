@@ -1308,6 +1308,7 @@ int main(int argc, char **argv)
 		{"chat", required_argument, 0, 'C'},
 		{"chat-start-tick", required_argument, 0, 'Z'},
 		{"zero-inputs", no_argument,       0, 'I'},
+		{"park-pos",    required_argument, 0, 'e'},
 		{"help",        no_argument,       0, 'h'},
 		{0,0,0,0}
 	};
@@ -1324,7 +1325,10 @@ int main(int argc, char **argv)
 	uint32_t chat_start_tick = 60;
 	int zero_inputs = 0;	/* --zero-inputs: emit all-zero input bytes
 				 * for byte-diff parity with legacy pcaps. */
-	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXYr:q:k:g:F:Q:v:W:jB:A:p:D:S:C:Z:Ih",
+	float park_pos = -1.0f;	/* --park-pos U: report a fixed norm_pos U with
+				 * zero velocity, simulating a client that locks
+				 * the car on the grid (issue #16 repro). */
+	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXYr:q:k:g:F:Q:v:W:jB:A:p:D:S:C:Z:Ie:h",
 	    opts, NULL)) != -1) {
 		switch (o) {
 		case 'H': host = optarg; break;
@@ -1509,6 +1513,9 @@ int main(int argc, char **argv)
 		case 'I':
 			zero_inputs = 1;
 			break;
+		case 'e':
+			park_pos = (float)atof(optarg);
+			break;
 		case 'h': usage(argv[0]); return 0;
 		default:  usage(argv[0]); return 2;
 		}
@@ -1581,6 +1588,11 @@ int main(int argc, char **argv)
 		float u0 = 1.0f - (float)grid_pos * grid_step;
 		while (u0 < 0) u0 += 1.0f;
 		u_pos = u0;
+	}
+	if (park_pos >= 0.0f) {
+		u_pos = park_pos;
+		printf("[bot] --park-pos %.6f: reporting fixed norm_pos, v=0\n",
+		    park_pos);
 	}
 	if (mid_race) {
 		lap = 1;
@@ -1688,6 +1700,10 @@ int main(int argc, char **argv)
 			else if (dv < -dv_max) dv = -dv_max;
 			v_current += dv;
 			if (v_current < 0) v_current = 0;
+		}
+		if (park_pos >= 0.0f) {
+			v_current = 0.0f;	/* frozen car: report v=0 */
+			u_pos = park_pos;	/* and a constant norm_pos */
 		}
 
 		/* Advance norm_pos at v_current / track_length. */
