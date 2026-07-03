@@ -51,6 +51,7 @@
 - [Scope & legal posture](#scope--legal-posture)
 - [Repository layout](#repository-layout)
 - [Contributing](#contributing)
+- [Acknowledgments](#acknowledgments)
 - [License](#license)
 
 ---
@@ -902,6 +903,15 @@ contributing, read **§ 0** of
 - Facts promoted to the public spec must be rewritten, in your own
   words, as protocol-level statements about what bytes go on the
   wire — not as statements about any particular implementation.
+
+---
+
+## Acknowledgments
+
+Thanks to the community members who report problems, send captures, and
+help track them down.  Special thanks to
+[@bandrefilipe](https://github.com/bandrefilipe) for bug reports, packet
+captures, and testing that helped find and fix several issues.
 
 ---
 
