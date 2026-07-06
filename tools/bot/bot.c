@@ -1191,7 +1191,14 @@ static void usage(const char *p)
 	    "                   wheel_slip / rpm / gear / fuel / damage all\n"
 	    "                   zero).  Use when pcap-diffing against a kunos\n"
 	    "                   capture that itself was taken with stationary\n"
-	    "                   inputs.\n",
+	    "                   inputs.\n"
+	    "  --park-pos U     report a fixed norm_pos U with zero velocity,\n"
+	    "                   simulating a client that locks the car on the\n"
+	    "                   grid (issue #16 rolling-start repro).\n"
+	    "  --drive-from U   start at norm_pos U and drive forward at\n"
+	    "                   formation speed with no racing line, simulating\n"
+	    "                   the client rolling-start autopilot leaving the\n"
+	    "                   grid (issue #16 green-fire test).\n",
 	    p);
 }
 
@@ -1309,6 +1316,7 @@ int main(int argc, char **argv)
 		{"chat-start-tick", required_argument, 0, 'Z'},
 		{"zero-inputs", no_argument,       0, 'I'},
 		{"park-pos",    required_argument, 0, 'e'},
+		{"drive-from",  required_argument, 0, 'u'},
 		{"help",        no_argument,       0, 'h'},
 		{0,0,0,0}
 	};
@@ -1328,7 +1336,13 @@ int main(int argc, char **argv)
 	float park_pos = -1.0f;	/* --park-pos U: report a fixed norm_pos U with
 				 * zero velocity, simulating a client that locks
 				 * the car on the grid (issue #16 repro). */
-	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXYr:q:k:g:F:Q:v:W:jB:A:p:D:S:C:Z:Ie:h",
+	float drive_from = -1.0f; /* --drive-from U: start at norm_pos U and
+				 * drive forward at formation speed (no racing
+				 * line), simulating the client rolling-start
+				 * autopilot leaving the grid (issue #16: verify
+				 * the server fires formation_end then green as
+				 * the leader sweeps the per-track zones). */
+	while ((o = getopt_long(argc, argv, "H:T:R:N:t:L:P:l:G:MXYr:q:k:g:F:Q:v:W:jB:A:p:D:S:C:Z:Ie:u:h",
 	    opts, NULL)) != -1) {
 		switch (o) {
 		case 'H': host = optarg; break;
@@ -1516,6 +1530,9 @@ int main(int argc, char **argv)
 		case 'e':
 			park_pos = (float)atof(optarg);
 			break;
+		case 'u':
+			drive_from = (float)atof(optarg);
+			break;
 		case 'h': usage(argv[0]); return 0;
 		default:  usage(argv[0]); return 2;
 		}
@@ -1594,6 +1611,11 @@ int main(int argc, char **argv)
 		printf("[bot] --park-pos %.6f: reporting fixed norm_pos, v=0\n",
 		    park_pos);
 	}
+	if (drive_from >= 0.0f) {
+		u_pos = drive_from;
+		printf("[bot] --drive-from %.6f: driving forward at formation "
+		    "speed from this norm_pos\n", drive_from);
+	}
 	if (mid_race) {
 		lap = 1;
 		printf("[bot] --mid-race: skipping formation, starting at "
@@ -1655,19 +1677,30 @@ int main(int argc, char **argv)
 		 * Effective grip blends mechanical µ + aero µ_aero(v) +
 		 * tyre wear; v_corner_for_radius() does the closed-form.
 		 */
-		v_target = waypoint_speed(u_pos);
-		{
-			int wp_i = (int)(u_pos * g_wp_n) % g_wp_n;
-			float v_here, v_ahead;
-			if (wp_i < 0) wp_i += g_wp_n;
-			v_here = v_corner_for_radius(
-			    g_wp[wp_i].radius, wear_factor);
-			v_ahead = min_corner_ahead(u_pos,
-			    v_current * BRAKE_LOOKAHEAD_S, wear_factor);
-			if (v_here < v_target)
-				v_target = v_here;
-			if (v_ahead < v_target)
-				v_target = v_ahead;
+		if (drive_from >= 0.0f) {
+			/*
+			 * --drive-from: constant formation-speed sweep with no
+			 * racing line loaded, so the leader's norm_pos climbs
+			 * steadily through the per-track formation and green
+			 * zones.  Bypasses the waypoint / corner model (g_wp is
+			 * empty here) entirely.
+			 */
+			v_target = V_FORMATION;
+		} else {
+			v_target = waypoint_speed(u_pos);
+			{
+				int wp_i = (int)(u_pos * g_wp_n) % g_wp_n;
+				float v_here, v_ahead;
+				if (wp_i < 0) wp_i += g_wp_n;
+				v_here = v_corner_for_radius(
+				    g_wp[wp_i].radius, wear_factor);
+				v_ahead = min_corner_ahead(u_pos,
+				    v_current * BRAKE_LOOKAHEAD_S, wear_factor);
+				if (v_here < v_target)
+					v_target = v_here;
+				if (v_ahead < v_target)
+					v_target = v_ahead;
+			}
 		}
 		loc = LOC_TRACK;
 		if (lap == 0 && v_target > V_FORMATION)

@@ -103,6 +103,8 @@ Test-only knobs the wire-level integration tests under
 | `--time-event` T | emit `0x5e` UDP latency event at tick T (loopback to self, chat=1) |
 | `--flap-at` N | force a TCP close at tick N (exercises reconnect cascade) |
 | `--zero-inputs` | emit legacy all-zero input / rpm / gear / fuel / damage bytes in every 0x1e car-update; default is the realistic-content encoding |
+| `--park-pos` U | report a fixed norm_pos U with zero velocity, simulating a client that locks the car on the grid (issue #16 rolling-start repro) |
+| `--drive-from` U | start at norm_pos U and drive forward at formation speed with no racing line, simulating the client rolling-start autopilot leaving the grid (issue #16 green-fire test) |
 
 ## Getting a racing line
 
