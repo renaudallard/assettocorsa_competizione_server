@@ -40,7 +40,11 @@ accd/tests/integration/cfg/ratings.json
 accd/tests/integration/cfg_next_race/ratings.json
 accd/tests/integration/cfg_nur24h/ratings.json
 accd/tests/integration/cfg_race_no_loc/ratings.json
-accd/tests/integration/cfg/current/
+# current/*.txt is accd's own snapshot of the loaded config
+# (snapshot_cfg_current, mirroring the stock server).  Generated from
+# the .json files next to it and read by nothing, so ignore it in every
+# fixture dir rather than tracking it in some and not others.
+accd/tests/integration/cfg*/current/
 accd/tests/integration/cfg/*.bak
 
 # Test run artifacts: pcap captures, logs, cached bytecode, result tables
