@@ -30,6 +30,7 @@ editcap -F pcap kunos_2bot_dq.pcap kunos_2bot_dq.legacy.pcap
 python3 -c "
 import sys
 sys.path.insert(0, '.')
+import decode36
 from diff_pcap import reassemble_server_tx, walk_acc_frames
 
 _, ab, _ = reassemble_server_tx('accd_2bot_dq.legacy.pcap', 9302)
@@ -40,6 +41,22 @@ _, kb, _ = reassemble_server_tx('kunos_2bot_dq.legacy.pcap', 19298)
 # frame is the LAST 2-car emit (right before bot1 disconnects).
 af = [b for o,l,b in walk_acc_frames(ab) if b[0]==0x36]
 kf = [b for o,l,b in walk_acc_frames(kb) if b[0]==0x36]
+
+# Blank each record's split time before fingerprinting.  It holds the
+# wall-clock moment a split happened as that server saw it, so two
+# independent runs never produce the same bytes there and every frame
+# would read as unique.
+def canon(frames):
+    out = []
+    for b in frames:
+        try:
+            out.append(decode36.normalise_split_times(b, decode36.decode(b)))
+        except ValueError:
+            out.append(b)
+    return out
+
+af = canon(af)
+kf = canon(kf)
 au = sorted({(len(b), b.hex()) for b in af})
 ku = sorted({(len(b), b.hex()) for b in kf})
 

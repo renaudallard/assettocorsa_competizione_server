@@ -41,6 +41,7 @@ editcap -F pcap kunos_ring.pcap kunos_ring.legacy.pcap
 python3 -c "
 import sys
 sys.path.insert(0, '.')
+import decode36
 from diff_pcap import reassemble_server_tx, walk_acc_frames
 
 _, ab, _ = reassemble_server_tx('accd_ring.legacy.pcap', 9302)
@@ -55,8 +56,29 @@ if not af or not kf:
 a, k = af[-1], kf[-1]
 ta, tk = a[-4:].hex(), k[-4:].hex()
 print(f'accd_tail={ta} kunos_tail={tk} accd_frames={len(af)} kunos_frames={len(kf)}')
+
+# The record's split time is the wall-clock moment a split happened as
+# each server saw it.  The two halves are separate processes on separate
+# hosts, so they never agree on it to the millisecond and a raw byte
+# compare can never pass.  Blank that one field on both sides and keep
+# the comparison byte-exact everywhere else; check the split times
+# separately, within a tolerance that is far below a sector.
+TOL_MS = 2000
+da, dk = decode36.decode(a), decode36.decode(k)
+for ca, ck in zip(da['cars'], dk['cars']):
+    if ca['split_ms'] == decode36.SENTINEL or ck['split_ms'] == decode36.SENTINEL:
+        continue
+    skew = abs(ca['split_ms'] - ck['split_ms'])
+    print('  car %d split accd=%d kunos=%d skew=%d ms'
+          % (ca['car_id'], ca['split_ms'], ck['split_ms'], skew))
+    if skew > TOL_MS:
+        print(f'RESULT: DIFFER (split time {skew} ms apart, over {TOL_MS})')
+        sys.exit(3)
+a = decode36.normalise_split_times(a, da)
+k = decode36.normalise_split_times(k, dk)
+
 if a == k:
-    print('RESULT: IDENTICAL (last frame byte-exact)')
+    print('RESULT: IDENTICAL (last frame byte-exact, split time aside)')
 else:
     diffs = sum(1 for j in range(min(len(a), len(k))) if a[j] != k[j])
     print(f'RESULT: DIFFER ({diffs} byte differences in last frame)')
