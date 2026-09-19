@@ -55,6 +55,23 @@ BOT_PIDS=""
 i=0
 for botargs in "$@"; do
     i=$((i + 1))
+    # BOT_DELAYS carries one value per bot: seconds to wait before
+    # launching that bot.  BOT_DELAYS="0 85" seats the first one right
+    # away and the second 85 s later, which is how a probe reaches a
+    # phase that only exists well into a session.  Missing entries keep
+    # the 0.3 s stagger below, which is there so concurrent handshakes
+    # don't race.
+    bot_delay=""
+    n=0
+    for v in ${BOT_DELAYS:-}; do
+        n=$((n + 1))
+        if [ "$n" -eq "$i" ]; then
+            bot_delay=$v
+        fi
+    done
+    if [ -n "$bot_delay" ]; then
+        sleep "$bot_delay"
+    fi
     "$BOT" --host 127.0.0.1 --tcp 9302 $botargs \
         >bot$i.log 2>&1 &
     BOT_PIDS="$BOT_PIDS $!"

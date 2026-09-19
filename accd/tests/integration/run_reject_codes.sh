@@ -124,7 +124,12 @@ probe() {
     overlay_dir=$3
     cross_check=$4
     shift 4
-    TEST_DURATION=5
+    # Most probes only need the handshake, so 5 s is plenty.  A probe
+    # that has to reach a later session phase sets PROBE_DURATION and
+    # PROBE_BOT_DELAYS (see bad_session).
+    TEST_DURATION=${PROBE_DURATION:-5}
+    BOT_DELAYS=${PROBE_BOT_DELAYS:-}
+    export BOT_DELAYS
 
     ACTIVE_OVERLAY=$overlay_dir
     swap_local_cfg "$overlay_dir"
@@ -139,7 +144,8 @@ probe() {
             remote="$remote \"$a\""
         done
         ssh accd@172.20.0.66 "sudo -n rm -f /tmp/kunos_run.pcap; cd ~/wine-test && \
-            TEST_DURATION=$TEST_DURATION ./kunos_run_v2.sh $remote >/dev/null 2>&1"
+            TEST_DURATION=$TEST_DURATION BOT_DELAYS='$BOT_DELAYS' \
+            ./kunos_run_v2.sh $remote >/dev/null 2>&1"
         scp -q accd@172.20.0.66:~/wine-test/kunos.pcap "kunos_reject_${label}.pcap"
     fi
 
@@ -240,14 +246,30 @@ probe not_in_list 9 cfg_reject_bad_car yes \
 probe bad_car_model 11 cfg_reject_bad_car_model yes \
     "--race 911 --grid 1 --name BotReject --expect-reject"
 # 12: BAD_SESSION (cfg_reject_bad_session sets isPrepPhaseLocked=1).
-# Bot1 connects first to advance phase from WAITING into FORMATION,
-# bot2 attempts to join while in locked prep -> REJECT_BAD_SESSION.
-# accd-only: kunos exe gates preparation_locked to race sessions (RE
-# at FUN_140025690:816 requires cVar6 == 10 / session_type=R), while
-# accd locks during FORMATION/PRE_SESSION of any session type.  The
-# stricter accd behaviour is the wire-correct emit for the prep-lock
-# case; kunos cross-check would need a race-session cfg overlay that
-# wines CPU starvation can't reliably run.
+# Bot1 seats first, bot2 joins later while the race sits in its locked
+# preparation phase -> REJECT_BAD_SESSION.
+#
+# Getting there takes a whole session.  The gate matches the exe
+# (FUN_140025690:816): it wants session_type 10 in PHASE_FORMATION, so
+# the overlay runs a 1 min practice and then the race.  A race-only
+# weekend is not an option, the server refuses to start on one.
+#
+# Mind the phase names when reading the log for this one.
+# session_phase_kname maps our enum onto the stock server's names by
+# state equivalence, and for these two that is a swap: PHASE_FORMATION
+# prints as "pre session" and PHASE_PRE_SESSION prints as "formation".
+# The window the gate wants is the race's pre-race wait, ts[0]..ts[1],
+# which the log calls "pre session".  preRaceWaitingTimeSeconds is 20 in
+# the overlay so that window is wide enough to aim at: the race starts
+# about 63 s in, and bot2 connects at 70 s, well inside it.  The window
+# closes on a timer, so this does not depend on where any car is.
+#
+# Bot1 parks with --park-pos so the race never goes green and the state
+# stays put for the rest of the run.
+#
+# accd-only: the stock server's behaviour behind a parked car has not
+# been checked.
+PROBE_DURATION=15 PROBE_BOT_DELAYS="0 70" \
 probe bad_session 12 cfg_reject_bad_session no \
-    "--race 911 --grid 1 --name BotSeat1" \
+    "--race 911 --grid 1 --name BotSeat1 --park-pos 0.5" \
     "--race 922 --grid 2 --name BotSeat2 --expect-reject"
