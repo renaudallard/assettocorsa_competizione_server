@@ -2219,6 +2219,18 @@ handshake_handle(struct Server *s, struct Conn *c,
 	int is_reconnect = 0;
 	uint8_t wire_medals = 0, wire_sa = 0, wire_rc = 0, wire_cp = 0;
 
+	/*
+	 * Seed the client clock base with the server clock, the way the
+	 * exe does in its own 0x09 handler (FUN_140025690:461 stores the
+	 * game clock in conn+0xa00a8 / +0xa00ac).  A client's timestamps
+	 * start near zero when it joins, so the seed alone already
+	 * projects them onto the server's timeline; the first pong then
+	 * refines it with the measured half-RTT.  Without it, a lap
+	 * finished before that pong would be timed off the raw client
+	 * clock.
+	 */
+	c->clock_base_ms = (int64_t)mono_ms();
+
 	rd_init(&r, body, len);
 
 	if (rd_u8(&r, &msg_id) < 0 || msg_id != ACP_REQUEST_CONNECTION) {

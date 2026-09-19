@@ -951,6 +951,14 @@ session_recompute_standings(struct Server *s)
 	}
 }
 
+uint64_t
+session_green_ms(const struct Server *s)
+{
+	if (s->session.ts_valid && s->session.ts[3] != UINT64_MAX)
+		return s->session.ts[3];
+	return s->session_start_ms;
+}
+
 const char *
 session_phase_name(uint8_t p)
 {

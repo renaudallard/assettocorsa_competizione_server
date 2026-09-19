@@ -513,12 +513,21 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * mirroring the exe's sign-bit "seen" sentinel.
 		 */
 		if (new_min && (int32_t)rtt >= 0) {
-			uint64_t session_now =
-			    mono_ms() - s->session.phase_started_ms;
-			pc->session_clock_offset_ms =
-			    (int64_t)session_now -
+			/*
+			 * clock_base_ms is the same estimate in the plain
+			 * monotonic frame; session_clock_offset_ms is it
+			 * shifted into the current phase.  Keep the base
+			 * too: consumers that outlive a phase boundary
+			 * (the S/F crossing time) cannot use the shifted
+			 * form, because phase_started_ms moves under them
+			 * and nothing re-latches the offset until the
+			 * connection posts a new minimum RTT.
+			 */
+			pc->clock_base_ms = (int64_t)mono_ms() -
 			    (int64_t)(rtt / 2) -
 			    (int64_t)pong_client_ts;
+			pc->session_clock_offset_ms = pc->clock_base_ms -
+			    (int64_t)s->session.phase_started_ms;
 			pc->best_rtt_ms = rtt;
 			pc->session_clock_seen = 1;
 		}

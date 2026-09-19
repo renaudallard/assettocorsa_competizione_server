@@ -91,6 +91,16 @@ void	session_restart_current(struct Server *s);
 void	session_recompute_standings(struct Server *s);
 
 /*
+ * Epoch that session-elapsed times are measured from: the green flag
+ * (ts[3]).  For practice and qualifying that is the end of the
+ * pre-session countdown; for a race it is the position-triggered
+ * start, which stays at the UINT64_MAX sentinel until the trigger
+ * fires, so the formation out-lap falls back to the start of the
+ * session itself.
+ */
+uint64_t session_green_ms(const struct Server *s);
+
+/*
  * Driver-stint tracker (FUN_14012ae10 equivalent).
  *   start_tracking   = called when the car moves from non-track to on-track;
  *                      records the timestamp to accumulate against.

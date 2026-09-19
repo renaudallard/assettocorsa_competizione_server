@@ -826,6 +826,22 @@ struct Conn {
 						 * client_ts); stat/CSV only, no
 						 * wire consumer (exe's dead
 						 * field 0x2802a) */
+	int64_t		clock_base_ms;		/* client -> server clock base in
+						 * the monotonic frame: mono_ms -
+						 * rtt/2 - pong_client_ts.  The exe
+						 * spreads this over two fields,
+						 * conn+0xa00ac (seeded from the
+						 * server clock at handshake by
+						 * FUN_140025690, then slewed) and
+						 * conn+0xa0310 (the min-RTT base
+						 * FUN_1400420e0 relatches); we keep
+						 * one, seeded like the former and
+						 * refreshed like the latter.
+						 * Unlike session_clock_offset_ms it
+						 * is not tied to phase_started_ms,
+						 * so a crossing time derived from
+						 * it survives phase and session
+						 * boundaries. */
 	int64_t		session_clock_offset_ms;	/* session-relative clock
 							 * offset: session_now -
 							 * rtt/2 - pong_client_ts.

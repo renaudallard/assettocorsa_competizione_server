@@ -612,27 +612,29 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			/* Mirror exe line 464: zero car+0x1e8 for new lap. */
 			race->car_field = 0;
 			/*
-			 * Record the S/F crossing timestamp as the session-
-			 * relative race time (mirrors exe car+0x1b8, set in
-			 * FUN_1400142f0 at the 0x21 branch).  The exe
-			 * transforms the raw client timestamp by adding
-			 * session_clock_offset so the value is in ms from
-			 * session start; used as tiebreaker in cmp_cars and
-			 * as the finishing time in 0x3e results.
+			 * Record the S/F crossing as the time elapsed since
+			 * the green flag; used as the tiebreaker in cmp_cars
+			 * and as the finishing time in the 0x3e results and
+			 * results.json.
+			 *
+			 * The exe keeps the crossing in its own absolute
+			 * clock (LeaderboardLine+0x58) and only subtracts a
+			 * session reference when the results are built
+			 * (FUN_140128a80).  Do the same here: project the raw
+			 * client timestamp with the connection's monotonic
+			 * clock base, then subtract this session's green
+			 * flag.  Folding session_clock_offset_ms in instead
+			 * dated the crossing from whichever phase was current
+			 * when that connection last posted a minimum RTT, so
+			 * the value kept growing across phase and session
+			 * boundaries and ended up longer than the race.
 			 */
-			if (c->session_clock_seen) {
-				/*
-				 * exe FUN_140042000 = drift + session-base-
-				 * offset + raw_ts; accd had only the base
-				 * offset, so add the drift term too.
-				 */
+			{
 				int64_t adj = (int64_t)lap_time +
-				    c->session_clock_offset_ms +
-				    (int64_t)c->drift_ms;
+				    c->clock_base_ms -
+				    (int64_t)session_green_ms(s);
 				race->race_time_ms = adj > 0
 				    ? (int32_t)adj : 0;
-			} else {
-				race->race_time_ms = lap_time;
 			}
 		}
 
@@ -2745,14 +2747,17 @@ h_udp_car_update(struct Server *s, struct Conn *c,
 	 * projected to server time, is ahead of the server clock by more
 	 * than the threshold.  The exe's projection term is
 	 * uVar17 = client_ts + FUN_1400418b0(conn), and FUN_1400418b0
-	 * returns drift + session-base-offset (NOT the round-trip time),
-	 * the same value session_clock_offset_ms + drift_ms holds here.
-	 * Log-only.
+	 * returns drift + clock base (NOT the round-trip time), the same
+	 * value clock_base_ms + drift_ms holds here.  Both sides of the
+	 * comparison have to sit on the same timeline, so the base has to
+	 * be the monotonic one.  With the phase-relative offset the line
+	 * fired or stayed quiet depending on how long the server had been
+	 * up.  Log-only.
 	 */
 	{
 		int32_t server_now32 = (int32_t)mono_ms();
 		int32_t client_adj = (int32_t)((int64_t)client_ts_ms +
-		    c->session_clock_offset_ms + (int64_t)c->drift_ms);
+		    c->clock_base_ms + (int64_t)c->drift_ms);
 		int threshold = s->legacy_netcode ? 25 : 5;
 		if (client_adj - server_now32 > threshold)
 			log_warn("onCarUpdate: timestamp %d ms in future",
