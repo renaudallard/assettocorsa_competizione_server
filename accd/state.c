@@ -262,6 +262,7 @@ server_init(struct Server *s)
 	for (int i = 0; i < ACC_MAX_CARS; i++) {
 		s->cars[i].car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
 		s->cars[i].last_elo = 0xff;	/* unrated sentinel */
+		s->cars[i].race.last_split_id = SPLIT_ID_NONE;
 		s->cars[i].team_entry_id = -1;	/* standalone until
 						 * entrylist_load expands a
 						 * multi-driver entry. */

@@ -294,6 +294,7 @@ session_reset(struct Server *s, uint8_t session_index)
 		memset(r, 0, sizeof(*r));
 		r->best_lap_ms = 0;
 		r->last_lap_ms = 0;
+		r->last_split_id = SPLIT_ID_NONE;
 		r->position = (int16_t)(i + 1);
 		r->grid_position = -1;
 		r->on_track = saved_on_track;

@@ -302,6 +302,22 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 */
 	if (sector_index < 3)
 		race->sector_ms[sector_index] = sector_time_ms;
+	/*
+	 * Split progress for the live 0x36 record.  The exe runs the split
+	 * clock through the same projection as the lap crossing
+	 * (FUN_1400142f0 case 0x20 calls FUN_140042000 on it), so do the
+	 * same here: client clock through the connection's monotonic base,
+	 * then relative to the green flag.  The id counts splits inside the
+	 * lap, so the sector the client just finished plus one; the S/F
+	 * crossing sets it back to 0 in h_sector_split_single.
+	 */
+	{
+		int64_t adj = (int64_t)clock_ms + c->clock_base_ms -
+		    (int64_t)session_green_ms(s);
+
+		race->last_split_ms = adj > 0 ? (int32_t)adj : 0;
+		race->last_split_id = (uint8_t)(sector_index + 1);
+	}
 	/* Append to the arrival-ordered per-lap split buffer (exe car+0x1d0
 	 * vector) for the 0x3a relay below. */
 	if (race->lap_split_n < 3)
@@ -635,6 +651,20 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 				    (int64_t)session_green_ms(s);
 				race->race_time_ms = adj > 0
 				    ? (int32_t)adj : 0;
+				/*
+				 * A real crossing is also a split, and it is
+				 * the one that restarts the count.  The
+				 * formation out-lap is not: the stock server
+				 * leaves both fields at their starting
+				 * sentinels until the car posts a sector
+				 * split, and that crossing predates the green
+				 * flag anyway, so its time would be 0.
+				 */
+				if (!is_fmn_outlap) {
+					race->last_split_ms =
+					    race->race_time_ms;
+					race->last_split_id = 0;
+				}
 			}
 		}
 

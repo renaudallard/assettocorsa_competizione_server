@@ -1162,24 +1162,46 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 * out-lap.
 	 */
 	if (wr_u16(bb, (uint16_t)race->lap_count) < 0) return -1;
+	/*
+	 * These last two fields carry different things depending on which
+	 * record this is.  In the post-race results (0x3e) the u32 is the
+	 * car's elapsed race time, built in the exe by subtracting the
+	 * session reference from the stored crossing (FUN_140128a80), and
+	 * the byte is the rating.  In a live 0x36 they are split progress:
+	 * the session-relative time of the car's last split and which split
+	 * it was, so the client can move the timing tower between lap
+	 * completions.  A paired capture shows the pair stepping
+	 * (t, 1), (t, 2), (t, 0) through every lap, the 0 landing on the
+	 * S/F crossing, and starting at INT32_MAX / 0xff.  We used to emit
+	 * that starting pair for the whole session.
+	 */
 	{
-		/*
-		 * Exe (FUN_140128a80:444-455) always emits 0x7fffffff for
-		 * this field in live sessions; only the post-race results
-		 * path (0x3e) uses the actual elapsed time.  In live context
-		 * apply_results_tp is 0, so emit the sentinel.
-		 */
 		uint32_t rt = LAP_TIME_INVALID;
-		if (apply_results_tp && race->race_time_ms > 0) {
-			rt = (uint32_t)race->race_time_ms + tp_ms;
-			if (rt == 0)
-				rt = LAP_TIME_INVALID;
+
+		if (apply_results_tp) {
+			if (race->race_time_ms > 0) {
+				rt = (uint32_t)race->race_time_ms + tp_ms;
+				if (rt == 0)
+					rt = LAP_TIME_INVALID;
+			}
+		} else if (race->last_split_id != SPLIT_ID_NONE) {
+			rt = (uint32_t)race->last_split_ms;
 		}
 		if (wr_u32(bb, rt) < 0)
 			return -1;
 	}
-	if (wr_u8(bb, ec->last_elo < 0xff
-	    ? (uint8_t)ec->last_elo : 0xff) < 0) return -1;
+	if (apply_results_tp) {
+		if (wr_u8(bb, ec->last_elo < 0xff
+		    ? (uint8_t)ec->last_elo : 0xff) < 0) return -1;
+	} else {
+		/*
+		 * The exe keeps this as a u32 and clamps anything that does
+		 * not fit a byte to 0xff (FUN_140034210), which is how the
+		 * -1 it starts from reaches the wire.
+		 */
+		if (wr_u8(bb, race->last_split_id < 0xff
+		    ? race->last_split_id : 0xff) < 0) return -1;
+	}
 
 	{
 		int si;
@@ -3070,6 +3092,7 @@ post_slot_assignment:
 			memset(&fc->race, 0, sizeof(fc->race));
 			fc->race.position = (int16_t)(c->car_id + 1);
 			fc->race.grid_position = -1;
+			fc->race.last_split_id = SPLIT_ID_NONE;
 		}
 		/* Populate the car slot with parsed data. */
 		car = &s->cars[c->car_id];

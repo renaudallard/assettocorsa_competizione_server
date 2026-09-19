@@ -83,6 +83,14 @@ mono_ms(void)
 #define LAP_TIME_INVALID	0x7FFFFFFFu
 
 /*
+ * CarRaceState.last_split_id value for "no split posted yet this
+ * session".  The stock server leaves car+0x1f8 at its -1 ctor default
+ * until the first split, and the record builder clamps anything above
+ * a byte to 0xff (FUN_140034210), so that is what reaches the wire.
+ */
+#define SPLIT_ID_NONE		0xFFu
+
+/*
  * Default ambient temperature in degrees Celsius, used as a
  * fallback whenever event.json doesn't set one (or sets it to
  * zero).  Lifted to a single named constant so the 5 wire
@@ -277,6 +285,18 @@ struct CarRaceState {
 	int32_t		last_lap_splits_ms[3];
 	int32_t		best_sectors_ms[3];
 	int32_t		race_time_ms;
+	/*
+	 * Last split this car posted: when it happened, in the session
+	 * frame, and which split it was.  The live 0x36 record carries
+	 * both (car+0x1f0 and the byte at car+0x1f8), so the client can
+	 * show split progress between lap completions.  split_id counts
+	 * within the current lap: 1 after the first sector, 2 after the
+	 * second, back to 0 on the S/F crossing.  SPLIT_ID_NONE means the
+	 * car has not posted one yet this session and the record emits the
+	 * INT32_MAX / 0xff pair the stock server starts from.
+	 */
+	int32_t		last_split_ms;
+	uint8_t		last_split_id;
 	int32_t		lap_history_ms[ACC_LAP_HISTORY];
 	/*
 	 * Per-lap sector splits captured at lap-completion time
