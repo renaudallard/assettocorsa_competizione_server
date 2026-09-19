@@ -289,15 +289,19 @@ static size_t pkt_location(uint8_t *out, uint16_t car_id, uint8_t loc)
 }
 
 /* 0x21 ACP_SECTOR_SPLIT_SINGLE — TCP framed.
- * Body: u8 + i32 split_ms + i32 lap_ms + u8 sector + u16 car_field +
- *       u8 flag.  Server transforms to 0x3b for relay. */
-static size_t pkt_sector_split(uint8_t *out, int32_t split_ms,
-    int32_t lap_ms, uint8_t sector, uint16_t car_field)
+ * Body: u8 + i32 lap_ms + i32 client_ts + u8 sector + u16 car_field +
+ *       u8 flag.  Server transforms to 0x3b for relay.  The second
+ * i32 is the client's running clock at the S/F crossing, not a lap
+ * time: the server projects it onto its own timeline to get the
+ * finishing time.  A real client's value climbs monotonically across
+ * the whole connection. */
+static size_t pkt_sector_split(uint8_t *out, int32_t lap_ms,
+    int32_t client_ts, uint8_t sector, uint16_t car_field)
 {
 	bb_reset();
 	bb_u8(0x21);
-	bb_u32((uint32_t)split_ms);
 	bb_u32((uint32_t)lap_ms);
+	bb_u32((uint32_t)client_ts);
 	bb_u8(sector);
 	bb_u16(car_field);
 	bb_u8(0);			/* flag_d, unused */
@@ -1192,6 +1196,11 @@ static void usage(const char *p)
 	    "                   zero).  Use when pcap-diffing against a kunos\n"
 	    "                   capture that itself was taken with stationary\n"
 	    "                   inputs.\n"
+	    "  --no-keepalive   send the UDP 0x13 keepalive once, at start,\n"
+	    "                   the way a real ACC client does, instead of\n"
+	    "                   once per second (issue #20 repro: the 1 Hz\n"
+	    "                   0x13 re-anchors the server's per-connection\n"
+	    "                   clock and hides staleness a real client hits)\n"
 	    "  --park-pos U     report a fixed norm_pos U with zero velocity,\n"
 	    "                   simulating a client that locks the car on the\n"
 	    "                   grid (issue #16 rolling-start repro).\n"
@@ -1315,6 +1324,7 @@ int main(int argc, char **argv)
 		{"chat", required_argument, 0, 'C'},
 		{"chat-start-tick", required_argument, 0, 'Z'},
 		{"zero-inputs", no_argument,       0, 'I'},
+		{"no-keepalive", no_argument,      0, 'n'},
 		{"park-pos",    required_argument, 0, 'e'},
 		{"drive-from",  required_argument, 0, 'u'},
 		{"help",        no_argument,       0, 'h'},
@@ -1333,6 +1343,10 @@ int main(int argc, char **argv)
 	uint32_t chat_start_tick = 60;
 	int zero_inputs = 0;	/* --zero-inputs: emit all-zero input bytes
 				 * for byte-diff parity with legacy pcaps. */
+	int no_keepalive = 0;	/* --no-keepalive: one 0x13 at start only, as a
+				 * real client does (it sends exactly one per
+				 * connection; the default 1 Hz stream is a bot
+				 * artefact). */
 	float park_pos = -1.0f;	/* --park-pos U: report a fixed norm_pos U with
 				 * zero velocity, simulating a client that locks
 				 * the car on the grid (issue #16 repro). */
@@ -1526,6 +1540,9 @@ int main(int argc, char **argv)
 			break;
 		case 'I':
 			zero_inputs = 1;
+			break;
+		case 'n':
+			no_keepalive = 1;
 			break;
 		case 'e':
 			park_pos = (float)atof(optarg);
@@ -1848,7 +1865,8 @@ int main(int argc, char **argv)
 					/*
 					 * Lap complete: 0x21 with the just-
 					 * finished lap's full time in the
-					 * first u32.  On the very first S/F
+					 * first u32 and the client clock in
+					 * the second.  On the very first S/F
 					 * crossing lap_t is 0 (timers were
 					 * initialized this same iteration);
 					 * tag the lap as IsOutLap (bit 2)
@@ -1872,7 +1890,7 @@ int main(int argc, char **argv)
 						    (int)emit_lap_t);
 					}
 					n = pkt_sector_split(pkt2,
-					    emit_lap_t, emit_lap_t,
+					    emit_lap_t, (int32_t)client_ts,
 					    (uint8_t)last_sector,
 					    car_field);
 					send_tcp_framed(tcp_fd, pkt2, n);
@@ -1883,7 +1901,7 @@ int main(int argc, char **argv)
 					uint8_t pkt3[16];
 					size_t m = pkt_sector_bulk(pkt3,
 					    split, (uint8_t)last_sector,
-					    lap_t, 0);
+					    (int32_t)client_ts, 0);
 					send_tcp_framed(tcp_fd, pkt3, m);
 				}
 				sector_start_ms = client_ts;
@@ -2089,7 +2107,15 @@ int main(int argc, char **argv)
 			}
 		}
 
-		if (tick % 30 == 0) {
+		/*
+		 * UDP 0x13.  A real ACC client sends exactly one of these
+		 * per connection, right after the UDP socket comes up; the
+		 * 1 Hz stream below is a bot convenience.  It matters
+		 * because the server resets its per-connection clock state
+		 * on every 0x13, so a bot that keeps sending them never
+		 * exercises the paths a real client does.
+		 */
+		if (tick % 30 == 0 && (tick == 0 || !no_keepalive)) {
 			size_t n = pkt_keepalive(pkt, conn_id);
 			sendto(udp_fd, pkt, n, 0,
 			    (struct sockaddr *)&udp_peer, sizeof udp_peer);

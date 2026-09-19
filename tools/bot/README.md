@@ -19,7 +19,9 @@ under Wine.
   lap (under 70 km/h), pit-lane (sub-22 m/s + `location=Pitlane`),
   per-sector `0x20` splits + lap-complete `0x21` at S/F (matching
   the kunos wire convention so the server's lap counter advances
-  in P / Q / R), mandatory pit served (`0x54`), keepalive pong
+  in P / Q / R, with the client's running clock in the timestamp
+  field the server times the finish off), mandatory pit served
+  (`0x54`), keepalive pong
   (`0x16`), reconnect with exponential backoff, mid-race join,
   damage zones (`0x43`), dirt (`0x45`), tyre compound (`0x2f`).
 - Drives on a kinematic model: corner radius from the racing-line
@@ -105,6 +107,7 @@ Test-only knobs the wire-level integration tests under
 | `--zero-inputs` | emit legacy all-zero input / rpm / gear / fuel / damage bytes in every 0x1e car-update; default is the realistic-content encoding |
 | `--park-pos` U | report a fixed norm_pos U with zero velocity, simulating a client that locks the car on the grid (issue #16 rolling-start repro) |
 | `--drive-from` U | start at norm_pos U and drive forward at formation speed with no racing line, simulating the client rolling-start autopilot leaving the grid (issue #16 green-fire test) |
+| `--no-keepalive` | send the UDP `0x13` keepalive once at start, the way a real client does, instead of once per second (issue #20 finishing-time test) |
 
 ## Getting a racing line
 
