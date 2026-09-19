@@ -29,8 +29,14 @@ build/
 .idea/
 accd/cfg/
 
-# Test cfg: track the static config files, ignore mutable / generated
+# Test cfg: track the static config files, ignore mutable / generated.
+# accd runs directly against some cfg_* fixture dirs (-c cfg_next_race)
+# and writes ratings back into them at shutdown, so a test run dirties
+# the working tree.  The seeds are inert there anyway: those overlays
+# set every rating requirement to 0, so nothing gates on them, and
+# ratings_load just returns when the file is absent.
 accd/tests/integration/cfg/ratings.json
+accd/tests/integration/cfg_next_race/ratings.json
 accd/tests/integration/cfg/current/
 accd/tests/integration/cfg/*.bak
 
