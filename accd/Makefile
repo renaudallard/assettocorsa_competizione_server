@@ -100,13 +100,22 @@ ${PROG}: ${OBJS}
 	echo ${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD $$SECCOMP ${LIBS}; \
 	${CC} ${ACCD_LDFLAGS} ${LDFLAGS} -o ${PROG} ${OBJS} ${ACCD_LIBS} $$ICONV $$BSD $$SECCOMP ${LIBS}
 
-# main.o embeds ACCD_VERSION_STR via -DACCD_VERSION_STR=...
-# defined in ACCD_CFLAGS at make-invocation time.  After bumping
-# VERSION, run `make clean && make` so the new value is baked in;
-# touching main.c alone is not enough because the dependency
-# system can't see the macro change.  The deploy script already
-# does clean+make.
+# main.o embeds ACCD_VERSION_STR via -DACCD_VERSION_STR=... defined
+# in ACCD_CFLAGS at make-invocation time, so it has to rebuild when
+# the VERSION file changes.  Without the dependency below an
+# incremental build after a bump keeps the old string: the build runs
+# clean, nothing looks wrong, and the binary reports a version that no
+# longer matches the tree (caught 2026-09-19, accd -V still said
+# 0.3.263 after the bump to 0.3.264).
 #
+# Resolve the same two layouts ACCD_VERSION reads, preferring ./VERSION
+# over ../VERSION, and expand to nothing when neither is present so
+# make is never asked for a file it has no rule to build.
+ACCD_VERSION_FILE != (ls VERSION 2>/dev/null || ls ../VERSION 2>/dev/null \
+		    || echo) | head -1
+
+main.o: ${ACCD_VERSION_FILE}
+
 # Header dependencies below were generated with `cc -MM *.c` so a
 # touch on any transitively-included header forces every dependent
 # .o to rebuild.  After changing a #include in any .c or .h, run
