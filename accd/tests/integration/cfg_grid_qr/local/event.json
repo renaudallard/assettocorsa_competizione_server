@@ -1,0 +1,27 @@
+{
+    "track": "misano",
+    "preRaceWaitingTimeSeconds": 5,
+    "sessionOverTimeSeconds": 5,
+    "ambientTemp": 22,
+    "trackTemp": 30,
+    "cloudLevel": 0.3,
+    "rain": 0.0,
+    "weatherRandomness": 0,
+    "configVersion": 1,
+    "sessions": [
+        {
+            "hourOfDay": 15,
+            "dayOfWeekend": 2,
+            "timeMultiplier": 1,
+            "sessionType": "Q",
+            "sessionDurationMinutes": 1
+        },
+        {
+            "hourOfDay": 16,
+            "dayOfWeekend": 3,
+            "timeMultiplier": 1,
+            "sessionType": "R",
+            "sessionDurationMinutes": 2
+        }
+    ]
+}
