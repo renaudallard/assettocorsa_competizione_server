@@ -382,6 +382,22 @@ session_reset(struct Server *s, uint8_t session_index)
 			    i, (int)car->race.grid_position, prior,
 			    car->used ? "" : ", zombie");
 		}
+		/*
+		 * Hand the finished grid to the clients now.  The exe emits
+		 * 0x3f from the session-completed branch of its tick
+		 * (FUN_14002f710:516, gated on the ending session type being
+		 * Qualifying), so a client holds the race grid before the race
+		 * session opens.  It needs it that early: AC2 reads the record
+		 * order in startSession (140e674e0.c:381-392) to set each car's
+		 * physics grid position and its double-file column, and any car
+		 * missing from the list lands on position 10000.  accd used to
+		 * defer the broadcast to the race PRE_SESSION transition, a
+		 * full preRaceWaitingTimeSeconds after the client had already
+		 * laid the grid out from the stale qualy pit slots.
+		 * A weekend without qualifying sends nothing, same as the exe.
+		 */
+		if (prior >= 0)
+			broadcast_grid(s);
 	}
 
 	{

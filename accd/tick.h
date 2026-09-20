@@ -67,6 +67,15 @@ int	broadcast_leaderboard_if_changed(struct Server *s);
 void	leaderboard_request_emit(struct Server *s);
 
 /*
+ * Build and broadcast SRV_GRID_POSITIONS (0x3f).  Called by
+ * session_reset() the moment a race grid is derived from a preceding
+ * qualifying session, matching where the exe emits it.  The client
+ * needs it before it lays the grid out, so it must not be deferred to
+ * a later phase.
+ */
+void	broadcast_grid(struct Server *s);
+
+/*
  * Build the leaderboard payload and broadcast unconditionally,
  * bypassing the deep-compare gate.  Used at kunos-documented
  * mandatory-emit moments (post-handshake fan-out, weekend wrap,

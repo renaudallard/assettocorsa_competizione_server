@@ -724,16 +724,27 @@ done:
 }
 
 /*
- * Build and emit the SRV_GRID_POSITIONS (0x3f) at the start of
- * the RACE phase.  Body: u8 grid_count + per-car { u16 carId +
- * u8 driverIndex + u32 best_lap_ms + u8 = 1 }.  The exe builds each
- * record in FUN_1401318b0: byte +4 = LeaderboardLine +0x180 (current
- * driver index), u32 +8 = LeaderboardLine +0x1d4 (qualifying
- * best_lap_ms), constant 1 at +0xc as trailing wire byte.  The client
- * infers each car's starting position from the record ORDER; the u32
- * carries the qualifying lap time for the pre-race grid display.
+ * Build and emit the SRV_GRID_POSITIONS (0x3f).  Body: u8 grid_count
+ * + per-car { u16 carId + u8 driverIndex + u32 best_lap_ms + u8 = 1 }.
+ * The exe builds each record in FUN_1401318b0: byte +4 =
+ * LeaderboardLine +0x180 (current driver index), u32 +8 =
+ * LeaderboardLine +0x1d4 (qualifying best_lap_ms), constant 1 at +0xc
+ * as trailing wire byte.  The client infers each car's starting
+ * position from the record ORDER; the u32 carries the qualifying lap
+ * time for the pre-race grid display.
+ *
+ * Called from session_reset() as soon as the race grid is built, which
+ * is where the exe sends it too (FUN_14002f710:516 gates on the ending
+ * session type 0x04 and emits inside the session-completed branch).
+ * The timing is load-bearing: the AC2 client reads the record order in
+ * ACarAvatar startSession (140e674e0.c:381-392), writes the resulting
+ * index to the car's physics grid position, and falls back to 10000 for
+ * any car missing from the list.  It then places the car and picks the
+ * double-file column from that value & 1 (140e674e0.c:484-491), so a
+ * grid that arrives after the pre-race countdown leaves every car on
+ * position 10000 and sends them all to the same column.
  */
-static void
+void
 broadcast_grid(struct Server *s)
 {
 	struct ByteBuf bb;
@@ -1425,36 +1436,6 @@ tick_run(struct Server *s)
 		 * last_weather_ms to just before the threshold.
 		 */
 		last_weather_ms = now_ms - CADENCE_WEATHER_MS;
-		/*
-		 * 0x3f grid positions.  The exe emits this at the END of a
-		 * Qualifying session: FUN_14002f710 gates on the ending
-		 * session's TYPE == 0x04 (Qualifying) inside the session-over
-		 * branch, so the race grid is broadcast only when it derives
-		 * from a preceding qualy.  A weekend with no qualy (Practice
-		 * to Race) never triggers it.  We fire at the race PRE_SESSION
-		 * transition instead, but only when a qualifying session
-		 * precedes this race, scanning the schedule the same way the
-		 * grid builder does (session.c).  This suppresses the spurious
-		 * frame accd used to send on a Practice to Race weekend while
-		 * still sending one grid before green on the normal P/Q/R
-		 * weekend.
-		 */
-		if (s->session.phase == PHASE_PRE_SESSION &&
-		    s->session_count > 0 &&
-		    s->sessions[s->session.session_index]
-			.session_type == 10) {
-			int k, has_qualy = 0;
-
-			for (k = (int)s->session.session_index - 1;
-			    k >= 0; k--) {
-				if (s->sessions[k].session_type == 4) {
-					has_qualy = 1;
-					break;
-				}
-			}
-			if (has_qualy)
-				broadcast_grid(s);
-		}
 		if ((s->session.phase == PHASE_COMPLETED ||
 		    s->session.phase == PHASE_ADVANCE) &&
 		    !s->session.results_written) {

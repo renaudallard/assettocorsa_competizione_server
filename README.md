@@ -113,14 +113,18 @@
   cannot fire the green flag.
 - **Race grid from qualy** — race grid derived from the most recent
   prior qualifying session's finishing order.  `defaultGridPosition`
-  in `entrylist.json` is used only when no prior Q/P exists.  On the
+  in `entrylist.json` is used only when no prior Q/P exists.  The grid
+  is broadcast (`0x3f`) the moment it is built, at the qualifying to
+  race boundary, because the client lays the grid out during the
+  pre-race countdown and a car missing from that list starts from
+  position 10000 and is sent to the wrong formation column.  On the
   formation-to-green transition the server prints a `Race grid:`
   block followed by one `  Car N Pos M` line per slot in pole-first
   order, so the final starting order is visible in the server output
   without needing the client HUD.
 - **Ranked leaderboard / results** — real-time standings on lap
-  completion, `0x36` broadcast in ranked order, `0x3f` grid at race
-  start, `0x3e` session results at session end.
+  completion, `0x36` broadcast in ranked order, `0x3f` grid at the
+  qualifying to race boundary, `0x3e` session results at session end.
 - **Results file writer** — `results/YYMMDD_HHMMSS_<type>.json`
   matching the stock server schema.  The top-level `laps` array logs
   every completed lap of the session in completion order, valid and
