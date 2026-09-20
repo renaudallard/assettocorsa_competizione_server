@@ -626,7 +626,10 @@ server_validate_default_grid(struct Server *s, int car_id, int dgp)
 		if (ce->race.grid_position == dgp &&
 		    (ce->race_number != my_num || my_num < 0)) {
 			log_warn("EntryList defaultGridPosition %d for race "
-			    "number %d is already occupied", dgp, my_num);
+			    "number %d is already occupied. Please check the "
+			    "entrylist.json to have unique values, and/or "
+			    "don't mix defaultGridPosition with Qualifying "
+			    "sessions", dgp, my_num);
 			return -1;
 		}
 	}
