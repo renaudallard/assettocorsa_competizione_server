@@ -266,6 +266,18 @@ server_init(struct Server *s)
 		s->cars[i].team_entry_id = -1;	/* standalone until
 						 * entrylist_load expands a
 						 * multi-driver entry. */
+		/*
+		 * Unset until the entrylist says otherwise.  server_init
+		 * memsets the whole struct and the entrylist parser is the
+		 * only other writer, so without this a car that has no entry
+		 * carries 0, which both the join path and the race-grid
+		 * builder read as a fixed request for pole: the first driver
+		 * to connect is granted it and everyone after collides and
+		 * logs the "already occupied" warning over an entrylist that
+		 * may not even exist.  The exe seeds the same field to -1
+		 * before its entrylist lookup (FUN_140025690).
+		 */
+		s->cars[i].default_grid_position = -1;
 		car_runtime_reset_gate(&s->cars[i].rt);
 	}
 	/*
