@@ -209,10 +209,38 @@ session_is_qualy(const struct Server *s)
 	return session_cur_type(s) == 4;
 }
 
+/*
+ * Seed value for the per-car first-split gate (exe car+0x204, the same
+ * byte the green flag's formation-mid latch uses).  The exe bulk-sets it
+ * for every car at each session transition (FUN_1400197b0 line 174,
+ * FUN_14002aca0 line 742) and its car constructor starts the field
+ * non-zero, so a sector split is normally counted.  It is held clear
+ * only for a Race running formationLapType 0 with automatic formation
+ * that has not yet passed the formation phase; with the shipped default
+ * of 3, and in every Practice or Qualifying session, the byte is already
+ * set.
+ *
+ * accd used to leave the flag clear in every session and let the first
+ * 0x20 flip it, which discarded sector 1 of each car's first lap and
+ * logged it as 0:0:0 (issue #24).  The exe's remaining "not manual
+ * formation" term is omitted: formationLapType 0 is already the outer
+ * gate, so the only window where it would differ is a private server
+ * deliberately running type 0.
+ */
+uint8_t
+session_first_split_seed(const struct Server *s, uint8_t session_index)
+{
+	if (session_index >= s->session_count)
+		return 1;
+	return (s->sessions[session_index].session_type == 10 &&
+	    s->formation_lap_type == 0) ? 0 : 1;
+}
+
 void
 session_reset(struct Server *s, uint8_t session_index)
 {
 	int i;
+	uint8_t first_split_seed;
 
 	/*
 	 * Clear the per-session results lap log so the next session's
@@ -275,6 +303,7 @@ session_reset(struct Server *s, uint8_t session_index)
 	 */
 	weather_grip_forecast_session(s, &s->sessions[session_index]);
 
+	first_split_seed = session_first_split_seed(s, session_index);
 	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarRaceState *r = &s->cars[i].race;
 		/*
@@ -298,6 +327,7 @@ session_reset(struct Server *s, uint8_t session_index)
 		r->position = (int16_t)(i + 1);
 		r->grid_position = -1;
 		r->on_track = saved_on_track;
+		r->formation_lap_done = first_split_seed;
 		car_runtime_reset_gate(&s->cars[i].rt);
 		s->cars[i].rt.last_moved_ms = 0;
 	}

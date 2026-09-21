@@ -270,13 +270,19 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	race = &s->cars[c->car_id].race;
 
 	/*
-	 * Drop a car's very first sector split.  Per FUN_1400142f0 case
-	 * 0x20, a car that has not yet finished the formation lap
-	 * (car+0x200 == 0) has its first split discarded: the exe logs
-	 * "did not finish the formation lap", sets the flag and returns
-	 * without recording or relaying.  Subsequent splits count.  The
-	 * flag is managed here in the 0x20 path, not in the 0x21 lap-
-	 * complete handler.
+	 * Drop a split from a car that has not finished the formation lap.
+	 * Per FUN_1400142f0 case 0x20, a car whose car+0x204 byte is clear
+	 * has this split discarded: the exe logs "did not finish the
+	 * formation lap", sets the byte and returns without recording or
+	 * relaying.  Subsequent splits count.
+	 *
+	 * car+0x204 is the same byte the green flag's formation-mid latch
+	 * uses (FUN_1400431e0), and the exe bulk-sets it for every car at
+	 * each session transition, so it is normally ALREADY set by the
+	 * time any split arrives.  session_reset seeds it the same way;
+	 * see the comment there for when it is left clear.  Leaving it
+	 * clear unconditionally is what made sector 1 of every car's first
+	 * lap read 0:0:0 (issue #24).
 	 */
 	if (!race->formation_lap_done) {
 		race->formation_lap_done = 1;

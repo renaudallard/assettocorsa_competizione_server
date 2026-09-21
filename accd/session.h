@@ -47,6 +47,16 @@
 void	session_reset(struct Server *s, uint8_t session_index);
 
 /*
+ * Value the per-car formation_lap_done flag (exe car+0x204) should hold
+ * for the given session.  1 means the car's first sector split counts,
+ * which is what the exe does everywhere except a Race on
+ * formationLapType 0.  Both session_reset and the fresh-join race-state
+ * reset in handshake.c seed the flag from this.
+ */
+uint8_t	session_first_split_seed(const struct Server *s,
+	    uint8_t session_index);
+
+/*
  * Advance the session machine one tick.  Called from tick.c
  * once per tick.  Handles phase transitions, fires the
  * one-shot broadcasts at boundaries.

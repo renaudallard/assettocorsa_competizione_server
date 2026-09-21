@@ -3093,6 +3093,17 @@ post_slot_assignment:
 			fc->race.position = (int16_t)(c->car_id + 1);
 			fc->race.grid_position = -1;
 			fc->race.last_split_id = SPLIT_ID_NONE;
+			/*
+			 * Re-seed the first-split gate the memset just
+			 * cleared.  The exe's car constructor starts
+			 * car+0x204 non-zero, so a freshly created car
+			 * counts its first sector split; leaving it at 0
+			 * here threw away sector 1 of the joiner's first
+			 * lap even when session_reset had seeded the slot.
+			 */
+			fc->race.formation_lap_done =
+			    session_first_split_seed(s,
+			    s->session.session_index);
 		}
 		/* Populate the car slot with parsed data. */
 		car = &s->cars[c->car_id];
