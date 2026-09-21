@@ -650,8 +650,16 @@ server_validate_default_grid(struct Server *s, int car_id, int dgp)
 	    s->is_cp_inv_server;
 	pit = track_pit_count(s->track, is_private);
 	if (dgp > pit) {
-		log_warn("EntryList defaultGridPosition %d for car %d exceeded "
-		    "the track's pit count %d", dgp, car_id, pit);
+		/*
+		 * The exe prints the same value here as in the collision
+		 * warning above, the one its own text calls the race number,
+		 * and spells the field "carId" and the count "pit counts".
+		 * Match both the wording and the argument so a log parser
+		 * written against the stock server reads accd the same way;
+		 * accd used to print the slot index under a "car" label.
+		 */
+		log_warn("EntryList defaultGridPosition %d for carId %d "
+		    "exceeded the track's pit counts %d", dgp, my_num, pit);
 		return -1;
 	}
 	return dgp;
