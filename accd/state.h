@@ -743,6 +743,10 @@ struct CarEntry {
 	char		team_name[ACC_MAX_NAME_LEN];
 	int32_t		default_grid_position;	/* 0-based; -1 = unset
 						 * (JSON value-1 at load) */
+	uint8_t		pit_slot;		/* 0-based pit box, picked on
+						 * each join; the spawnDef
+						 * sends it +1 as the client's
+						 * pitNumber */
 	int8_t		ballast_kg;		/* kg; /ballast admin clamps
 						 * -40..40 per exe FUN_14001dae0 */
 	float		restrictor;		/* normalized 0..0.20 */
@@ -1372,6 +1376,12 @@ int	server_used_car_count(const struct Server *s);
  * accServer.exe FUN_140021090.
  */
 int	server_find_grid_slot(struct Server *s);
+/*
+ * Pick the pit box for the car in slot `self`: the one held by the
+ * fewest other used cars, lowest index on a tie.  Mirrors
+ * accServer.exe FUN_1400211b0.
+ */
+int	server_find_pit_slot(struct Server *s, int self);
 int	server_validate_default_grid(struct Server *s, int car_id, int dgp);
 
 /*

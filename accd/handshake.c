@@ -1728,7 +1728,7 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	struct Conn *owner = NULL;
 	size_t drv_len, ci_off, ci_len;
 	int k;
-	uint8_t slot1;
+	uint8_t pit_wire;
 
 	if (car_slot < 0 || car_slot >= ACC_MAX_CARS)
 		return -1;
@@ -1755,21 +1755,15 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	ci_len = owner->hs_echo_len - ci_off;
 
 	/*
-	 * Byte@+2: sequential 1-based index among the active (used) cars
-	 * ordered by slot.  FUN_140032c90 reads car+0x2 (a per-car counter
-	 * set when the car is added) and adds 1.  With non-contiguous slots
-	 * (a slot was freed by a mid-session disconnect) the exe's index is
-	 * smaller than slot+1; e.g. slots 0 and 2 active yields b2=1 and b2=2
-	 * where slot+1 would give 1 and 3.
+	 * Byte@+2: FUN_140032c90 writes car+0x2 + 1, the pit box picked by
+	 * FUN_1400211b0 when the car joined.  The client passes it to
+	 * ACarAvatar init as pitNumber ("Assigned pitNumber %d / gridNumber
+	 * %d") and puts the car in that garage, so it must stay fixed for
+	 * the whole connection.
 	 */
-	{
-		int k, seq = 0;
-		for (k = 0; k <= car_slot; k++)
-			if (s->cars[k].used) seq++;
-		slot1 = (uint8_t)seq;
-	}
+	pit_wire = (uint8_t)(ec->pit_slot + 1);
 	if (wr_u16(bb, ec->car_id) < 0) return -1;
-	if (wr_u8(bb, slot1) < 0) return -1;
+	if (wr_u8(bb, pit_wire) < 0) return -1;
 	/*
 	 * FUN_140032c90 writes `car+0x3 + 1` here — the 1-based
 	 * gridNumber.  The exe's own debug log confirms it:
@@ -1782,7 +1776,7 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 	{
 		int16_t g = ec->race.grid_position;
 		uint8_t grid_wire = (g >= 0 && g < 0xff)
-		    ? (uint8_t)(g + 1) : slot1;
+		    ? (uint8_t)(g + 1) : pit_wire;
 		if (wr_u8(bb, grid_wire) < 0) return -1;
 	}
 
@@ -3071,6 +3065,13 @@ post_slot_assignment:
 		 * be reallocated; reclaim must flip it back so the rest
 		 * of the server sees the driver as active again). */
 		s->cars[c->car_id].used = 1;
+		/*
+		 * Pit box for this connection.  The exe runs FUN_1400211b0
+		 * on every join, reconnects included, and keeps the result
+		 * on the car for the whole connection.
+		 */
+		s->cars[c->car_id].pit_slot =
+		    (uint8_t)server_find_pit_slot(s, c->car_id);
 		/*
 		 * Fresh occupant (different steam_id than any zombie):
 		 * drop the previous driver's race state and archived

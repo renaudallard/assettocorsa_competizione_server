@@ -612,6 +612,36 @@ server_find_grid_slot(struct Server *s)
 }
 
 /*
+ * FUN_1400211b0 counts, for every pit index, how many connected cars
+ * hold it and returns the least used one, lowest index first.  The
+ * exe bounds the scan by the track pit count; accd has no per-track
+ * pit table and uses max_connections, as server_find_grid_slot does.
+ * The count covers every used car except `self`, so a reconnecting
+ * car does not see its own previous box as taken.
+ */
+int
+server_find_pit_slot(struct Server *s, int self)
+{
+	int i, best, max_pits;
+	int count[ACC_MAX_CARS];
+
+	max_pits = s->max_connections > 0 &&
+	    s->max_connections <= ACC_MAX_CARS
+	    ? s->max_connections : ACC_MAX_CARS;
+	for (i = 0; i < ACC_MAX_CARS; i++)
+		count[i] = 0;
+	for (i = 0; i < ACC_MAX_CARS; i++)
+		if (i != self && s->cars[i].used &&
+		    s->cars[i].pit_slot < max_pits)
+			count[s->cars[i].pit_slot]++;
+	best = 0;
+	for (i = 1; i < max_pits; i++)
+		if (count[i] < count[best])
+			best = i;
+	return best;
+}
+
+/*
  * Validate an entrylist defaultGridPosition (0-based) against the live grid,
  * mirroring the exe FUN_140025690:612-637.  Returns dgp when it is free (no
  * other used car with a different race number already holds that slot) and

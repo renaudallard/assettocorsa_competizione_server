@@ -75,6 +75,10 @@
   car slot, so race state, grid position, and penalty queue survive
   a mid-race disconnect.  Works both while the old socket is still
   alive and after the inactive-peer sweep removes it.
+- **Pit box per car** — each joining car gets the pit box held by the
+  fewest other connected cars (lowest first), kept for the whole
+  connection, so drivers spawn in their own garage whatever the join
+  or reconnect order.
 - **Unique race numbers** enforced on join: a connection requesting
   a number already in use is bumped to `requested+1..+9`, then to
   the smallest free 1..999, then to 999, mirroring the exe's
