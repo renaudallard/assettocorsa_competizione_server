@@ -3147,8 +3147,8 @@ post_slot_assignment:
 		 * Only override car fields from the handshake if the
 		 * entry list did not pre-populate them, and only on a
 		 * fresh slot.  A reconnect must keep the existing
-		 * car_entry's race_number / model / cup so the driver
-		 * doesn't reset their on-grid identity across the drop.
+		 * car_entry's race_number / cup so the driver doesn't
+		 * reset their on-grid identity across the drop.
 		 *
 		 * Race-number uniqueness mirrors accServer.exe
 		 * FUN_140025690: try requested, requested+1, ..., +9,
@@ -3158,7 +3158,6 @@ post_slot_assignment:
 		if (!s->force_entry_list && !is_reconnect) {
 			car->race_number = server_alloc_race_number(s,
 			    c->car_id, (int)rnum);
-			car->car_model = cmodel;
 			/*
 			 * Derive cup_category from driver_category (cat),
 			 * matching FUN_140025690:496-505.  The raw wire
@@ -3173,21 +3172,18 @@ post_slot_assignment:
 			if (team != NULL)
 				snprintf(car->team_name,
 				    sizeof(car->team_name), "%s", team);
-		} else if (car->forced_car_model == 0xff) {
-			/*
-			 * forceEntryList=1 + forcedCarModel=-1 means the
-			 * operator lets each driver pick their own car
-			 * within the entry slot.  Pick up the wire model
-			 * so the leaderboard reports the driver's actual
-			 * selection instead of the CarEntry default 0
-			 * (Porsche 991 GT3 R).  Done for both fresh joins
-			 * AND zombie/reconnect slot reclaims because kunos
-			 * logs "carModel %d" on both paths (FUN_140025690
-			 * "Creating new car connection" / "Recognized
-			 * reconnect") -- the wire byte is authoritative.
-			 */
-			car->car_model = cmodel;
 		}
+		/*
+		 * The car is the one the client drives, on a fresh join
+		 * and on a reconnect alike. The exe builds every car from
+		 * the handshake model (FUN_140025690 logs it on both
+		 * "Creating new car connection" and "Recognized
+		 * reconnect"), and a forced entrylist model was already
+		 * checked against it above. Keeping the slot's model let
+		 * a reclaimed entrylist slot report its forcedCarModel
+		 * when forceEntryList is off.
+		 */
+		car->car_model = cmodel;
 		/*
 		 * Grid-position assignment.  Only assigned when the slot
 		 * has no grid position yet — a reclaim (zombie reconnect)
