@@ -194,6 +194,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 		size_t dj, dn;
 
 		car->car_id = (uint16_t)(ACC_CAR_ID_BASE + i);
+		car->entry_item = 1;
 		/*
 		 * Entrylist entries are templates: the actual
 		 * `used` flag is set when a client claims this
@@ -419,6 +420,7 @@ entrylist_load(struct Server *s, const char *cfg_dir)
 				    anchor->current_driver_index;
 				c->driver_count = anchor->driver_count;
 				c->is_server_admin = anchor->is_server_admin;
+				c->entry_item = 1;
 				memcpy(c->drivers, anchor->drivers,
 				    sizeof(c->drivers));
 				c->team_entry_id = (int8_t)i;

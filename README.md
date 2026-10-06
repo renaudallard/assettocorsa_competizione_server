@@ -74,7 +74,9 @@
 - **Quick reconnect** by Steam ID drops the old conn and reuses the
   car slot, so race state, grid position, and penalty queue survive
   a mid-race disconnect.  Works both while the old socket is still
-  alive and after the inactive-peer sweep removes it.
+  alive and after the inactive-peer sweep removes it.  Outside the
+  entry list a driver must come back in the same car model to be
+  recognized, as in the exe; another model joins as a new car.
 - **Pit box per car** — each joining car gets the pit box held by the
   fewest other connected cars (lowest first), kept for the whole
   connection, so drivers spawn in their own garage whatever the join

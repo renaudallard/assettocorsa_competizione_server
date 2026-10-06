@@ -2696,6 +2696,19 @@ handshake_handle(struct Server *s, struct Conn *c,
 					if (strcmp(old->steam_id,
 					    steam_buf) != 0)
 						continue;
+					/*
+					 * A car made by a join is only taken
+					 * back in the same model. The exe keys
+					 * its reconnect lookup on steam id and
+					 * car model (FUN_140025690), so a
+					 * driver back in another car gets a new
+					 * car. The old conn is already marked
+					 * for disconnect above and frees its
+					 * slot when it is dropped.
+					 */
+					if (!oc->entry_item &&
+					    oc->car_model != cmodel)
+						continue;
 					log_info("Removed connection due to "
 					    "(quick) reconnect: conn=%u "
 					    "for %s",
@@ -2751,6 +2764,10 @@ handshake_handle(struct Server *s, struct Conn *c,
 								break;
 						}
 						if (dj >= ec->driver_count)
+							continue;
+						/* Same model rule as above. */
+						if (!ec->entry_item &&
+						    ec->car_model != cmodel)
 							continue;
 						for (cc = 0;
 						    cc < ACC_MAX_CARS;
@@ -3156,6 +3173,11 @@ post_slot_assignment:
 		 * in state.c.
 		 */
 		if (!s->force_entry_list && !is_reconnect) {
+			/*
+			 * The slot now holds a car made by this join, even
+			 * if it was loaded from the entry list.
+			 */
+			car->entry_item = 0;
 			car->race_number = server_alloc_race_number(s,
 			    c->car_id, (int)rnum);
 			/*

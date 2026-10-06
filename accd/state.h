@@ -761,6 +761,9 @@ struct CarEntry {
 						 * matching this slot to admin
 						 * without /admin <pw>,
 						 * matching exe +0x6e check */
+	uint8_t		entry_item;		/* slot holds an entrylist
+						 * entry, not a car created
+						 * by a join */
 	struct DriverInfo drivers[ACC_MAX_DRIVERS_PER_CAR];
 	uint8_t		swap_state[ACC_MAX_DRIVERS_PER_CAR]; /* 0=idle..5=done */
 	int		used;			/* slot occupied? */
