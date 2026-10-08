@@ -39,11 +39,12 @@ under Wine.
   the line and not invalidating laps*, not minimising sector
   times.  Lap times are typically 110–120 % of human pace.  Top
   drivers' times are out of reach by design.
-- **Not a Steam impersonator.**  The bot can claim any name and
-  Steam ID, but public Kunos-listed servers verify a Steam auth
-  ticket the bot doesn't carry, so they reject the join.  Useful
-  for your own private/LAN server, not for getting on someone
-  else's lobby pretending to be them.
+- **Not a Steam impersonator.**  The server protocol carries no
+  Steam authentication, so a client can claim any name and Steam
+  ID.  The bot's ID (`S7656119900` + 7-digit race number) is a
+  test value, not a reserved namespace.  Use it on your own
+  private/LAN server, not to get on someone else's server
+  pretending to be someone else.
 - **Not subtle.**  Telemetry analysis would flag it instantly:
   nobody's brake/throttle traces look like a kinematic model's.
 
