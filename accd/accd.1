@@ -96,6 +96,12 @@ is set (the default).
 The ACC client sends a discovery probe to this port before connecting,
 even for remote servers.
 Ensure TCP 9232, UDP 9231, and UDP 8999 are all open in the firewall.
+.Pp
+.Va unauthHandshakeTimeoutMs
+optionally sets the TCP handshake timeout to 1000..30000 milliseconds.
+The default is 30000.  Shorter values release idle sockets sooner but may
+disconnect slow legitimate clients.  Repeated connections can still fill
+the pool; this is not complete denial-of-service protection.
 .It Pa settings.json
 Server identity, access control, and policy toggles.
 .Bd -literal -offset indent

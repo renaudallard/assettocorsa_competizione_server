@@ -271,6 +271,15 @@ config_load(struct Server *s, const char *cfg_dir)
 	}
 	s->max_connections = json_obj_get_int(configuration,
 	    "maxConnections", s->max_connections);
+	{
+		int timeout = json_obj_get_int(configuration,
+		    "unauthHandshakeTimeoutMs", (int)s->unauth_timeout_ms);
+		if (timeout >= 1000 && timeout <= 30000)
+			s->unauth_timeout_ms = (uint32_t)timeout;
+		else
+			log_warn("unauthHandshakeTimeoutMs %d outside 1000..30000; "
+			    "keeping %u", timeout, (unsigned)s->unauth_timeout_ms);
+	}
 	s->lan_discovery = json_obj_get_int(configuration,
 	    "lanDiscovery", s->lan_discovery);
 	s->stats_udp_port = json_obj_get_int(configuration,

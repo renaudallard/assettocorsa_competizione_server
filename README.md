@@ -391,6 +391,12 @@ plain UTF-8 — detection is automatic.
 `0xbe` state snapshot to `127.0.0.1:<port>` for local monitoring
 tools (never routed off loopback).  `0` disables it.
 
+`unauthHandshakeTimeoutMs` optionally sets the unauthenticated TCP
+handshake timeout from 1000 to 30000 milliseconds; the default is 30000.
+A shorter value frees idle sockets sooner, but slow legitimate clients can
+be disconnected and repeated connections can still fill the pool. This is
+a partial availability mitigation, not protection from denial of service.
+
 `maxConnections` is also the **upper bound on the advertised slot
 count** — see [How many car slots can the server advertise?](#how-many-car-slots-can-the-server-advertise).
 If you've configured `maxCarSlots: 30` but `maxConnections: 24`,

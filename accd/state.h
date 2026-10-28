@@ -846,7 +846,7 @@ struct Conn {
 	unsigned char	*hs_echo;	/* raw handshake body to echo in trailer */
 	size_t		 hs_echo_len;
 	uint64_t	accepted_mono_ms;	/* mono_ms at TCP accept; unauth
-						 * conns past CONN_UNAUTH_TIMEOUT_MS
+						 * conns past the configured timeout
 						 * are reaped so port scanners don't
 						 * pin the session-start gate */
 	uint32_t	avg_rtt_ms;		/* windowed mean round-trip from
@@ -1017,6 +1017,7 @@ struct Server {
 	int		tcp_port;
 	int		udp_port;
 	int		max_connections;
+	uint32_t	unauth_timeout_ms; /* handshake timeout, milliseconds */
 	int		max_monitors;	/* SMPR observer cap; settings.json
 					 * "maxMonitors"; defaults to
 					 * max_connections / 4 (>=2) */

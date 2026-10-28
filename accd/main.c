@@ -77,7 +77,6 @@
 #define POLL_RECV_BUF	8192
 #define POLL_SLOTS	(ACC_MAX_CARS + 5)	/* tcp + udp + lan + stdin + conns */
 #define TICK_INTERVAL_US	3000	/* 333 Hz, matching exe CreateTimerQueueTimer(3) */
-#define CONN_UNAUTH_TIMEOUT_MS	30000	/* reap silent TCP scanners */
 #define SHUTDOWN_FLUSH_MS	500	/* longest wait for the shutdown notice */
 
 volatile sig_atomic_t g_stop;
@@ -564,7 +563,7 @@ main(int argc, char **argv)
 		/* Sweep connections marked for disconnect (kick/ban
 		 * or failed sends) that had no poll events this
 		 * iteration, plus any TCP that accepted but never
-		 * authenticated within CONN_UNAUTH_TIMEOUT_MS — port
+		 * authenticated within the configured timeout — port
 		 * scanners occasionally hold the socket open forever,
 		 * and the session-start gate treats any TCP conn as a
 		 * driver present, pinning the phase machine. */
@@ -579,7 +578,7 @@ main(int argc, char **argv)
 			}
 			if (cn->state == CONN_UNAUTH &&
 			    mono_ms() - cn->accepted_mono_ms >=
-			    CONN_UNAUTH_TIMEOUT_MS) {
+			    srv.unauth_timeout_ms) {
 				log_info("conn=%u unauth idle timeout, "
 				    "closing %s:%u",
 				    (unsigned)cn->conn_id,

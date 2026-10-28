@@ -283,6 +283,7 @@ void
 server_init(struct Server *s)
 {
 	memset(s, 0, sizeof(*s));
+	s->unauth_timeout_ms = 30000;
 	s->tcp_fd = -1;
 	s->udp_fd = -1;
 	s->lan_fd = -1;
