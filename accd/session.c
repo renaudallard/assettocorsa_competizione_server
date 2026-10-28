@@ -1199,8 +1199,8 @@ session_tick(struct Server *s)
 
 	/*
 	 * Overtime entry check, applies to every session type: if
-	 * nobody has a valid lap and is still out on track (not in
-	 * pit/garage), waiting the overtime grace period serves no
+	 * nobody is on a qualifying/practice lap or has recorded a race lap
+	 * outside the pit/garage, waiting the overtime grace period serves no
 	 * purpose.  Collapse ts[5] so compute_phase jumps straight to
 	 * COMPLETED on the next tick.
 	 *
@@ -1215,8 +1215,10 @@ session_tick(struct Server *s)
 		    i++) {
 			if (!s->cars[i].used)
 				continue;
-			if (s->cars[i].race.lap_count > 0 &&
-			    !s->cars[i].race.in_pit)
+			if (!s->cars[i].race.in_pit &&
+			    (s->cars[i].race.lap_count > 0 ||
+			    ((def->session_type == 0 || def->session_type == 4) &&
+			    s->cars[i].race.on_track)))
 				racing++;
 		}
 		if (racing == 0) {
