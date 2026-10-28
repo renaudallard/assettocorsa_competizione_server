@@ -927,6 +927,7 @@ h_chat(struct Server *s, struct Conn *c,
 	uint8_t msg_id;
 	char *text = NULL;
 	const char *sender;
+	char sender_name[ACC_MAX_NAME_LEN * 2];
 	int handled;
 	int32_t client_ts_ms = 0;
 	struct ByteBuf out;
@@ -974,10 +975,18 @@ h_chat(struct Server *s, struct Conn *c,
 		 * an OOB read past the 4-element array would land on
 		 * an arbitrary CarEntry tail field.
 		 */
-		if (idx < car->driver_count &&
-		    idx < ACC_MAX_DRIVERS_PER_CAR &&
-		    car->drivers[idx].short_name[0] != '\0')
-			sender = car->drivers[idx].short_name;
+		if (idx < car->driver_count && idx < ACC_MAX_DRIVERS_PER_CAR) {
+			const struct DriverInfo *driver = &car->drivers[idx];
+			if (driver->first_name[0] != '\0' || driver->last_name[0] != '\0') {
+				(void)snprintf(sender_name, sizeof(sender_name), "%s%s%s",
+				    driver->first_name,
+				    driver->first_name[0] && driver->last_name[0] ? " " : "",
+				    driver->last_name);
+				sender = sender_name;
+			} else if (driver->short_name[0] != '\0') {
+				sender = driver->short_name;
+			}
+		}
 	}
 	log_info("CHAT %s: %s", sender, text);
 	/* accweb regex: ^CHAT (.*?): (.*)$  -- stdout plain form */
