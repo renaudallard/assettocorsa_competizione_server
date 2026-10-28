@@ -1027,6 +1027,16 @@ chat_process(struct Server *s, struct Conn *c, const char *text)
 			chat_reply(s, c, reply, 4);
 			return 1;
 		}
+		/* Bound bursts from this connection; reconnects remain a limitation. */
+		{
+			uint64_t report_now_ms = mono_ms();
+			if (c->last_report_ms != 0 &&
+			    report_now_ms - c->last_report_ms < 2000) {
+				chat_reply(s, c, "Please wait before reporting again", 4);
+				return 1;
+			}
+			c->last_report_ms = report_now_ms;
+		}
 		(void)localtime_r(&now, &tm_buf);
 		strftime(ts, sizeof(ts), "%Y-%m-%d %H:%M:%S", &tm_buf);
 		snprintf(path, sizeof(path), "%s/reports.txt", s->cfg_dir);

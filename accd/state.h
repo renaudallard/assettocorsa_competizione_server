@@ -830,6 +830,7 @@ struct Conn {
 					 * handshake closes the others with it */
 	int		is_admin;
 	uint64_t	last_admin_attempt_ms;	/* /admin rate limit anchor */
+	uint64_t	last_report_ms;		/* per-connection report cooldown */
 	int		is_spectator;
 	int		hellbanned;	/* /hellban: drop inbound, skip in
 					 * broadcasts.  Per-session only. */
