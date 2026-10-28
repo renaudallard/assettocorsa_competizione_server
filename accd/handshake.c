@@ -2475,7 +2475,9 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 * (FUN_140025690:267-279): the instant a fresh handshake is
 		 * parsed, before the ban/kick/rating/slot gates, close any
 		 * existing connection (driver OR spectator) with a matching
-		 * SteamID.  accd's quick-reconnect below only covers live
+		 * SteamID, but only after the password and ban checks can pass.
+         * The SteamID is client-supplied; this is not identity verification.
+         * accd's quick-reconnect below only covers live
 		 * driver slots after the gates, so a stale spectator or
 		 * rejected-rejoin socket would otherwise linger until the
 		 * passive UDP reaper.  Mark the old conn dead only; the driver
@@ -2483,7 +2485,11 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 */
 		if (steam_buf[0] != '\0') {
 			int dj;
-			for (dj = 0; dj < ACC_MAX_CARS; dj++) {
+            /* Wrong passwords and banned IDs must not evict a connected driver. */
+            int may_replace = !pw_bad &&
+                !bans_contains(&s->bans, steam_buf) &&
+                !bans_contains(&s->kicks, steam_buf);
+			for (dj = 0; may_replace && dj < ACC_MAX_CARS; dj++) {
 				struct Conn *o = s->conns[dj];
 				if (o == NULL || o == c)
 					continue;
