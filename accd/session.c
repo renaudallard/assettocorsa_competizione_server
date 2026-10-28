@@ -1139,11 +1139,42 @@ enter_phase(struct Server *s, uint8_t new_phase)
 	}
 }
 
+static int
+race_overtime_eligible(const struct CarEntry *car)
+{
+    return car->used && !car->race.finished && !car->race.in_pit &&
+        (car->race.on_track || car->race.lap_count > 0);
+}
+
+static int
+race_pending_count(const struct Server *s)
+{
+    int i, n = 0;
+    for (i = 0; i < ACC_MAX_CARS; i++)
+        if (s->cars[i].used && s->cars[i].race.race_finish_pending &&
+            !s->cars[i].race.finished)
+            n++;
+    return n;
+}
+
+static void
+race_close_overtime(struct Server *s, uint64_t now)
+{
+    int i;
+    s->session.overtime_hold = 0;
+    s->session.cars_in_overtime = 0;
+    s->session.ts[5] = now;
+    s->session.ts[6] = now + post_grace_ms(s);
+    s->session.advance_at_ms = 0;
+    for (i = 0; i < ACC_MAX_CARS; i++)
+        s->cars[i].race.race_finish_pending = 0;
+}
+
 void
 session_tick(struct Server *s)
 {
 	uint64_t now;
-	uint8_t new_phase;
+	uint8_t new_phase, old_phase = s->session.phase;
 	const struct SessionDef *def;
 
 	if (s->session_count == 0)
@@ -1209,23 +1240,31 @@ session_tick(struct Server *s)
 	 * crossed the finish line.
 	 */
 	if (new_phase == PHASE_OVERTIME &&
-	    s->session.overtime_hold == 0) {
+	    old_phase != PHASE_OVERTIME) {
 		int i, racing = 0;
 		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
 		    i++) {
 			if (!s->cars[i].used)
 				continue;
-			if (s->cars[i].race.lap_count > 0 &&
-			    !s->cars[i].race.in_pit)
+			if (def->session_type == 10 ? race_overtime_eligible(&s->cars[i]) :
+			    (s->cars[i].race.lap_count > 0 && !s->cars[i].race.in_pit))
 				racing++;
 		}
 		if (racing == 0) {
 			log_info("overtime: no car racing on track, "
-			    "skipping grace period");
-			s->session.ts[5] = now;
-			s->session.ts[6] = now;
-			s->session.advance_at_ms = now + post_grace_ms(s);
+			    "skipping overtime");
+            if (session_is_race(s)) {
+                race_close_overtime(s, now);
+            } else {
+                s->session.ts[5] = now;
+                s->session.ts[6] = now;
+                s->session.advance_at_ms = now + post_grace_ms(s);
+            }
 		} else if (def->session_type == 10) {
+            for (i = 0; i < ACC_MAX_CARS; i++) {
+                struct CarEntry *car = &s->cars[i];
+                car->race.race_finish_pending = race_overtime_eligible(car);
+            }
 			s->session.overtime_hold = 1;
 			s->session.cars_in_overtime = (int16_t)racing;
 			s->session.overtime_hold_started_ms = now;
@@ -1299,35 +1338,21 @@ session_tick(struct Server *s)
 	 * forever.  Spec: "Once this timer expires, the server executes a
 	 * 'Hard Stop,' instantly closing the session for everyone".
 	 */
-	if (s->session.overtime_hold &&
-	    s->session_overtime_s > 0 &&
-	    s->session.overtime_hold_started_ms != 0 &&
-	    now - s->session.overtime_hold_started_ms >=
-		(uint64_t)s->session_overtime_s * 1000ull) {
+	if (s->session.overtime_hold && now >= s->session.ts[5]) {
 		log_info("overtime: hard stop after %us, %d cars still "
 		    "out — releasing hold", (unsigned)s->session_overtime_s,
 		    (int)s->session.cars_in_overtime);
-		s->session.overtime_hold = 0;
-		s->session.cars_in_overtime = 0;
-		s->session.ts[5] = now;
-		s->session.ts[6] = now;
+        if (session_is_race(s)) {
+            race_close_overtime(s, now);
+        } else {
+            s->session.overtime_hold = 0;
+            s->session.cars_in_overtime = 0;
+            s->session.ts[5] = now;
+            s->session.ts[6] = now;
+        }
 	}
 
-	/*
-	 * Release an active overtime hold when no car is still actively
-	 * racing.
-	 *
-	 * Race sessions mirror exe FUN_14002f710 (phase==6 block) which
-	 * calls FUN_140042890 per car: a non-finished car is considered
-	 * still racing if (now - car+0x158 <= 300000 ms).  car+0x158 is
-	 * last_moved_ms, updated on every 0x1e where |vec_c| > 5 km/h.
-	 * When no non-finished car has moved in the last 300 s the hold
-	 * releases.  Handles crashes, disconnects, and long pit stops
-	 * without requiring a lap completion to decrement a counter.
-	 *
-	 * Quali and other session types fall back to the approximate
-	 * lap_count + !in_pit check (handled via the eligibility set).
-	 */
+	/* Release early only when no eligible connected car remains. */
 	if (s->session.overtime_hold) {
 		int i, still_racing = 0;
 		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
@@ -1336,11 +1361,10 @@ session_tick(struct Server *s)
 			if (!car->used)
 				continue;
 			if (session_is_race(s)) {
-				if (car->race.finished)
+				if (!car->race.race_finish_pending || car->race.finished)
 					continue;
-				if (car->rt.last_moved_ms > 0 &&
-				    now - car->rt.last_moved_ms <=
-				    300000ull)
+				/* A stationary entrant may still finish before the hard stop. */
+				if (!car->race.in_pit)
 					still_racing++;
 			} else {
 				/* Exe FUN_140042890 (param_2==0, non-race):
@@ -1370,7 +1394,10 @@ session_tick(struct Server *s)
 			 */
 			s->session.ts[5] = now;
 			s->session.ts[6] = now;
-			s->session.advance_at_ms = now + post_grace_ms(s);
+            if (session_is_race(s))
+                race_close_overtime(s, now);
+            else
+                s->session.advance_at_ms = now + post_grace_ms(s);
 		}
 	}
 
@@ -1420,74 +1447,39 @@ session_tick(struct Server *s)
 
 /*
  * Called from the lap completion handler when a car finishes
- * a lap during overtime.  Decrements the cars-in-overtime
- * counter; when it reaches 0, releases the overtime hold
- * and adjusts ts[5] to let the phase advance.
+ * a lap during overtime. The leader must finish before lapped cars can
+ * be flagged. Each car finishes once; after the last remaining car,
+ * the configured post-race grace runs in PHASE_COMPLETED.
  */
 void
 session_overtime_car_finished(struct Server *s, int car_id)
 {
-	uint64_t now;
-	int leader_just_finished = 0;
-
-	if (!s->session.overtime_hold)
-		return;
-	/*
-	 * Quali tracks its eligible-car count via session_quali_drop_eligibility,
-	 * which decrements cars_in_overtime once per car that uses its right
-	 * to finish.  If we also decrement here on every Quali lap completion
-	 * the counter collapses ~2x as fast as expected and the hold releases
-	 * before the rest of the eligible field has crossed.
-	 */
-	if (!session_is_race(s))
-		return;
-
-	now = mono_ms();
-
-	/*
-	 * Leader-finish one-shot (SM+0x262, exe FUN_14012ed70): when the
-	 * race leader crosses S/F during overtime, set ts[6] = now +
-	 * post_race_s.  This fires only once (the arm flag is cleared so
-	 * subsequent finishers don't reset ts[6] further out).
-	 */
-	if (s->session.overtime_leader_armed &&
-	    car_id >= 0 && car_id < ACC_MAX_CARS &&
-	    s->cars[car_id].race.position == 1) {
-		uint64_t grace = post_grace_ms(s);
-		s->session.overtime_leader_armed = 0;
-		s->session.ts[6] = now + grace;
-		/* FUN_14012ed70 resets SM+0x220 (ts[5]) to now+overtime_s
-		 * so the HUD countdown refreshes for remaining cars. */
-		s->session.ts[5] = now +
-		    (uint64_t)s->session_overtime_s * 1000ull;
-		leader_just_finished = 1;
-		log_info("overtime: leader finished, ts[5]=now+%us ts[6]=now+%llums",
-		    (unsigned)s->session_overtime_s,
-		    (unsigned long long)grace);
-	}
-
-	if (s->session.cars_in_overtime > 0)
-		s->session.cars_in_overtime--;
-	if (s->session.cars_in_overtime <= 0) {
-		/*
-		 * All remaining cars finished.  Three cases:
-		 *  - leader_just_finished=1: ts[6] was set above with grace, keep it.
-		 *  - leader_just_finished=0, armed=0: leader fired in a prior call
-		 *    and already set ts[6]=now+grace; do not overwrite.
-		 *  - leader_just_finished=0, armed=1: leader never crossed (DNF/AFK);
-		 *    collapse ts[6] to now so the session advances immediately.
-		 */
-		s->session.overtime_hold = 0;
-		s->session.ts[5] = now;
-		if (!leader_just_finished && s->session.overtime_leader_armed)
-			s->session.ts[6] = now;
-		log_info("overtime: all cars finished%s",
-		    (leader_just_finished || !s->session.overtime_leader_armed)
-		    ? ", leader grace active" : ", collapsing to now");
-	} else {
-		log_info("overtime: %d cars still racing",
-		    (int)s->session.cars_in_overtime);
-	}
+    struct CarRaceState *race;
+    uint64_t now;
+    if (!session_is_race(s) || !s->session.overtime_hold ||
+        car_id < 0 || car_id >= ACC_MAX_CARS || !s->cars[car_id].used)
+        return;
+    race = &s->cars[car_id].race;
+    if (!race->race_finish_pending || race->finished)
+        return;
+    /* A lapped car crossing before the leader must continue racing. */
+    if (s->session.overtime_leader_armed && race->position != 1)
+        return;
+    now = mono_ms();
+    if (s->session.overtime_leader_armed) {
+        s->session.overtime_leader_armed = 0;
+        /* The configured overtime deadline remains anchored to 0:00. */
+        log_info("overtime: leader finished; existing deadline retained");
+    }
+    race->finished = 1;
+    race->race_finish_pending = 0;
+    race->completed_lap_flags |= 0x0400;
+    s->session.cars_in_overtime = (int16_t)race_pending_count(s);
+    leaderboard_request_emit(s);
+    if (s->session.cars_in_overtime == 0) {
+        race_close_overtime(s, now);
+        log_info("overtime: all cars finished, post-race grace active");
+    }
 }
 
 /*

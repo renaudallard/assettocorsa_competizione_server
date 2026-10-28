@@ -944,6 +944,9 @@ write_car_leaderboard_record(struct ByteBuf *bb,
 	 */
 	{
 		uint16_t status = race->completed_lap_flags;
+        /* Finish must reach the crossing driver too (0x3b excludes sender). */
+        if (race->finished)
+            status |= 0x0400;
 		if (tp_ms > 0)
 			status |= 0x2000;	/* PostRaceTime marker */
 		if (wr_u16(bb, status) < 0)

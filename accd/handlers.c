@@ -434,7 +434,8 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	 * the server phase, so a final lap completing as the server crosses
 	 * into its end-detection phase is still scored.
 	 */
-	if ((car_field & 0x0400) != 0)
+	if ((car_field & 0x0400) != 0 ||
+        (session_is_race(s) && s->cars[c->car_id].race.finished))
 		return 0;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
@@ -817,8 +818,6 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			 * the car so the phase-6 end-detection hold no longer
 			 * waits on it (exe car+0x1d1 bit 0x04).
 			 */
-			if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS)
-				s->cars[c->car_id].race.finished = 1;
 			session_overtime_car_finished(s, c->car_id);
 			session_quali_drop_eligibility(s, c->car_id);
 		}
@@ -850,40 +849,11 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 */
 		uint16_t relay_cf = car_field;
 		if (session_is_race(s)) {
-			int sess_over = s->cars[c->car_id].race.finished;
-			if (!sess_over &&
-			    s->session.phase >= PHASE_OVERTIME) {
-				uint32_t leader_laps = 0;
-				int leader_finished = 0;
-				int k;
-				for (k = 0; k < ACC_MAX_CARS; k++) {
-					const struct CarEntry *ce =
-					    &s->cars[k];
-					if (ce->driver_count > 0 &&
-					    (uint32_t)ce->race.lap_count >
-					    leader_laps) {
-						leader_laps = (uint32_t)
-						    ce->race.lap_count;
-						leader_finished =
-						    ce->race.finished;
-					}
-				}
-				if ((uint32_t)s->cars[c->car_id].race.lap_count
-				    >= leader_laps)
-					sess_over = 1;
-				else
-					/*
-					 * Lapped-down car: exe FUN_14012b380:31
-					 * copies the leader's finished latch into
-					 * isSessionOver instead of leaving it 0.
-					 */
-					sess_over = leader_finished;
-			}
-			if (sess_over)
-				relay_cf |= 0x0400;
-		} else if (s->session.phase >= PHASE_OVERTIME) {
-			relay_cf |= 0x0400;
-		}
+            if (s->cars[c->car_id].race.finished)
+                relay_cf |= 0x0400;
+        } else if (s->session.phase >= PHASE_OVERTIME) {
+            relay_cf |= 0x0400;
+        }
 		int ts_off, i;
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||

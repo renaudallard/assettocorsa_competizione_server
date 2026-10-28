@@ -370,6 +370,7 @@ struct CarRaceState {
 						 * last ACP_CAR_LOCATION_UPDATE
 						 * (0x32) had location==Track.
 						 * Gates race-start leader pick. */
+	uint8_t		race_finish_pending; /* captured once at race overtime entry */
 	uint8_t		finished;		/* crossed S/F after the race
 						 * clock expired (set in the
 						 * overtime lap-finish path);
