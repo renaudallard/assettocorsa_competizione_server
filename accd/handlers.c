@@ -150,8 +150,11 @@ h_lap_completed(struct Server *s, struct Conn *c,
 		    (unsigned)c->conn_id);
 		return 0;
 	}
-	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
+	if (check_car_owner(s, c, reporter_car_id) < 0) {
+		log_warn("SA contact: reporter does not match conn=%u",
+		    (unsigned)c->conn_id);
 		return 0;
+	}
 	/*
 	 * Normalize a signed-negative quality byte to 0xff: the exe reads
 	 * it as int8_t and for any value >= 0x80 captures the contact
