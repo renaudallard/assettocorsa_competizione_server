@@ -1352,6 +1352,7 @@ struct Conn *
 /* Drop a connection: close the fd, free the buffers, slot returns
  * to the free pool. */
 void	conn_drop(struct Server *s, struct Conn *c);
+void	server_notify_shutdown(struct Server *s);
 
 /* Find a connection by its (server-assigned) conn_id. */
 struct Conn *

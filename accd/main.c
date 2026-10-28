@@ -625,6 +625,7 @@ main(int argc, char **argv)
 	}
 
 	log_info("accd shutting down");
+	server_notify_shutdown(&srv);
 	ratings_save(&srv);
 	console_close();
 	if (srv.lan_fd >= 0)

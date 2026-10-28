@@ -29,6 +29,7 @@
 
 #define _POSIX_C_SOURCE 200809L
 
+#include <poll.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -36,6 +37,7 @@
 #include <unistd.h>
 
 #include "bcast.h"
+#include "chat.h"
 #include "ratings.h"
 #include "handlers.h"
 #include "io.h"
@@ -372,6 +374,64 @@ conn_new(struct Server *s, int fd, const struct sockaddr_in *peer)
 	s->conns[slot] = c;
 	s->nconns++;
 	return c;
+}
+
+void
+server_notify_shutdown(struct Server *s)
+{
+    struct ByteBuf out;
+    struct pollfd pending[ACC_MAX_CARS];
+    uint64_t deadline = mono_ms() + 500;
+    int i, notified = 0;
+    const char *reason = "Connection lost: server is restarting or shutting down.";
+
+    chat_broadcast(s, reason, 4);
+    bb_init(&out);
+    if (wr_u8(&out, SRV_CHAT_OR_STATE) == 0 &&
+        wr_str_a(&out, "") == 0 && wr_str_a(&out, reason) == 0 &&
+        wr_i32(&out, (int32_t)s->session.weekend_time_s) == 0 &&
+        wr_u8(&out, 5) == 0) {
+        for (i = 0; i < ACC_MAX_CARS; i++) {
+            struct Conn *c = s->conns[i];
+            if (c == NULL || c->state != CONN_AUTH || c->is_smpr)
+                continue;
+            /* Chat fallback plus the existing client state-banner variant.
+             * This is not a kick: do not DQ or add anyone to the kick list. */
+            (void)bcast_send_one(c, out.data, out.wpos);
+            notified++;
+        }
+    }
+    bb_free(&out);
+    /* Non-blocking sockets: give queued terminal messages at most 500 ms.
+     * Never let one stalled client prevent Docker's graceful stop. */
+    for (;;) {
+        nfds_t n = 0;
+        uint64_t now;
+        for (i = 0; i < ACC_MAX_CARS; i++) {
+            struct Conn *c = s->conns[i];
+            if (c == NULL || c->fd < 0 || c->tx.wpos == c->tx.rpos)
+                continue;
+            if (conn_drain_tx(c) == 1) {
+                pending[n].fd = c->fd;
+                pending[n].events = POLLOUT;
+                pending[n++].revents = 0;
+            }
+        }
+        now = mono_ms();
+        if (n == 0 || now >= deadline)
+            break;
+        (void)poll(pending, n, (int)(deadline - now));
+    }
+    /* Orderly FIN follows the queued messages, before server_free closes FDs. */
+    for (i = 0; i < ACC_MAX_CARS; i++) {
+        struct Conn *c = s->conns[i];
+        if (c == NULL)
+            continue;
+        if (c->fd >= 0)
+            (void)shutdown(c->fd, SHUT_WR);
+        c->state = CONN_DISCONNECT;
+    }
+    log_info("shutdown: notified %d game clients before disconnect", notified);
 }
 
 void
