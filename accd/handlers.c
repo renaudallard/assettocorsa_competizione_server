@@ -2935,7 +2935,7 @@ h_udp_car_info_request(struct Server *s,
 	 * driver's conn_id and flood their TCP TX queue with ~1 KiB
 	 * 0x23 spawnDef responses.
 	 */
-	if (requester->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+	if (!conn_udp_allowed(s, requester, peer, 0))
 		return 0;
 	/*
 	 * Refresh the requester's UDP liveness: the exe writes conn+0xa01e8

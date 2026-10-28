@@ -314,6 +314,8 @@ config_load(struct Server *s, const char *cfg_dir)
 		    s->ignore_premature_disconnects);
 		s->dump_leaderboards = json_obj_get_int(settings,
 		    "dumpLeaderboards", s->dump_leaderboards);
+		s->strict_udp_peer = json_obj_get_int(settings,
+		    "strictUdpPeer", s->strict_udp_peer) == 1;
 		s->dump_entry_list = json_obj_get_int(settings,
 		    "dumpEntryList", s->dump_entry_list);
 		s->allow_auto_dq = json_obj_get_int(settings,

@@ -209,6 +209,13 @@ When 1, the session results are written to
 when a session completes, and for the abandoned session when the last
 client leaves.
 A race that never reached its green flag is skipped.
+.It Va strictUdpPeer
+Default 0 (disabled).  When enabled, the first accepted game UDP sender
+port for an authenticated connection is pinned until the connection ends.
+This may reduce same-IP endpoint confusion after binding, but the first
+packet is not authenticated and can be spoofed.  NAT rebinding or clients
+using multiple UDP source ports may be rejected.  This is not cryptographic
+authentication.  Test with the target ACC clients and network before use.
 .It Va maxMonitors
 Default
 .Va maxConnections

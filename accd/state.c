@@ -373,6 +373,21 @@ server_free(struct Server *s)
 	lobby_shutdown(&s->lobby);
 }
 
+/* This optional check narrows the endpoint after first use, but the first
+ * same-IP datagram is not authenticated and can still win the binding race. */
+int
+conn_udp_allowed(const struct Server *s, const struct Conn *c,
+    const struct sockaddr_in *peer, int may_bind)
+{
+	if (c->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+		return 0;
+	if (!s->strict_udp_peer)
+		return 1;
+	if (!c->udp_peer_bound)
+		return may_bind && c->state == CONN_AUTH;
+	return c->peer.sin_port == peer->sin_port;
+}
+
 struct Conn *
 conn_new(struct Server *s, int fd, const struct sockaddr_in *peer)
 {

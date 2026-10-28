@@ -354,7 +354,8 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 
 		rd_init(&kr, buf, len);
 		(void)rd_skip(&kr, 1);		/* msg_id */
-		(void)rd_u16(&kr, &ka_conn_id);
+		if (rd_u16(&kr, &ka_conn_id) < 0)
+			return;
 
 		kc = server_find_conn(s, ka_conn_id);
 		if (kc == NULL)
@@ -370,7 +371,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * c->peer and redirect that conn's outbound 0x14 / 0x1e
 		 * traffic to itself.
 		 */
-		if (kc->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+		if (!conn_udp_allowed(s, kc, peer, 1))
 			return;
 		/*
 		 * Learn / update the UDP peer port.  Do NOT emit a 0x14
@@ -382,6 +383,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * 1.0 Hz/conn vs accd 2.0 Hz/conn).
 		 */
 		kc->peer = *peer;
+		kc->udp_peer_bound = 1;
 		/*
 		 * Exe FUN_140041d90 (called on every 0x13 at FUN_140027f80:651)
 		 * resets the 50-entry RTT ring and best-RTT sentinel to -1 so
@@ -470,7 +472,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * and re-anchored to the same IP on every 0x13 / 0x1e,
 		 * so a clean comparison.
 		 */
-		if (pc->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+		if (!conn_udp_allowed(s, pc, peer, 0))
 			return;
 
 		now_ms = (uint32_t)mono_ms();
@@ -669,17 +671,25 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		if (len >= 3)
 			src_conn = (uint16_t)(buf[1] | (buf[2] << 8));
 		c = server_find_conn(s, src_conn);
+		/* A malformed or wrong-car update must not establish the
+		 * optional first endpoint binding. */
+		if (c != NULL && s->strict_udp_peer &&
+		    (len != 68 || c->car_id < 0 || c->car_id >= ACC_MAX_CARS ||
+		    s->cars[c->car_id].car_id !=
+		    (uint16_t)(buf[3] | (buf[4] << 8))))
+			return;
 		/*
 		 * Same IP-bind as 0x13: refuse a peer update if the
 		 * UDP source IP differs from the conn's accepted IP.
 		 * Stops a forged 0x1e from hijacking the per-peer
 		 * sendto destination.  Allow port changes for NAT.
 		 */
-		if (c != NULL &&
-		    c->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+		if (c != NULL && !conn_udp_allowed(s, c, peer, 1))
 			return;
-		if (c != NULL)
+		if (c != NULL) {
 			c->peer = *peer;
+			c->udp_peer_bound = 1;
+		}
 		if (c != NULL && c->hellbanned) {
 			/*
 			 * Shadow-banned: don't process or relay the car
@@ -744,8 +754,7 @@ dispatch_udp(struct Server *s, const struct sockaddr_in *peer,
 		 * peer can forge a "Latency error: N ms" chat under
 		 * another driver's name by picking their conn_id.
 		 */
-		if (src != NULL &&
-		    src->peer.sin_addr.s_addr != peer->sin_addr.s_addr)
+		if (src != NULL && !conn_udp_allowed(s, src, peer, 0))
 			return;
 		/* Mirror FUN_140027f80:246 -- exe gates 0x5e on CONN_AUTH. */
 		if (src != NULL && src->state != CONN_AUTH)

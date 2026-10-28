@@ -822,6 +822,7 @@ struct Conn {
 	int		fd;
 	struct sockaddr_in
 			peer;
+	uint8_t		udp_peer_bound;
 	enum conn_state	state;
 	uint8_t		authenticated_once; /* reached AUTH, kept in teardown */
 	uint16_t	conn_id;	/* server-assigned, also "carIndex" */
@@ -1017,6 +1018,7 @@ struct Server {
 	int		tcp_port;
 	int		udp_port;
 	int		max_connections;
+	int		strict_udp_peer; /* optional first-endpoint pinning */
 	int		max_monitors;	/* SMPR observer cap; settings.json
 					 * "maxMonitors"; defaults to
 					 * max_connections / 4 (>=2) */
@@ -1354,6 +1356,8 @@ int	track_pit_count(const char *track, int is_private);
 int	track_known(const char *track);
 void	track_random_pick(struct Server *s);
 int64_t	conn_clock_offset(const struct Server *s, const struct Conn *c);
+int	conn_udp_allowed(const struct Server *s, const struct Conn *c,
+	    const struct sockaddr_in *peer, int may_bind);
 
 /* Allocate a new Conn for an accepted fd.  Returns NULL on full. */
 struct Conn *
