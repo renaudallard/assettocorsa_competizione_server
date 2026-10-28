@@ -42,6 +42,9 @@
  */
 int	results_write(struct Server *s);
 
+/* Preserve prior occupant before reusing a live car slot. */
+int	results_archive_car(struct Server *s, int car_slot);
+
 /*
  * Append one completed lap to the per-session results log.  Called at
  * lap completion for every lap (valid and invalid) in completion order.

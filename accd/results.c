@@ -188,11 +188,65 @@ results_laps_append(struct Server *s, uint16_t car_id, uint8_t driver_index,
 	rec->splits_ms[2] = splits_ms[2];
 }
 
+int
+results_archive_car(struct Server *s, int car_slot)
+{
+    struct CarEntry *old, *snapshot, *grown;
+    uint32_t i, cap;
+    uint16_t archive_id;
+    int has_laps = 0;
+    if (car_slot < 0 || car_slot >= ACC_MAX_CARS)
+        return -1;
+    old = &s->cars[car_slot];
+    if (old->driver_count == 0)
+        return 0;
+    for (i = 0; i < s->results_lap_count; i++)
+        if (s->results_laps[i].car_id == old->car_id) { has_laps = 1; break; }
+    if (!has_laps && old->race.lap_count == 0 && old->race.pen.count == 0)
+        return 0;
+    if (s->results_archived_count >= ACC_RESULTS_ARCHIVE_MAX) {
+        log_warn("results: archived driver limit reached; preserving previous results");
+        return -1;
+    }
+    if (s->results_archived_count == s->results_archived_cap) {
+        cap = s->results_archived_cap ? s->results_archived_cap * 2 : 16;
+        if (cap > ACC_RESULTS_ARCHIVE_MAX) cap = ACC_RESULTS_ARCHIVE_MAX;
+        grown = realloc(s->results_archived_cars, (size_t)cap * sizeof(*grown));
+        if (grown == NULL) {
+            log_warn("results: unable to archive previous driver");
+            return -1;
+        }
+        s->results_archived_cars = grown;
+        s->results_archived_cap = cap;
+    }
+    archive_id = (uint16_t)(ACC_CAR_ID_BASE + ACC_MAX_CARS + s->results_archived_count);
+    snapshot = &s->results_archived_cars[s->results_archived_count++];
+    *snapshot = *old;
+    snapshot->used = 0;
+    snapshot->car_id = archive_id;
+    /* Only result fields are used; the live slot owns race_archive pointers. */
+    memset(snapshot->race_archive, 0, sizeof(snapshot->race_archive));
+    for (i = 0; i < s->results_lap_count; i++)
+        if (s->results_laps[i].car_id == old->car_id)
+            s->results_laps[i].car_id = archive_id;
+    return 0;
+}
+
+static struct CarEntry *
+results_car_at(struct Server *s, int i)
+{
+    if (i < ACC_MAX_CARS)
+        return i < s->max_connections ? &s->cars[i] : NULL;
+    i -= ACC_MAX_CARS;
+    return (uint32_t)i < s->results_archived_count ? &s->results_archived_cars[i] : NULL;
+}
+
 void
 results_laps_reset(struct Server *s)
 {
 	/* Keep the allocation for reuse across sessions. */
 	s->results_lap_count = 0;
+	s->results_archived_count = 0;
 	s->results_lap_overflow = 0;
 }
 
@@ -200,6 +254,9 @@ void
 results_laps_free(struct Server *s)
 {
 	free(s->results_laps);
+	free(s->results_archived_cars);
+	s->results_archived_cars = NULL;
+	s->results_archived_count = s->results_archived_cap = 0;
 	s->results_laps = NULL;
 	s->results_lap_count = 0;
 	s->results_lap_cap = 0;
@@ -291,9 +348,12 @@ results_write(struct Server *s)
 		int32_t best_sec[3] = { 0, 0, 0 };
 		int k;
 
-		for (k = 0; k < ACC_MAX_CARS; k++) {
-			const struct CarRaceState *r = &s->cars[k].race;
-			int j;
+        for (k = 0; k < ACC_MAX_CARS + (int)s->results_archived_count; k++) {
+            const struct CarEntry *entry = results_car_at(s, k);
+            const struct CarRaceState *r;
+            int j;
+            if (entry == NULL) continue;
+            r = &entry->race;
 
 			/*
 			 * Include DQ'd cars: the exe session-best path
@@ -328,7 +388,7 @@ results_write(struct Server *s)
 
 	first = 1;
 	{
-	int order[ACC_MAX_CARS];
+	int order[ACC_MAX_CARS + ACC_RESULTS_ARCHIVE_MAX];
 	int ord_n = 0, oi;
 
 	/*
@@ -338,18 +398,21 @@ results_write(struct Server *s)
 	 * race.position.  Collect identified cars, then insertion-sort by
 	 * the position the standings sort assigned (unset/0 trails).
 	 */
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
-		if (s->cars[i].driver_count > 0)
-			order[ord_n++] = i;
+    for (i = 0; i < ACC_MAX_CARS + (int)s->results_archived_count; i++) {
+        const struct CarEntry *entry = results_car_at(s, i);
+        if (entry != NULL && entry->driver_count > 0)
+            order[ord_n++] = i;
+    }
 	for (oi = 1; oi < ord_n; oi++) {
 		int key = order[oi];
-		int kp = s->cars[key].race.position > 0
-		    ? s->cars[key].race.position : ACC_MAX_CARS + 1;
+        const struct CarEntry *key_car = results_car_at(s, key);
+        int kp = key_car && key_car->race.position > 0
+            ? key_car->race.position : ACC_MAX_CARS + 1;
 		int jj = oi - 1;
 		while (jj >= 0) {
-			int pp = s->cars[order[jj]].race.position > 0
-			    ? s->cars[order[jj]].race.position
-			    : ACC_MAX_CARS + 1;
+            const struct CarEntry *prev = results_car_at(s, order[jj]);
+            int pp = prev && prev->race.position > 0
+                ? prev->race.position : ACC_MAX_CARS + 1;
 			if (pp <= kp)
 				break;
 			order[jj + 1] = order[jj];
@@ -362,7 +425,8 @@ results_write(struct Server *s)
 		struct DriverInfo *d;
 
 		i = order[oi];
-		car = &s->cars[i];
+        car = results_car_at(s, i);
+        if (car == NULL) continue;
 		/*
 		 * Emit any slot with an identity (driver_count > 0),
 		 * not just currently-connected ones — a driver who ran
@@ -596,11 +660,10 @@ results_write(struct Server *s)
 	{
 		int pen_first = 1, ci, pi;
 
-		for (ci = 0; ci < ACC_MAX_CARS && ci < s->max_connections;
-		    ci++) {
-			struct CarEntry *cc = &s->cars[ci];
+        for (ci = 0; ci < ACC_MAX_CARS + (int)s->results_archived_count; ci++) {
+            struct CarEntry *cc = results_car_at(s, ci);
 
-			if (cc->driver_count == 0)
+            if (cc == NULL || cc->driver_count == 0)
 				continue;
 			for (pi = 0; pi < cc->race.pen.count; pi++) {
 				const struct PenaltyEntry *p =
@@ -654,11 +717,10 @@ results_write(struct Server *s)
 	{
 		int prp_first = 1, ci, pi;
 
-		for (ci = 0; ci < ACC_MAX_CARS && ci < s->max_connections;
-		    ci++) {
-			struct CarEntry *cc = &s->cars[ci];
+        for (ci = 0; ci < ACC_MAX_CARS + (int)s->results_archived_count; ci++) {
+            struct CarEntry *cc = results_car_at(s, ci);
 
-			if (cc->driver_count == 0)
+            if (cc == NULL || cc->driver_count == 0)
 				continue;
 			for (pi = 0; pi < cc->race.pen.count; pi++) {
 				const struct PenaltyEntry *p =

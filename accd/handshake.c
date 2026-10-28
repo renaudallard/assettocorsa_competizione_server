@@ -69,6 +69,7 @@
 #include "msg.h"
 #include "penalty.h"
 #include "prim.h"
+#include "results.h"
 #include "session.h"
 #include "smpr.h"
 #include "state.h"
@@ -3101,6 +3102,13 @@ post_slot_assignment:
 			struct CarEntry *fc = &s->cars[c->car_id];
 			int ai;
 
+            if (!fc->entry_item && results_archive_car(s, c->car_id) < 0) {
+                fc->used = 0;
+                c->car_id = -1;
+                reason = REJECT_FULL;
+                free(first); free(last); free(sname); free(steam); free(team);
+                goto reply;
+            }
 			for (ai = 0; ai < ACC_MAX_SESSIONS; ai++) {
 				if (fc->race_archive[ai] != NULL) {
 					free(fc->race_archive[ai]);

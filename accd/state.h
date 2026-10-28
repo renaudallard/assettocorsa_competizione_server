@@ -112,6 +112,7 @@ mono_ms(void)
  * spamming lap-complete cannot grow the log without bound.
  */
 #define ACC_RESULTS_LAP_MAX	100000
+#define ACC_RESULTS_ARCHIVE_MAX	900 /* bounded snapshots per session */
 #define ACC_RATINGS_MAX		256
 
 /*
@@ -1324,6 +1325,8 @@ struct Server {
 	 * freed at shutdown.
 	 */
 	struct ResultsLap	*results_laps;
+	struct CarEntry		*results_archived_cars;
+	uint32_t		results_archived_count, results_archived_cap;
 	uint32_t		results_lap_count;
 	uint32_t		results_lap_cap;
 	uint8_t			results_lap_overflow;	/* one-shot warn flag */
