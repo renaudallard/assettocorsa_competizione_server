@@ -336,17 +336,28 @@ server_free(struct Server *s)
 	lobby_shutdown(&s->lobby);
 }
 
+int
+server_connection_capacity(const struct Server *s)
+{
+    int remaining = ACC_MAX_CARS - s->max_connections;
+    if (remaining <= 0)
+        return ACC_MAX_CARS;
+    if (s->max_extra_monitors < remaining)
+        return s->max_connections + s->max_extra_monitors;
+    return ACC_MAX_CARS;
+}
+
 struct Conn *
 conn_new(struct Server *s, int fd, const struct sockaddr_in *peer)
 {
 	int slot;
 	struct Conn *c;
 
-	for (slot = 0; slot < s->max_connections && slot < ACC_MAX_CARS; slot++) {
+	for (slot = 0; slot < server_connection_capacity(s) && slot < ACC_MAX_CARS; slot++) {
 		if (s->conns[slot] == NULL)
 			break;
 	}
-	if (slot >= s->max_connections || slot >= ACC_MAX_CARS)
+	if (slot >= server_connection_capacity(s) || slot >= ACC_MAX_CARS)
 		return NULL;
 
 	c = calloc(1, sizeof(*c));

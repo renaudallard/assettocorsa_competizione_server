@@ -168,7 +168,7 @@ handle_tcp_accept(struct Server *s)
 		unsigned char reject[16];
 		size_t i;
 		uint32_t cur = (uint32_t)s->nconns;
-		uint32_t cap = (uint32_t)s->max_connections;
+		uint32_t cap = (uint32_t)server_connection_capacity(s);
 		reject[0] = 14;
 		reject[1] = 0;
 		reject[2] = SRV_STATE_RECORD_0C;

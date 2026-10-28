@@ -420,6 +420,7 @@ the server browser will show 24, not 30.
 | `isCPServer` | `0` | `1` restricts joins to Free Practice and gates on the competition-rating window below. |
 | `competitionRatingMin` / `competitionRatingMax` | `0` / unbounded | On a CP server, the client-declared competition rating must fall within `[min, max]` to join. |
 | `maxMonitors` | `max_connections / 4` (min 2) | Cap on simultaneous SMPR observer connections so monitors can't starve sim drivers out of the shared slot pool.  `0` disables observers entirely. |
+| `maxExtraMonitorConnections` | `0` | Optional extra TCP capacity for SMPR observers, capped by `maxMonitors` and the build connection limit. Driver/spectator capacity and lobby advertising do not change. |
 | `maxMonitorsPerIp` | `2` | Per-source-IP observer cap.  Stops a single host from filling the global observer quota. |
 
 </details>

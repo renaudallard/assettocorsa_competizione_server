@@ -375,6 +375,12 @@ config_load(struct Server *s, const char *cfg_dir)
 				s->max_monitors = 0;
 			if (s->max_monitors > s->max_connections)
 				s->max_monitors = s->max_connections;
+			s->max_extra_monitors = json_obj_get_int(settings,
+			    "maxExtraMonitorConnections", 0);
+			if (s->max_extra_monitors < 0)
+				s->max_extra_monitors = 0;
+			if (s->max_extra_monitors > s->max_monitors)
+				s->max_extra_monitors = s->max_monitors;
 			s->max_monitors_per_ip = json_obj_get_int(settings,
 			    "maxMonitorsPerIp", 2);
 			if (s->max_monitors_per_ip < 1)

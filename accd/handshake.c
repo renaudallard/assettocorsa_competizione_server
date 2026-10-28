@@ -2519,10 +2519,17 @@ handshake_handle(struct Server *s, struct Conn *c,
 		 * Full-server check: exe FUN_140025690:645 places this
 		 * after ban/kick so banned or kicked drivers receive the
 		 * correct reason even when the server is full.
-		 * nconns already includes this connection (incremented in
-		 * conn_new at TCP accept time), so compare with > not >=.
+		 * The accepted connection is already counted. Authenticated
+		 * SMPR observers may use the optional extra TCP capacity and
+		 * do not consume the game connection limit.
 		 */
-		if (s->nconns > s->max_connections) {
+		int game_connections = s->nconns;
+		for (int i = 0; i < ACC_MAX_CARS; i++) {
+			const struct Conn *other = s->conns[i];
+			if (other != NULL && other->is_smpr && other->state == CONN_AUTH)
+				game_connections--;
+		}
+		if (game_connections > s->max_connections) {
 			log_info("rejecting connection: server full");
 			reason = REJECT_FULL;
 			/*
@@ -2532,7 +2539,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 			 * max_connections.
 			 */
 			reject_sub = c->is_spectator ? 1 : 0;
-			reject_a = (uint32_t)s->nconns;
+			reject_a = (uint32_t)game_connections;
 			reject_b = (uint32_t)s->max_connections;
 			free(first); free(last); free(sname);
 			free(steam); free(team);

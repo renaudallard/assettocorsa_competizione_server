@@ -1011,6 +1011,7 @@ struct Server {
 	int		tcp_port;
 	int		udp_port;
 	int		max_connections;
+	int		max_extra_monitors; /* optional extra shared TCP slots */
 	int		max_monitors;	/* SMPR observer cap; settings.json
 					 * "maxMonitors"; defaults to
 					 * max_connections / 4 (>=2) */
@@ -1344,6 +1345,8 @@ void	track_zones_apply(struct Server *s);
 int	track_pit_count(const char *track, int is_private);
 void	track_random_pick(struct Server *s);
 int64_t	conn_clock_offset(const struct Server *s, const struct Conn *c);
+
+int	server_connection_capacity(const struct Server *s);
 
 /* Allocate a new Conn for an accepted fd.  Returns NULL on full. */
 struct Conn *

@@ -202,6 +202,14 @@ Cap on simultaneous SMPR observer connections; 0 disables observers
 entirely.
 SMPR observers share the same TCP port and slot pool as sim drivers,
 so a low cap protects driver slots from observer floods.
+.It Va maxExtraMonitorConnections
+Default 0, preserving the shared connection limit.
+When nonzero, allow up to this many extra TCP connections for SMPR
+observers, bounded by
+.Va maxMonitors
+and the build connection limit. The advertised driver capacity does not
+change. Connections are not identified until their handshake arrives,
+so extra capacity can briefly be occupied by unauthenticated peers.
 .It Va maxMonitorsPerIp
 Default 2.
 Per-source-IP observer cap.
