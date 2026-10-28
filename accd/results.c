@@ -206,6 +206,29 @@ results_laps_free(struct Server *s)
 	s->results_lap_overflow = 0;
 }
 
+/* Sort timed-session results across both connected and departed cars. */
+static int
+results_practice_compare(const struct CarEntry *a, const struct CarEntry *b)
+{
+    const struct CarRaceState *ra = &a->race, *rb = &b->race;
+    int retired_a, retired_b;
+    if (ra->disqualified != rb->disqualified)
+        return ra->disqualified ? 1 : -1;
+    retired_a = (ra->car_field & 0x40) != 0;
+    retired_b = (rb->car_field & 0x40) != 0;
+    if (retired_a != retired_b)
+        return retired_a ? 1 : -1;
+    if (ra->best_lap_ms <= 0 && rb->best_lap_ms > 0) return 1;
+    if (rb->best_lap_ms <= 0 && ra->best_lap_ms > 0) return -1;
+    if (ra->best_lap_ms > 0 && rb->best_lap_ms > 0) {
+        if (ra->best_lap_ms != rb->best_lap_ms)
+            return ra->best_lap_ms < rb->best_lap_ms ? -1 : 1;
+        if (ra->best_lap_set_at_ms != rb->best_lap_set_at_ms)
+            return ra->best_lap_set_at_ms < rb->best_lap_set_at_ms ? -1 : 1;
+    }
+    return 0;
+}
+
 int
 results_write(struct Server *s)
 {
@@ -350,8 +373,11 @@ results_write(struct Server *s)
 			int pp = s->cars[order[jj]].race.position > 0
 			    ? s->cars[order[jj]].race.position
 			    : ACC_MAX_CARS + 1;
-			if (pp <= kp)
-				break;
+            if (st == 0 || st == 4) {
+                if (results_practice_compare(&s->cars[order[jj]], &s->cars[key]) <= 0)
+                    break;
+            } else if (pp <= kp)
+                break;
 			order[jj + 1] = order[jj];
 			jj--;
 		}
