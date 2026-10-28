@@ -1324,6 +1324,7 @@ struct Server {
 	 * freed at shutdown.
 	 */
 	struct ResultsLap	*results_laps;
+	char			results_path[512]; /* one atomic snapshot per session */
 	uint32_t		results_lap_count;
 	uint32_t		results_lap_cap;
 	uint8_t			results_lap_overflow;	/* one-shot warn flag */

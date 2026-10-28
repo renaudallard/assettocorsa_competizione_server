@@ -822,6 +822,10 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			session_overtime_car_finished(s, c->car_id);
 			session_quali_drop_eligibility(s, c->car_id);
 		}
+
+		/* Snapshot after standings and finish state reflect this lap. */
+		if (s->dump_leaderboards)
+			(void)results_write(s);
 	}
 
 	/*

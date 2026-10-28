@@ -242,6 +242,12 @@ session_reset(struct Server *s, uint8_t session_index)
 	int i;
 	uint8_t first_split_seed;
 
+	/* Empty-server and admin resets also close the current session. */
+	if (s->dump_leaderboards && s->results_lap_count > 0 &&
+	    !s->session.results_written && results_write(s) < 0)
+		log_warn("results: could not save session before reset");
+	s->results_path[0] = '\0';
+
 	/*
 	 * Clear the per-session results lap log so the next session's
 	 * results.json laps[] starts empty.  results_write() for the

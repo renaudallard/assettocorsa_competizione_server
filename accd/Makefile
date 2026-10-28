@@ -206,6 +206,7 @@ probe: probe.c
 #     any of the 11 sections to EOF (this is what flagged the 84 B
 #     TrackConditions overrun the smoke test alone missed)
 test: ${PROG}
+	python3 tests/smoke_result_snapshots.py
 	python3 tests/smoke_handshake.py
 	python3 tests/smoke_reject_codes.py
 	sh tests/integration/run_welcome_trailer_walk.sh
@@ -223,7 +224,7 @@ install: ${PROG}
 	install -d ${DESTDIR}${MANDIR}/man1
 	install -m 644 accd.1 ${DESTDIR}${MANDIR}/man1/accd.1
 
-# OpenBSD service install — puts the rc.d wrapper under /etc/rc.d
+# OpenBSD service install â€” puts the rc.d wrapper under /etc/rc.d
 # and (if missing) creates the /var/accd run-state directory owned
 # by the _accd user.  The wrapper assumes the _accd user already
 # exists (created by useradd / port install).  Run as root.

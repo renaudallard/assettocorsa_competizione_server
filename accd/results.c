@@ -232,6 +232,9 @@ results_write(struct Server *s)
 		return -1;
 	}
 
+	if (s->results_path[0] != '\0') {
+		(void)snprintf(path, sizeof(path), "%s", s->results_path);
+	} else {
 	now = time(NULL);
 	localtime_r(&now, &tm);
 	strftime(ts, sizeof(ts), "%Y%m%d_%H%M%S", &tm);
@@ -253,6 +256,7 @@ results_write(struct Server *s)
 			    dir, ts, session_type_str(st, stype_buf, sizeof(stype_buf)), suffix);
 	}
 
+	}
 	f = atomic_open(tmp_path, sizeof(tmp_path), path, "results");
 	if (f == NULL)
 		return -1;
@@ -710,6 +714,8 @@ results_write(struct Server *s)
 	if (atomic_close(f, tmp_path, path, "results") < 0)
 		return -1;
 
-	log_info("results: wrote %s", path);
+	(void)snprintf(s->results_path, sizeof(s->results_path), "%s", path);
+	log_info("results: wrote %s (%u laps)", path,
+	    (unsigned)s->results_lap_count);
 	return 0;
 }
