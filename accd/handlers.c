@@ -475,6 +475,15 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	 */
 	if ((car_field & 0x0400) != 0)
 		return 0;
+	/* Optional operator-specified floor for laps claimed valid for best.
+	 * Leave out-, in- and cut-laps on the existing path.  This is only a
+	 * coarse filter, not validation of the driver's reported position. */
+	if (s->min_flying_lap_ms > 0 && (car_field & 0x100f) == 0 &&
+	    split_time >= 0 && split_time < s->min_flying_lap_ms) {
+		log_warn("lap rejected: car=%d time=%d below configured floor=%d",
+		    c->car_id, split_time, s->min_flying_lap_ms);
+		return 0;
+	}
 	laps_before = (uint32_t)s->cars[c->car_id].race.lap_count;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;

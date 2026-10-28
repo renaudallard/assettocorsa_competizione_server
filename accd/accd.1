@@ -209,6 +209,14 @@ When 1, the session results are written to
 when a session completes, and for the abandoned session when the last
 client leaves.
 A race that never reached its green flag is skipped.
+.It Va minFlyingLapTimeMs
+Default 0 (disabled).  When set to a positive number, a completed lap
+the client claims is valid for best is rejected if its time is below
+this operator-specified floor in milliseconds.  Rejected laps are not
+counted.  Set the floor conservatively for every configured track and
+session: too high a value can reject legitimate laps.  Out-laps,
+in-laps and laps the client already marked invalid are not checked.
+Plausible fabricated times can still pass; this option is not anti-cheat.
 .It Va maxMonitors
 Default
 .Va maxConnections

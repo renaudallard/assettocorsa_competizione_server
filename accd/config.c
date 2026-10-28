@@ -314,6 +314,12 @@ config_load(struct Server *s, const char *cfg_dir)
 		    s->ignore_premature_disconnects);
 		s->dump_leaderboards = json_obj_get_int(settings,
 		    "dumpLeaderboards", s->dump_leaderboards);
+		s->min_flying_lap_ms = json_obj_get_int(settings,
+		    "minFlyingLapTimeMs", s->min_flying_lap_ms);
+		if (s->min_flying_lap_ms < 0) {
+			log_warn("negative minFlyingLapTimeMs; disabling floor");
+			s->min_flying_lap_ms = 0;
+		}
 		s->dump_entry_list = json_obj_get_int(settings,
 		    "dumpEntryList", s->dump_entry_list);
 		s->allow_auto_dq = json_obj_get_int(settings,

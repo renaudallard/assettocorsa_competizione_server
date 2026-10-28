@@ -1017,6 +1017,7 @@ struct Server {
 	int		tcp_port;
 	int		udp_port;
 	int		max_connections;
+	int		min_flying_lap_ms; /* optional best-lap plausibility floor */
 	int		max_monitors;	/* SMPR observer cap; settings.json
 					 * "maxMonitors"; defaults to
 					 * max_connections / 4 (>=2) */
