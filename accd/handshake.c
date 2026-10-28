@@ -3206,6 +3206,13 @@ post_slot_assignment:
 		 * when forceEntryList is off.
 		 */
 		car->car_model = cmodel;
+		if (!is_reconnect && !car->entry_item) {
+			car->ballast_kg = 0;
+			car->restrictor = 0.0f;
+			car->bop_ballast_delta = 0;
+			car->bop_restrictor_delta = 0.0f;
+		}
+		bop_apply(s, car);
 		/*
 		 * Grid-position assignment.  Only assigned when the slot
 		 * has no grid position yet — a reclaim (zombie reconnect)
@@ -3332,6 +3339,18 @@ reply:
 		    ACC_CAR_ID_BASE + c->car_id,
 		    (unsigned)c->conn_id,
 		    (unsigned)c->welcome_bytes);
+
+	if (c->car_id >= 0 && c->car_id < ACC_MAX_CARS) {
+		const struct CarEntry *car = &s->cars[c->car_id];
+		struct ByteBuf bop;
+		bb_init(&bop);
+		if (wr_u8(&bop, SRV_BOP_UPDATE) == 0 &&
+		    wr_u16(&bop, car->car_id) == 0 &&
+		    wr_u16(&bop, (uint16_t)car->ballast_kg) == 0 &&
+		    wr_f32(&bop, car->restrictor) == 0)
+			(void)conn_send_framed(c, bop.data, bop.wpos);
+		bb_free(&bop);
+	}
 
 	/*
 	 * Recompute standings now that the new car has been added.

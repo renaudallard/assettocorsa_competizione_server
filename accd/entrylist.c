@@ -575,11 +575,37 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 }
 
 /*
- * Load + range-clamp + log cfg/bop.json.  The table is NOT applied to
- * any car: the original server likewise only loads, clamps, and logs
- * its BoP vector and never writes it to a CarEntry (the applier was
- * never wired up).  Kept for forward-compat and operator visibility.
+ * Apply the matching track/model adjustment to the car's base values.
+ * Remember the applied delta so reconnects and model changes do not
+ * accumulate ballast or restrictor repeatedly.
  */
+void
+bop_apply(const struct Server *s, struct CarEntry *car)
+{
+	int i, base_kg = car->ballast_kg - car->bop_ballast_delta;
+	float base_restrictor = car->restrictor - car->bop_restrictor_delta;
+	int kg = base_kg;
+	float restrictor = base_restrictor;
+	for (i = 0; i < s->bop_count; i++) {
+		const struct BoPEntry *b = &s->bop[i];
+		if (b->car_model != car->car_model || strcmp(b->track, s->track) != 0)
+			continue;
+		kg += b->ballast_kg;
+		restrictor += (float)b->restrictor_pct / 100.0f;
+		break;
+	}
+	if (kg < -40) kg = -40;
+	if (kg > 40) kg = 40;
+	if (restrictor < 0.0f) restrictor = 0.0f;
+	if (restrictor > 0.20f) restrictor = 0.20f;
+	car->ballast_kg = (int8_t)kg;
+	car->restrictor = restrictor;
+	car->bop_ballast_delta = (int8_t)(kg - base_kg);
+	car->bop_restrictor_delta = restrictor - base_restrictor;
+	log_info("bop: model=%u track=%s ballast=%dkg restrictor=%.2f%%",
+	    (unsigned)car->car_model, s->track, kg, (double)restrictor * 100.0);
+}
+
 int
 bop_load(struct Server *s, const char *cfg_dir)
 {

@@ -54,11 +54,11 @@ int	entrylist_save(const struct Server *s, const char *cfg_dir);
 
 /*
  * Read cfg_dir/bop.json (handbook §VI.3) into s->bop[], range-clamp,
- * and log it.  File is optional; missing or unparseable yields
- * bop_count = 0.  The table is loaded and logged only, never applied
- * to a car (mirrors the original server, which ships its BoP vector
- * inert).  Returns the number of entries loaded, or -1 on I/O error.
+ * and log it. File is optional; missing or unparseable yields
+ * bop_count = 0. bop_apply selects the active track/model at join.
+ * Returns the number of entries loaded, or -1 on I/O error.
  */
 int	bop_load(struct Server *s, const char *cfg_dir);
+void	bop_apply(const struct Server *s, struct CarEntry *car);
 
 #endif /* ACCD_ENTRYLIST_H */
