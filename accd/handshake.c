@@ -2557,6 +2557,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 		if (c->is_spectator) {
 			c->car_id = -1;
 			c->state = CONN_AUTH;
+			c->authenticated_once = 1;
 			free(first); free(last); free(sname);
 			free(steam); free(team);
 			log_kunos("Sending initData with -1 carIndex, meaning "
@@ -3249,6 +3250,7 @@ post_slot_assignment:
 	}
 
 	c->state = CONN_AUTH;
+	c->authenticated_once = 1;
 	{
 		struct CarEntry *lcar = &s->cars[c->car_id];
 		struct DriverInfo *ldrv = &lcar->drivers[0];

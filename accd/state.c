@@ -380,12 +380,15 @@ conn_drop(struct Server *s, struct Conn *c)
 	if (c == NULL)
 		return;
 
+	/* A kick or failed send may already have entered DISCONNECT. */
+	int was_authenticated = c->state == CONN_AUTH || c->authenticated_once;
+
 	/*
 	 * Notify any attached SMPR monitors that this conn is going
 	 * away.  Done before the slot reset so monitor_build_connection_
 	 * entry still sees the driver names.
 	 */
-	if (c->state == CONN_AUTH && !c->is_smpr)
+	if (was_authenticated && !c->is_smpr)
 		smpr_notify_conn_changed(s, c);
 
 	/*
@@ -395,7 +398,7 @@ conn_drop(struct Server *s, struct Conn *c)
 	 * the standalone 0x4e is only the periodic refresh gated by
 	 * CADENCE_RATINGS_MS in tick_run.
 	 */
-	if (c->state == CONN_AUTH && c->car_id >= 0 &&
+	if (was_authenticated && c->car_id >= 0 &&
 	    c->car_id < ACC_MAX_CARS) {
 		struct ByteBuf bb;
 
@@ -421,7 +424,7 @@ conn_drop(struct Server *s, struct Conn *c)
 	 * the units kunos already uses for its own tracking; we
 	 * mirror by emitting last_udp_client_ts directly.
 	 */
-	if (c->state == CONN_AUTH && !c->is_smpr)
+	if (was_authenticated && !c->is_smpr)
 		log_kunos("Removing dead connection %u  (last lastUdpPaketReceived %u)",
 		    (unsigned)c->conn_id, (unsigned)c->last_udp_client_ts);
 	/*

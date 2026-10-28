@@ -206,6 +206,7 @@ probe: probe.c
 #     any of the 11 sections to EOF (this is what flagged the 84 B
 #     TrackConditions overrun the smoke test alone missed)
 test: ${PROG}
+	sh tests/test_disconnect_notify.sh
 	python3 tests/smoke_handshake.py
 	python3 tests/smoke_reject_codes.py
 	sh tests/integration/run_welcome_trailer_walk.sh
