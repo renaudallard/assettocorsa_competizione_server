@@ -1347,12 +1347,17 @@ session_tick(struct Server *s)
 				 * eligible iff on_track && !(car+0x1e8 & 1)
 				 * && car+0x1ec <= 10000.  in_pit is redundant
 				 * (in-pit cars have on_track=0). */
-				if (car->race.on_track &&
+				if (car->race.quali_eligible_to_finish &&
+				    car->race.on_track && !car->race.in_pit &&
 				    !(car->race.car_field & 0x0001) &&
 				    car->rt.scalar_1ec <= 10000)
 					still_racing++;
+				else
+					car->race.quali_eligible_to_finish = 0;
 			}
 		}
+		if (!session_is_race(s))
+			s->session.cars_in_overtime = (int16_t)still_racing;
 		if (still_racing == 0) {
 			log_info("overtime: no car still racing, "
 			    "releasing hold");
