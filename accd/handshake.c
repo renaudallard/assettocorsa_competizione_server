@@ -1748,6 +1748,8 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		return -1;
 	ci_off = drv_len + 8;
 	ci_len = owner->hs_echo_len - ci_off;
+	if (ci_len < 12)
+		return -1;
 
 	/*
 	 * Byte@+2: FUN_140032c90 writes car+0x2 + 1, the pit box picked by
@@ -1775,7 +1777,11 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		if (wr_u8(bb, grid_wire) < 0) return -1;
 	}
 
-	if (bb_append(bb, owner->hs_echo + ci_off, ci_len) < 0)
+	/* Keep the client's CarInfo, but replace its requested race number
+	 * with the number the server assigned after resolving duplicates. */
+	if (bb_append(bb, owner->hs_echo + ci_off, 8) < 0 ||
+	    wr_i32(bb, ec->race_number) < 0 ||
+	    bb_append(bb, owner->hs_echo + ci_off + 12, ci_len - 12) < 0)
 		return -1;
 
 	/*

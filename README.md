@@ -101,7 +101,8 @@
   a number already in use is bumped to `requested+1..+9`, then to
   the smallest free 1..999, then to 999, mirroring the exe's
   allocator in `FUN_140025690`.  Reconnects keep their original
-  number.
+  number.  The car's spawn definition carries the assigned number,
+  so the track map and the timing tower agree.
 - **Mid-race join controls** — `unsafeRejoin: 0` refuses fresh
   handshakes during an active race; `/lockprep` freezes the
   preparation phase.  Returning drivers always bypass both.
