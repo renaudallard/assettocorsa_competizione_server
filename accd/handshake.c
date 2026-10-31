@@ -668,20 +668,14 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 	int32_t sess_best_lap = INT32_MAX;
 	int32_t sess_best_sec[3] = { INT32_MAX, INT32_MAX, INT32_MAX };
 
-	/*
-	 * Session-best counters scan every slot whose race state is
-	 * still in this session (session_reset wipes best_lap_ms back
-	 * to 0, so stale prior-session values can't leak in).  Slots
-	 * where the driver disconnected mid-session keep their timing
-	 * so the fastest lap stays visible on the standings sidebar.
-	 * DQ'd cars are included (the exe FUN_140128a80:421-424 has no
-	 * DQ predicate on the session-best update).  Entry count (nc)
-	 * considers only currently connected cars.
-	 */
+	/* Live timing uses connected cars; archived results retain every
+	 * participant's race state, including departed drivers' laps. */
 	for (j = 0; j < ACC_MAX_CARS; j++) {
 		const struct CarRaceState *r =
 		    race_src_for(&s->cars[j], session_idx);
 
+		if (session_idx < 0 && !s->cars[j].used)
+			continue;
 		if (r == NULL)
 			continue;	/* didn't participate in this session */
 
@@ -696,17 +690,6 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 				sess_best_sec[d] =
 				    r->best_sectors_ms[d];
 
-		/*
-		 * For archived sessions race_src_for already returned non-NULL
-		 * only for participants, so disconnected cars are included
-		 * automatically.  For the current session, mirror the exe
-		 * (FUN_140034a40): include a car that disconnected mid-session
-		 * as long as it has accumulated any race data (lap or best lap).
-		 * Truly empty slots (never connected this session) have both
-		 * zeroed by session_reset and are skipped.
-		 */
-		if (session_idx < 0 && !car_in_standings(&s->cars[j]))
-			continue;
 		nc++;
 	}
 
@@ -745,14 +728,7 @@ write_session_leaderboard_section(struct ByteBuf *bb, struct Server *s,
 			for (j = 0; j < ACC_MAX_CARS; j++) {
 				const struct CarRaceState *src =
 				    race_src_for(&s->cars[j], session_idx);
-				/*
-				 * Mirror the counting loop: skip a disconnected
-				 * car (used=0) that has no race data, but keep
-				 * one that drove at least one lap or posted a
-				 * best time — the same guard used for nc above.
-				 */
-				if (session_idx < 0 &&
-				    !car_in_standings(&s->cars[j]))
+				if (session_idx < 0 && !s->cars[j].used)
 					continue;
 				if (src == NULL || src->position != pos)
 					continue;
@@ -1748,6 +1724,8 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		return -1;
 	ci_off = drv_len + 8;
 	ci_len = owner->hs_echo_len - ci_off;
+	if (ci_len < 12)
+		return -1;
 
 	/*
 	 * Byte@+2: FUN_140032c90 writes car+0x2 + 1, the pit box picked by
@@ -1775,7 +1753,11 @@ write_spawn_def(struct ByteBuf *bb, struct Server *s, int car_slot)
 		if (wr_u8(bb, grid_wire) < 0) return -1;
 	}
 
-	if (bb_append(bb, owner->hs_echo + ci_off, ci_len) < 0)
+	/* Keep the client's CarInfo, but replace its requested race number
+	 * with the number the server assigned after resolving duplicates. */
+	if (bb_append(bb, owner->hs_echo + ci_off, 8) < 0 ||
+	    wr_i32(bb, ec->race_number) < 0 ||
+	    bb_append(bb, owner->hs_echo + ci_off + 12, ci_len - 12) < 0)
 		return -1;
 
 	/*

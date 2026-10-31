@@ -25,6 +25,7 @@
 #include "io.h"
 #include "msg.h"
 #include "prim.h"
+#include "session.h"
 #include "state.h"
 
 /* Defined in main.c, which the unit tests do not link. */
@@ -225,6 +226,7 @@ expect(struct Server *s, struct Conn *c, int kg, float rest,
 	struct ByteBuf bb;
 	struct Reader r;
 	uint16_t wkg = 0;
+	int32_t wrace = 0;
 	float wrest = 0.0f;
 	char msg[128];
 
@@ -235,11 +237,19 @@ expect(struct Server *s, struct Conn *c, int kg, float rest,
 		fail(msg);
 	}
 	bb_init(&bb);
-	if (write_spawn_def(&bb, s, c->car_id) < 0 || bb.wpos < 6) {
+	if (write_spawn_def(&bb, s, c->car_id) < 0 || bb.wpos < 16) {
 		snprintf(msg, sizeof(msg), "%s: no spawnDef", what);
 		fail(msg);
 		bb_free(&bb);
 		return;
+	}
+	/* spawnDef contains a four-byte race number after the two CarInfo ids.
+	 * A duplicate client request must not leave the old number here. */
+	rd_init(&r, bb.data + 12, 4);
+	if (rd_i32(&r, &wrace) < 0 || wrace != car->race_number) {
+		snprintf(msg, sizeof(msg), "%s: spawnDef number %d, assigned %d",
+		    what, wrace, car->race_number);
+		fail(msg);
 	}
 	rd_init(&r, bb.data + bb.wpos - 6, 6);
 	if (rd_u16(&r, &wkg) < 0 || rd_f32(&r, &wrest) < 0 ||
@@ -358,6 +368,81 @@ open_server(void)
 }
 
 static void
+duplicate_race_number(void)
+{
+	struct Server *s = new_server();
+	struct Conn *first, *second;
+	int p0, p1;
+
+	first = join(s, "S300", 35, 5, &p0);
+	second = join(s, "S301", 35, 5, &p1);
+	if (s->cars[first->car_id].race_number != 5 ||
+	    s->cars[second->car_id].race_number != 6)
+		fail("duplicate client race numbers were not disambiguated");
+	expect(s, first, 0, 0.0f, "first race number");
+	expect(s, second, 0, 0.0f, "reassigned race number");
+	leave(s, first, p0);
+	leave(s, second, p1);
+	server_free(s);
+	free(s);
+}
+
+static int
+live_board_count(struct Server *s, uint32_t *best)
+{
+	struct ByteBuf bb;
+	struct Reader r;
+	uint16_t count = 0;
+
+	bb_init(&bb);
+	if (write_leaderboard_section(&bb, s) < 0 || bb.wpos < 20) {
+		fail("could not build live leaderboard");
+		bb_free(&bb);
+		return -1;
+	}
+	if (best != NULL) {
+		rd_init(&r, bb.data, 4);
+		if (rd_u32(&r, best) < 0)
+			fail("could not read live session best");
+	}
+	/* best lap (4), split count (1), three splits (12), flag (1) */
+	rd_init(&r, bb.data + 18, 2);
+	if (rd_u16(&r, &count) < 0)
+		fail("could not read live leaderboard count");
+	bb_free(&bb);
+	return count;
+}
+
+static void
+departed_live_board(void)
+{
+	struct Server *s = new_server();
+	struct Conn *first, *second;
+	int p0, p1, first_slot;
+	uint32_t best = 0;
+
+	first = join(s, "S400", 35, 40, &p0);
+	second = join(s, "S401", 35, 41, &p1);
+	first_slot = first->car_id;
+	s->cars[first_slot].race.lap_count = 2;
+	s->cars[first_slot].race.best_lap_ms = 90000;
+	s->cars[second->car_id].race.lap_count = 1;
+	s->cars[second->car_id].race.best_lap_ms = 100000;
+	session_recompute_standings(s);
+	if (live_board_count(s, &best) != 2 || best != 90000)
+		fail("connected drivers missing from live leaderboard");
+	leave(s, first, p0);
+	if (live_board_count(s, &best) != 1 || best != 100000)
+		fail("departed driver remained on live leaderboard");
+	if (s->cars[first_slot].race.lap_count != 2 ||
+	    s->cars[first_slot].race.best_lap_ms != 90000)
+		fail("departed driver's result was lost");
+	leave(s, second, p1);
+	server_free(s);
+	free(s);
+}
+
+static void
 cleanup(void)
 {
 	char path[64];
@@ -378,6 +463,8 @@ main(void)
 	}
 	entrylist_server();
 	open_server();
+	duplicate_race_number();
+	departed_live_board();
 	cleanup();
 	if (failed)
 		return 1;
