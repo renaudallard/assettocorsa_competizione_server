@@ -672,10 +672,12 @@ server_used_car_count(const struct Server *s)
 
 /*
  * A car is in the standings while it is connected, and after its
- * driver left as long as it has a lap or best lap in the session. The
- * exe keeps a departed car in its timing vector and ranks it with the
- * others (FUN_140127d80; FUN_14001c300 only clears the connected
- * byte). A slot that did not drive this session has nothing to rank,
+ * driver left as long as it completed a lap in the session. The first
+ * out-lap counts: it does not raise lap_count, but it is in the
+ * results laps[], which needs a row to own it. The exe keeps a
+ * departed car in its timing vector and ranks it with the others
+ * (FUN_140127d80; FUN_14001c300 only clears the connected byte). A
+ * slot that did not drive this session has nothing to rank,
  * session_reset zeroes its race state.
  */
 int
@@ -684,7 +686,7 @@ car_in_standings(const struct CarEntry *car)
 	if (car->driver_count == 0)
 		return 0;
 	return car->used || car->race.lap_count > 0 ||
-	    car->race.best_lap_ms > 0;
+	    car->race.results_laps > 0 || car->race.best_lap_ms > 0;
 }
 
 /*

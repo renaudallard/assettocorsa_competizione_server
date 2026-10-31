@@ -628,6 +628,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		results_laps_append(s, s->cars[c->car_id].car_id,
 		    s->cars[c->car_id].current_driver_index,
 		    lap_ms, race->sector_ms, valid_for_best);
+		race->results_laps++;
 
 		/* Best-sector tracking from the just-completed lap's stored
 		 * sector_ms[].  Gated on the same 0x100f mask as best_lap so an

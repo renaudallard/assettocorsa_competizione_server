@@ -5,9 +5,10 @@ driver's car slot could be handed to someone else.
 
 A keeper holds the session open. Driver A laps and leaves, driver B
 joins and laps, then A comes back in the same car and laps again.
-Driver C joins and leaves without a lap. After /next the results file
-must give A's two laps to A's car and B's lap to B's car, and must not
-list C. Invoked from `make test`. Exits 0 on success,
+Driver C joins and leaves without a lap, and once A is back, driver D
+drives only its out-lap and leaves. After /next the results file must give A's two laps
+to A's car and B's lap to B's car, must list D with its out-lap, must
+not list C, and every lap must belong to a listed car. Invoked from `make test`. Exits 0 on success,
 non-zero on any failure.
 """
 
@@ -28,6 +29,7 @@ KEEPER = "S76561199000000001"
 DRIVER_A = "S76561199000000002"
 DRIVER_B = "S76561199000000003"
 DRIVER_C = "S76561199000000004"
+DRIVER_D = "S76561199000000005"
 SETTINGS = {"serverName": "smoke", "adminPassword": "admin", "dumpLeaderboards": 1}
 
 
@@ -80,10 +82,10 @@ class Client:
     def send(self, body):
         self.sock.sendall(frame(body))
 
-    def lap(self, ms):
+    def lap(self, ms, lap_states=0):
         self.send(struct.pack("<BiBiH", 0x20, ms // 3, 0, 100000, 0))
         self.send(struct.pack("<BiBiH", 0x20, ms // 3, 1, 100000, 0))
-        self.send(struct.pack("<BiiBHB", 0x21, ms, 100000, 0, 0, 0))
+        self.send(struct.pack("<BiiBHB", 0x21, ms, 100000, 0, lap_states, 0))
         self.pump(0.3)
 
     def chat(self, text):
@@ -159,6 +161,11 @@ def main():
             clients.append(a)
             a.lap(77000)
 
+            d = Client(proc, DRIVER_D, 95)
+            d.lap(111000, lap_states=0x0004)  # IsOutLap
+            d.close()
+            keeper.pump(0.5)
+
             keeper.chat("/admin admin")
             keeper.chat("/next")
 
@@ -179,8 +186,11 @@ def main():
                 owner[car["carId"]] = [d["playerId"] for d in car["drivers"]]
             if any(DRIVER_C in ids for ids in owner.values()):
                 fail("driver who left without a lap has a result row")
+            for lp in obj["laps"]:
+                if lp["carId"] not in owner:
+                    fail(f"lap {lp['laptime']} of car {lp['carId']} has no result row")
             laps = {lp["laptime"]: lp["carId"] for lp in obj["laps"]}
-            want = {88000: DRIVER_A, 99000: DRIVER_B, 77000: DRIVER_A}
+            want = {88000: DRIVER_A, 99000: DRIVER_B, 77000: DRIVER_A, 111000: DRIVER_D}
             for ms, steam in want.items():
                 if ms not in laps:
                     fail(f"lap {ms} missing from the results")

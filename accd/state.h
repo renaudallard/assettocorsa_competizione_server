@@ -239,6 +239,9 @@ struct CarRaceState {
 	int16_t		position;		/* 1-based, 0 = unset */
 	int16_t		grid_position;
 	int32_t		lap_count;
+	int32_t		results_laps;		/* laps in the results laps[]
+						 * this session, the first
+						 * out-lap included */
 	int32_t		best_lap_ms;
 	uint64_t	best_lap_set_at_ms;	/* mono_ms when best_lap_ms was
 						 * set; tiebreaker in P/Q sort
