@@ -740,14 +740,20 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		 * car_field) are excluded.  When any entry reaches zero the
 		 * entry's category is inherited into a force-DQ.
 		 */
-		if (race->pen.count > 0 && (car_field & 0x0008) == 0) {
+		if (!race->disqualified && race->pen.count > 0 &&
+		    (car_field & 0x0008) == 0) {
 			int pi;
 			for (pi = 0; pi < race->pen.count; pi++) {
 				struct PenaltyEntry *pe = &race->pen.slots[pi];
 				char chat[128];
 				if (pe->served || !penalty_kind_is_dtsg(pe->kind))
 					continue;
-				pe->laps_remaining--;
+				/* A promoted DT/SG can already have zero laps left.
+				 * Expire it now instead of wrapping the wire count. */
+				if (pe->laps_remaining < 0)
+					pe->laps_remaining = 0;
+				if (pe->laps_remaining > 0)
+					pe->laps_remaining--;
 				if (pe->laps_remaining == 0) {
 					uint8_t inherited = pe->reason;
 					uint8_t inherited_cat = pe->category;
