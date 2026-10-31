@@ -89,11 +89,12 @@
   a returning driver picks them up again and a new driver never
   inherits them.  A departed car is listed in a session's results when
   it completed a lap in that session, its first out-lap included.  A
-  new car takes an empty slot first;
-  when every slot holds a car, connected or not, it takes the slot of
-  the driver who left first under a car id never used before in the
-  event.  That departed car then drops out of the results, with a
-  warning in the log if it left during the current session.
+  new car takes an empty slot first; when every slot holds a car,
+  connected or not, it takes the slot of a departed car under a car id
+  never used before in the event, preferring one with no result row in
+  the current session, then the one whose driver left first.  Only
+  when every departed car has a row does one drop out of the results,
+  with a warning in the log.
 - **Pit box per car** — each joining car gets the pit box held by the
   fewest other connected cars (lowest first), kept for the whole
   connection, so drivers spawn in their own garage whatever the join

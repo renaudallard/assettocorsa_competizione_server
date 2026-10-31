@@ -4,12 +4,13 @@ Smoke test: a lap stays with the driver who drove it when that
 driver's car slot could be handed to someone else.
 
 A keeper holds the session open. Driver A laps and leaves, driver B
-joins and laps, then A comes back in the same car and laps again.
-Driver C joins and leaves without a lap, and once A is back, driver D
-drives only its out-lap and leaves. After /next the results file must give A's two laps
-to A's car and B's lap to B's car, must list D with its out-lap, must
-not list C, and every lap must belong to a listed car. Invoked from `make test`. Exits 0 on success,
-non-zero on any failure.
+joins and laps, driver C joins and leaves without a lap. With every
+slot taken, driver D gets the slot of C, not the one of A, drives only
+its out-lap and leaves. Then A comes back in the same car and laps
+again. After /next the results file must give A's two laps to A's car,
+B's lap to B's car and D's out-lap to D's car, must not list C, and
+every lap must belong to a listed car. Invoked from `make test`. Exits
+0 on success, non-zero on any failure.
 """
 
 import json
@@ -157,14 +158,16 @@ def main():
             c.close()
             keeper.pump(0.5)
 
-            a = Client(proc, DRIVER_A, 92)
-            clients.append(a)
-            a.lap(77000)
-
+            # Every slot holds a car now. D must take the slot of C,
+            # who has no row, not the one of A, who left first.
             d = Client(proc, DRIVER_D, 95)
             d.lap(111000, lap_states=0x0004)  # IsOutLap
             d.close()
             keeper.pump(0.5)
+
+            a = Client(proc, DRIVER_A, 92)
+            clients.append(a)
+            a.lap(77000)
 
             keeper.chat("/admin admin")
             keeper.chat("/next")

@@ -605,14 +605,30 @@ server_new_car_id(struct Server *s)
 }
 
 /*
+ * Order in which server_alloc_car gives up departed cars: one with no
+ * row in the current session first, then the one whose driver left
+ * longest ago.
+ */
+static int
+evict_before(const struct CarEntry *a, const struct CarEntry *b)
+{
+	int ra = car_in_standings(a), rb = car_in_standings(b);
+
+	if (ra != rb)
+		return rb;
+	return a->left_ms < b->left_ms;
+}
+
+/*
  * A car that loses its driver keeps its slot, id, laps and results
  * row, like the exe which only marks its timing entry disconnected
  * (FUN_14001c300) and gives the car back to the same steam id and
  * model. So a new car takes an empty slot first. When there is none,
- * it takes the slot whose driver left longest ago under a new id: the
- * laps of the old car stay in the results log under its own id
- * instead of moving to the new driver. Only its row is lost, and only
- * if it left during the current session.
+ * it takes a departed car's slot under a new id, preferring one with
+ * no row in the current session (evict_before): the laps of the old
+ * car stay in the results log under its own id instead of moving to
+ * the new driver. Only its row is lost, and only when every departed
+ * car has one.
  */
 int
 server_alloc_car(struct Server *s)
@@ -628,7 +644,7 @@ server_alloc_car(struct Server *s)
 			pick = i;
 			break;
 		}
-		if (pick < 0 || car->left_ms < s->cars[pick].left_ms)
+		if (pick < 0 || evict_before(car, &s->cars[pick]))
 			pick = i;
 	}
 	if (pick < 0)
@@ -637,8 +653,7 @@ server_alloc_car(struct Server *s)
 	if (car->driver_count > 0) {
 		uint16_t old = car->car_id;
 
-		if (car->left_ms != 0 &&
-		    car->left_ms >= s->session_reset_ms)
+		if (car_in_standings(car))
 			log_warn("no free car slot, car %u of %s left this "
 			    "session and drops out of its results",
 			    (unsigned)old, car->drivers[0].steam_id);
