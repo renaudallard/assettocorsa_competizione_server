@@ -236,6 +236,31 @@ session_first_split_seed(const struct Server *s, uint8_t session_index)
 	    s->formation_lap_type == 0) ? 0 : 1;
 }
 
+/*
+ * Give the connected (used=1) or departed (used=0) cars the next grid
+ * numbers, from next up to last, in their qualifying order. Returns
+ * the next free number.
+ */
+static int
+grid_from_qualy(struct Server *s, int prior, int used, int next, int last)
+{
+	int p, i;
+
+	for (p = 1; p <= ACC_MAX_CARS && next < last; p++) {
+		for (i = 0; i < ACC_MAX_CARS; i++) {
+			struct CarEntry *car = &s->cars[i];
+			const struct CarRaceState *q = car->race_archive[prior];
+
+			if (car->driver_count == 0 || !car->used != !used ||
+			    q == NULL || q->position != p)
+				continue;
+			car->race.grid_position = (int16_t)next++;
+			break;
+		}
+	}
+	return next;
+}
+
 void
 session_reset(struct Server *s, uint8_t session_index)
 {
@@ -351,29 +376,6 @@ session_reset(struct Server *s, uint8_t session_index)
 			}
 		}
 		/*
-		 * Two passes, matching the exe's grid builder
-		 * (FUN_140032400).  Pass 1 assigns every car that has an
-		 * entitled position (qualy archive order, or a configured
-		 * defaultGridPosition).  Pass 2 fills the rest from the
-		 * next free slot.  Splitting the passes prevents a
-		 * collision: server_find_grid_slot derives the next free
-		 * slot from already-assigned grid_positions, so a fallback
-		 * car must not run before a higher-slot qualy car has
-		 * claimed its position or both could land on the same grid
-		 * number.
-		 *
-		 * Grid is assigned to every slot with an identity
-		 * (driver_count > 0), not just connected ones, so a driver
-		 * who dropped during qualy keeps their slot for the
-		 * zombie-slot reclaim in handshake_handle; unreclaimed
-		 * zombies stay invisible because broadcast_grid iterates
-		 * only `used` cars.
-		 *
-		 * No practice-session fallback: the exe uses
-		 * defaultGridPosition when no qualifying precedes the race,
-		 * never the practice finish order.
-		 */
-		/*
 		 * Clear stale grid slots first so the defaultGridPosition
 		 * collision check (server_validate_default_grid) only sees
 		 * slots assigned earlier in this pass, mirroring the exe's
@@ -382,34 +384,64 @@ session_reset(struct Server *s, uint8_t session_index)
 		for (i = 0; i < ACC_MAX_CARS; i++)
 			if (s->cars[i].driver_count > 0)
 				s->cars[i].race.grid_position = -1;
-		for (i = 0; i < ACC_MAX_CARS; i++) {
-			struct CarEntry *car = &s->cars[i];
-			int16_t g = -1;
+		if (prior >= 0) {
+			/*
+			 * FUN_140032400 numbers the connected cars in
+			 * qualifying order without gaps, then the ones with no
+			 * qualifying result.  The exe knows only connected
+			 * cars.  A departed car is numbered after them while
+			 * the grid has room, so it keeps a slot for the reclaim
+			 * in handshake_handle and a live car never lands past
+			 * the grid.  One that gets none is given a slot there
+			 * when it comes back.
+			 */
+			int next = grid_from_qualy(s, prior, 1, 0, ACC_MAX_CARS);
 
-			if (car->driver_count == 0)
-				continue;
-			if (prior >= 0 && car->race_archive[prior] != NULL) {
-				int16_t p = car->race_archive[prior]->position;
-				if (p >= 1 && p <= ACC_MAX_CARS)
-					g = p - 1;	/* 0-based slot */
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct CarEntry *car = &s->cars[i];
+
+				if (!car->used || car->race.grid_position >= 0)
+					continue;
+				car->race.grid_position = (int16_t)next++;
+				log_info("Car %u had no grid position "
+				    "assigned; fallback to %d",
+				    (unsigned)car->car_id, next);
 			}
-			if (g < 0 && prior < 0 &&
-			    car->default_grid_position >= 0)
-				g = (int16_t)server_validate_default_grid(s, i,
-				    car->default_grid_position);
-			car->race.grid_position = g;
+			(void)grid_from_qualy(s, prior, 0, next,
+			    server_grid_slots(s));
+		} else {
+			/*
+			 * No qualifying: the exe uses defaultGridPosition,
+			 * never the practice finish order.  The cars without
+			 * one take the next free slot, in a second pass so a
+			 * fallback car does not take a slot a later car is
+			 * entitled to (server_find_grid_slot derives the next
+			 * free slot from the grid assigned so far).
+			 */
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct CarEntry *car = &s->cars[i];
+
+				if (car->driver_count > 0 &&
+				    car->default_grid_position >= 0)
+					car->race.grid_position = (int16_t)
+					    server_validate_default_grid(s, i,
+					    car->default_grid_position);
+			}
+			for (i = 0; i < ACC_MAX_CARS; i++) {
+				struct CarEntry *car = &s->cars[i];
+				int slot;
+
+				if (!car->used || car->race.grid_position >= 0)
+					continue;
+				if ((slot = server_find_grid_slot(s)) >= 0)
+					car->race.grid_position = (int16_t)slot;
+			}
 		}
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct CarEntry *car = &s->cars[i];
 
 			if (car->driver_count == 0)
 				continue;
-			if (car->race.grid_position < 0) {
-				int slot = server_find_grid_slot(s);
-				if (slot >= 0)
-					car->race.grid_position =
-					    (int16_t)slot;
-			}
 			log_info("grid: car %d -> %d (from session %d%s)",
 			    i, (int)car->race.grid_position, prior,
 			    car->used ? "" : ", zombie");
@@ -1022,7 +1054,7 @@ session_recompute_standings(struct Server *s)
 	int order[ACC_MAX_CARS];
 	int n = 0, i, j;
 
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	for (i = 0; i < ACC_MAX_CARS; i++) {
 		if (car_in_standings(&s->cars[i]))
 			order[n++] = i;
 		else
@@ -1261,8 +1293,7 @@ session_tick(struct Server *s)
 	if (new_phase == PHASE_OVERTIME &&
 	    s->session.overtime_hold == 0) {
 		int i, racing = 0;
-		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
-		    i++) {
+		for (i = 0; i < ACC_MAX_CARS; i++) {
 			if (!s->cars[i].used)
 				continue;
 			if (s->cars[i].race.in_pit)
@@ -1298,8 +1329,7 @@ session_tick(struct Server *s)
 			const char *stype = def->session_type == 4
 			    ? "quali" : "practice";
 			int eligible = 0;
-			for (i = 0; i < ACC_MAX_CARS &&
-			    i < s->max_connections; i++) {
+			for (i = 0; i < ACC_MAX_CARS; i++) {
 				struct CarEntry *car = &s->cars[i];
 				if (!car->used) {
 					car->race.quali_eligible_to_finish = 0;
@@ -1372,8 +1402,7 @@ session_tick(struct Server *s)
 	 */
 	if (s->session.overtime_hold) {
 		int i, still_racing = 0;
-		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
-		    i++) {
+		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct CarEntry *car = &s->cars[i];
 			if (!car->used || car->race.finished)
 				continue;

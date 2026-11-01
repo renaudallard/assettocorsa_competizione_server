@@ -623,12 +623,14 @@ evict_before(const struct CarEntry *a, const struct CarEntry *b)
  * A car that loses its driver keeps its slot, id, laps and results
  * row, like the exe which only marks its timing entry disconnected
  * (FUN_14001c300) and gives the car back to the same steam id and
- * model. So a new car takes an empty slot first. When there is none,
- * it takes a departed car's slot under a new id, preferring one with
- * no row in the current session (evict_before): the laps of the old
- * car stay in the results log under its own id instead of moving to
- * the new driver. Only its row is lost, and only when every departed
- * car has one.
+ * model. The pool is every slot, not max_connections: the joins cap
+ * the live cars (maxCarSlots, maxConnections) and the rest of the pool
+ * holds departed cars. So a new car takes an empty slot first. When
+ * there is none, it takes a departed car's slot under a new id,
+ * preferring one with no row in the current session (evict_before):
+ * the laps of the old car stay in the results log under its own id
+ * instead of moving to the new driver. Only its row is lost, and only
+ * when every departed car has one.
  */
 int
 server_alloc_car(struct Server *s)
@@ -636,7 +638,7 @@ server_alloc_car(struct Server *s)
 	struct CarEntry *car;
 	int i, pick = -1;
 
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	for (i = 0; i < ACC_MAX_CARS; i++) {
 		car = &s->cars[i];
 		if (car->used)
 			continue;
@@ -679,7 +681,7 @@ server_used_car_count(const struct Server *s)
 {
 	int i, n = 0;
 
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+	for (i = 0; i < ACC_MAX_CARS; i++)
 		if (s->cars[i].used)
 			n++;
 	return n;
@@ -705,6 +707,18 @@ car_in_standings(const struct CarEntry *car)
 }
 
 /*
+ * Number of grid and pit positions. The exe uses the track pit count;
+ * accd has no per-track pit table and uses max_connections.
+ */
+int
+server_grid_slots(const struct Server *s)
+{
+	if (s->max_connections > 0 && s->max_connections <= ACC_MAX_CARS)
+		return s->max_connections;
+	return ACC_MAX_CARS;
+}
+
+/*
  * Active grid-position assignment per FUN_140021090.  Scan every
  * used car, find the maximum assigned grid number, and return
  * max+1 if it still fits under max_connections.  Otherwise walk
@@ -721,9 +735,7 @@ server_find_grid_slot(struct Server *s)
 	int i, max_pits, used_count, max_assigned;
 	uint8_t occupied[ACC_MAX_CARS];
 
-	max_pits = s->max_connections > 0 &&
-	    s->max_connections <= ACC_MAX_CARS
-	    ? s->max_connections : ACC_MAX_CARS;
+	max_pits = server_grid_slots(s);
 	max_assigned = -1;
 	used_count = 0;
 	for (i = 0; i < ACC_MAX_CARS; i++)
@@ -753,8 +765,8 @@ server_find_grid_slot(struct Server *s)
 /*
  * FUN_1400211b0 counts, for every pit index, how many connected cars
  * hold it and returns the least used one, lowest index first.  The
- * exe bounds the scan by the track pit count; accd has no per-track
- * pit table and uses max_connections, as server_find_grid_slot does.
+ * exe bounds the scan by the track pit count, accd by
+ * server_grid_slots.
  * The count covers every used car except `self`, so a reconnecting
  * car does not see its own previous box as taken.
  */
@@ -764,9 +776,7 @@ server_find_pit_slot(struct Server *s, int self)
 	int i, best, max_pits;
 	int count[ACC_MAX_CARS];
 
-	max_pits = s->max_connections > 0 &&
-	    s->max_connections <= ACC_MAX_CARS
-	    ? s->max_connections : ACC_MAX_CARS;
+	max_pits = server_grid_slots(s);
 	for (i = 0; i < ACC_MAX_CARS; i++)
 		count[i] = 0;
 	for (i = 0; i < ACC_MAX_CARS; i++)

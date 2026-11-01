@@ -1390,6 +1390,7 @@ int	server_car_slot(const struct Server *s, uint16_t car_id);
 int	server_used_car_count(const struct Server *s);
 /* Car is ranked: connected, or departed with a lap this session. */
 int	car_in_standings(const struct CarEntry *car);
+int	server_grid_slots(const struct Server *s);
 
 /*
  * Pick the next grid slot for a joining car: max existing +1 if

@@ -124,7 +124,7 @@ cmd_show_cars(struct Server *s)
 {
 	int i, n = 0;
 
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarEntry *car = &s->cars[i];
 		if (!car->used)
 			continue;

@@ -774,7 +774,7 @@ broadcast_grid(struct Server *s)
 	 * appear in the 0x3f packet, mirroring the exe's leaderboard-vector
 	 * iteration in FUN_1401318b0.
 	 */
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	for (i = 0; i < ACC_MAX_CARS; i++) {
 		struct CarEntry *car = &s->cars[i];
 		if (car->used || car->race.grid_position >= 0)
 			n++;
@@ -789,8 +789,7 @@ broadcast_grid(struct Server *s)
 	 * grid slot trail in car_id order.
 	 */
 	for (g = 0; g < ACC_MAX_CARS && emitted < n; g++) {
-		for (i = 0; i < ACC_MAX_CARS && i < s->max_connections;
-		    i++) {
+		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct CarEntry *car = &s->cars[i];
 			struct CarRaceState *ar;
 			uint32_t best_ms;
@@ -810,8 +809,7 @@ broadcast_grid(struct Server *s)
 			emitted++;
 		}
 	}
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections &&
-	    emitted < n; i++) {
+	for (i = 0; i < ACC_MAX_CARS && emitted < n; i++) {
 		struct CarEntry *car = &s->cars[i];
 		struct CarRaceState *ar;
 		uint32_t best_ms;
@@ -1030,11 +1028,11 @@ broadcast_stats_udp(struct Server *s)
 
 	/* Car list. */
 	n_car = 0;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+	for (i = 0; i < ACC_MAX_CARS; i++)
 		if (s->cars[i].used)
 			n_car++;
 	ok = ok && wr_u8(&bb, (uint8_t)(n_car > 255 ? 255 : n_car)) == 0;
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections && ok; i++) {
+	for (i = 0; i < ACC_MAX_CARS && ok; i++) {
 		if (!s->cars[i].used)
 			continue;
 		ok = ok && wr_u16(&bb, s->cars[i].car_id) == 0;

@@ -348,7 +348,7 @@ results_write(struct Server *s)
 	 * race.position.  Collect identified cars, then insertion-sort by
 	 * the position the standings sort assigned (unset/0 trails).
 	 */
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+	for (i = 0; i < ACC_MAX_CARS; i++)
 		if (car_in_standings(&s->cars[i]))
 			order[ord_n++] = i;
 	for (oi = 1; oi < ord_n; oi++) {
@@ -597,8 +597,7 @@ results_write(struct Server *s)
 	{
 		int pen_first = 1, ci, pi;
 
-		for (ci = 0; ci < ACC_MAX_CARS && ci < s->max_connections;
-		    ci++) {
+		for (ci = 0; ci < ACC_MAX_CARS; ci++) {
 			struct CarEntry *cc = &s->cars[ci];
 
 			if (cc->driver_count == 0)
@@ -655,8 +654,7 @@ results_write(struct Server *s)
 	{
 		int prp_first = 1, ci, pi;
 
-		for (ci = 0; ci < ACC_MAX_CARS && ci < s->max_connections;
-		    ci++) {
+		for (ci = 0; ci < ACC_MAX_CARS; ci++) {
 			struct CarEntry *cc = &s->cars[ci];
 
 			if (cc->driver_count == 0)

@@ -3,14 +3,16 @@
 Smoke test: a lap stays with the driver who drove it when that
 driver's car slot could be handed to someone else.
 
-A keeper holds the session open. Driver A laps and leaves, driver B
-joins and laps, driver C joins and leaves without a lap. With every
-slot taken, driver D gets the slot of C, not the one of A, drives only
-its out-lap and leaves. Then A comes back in the same car and laps
-again. After /next the results file must give A's two laps to A's car,
-B's lap to B's car and D's out-lap to D's car, must not list C, and
-every lap must belong to a listed car. Invoked from `make test`. Exits
-0 on success, non-zero on any failure.
+The server has 4 connections. A keeper holds the session open. Driver
+A laps and leaves, driver B joins and laps, driver C joins and leaves
+without a lap, driver E laps and leaves, driver D drives only its
+out-lap and leaves, then A comes back in the same car and laps again.
+That is more cars than connections, and every car but C has a row, so
+the pool must hold departed cars past the connection count. After
+/next the results file must give every lap to the car of the driver
+who drove it, must not list C, and every lap must belong to a listed
+car. Invoked from `make test`. Exits 0 on success, non-zero on any
+failure.
 """
 
 import json
@@ -31,6 +33,7 @@ DRIVER_A = "S76561199000000002"
 DRIVER_B = "S76561199000000003"
 DRIVER_C = "S76561199000000004"
 DRIVER_D = "S76561199000000005"
+DRIVER_E = "S76561199000000006"
 SETTINGS = {"serverName": "smoke", "adminPassword": "admin", "dumpLeaderboards": 1}
 
 
@@ -158,8 +161,11 @@ def main():
             c.close()
             keeper.pump(0.5)
 
-            # Every slot holds a car now. D must take the slot of C,
-            # who has no row, not the one of A, who left first.
+            e = Client(proc, DRIVER_E, 96)
+            e.lap(105000)
+            e.close()
+            keeper.pump(0.5)
+
             d = Client(proc, DRIVER_D, 95)
             d.lap(111000, lap_states=0x0004)  # IsOutLap
             d.close()
@@ -193,7 +199,13 @@ def main():
                 if lp["carId"] not in owner:
                     fail(f"lap {lp['laptime']} of car {lp['carId']} has no result row")
             laps = {lp["laptime"]: lp["carId"] for lp in obj["laps"]}
-            want = {88000: DRIVER_A, 99000: DRIVER_B, 77000: DRIVER_A, 111000: DRIVER_D}
+            want = {
+                88000: DRIVER_A,
+                99000: DRIVER_B,
+                77000: DRIVER_A,
+                111000: DRIVER_D,
+                105000: DRIVER_E,
+            }
             for ms, steam in want.items():
                 if ms not in laps:
                     fail(f"lap {ms} missing from the results")

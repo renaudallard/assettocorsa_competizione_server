@@ -506,7 +506,7 @@ monitor_build_leaderboard(struct ByteBuf *bb, const struct Server *s)
 	int i, k;
 	size_t sub_start;
 
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	for (i = 0; i < ACC_MAX_CARS; i++) {
 		const struct CarRaceState *race = &s->cars[i].race;
 		if (!s->cars[i].used)
 			continue;
@@ -529,7 +529,7 @@ monitor_build_leaderboard(struct ByteBuf *bb, const struct Server *s)
 	if (pb_w_bool(bb, PB_LB_IS_DECLARED_WET_SESSION, 0) < 0)
 		return -1;
 
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	for (i = 0; i < ACC_MAX_CARS; i++) {
 		if (!s->cars[i].used)
 			continue;
 		if (pb_sub_begin(bb, PB_LB_ENTRIES, &sub_start) < 0)

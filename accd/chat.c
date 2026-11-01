@@ -102,7 +102,7 @@ chat_car_by_racenum(struct Server *s, int num)
 {
 	int i;
 
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++)
+	for (i = 0; i < ACC_MAX_CARS; i++)
 		if (s->cars[i].used && s->cars[i].race_number == num)
 			return i;
 	return -1;

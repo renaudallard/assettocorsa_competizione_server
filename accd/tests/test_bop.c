@@ -341,14 +341,14 @@ entrylist_server(void)
  * Without an entry list a car made by a join starts from zero, even
  * in a slot an earlier car with an admin ballast left behind. A new
  * car only takes over a departed car's slot when no slot is empty,
- * so give the server a single one.
+ * so the test fills the rest of the pool.
  */
 static void
 open_server(void)
 {
 	struct Server *s;
 	struct Conn *c;
-	int p;
+	int i, p;
 
 	s = new_server();
 	s->max_connections = 1;
@@ -357,6 +357,11 @@ open_server(void)
 	expect(s, c, 25, 0.08f, "car made by a join");
 	admin(s, "21 40", 1);
 	leave(s, c, p);
+	/* Hold the rest of the pool with departed cars that have laps. */
+	for (i = 1; i < ACC_MAX_CARS; i++) {
+		s->cars[i].driver_count = 1;
+		s->cars[i].race.lap_count = 1;
+	}
 	c = join(s, "S201", 35, 22, &p);
 	if (c->car_id != 0)
 		fail("second driver did not reuse the slot");

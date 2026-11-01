@@ -1,7 +1,8 @@
 /*
- * A car whose driver left keeps its slot and wire id. A new car takes
- * an empty slot first, then the slot of the driver who left first,
- * under an id no other car of the event had.
+ * A car whose driver left keeps its slot and wire id. The pool is every
+ * slot, not maxConnections. A new car takes an empty slot first, then
+ * the slot of a departed car with no result row, then the slot of the
+ * driver who left first, under an id no other car of the event had.
  */
 
 #define _POSIX_C_SOURCE 200809L
@@ -51,7 +52,8 @@ int
 main(void)
 {
 	struct Server *s;
-	int a, b, c, d, e;
+	char steam[16];
+	int a, b, c, d, e, i;
 
 	if ((s = calloc(1, sizeof(*s))) == NULL) {
 		perror("calloc");
@@ -74,6 +76,12 @@ main(void)
 	expect(server_car_slot(s, ACC_CAR_ID_BASE) == a,
 	    "departed car keeps its id");
 
+	/* Departed cars do not count against maxConnections. */
+	for (i = 3; i < ACC_MAX_CARS; i++) {
+		snprintf(steam, sizeof(steam), "P%d", i);
+		expect(join(s, steam) == i, "pool ends at maxConnections");
+	}
+
 	/* No empty slot left: the driver who left first gives way. */
 	leave(s, b, 200);
 	s->cars[a].race_archive[0] = calloc(1, sizeof(struct CarRaceState));
@@ -94,14 +102,21 @@ main(void)
 	    "next reused slot gets the next id");
 	expect(join(s, "F") < 0, "no slot while every car is connected");
 
+	/* A car with a result row gives way last, even if it left first. */
+	leave(s, 3, 300);
+	s->cars[3].race.lap_count = 1;
+	leave(s, 4, 400);
+	expect(join(s, "G") == 4, "car with a result row gave way first");
+	expect(join(s, "H") == 3, "car with a result row gave way last");
+
 	/* After a wrap the counter skips ids a car still holds. */
-	leave(s, c, 300);
+	leave(s, c, 500);
 	s->next_car_id = 0xfffe;
-	(void)join(s, "G");
+	(void)join(s, "I");
 	expect(s->cars[c].car_id == 0xfffe, "last id before the wrap");
-	leave(s, c, 400);
-	(void)join(s, "H");
-	expect(s->cars[c].car_id == ACC_CAR_ID_BASE + ACC_MAX_CARS + 2,
+	leave(s, c, 600);
+	(void)join(s, "J");
+	expect(s->cars[c].car_id == ACC_CAR_ID_BASE + ACC_MAX_CARS + 4,
 	    "wrapped counter skips ids in use");
 
 	server_free(s);

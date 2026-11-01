@@ -3048,10 +3048,10 @@ handshake_handle(struct Server *s, struct Conn *c,
 			 * Enforce the runtime maxCarSlots cap on a fresh
 			 * (non-entrylist) joiner: the exe rejects with reason 9
 			 * once the live car count reaches the rating-clamped slot
-			 * count (FUN_140025690:656-658 -> FUN_1400214b0).  accd's
-			 * server_alloc_car bounds only by max_connections, so a
-			 * rating-restricted public server admitted more cars than
-			 * it advertised in the lobby.  (The exe also clamps to the
+			 * count (FUN_140025690:656-658 -> FUN_1400214b0).
+			 * server_alloc_car also hands out slots held by
+			 * departed cars, so it does not cap the live count
+			 * itself.  (The exe also clamps to the
 			 * track pit count; accd has no per-track pit-box table, so
 			 * that secondary clamp is not applied.)
 			 */

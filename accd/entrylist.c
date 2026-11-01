@@ -500,7 +500,7 @@ entrylist_save(const struct Server *s, const char *cfg_dir)
 	if (fp == NULL)
 		return -1;
 	fputs("{\n  \"entries\": [\n", fp);
-	for (i = 0; i < ACC_MAX_CARS && i < s->max_connections; i++) {
+	for (i = 0; i < ACC_MAX_CARS; i++) {
 		const struct CarEntry *car = &s->cars[i];
 		int d;
 		char buf[512];

@@ -88,13 +88,14 @@
 - **Departed cars stay in the event** with their car id and laps, so
   a returning driver picks them up again and a new driver never
   inherits them.  A departed car is listed in a session's results when
-  it completed a lap in that session, its first out-lap included.  A
-  new car takes an empty slot first; when every slot holds a car,
-  connected or not, it takes the slot of a departed car under a car id
-  never used before in the event, preferring one with no result row in
-  the current session, then the one whose driver left first.  Only
-  when every departed car has a row does one drop out of the results,
-  with a warning in the log.
+  it completed a lap in that session, its first out-lap included.  The
+  server keeps 64 car slots whatever `maxConnections` is, so departed
+  cars do not take room from live ones.  A new car takes an empty slot
+  first; when all 64 hold a car, connected or not, it takes the slot
+  of a departed car under a car id never used before in the event,
+  preferring one with no result row in the current session, then the
+  one whose driver left first.  Only when every departed car has a row
+  does one drop out of the results, with a warning in the log.
 - **Pit box per car** — each joining car gets the pit box held by the
   fewest other connected cars (lowest first), kept for the whole
   connection, so drivers spawn in their own garage whatever the join
@@ -144,8 +145,14 @@
   formation-lap midpoint, so a car still parked in the paddock
   cannot fire the green flag.
 - **Race grid from qualy** — race grid derived from the most recent
-  prior qualifying session's finishing order.  `defaultGridPosition`
-  in `entrylist.json` is used only when no prior Q/P exists.  The grid
+  prior qualifying session's finishing order, like the exe: connected
+  cars are numbered in that order without gaps, then the connected
+  cars with no qualifying result.  A departed car is numbered after
+  them while the grid (`maxConnections` positions) has room, so a car
+  that left after qualifying never pushes a live one off the grid;
+  one left without a position gets one when it comes back.
+  `defaultGridPosition` in `entrylist.json` is used only when no prior
+  qualifying exists.  The grid
   is broadcast (`0x3f`) the moment it is built, at the qualifying to
   race boundary, because the client lays the grid out during the
   pre-race countdown and a car missing from that list starts from
