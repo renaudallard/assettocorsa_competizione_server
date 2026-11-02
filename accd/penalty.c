@@ -551,8 +551,9 @@ penalty_enqueue(struct Server *s, int car_id, uint8_t exe_kind,
 				/*
 				 * The exe hardcodes laps_remaining=3 for all
 				 * ladder steps (140125f50.c lines 181, 187).
-				 * Exception: DT incoming with current slot
-				 * already at SG+ uses 0 (line 163).
+				 * Exception: a pending DT hit by a heavier
+				 * penalty steps with 0 (line 163), so the next
+				 * lap counts it to -1 and it never DQs.
 				 */
 				q->slots[i].laps_remaining =
 				    (old_sev == EXE_DT && exe_kind > EXE_DT)
