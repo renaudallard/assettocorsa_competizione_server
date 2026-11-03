@@ -225,13 +225,14 @@ ratings_seed_from_client(struct Server *s, const char *steam_id,
 
 	if (steam_id == NULL || steam_id[0] == '\0')
 		return;
+	if ((int8_t)sa_wire < 0)
+		return;	/* unrated */
 	if (lookup(s, steam_id, 0) != NULL)
 		return;	/* driver already has a local record */
 	e = lookup(s, steam_id, 1);
 	if (e == NULL)
 		return;
-	/* sa_wire is a 0-99 integer (handshake 41-byte block byte 1).
-	 * Convert to internal x100: SA 75 -> 7500. */
+	/* Convert to internal x100: SA 75 -> 7500. */
 	e->sa_x100 = (uint16_t)sa_wire * 100;
 	if (e->sa_x100 > RATINGS_MAX)
 		e->sa_x100 = RATINGS_MAX;

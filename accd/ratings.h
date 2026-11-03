@@ -67,8 +67,8 @@ void	ratings_get(const struct Server *s, const char *steam_id,
 
 /*
  * Seed SA from the handshake wire byte for a driver with no local
- * record.  sa_wire is the 0-99 integer from the 41-byte DriverInfo
- * block.  No-op if the driver already has a local record.
+ * record.  sa_wire is the 0-99 handshake rating byte, 0xff when the
+ * driver is unrated.  No-op if unrated or already recorded.
  */
 void	ratings_seed_from_client(struct Server *s, const char *steam_id,
 	    uint8_t sa_wire);

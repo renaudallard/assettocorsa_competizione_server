@@ -2402,7 +2402,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 			/*
 			 * Real client format: 5 DriverInfo strings
 			 * (first, second, last, aux, short), 41-byte
-			 * numeric block, steam_id, middle bytes,
+			 * numeric block, steam_id, 8 rating bytes,
 			 * then full CarInfo. The second name only
 			 * feeds the chat sender name.
 			 */
@@ -2424,17 +2424,12 @@ handshake_handle(struct Server *s, struct Conn *c,
 				(void)rd_str_a(&r, &sname);
 
 			/*
-			 * 41-byte numeric block.  The first 4 bytes are the
-			 * client-declared ratings the join gate trusts
-			 * (FUN_140025690:462): trackMedals, SA, RC,
-			 * competition; driver_category is at offset 16.
+			 * 41-byte numeric block (FUN_1401180c0): u8, u16
+			 * nationality, u8, 3 x u32, u8, 6 x u32.  accd takes
+			 * driver_category from offset 16.
 			 */
 			if (rd_remaining(&r) >= 41) {
-				(void)rd_u8(&r, &wire_medals);
-				(void)rd_u8(&r, &wire_sa);
-				(void)rd_u8(&r, &wire_rc);
-				(void)rd_u8(&r, &wire_cp);
-				(void)rd_skip(&r, 12);
+				(void)rd_skip(&r, 16);
 				(void)rd_u8(&r, &cat);
 				(void)rd_skip(&r, 24);
 			}
@@ -2446,7 +2441,19 @@ handshake_handle(struct Server *s, struct Conn *c,
 				    "%s", steam);
 
 			/*
-			 * Skip middle bytes, parse CarInfo.  Wire offsets
+			 * Client-declared ratings the join gate trusts,
+			 * read right after DriverInfo (FUN_140025690:462):
+			 * u8 trackMedals, i8 SA, i8 RC, i8 competition
+			 * (0xff = unrated), then two u16.
+			 */
+			(void)rd_u8(&r, &wire_medals);
+			(void)rd_u8(&r, &wire_sa);
+			(void)rd_u8(&r, &wire_rc);
+			(void)rd_u8(&r, &wire_cp);
+			(void)rd_skip(&r, 4);
+
+			/*
+			 * Parse CarInfo.  Wire offsets
 			 * pinned against the AC2 client's JSON serializer
 			 * (FUN_1434e9a70):
 			 *
@@ -2460,7 +2467,6 @@ handshake_handle(struct Server *s, struct Conn *c,
 			 * when the driver hasn't configured a number,
 			 * making every connecting car render as #65535.
 			 */
-			(void)rd_skip(&r, 8);		/* DriverInfo / CarInfo separator */
 			(void)rd_skip(&r, 8);		/* CarInfo +0..+7 (2 × u32 ids) */
 			(void)rd_i32(&r, &rnum);	/* raceNumber at body +8 (struct +0x30) */
 			(void)rd_skip(&r, 33);		/* CarInfo +12..+44 (skin / cup / etc) */
@@ -2590,7 +2596,7 @@ handshake_handle(struct Server *s, struct Conn *c,
 		/*
 		 * Join rating / competition gate (FUN_140025690).  The
 		 * trackMedals / SA / RC / competition values are the client-
-		 * declared ratings read off the wire numeric block above; the
+		 * declared ratings read after the steam_id above; the
 		 * original server trusts them like the steam_id.
 		 *
 		 * A CP server (isCPServer) accepts connections only during
@@ -2612,24 +2618,24 @@ handshake_handle(struct Server *s, struct Conn *c,
 				goto reply;
 			}
 			if ((int)(int8_t)wire_cp < s->competition_rating_min) {
-				log_info("rejecting %s: competition %u < "
-				    "min %d", steam_buf, (unsigned)wire_cp,
+				log_info("rejecting %s: competition %d < "
+				    "min %d", steam_buf, (int)(int8_t)wire_cp,
 				    s->competition_rating_min);
 				reason = REJECT_CP_RATING;
 				reject_sub = 3;
-				reject_a = wire_cp;
+				reject_a = (uint32_t)(int8_t)wire_cp;
 				reject_b = (uint32_t)s->competition_rating_min;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
 				goto reply;
 			}
 			if ((int)(int8_t)wire_cp > s->competition_rating_max) {
-				log_info("rejecting %s: competition %u > "
-				    "max %d", steam_buf, (unsigned)wire_cp,
+				log_info("rejecting %s: competition %d > "
+				    "max %d", steam_buf, (int)(int8_t)wire_cp,
 				    s->competition_rating_max);
 				reason = REJECT_CP_RATING;
 				reject_sub = 4;
-				reject_a = wire_cp;
+				reject_a = (uint32_t)(int8_t)wire_cp;
 				reject_b = (uint32_t)s->competition_rating_max;
 				free(first); free(last); free(sname);
 				free(steam); free(team);
@@ -2651,12 +2657,12 @@ handshake_handle(struct Server *s, struct Conn *c,
 		}
 		if (ACC_RATING_REQUIRED(s->safety_rating_required) &&
 		    (int)(int8_t)wire_sa < (int)s->safety_rating_required) {
-			log_info("rejecting %s: SA %u < required %u",
-			    steam_buf, (unsigned)wire_sa,
+			log_info("rejecting %s: SA %d < required %u",
+			    steam_buf, (int)(int8_t)wire_sa,
 			    (unsigned)s->safety_rating_required);
 			reason = REJECT_CP_RATING;
 			reject_sub = 1;
-			reject_a = wire_sa;
+			reject_a = (uint32_t)(int8_t)wire_sa;
 			reject_b = s->safety_rating_required;
 			free(first); free(last); free(sname);
 			free(steam); free(team);
@@ -2664,12 +2670,12 @@ handshake_handle(struct Server *s, struct Conn *c,
 		}
 		if (ACC_RATING_REQUIRED(s->racecraft_rating_required) &&
 		    (int)(int8_t)wire_rc < (int)s->racecraft_rating_required) {
-			log_info("rejecting %s: RC %u < required %u",
-			    steam_buf, (unsigned)wire_rc,
+			log_info("rejecting %s: RC %d < required %u",
+			    steam_buf, (int)(int8_t)wire_rc,
 			    (unsigned)s->racecraft_rating_required);
 			reason = REJECT_CP_RATING;
 			reject_sub = 2;
-			reject_a = wire_rc;
+			reject_a = (uint32_t)(int8_t)wire_rc;
 			reject_b = s->racecraft_rating_required;
 			free(first); free(last); free(sname);
 			free(steam); free(team);

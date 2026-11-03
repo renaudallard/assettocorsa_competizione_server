@@ -232,7 +232,7 @@ probe kicked 4 cfg_reject_kicked no \
 probe banned 5 cfg_reject_banned no \
     "--race 911 --grid 1 --name BotReject --expect-reject"
 # 10: CP_RATING (cfg_reject_cp_rating sets safetyRatingRequirement=70;
-# bots default SA rating is 0 on kunos / NEUTRAL on accd, both < 70)
+# the bot sends SA 0 in the rating bytes after its steam_id, < 70)
 probe cp_rating 10 cfg_reject_cp_rating yes \
     "--race 911 --grid 1 --name BotReject --expect-reject"
 # 11b: not-in-entry-list (cfg_reject_bad_car has forceEntryList=1 with

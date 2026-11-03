@@ -189,7 +189,7 @@ static int build_handshake(const char *first, const char *last,
 	bb_u16(client_version);
 	bb_fmta(password);
 	build_driver_info(first, last, shortn, steam, driver_cat);
-	bb_pad(8);
+	bb_pad(8);	/* medals, SA, RC, competition, 2 x u16 */
 	build_car_info(35, race_number);
 	while (bb_n <= 200)
 		bb_u8(0);

@@ -199,7 +199,7 @@ def build_handshake(password=""):
     body += struct.pack("<H", ACCD_PROTOCOL_VERSION)
     body += wstr_a(password)          # empty = driver, else spectator pw
     body += build_driver_info()
-    body += bytes(8)                  # separator between DriverInfo and CarInfo
+    body += bytes(8)                  # medals, SA, RC, CP, 2*u16: all unset
     body += build_car_info()
     # Pad body past 200 bytes to trigger the real-format parse path
     # on the server if the core payload underruns (doesn't on current
