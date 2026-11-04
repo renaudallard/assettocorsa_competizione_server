@@ -125,7 +125,9 @@
   still moving on track (or, in P/Q, still on track), matching the
   stock server, so a slow finisher is not cut off; a 5-minute cap stops
   a stalled car from holding the lobby.  In a race a lapped car takes
-  the flag only after the leader has finished.  Overtime ends at the
+  the flag only after the leader has finished, and the lap that
+  finishes a car is marked session over in the standings, so the
+  client shows the checkered flag next to it.  Overtime ends at the
   latest `sessionOverTimeSeconds` after 0:00, or after the leader's
   finish in a race, and `postRaceSeconds` / `postQualySeconds` always
   run in full afterwards, however overtime ended.
@@ -930,7 +932,7 @@ interoperability of an independently created program.
 │   │   ├── smoke_handshake.py      python wire-level smoke
 │   │   ├── smoke_reject_codes.py   reject-code matrix
 │   │   ├── fake_client.py          11-anchor welcome-trailer walker
-│   │   └── integration/            110 shell-driven integration tests
+│   │   └── integration/            111 shell-driven integration tests
 │   └── fuzz/
 │       └── fuzz_json.c             libFuzzer harness for json_parse
 ├── tools/

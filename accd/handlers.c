@@ -412,6 +412,8 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
  * follows the leader's finished latch, so it never takes the flag
  * before the leader. The exe compares lap counts as they were before
  * this lap was recorded, so the crossing car counts with laps_before.
+ * The exe caller passes param_7 = (5 < exe phase level); level 6 is
+ * accd PHASE_OVERTIME, so "level > 5" is "phase >= PHASE_OVERTIME".
  */
 static int
 lap_session_over(const struct Server *s, int idx, uint32_t laps_before)
@@ -477,6 +479,15 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	if ((car_field & 0x0400) != 0)
 		return 0;
 	laps_before = (uint32_t)s->cars[c->car_id].race.lap_count;
+	/*
+	 * Stamp isSessionOver into the lap word before anything stores or
+	 * relays it, as the exe does with FUN_14012b380 ahead of the lap
+	 * store (FUN_1400142f0 case 0x21). The word then reaches the 0x36
+	 * status and the 0x3b relay, and the client draws the finish flag
+	 * from this bit.
+	 */
+	if (lap_session_over(s, c->car_id, laps_before))
+		car_field |= 0x0400;
 	{
 		struct CarRaceState *race = &s->cars[c->car_id].race;
 		/*
@@ -860,7 +871,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			 * it (exe car+0x1d1 bit 0x04). A lapped race car
 			 * crossing before the leader keeps racing.
 			 */
-			if (lap_session_over(s, c->car_id, laps_before)) {
+			if (car_field & 0x0400) {
 				s->cars[c->car_id].race.finished = 1;
 				session_overtime_car_finished(s, c->car_id);
 			}
@@ -879,17 +890,6 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 	 */
 	{
 		uint32_t split_wire = (uint32_t)split_time;
-		/*
-		 * isSessionOver (lap-states bit 0x0400) is set per car, see
-		 * lap_session_over. The exe caller (FUN_1400142f0) passes
-		 * param_7 = (5 < exe_phase_level); the exe 7-level model maps
-		 * level 5 = accd PHASE_SESSION (4), level 6 = accd
-		 * PHASE_OVERTIME (5), level 7 = PHASE_COMPLETED (6), so exe
-		 * "level > 5" == accd "phase >= PHASE_OVERTIME".
-		 */
-		uint16_t relay_cf = car_field;
-		if (lap_session_over(s, c->car_id, laps_before))
-			relay_cf |= 0x0400;
 		int ts_off, i;
 		bb_init(&out);
 		if (wr_u8(&out, SRV_SECTOR_SPLIT_RELAY) < 0 ||
@@ -899,7 +899,7 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 			goto done;
 		ts_off = (int)out.wpos;
 		if (wr_i32(&out, 0) < 0 ||   /* placeholder, patched per peer */
-		    wr_u16(&out, relay_cf) < 0)
+		    wr_u16(&out, car_field) < 0)
 			goto done;
 		for (i = 0; i < ACC_MAX_CARS; i++) {
 			struct Conn *peer = s->conns[i];
