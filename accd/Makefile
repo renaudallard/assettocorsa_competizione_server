@@ -197,6 +197,7 @@ UNITTESTS =	tests/test_bop \
 		tests/test_chat_sender \
 		tests/test_disconnect_notify \
 		tests/test_first_lap \
+		tests/test_finalized_timing \
 		tests/test_grid \
 		tests/test_race_finish \
 		tests/test_quali_overtime \
@@ -220,6 +221,9 @@ tests/test_disconnect_notify: tests/test_disconnect_notify.c ${TESTOBJS}
 	@${UNITTEST_LINK}
 
 tests/test_first_lap: tests/test_first_lap.c ${TESTOBJS}
+	@${UNITTEST_LINK}
+
+tests/test_finalized_timing: tests/test_finalized_timing.c ${TESTOBJS}
 	@${UNITTEST_LINK}
 
 tests/test_grid: tests/test_grid.c ${TESTOBJS}
@@ -255,6 +259,7 @@ test: ${PROG} ${UNITTESTS}
 	tests/test_chat_sender
 	tests/test_disconnect_notify
 	tests/test_first_lap
+	tests/test_finalized_timing
 	tests/test_grid
 	tests/test_race_finish
 	tests/test_quali_overtime

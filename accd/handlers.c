@@ -258,6 +258,15 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
 		return 0;
 	/*
+	 * Final results and the per-session archive have already been
+	 * published. A client can omit isSessionOver while coasting during
+	 * aftercare; do not let that change timing behind the frozen grid.
+	 * Overtime remains writable until finalization, and session_reset
+	 * clears results_written for the next session.
+	 */
+	if (s->session.results_written)
+		return 0;
+	/*
 	 * Ignore a split the CLIENT flags as IsSessionOver (lap-states bit
 	 * 0x0400), mirroring the exe's wire-bit guard (FUN_1400142f0 case
 	 * 0x20: `(word >> 8 & 4)` -> "Received split with isSessionOver
@@ -467,6 +476,12 @@ h_sector_split_single(struct Server *s, struct Conn *c,
 		return 0;
 	}
 	if (c->car_id < 0 || c->car_id >= ACC_MAX_CARS)
+		return 0;
+	/*
+	 * Match the split guard: late laps must not change the published
+	 * result, live leaderboard or lap history after finalization.
+	 */
+	if (s->session.results_written)
 		return 0;
 	/*
 	 * Ignore a lap the CLIENT flags as IsSessionOver (lap-states bit
