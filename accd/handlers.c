@@ -338,6 +338,10 @@ h_sector_split_bulk(struct Server *s, struct Conn *c,
 	 * is absent.  Mirror: reset out_of_track_latched when HasCut=0. */
 	if (!(car_field & 0x0001))
 		race->out_of_track_latched = 0;
+	/* A sector crossing can change the race order before the next lap.
+	 * The tick's leaderboard comparison will publish the new order. */
+	if (session_is_race(s))
+		session_recompute_standings(s);
 	log_info("sector split: car=%d sector=%u time=%dms clock=%d",
 	    c->car_id, (unsigned)sector_index, (int)sector_time_ms,
 	    (int)clock_ms);

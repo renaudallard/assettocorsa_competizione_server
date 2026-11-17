@@ -1016,12 +1016,42 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	if (ra->lap_count != rb->lap_count)
 		return (int)rb->lap_count - (int)ra->lap_count;
 	/*
+	 * During a running race, compare progress at the most recent timing
+	 * line before falling back to the previous S/F crossing. Without
+	 * this a car ahead at sector 2 stays behind until it completes a lap.
+	 * Only 1 and 2 describe in-lap progress; 0 is S/F and the unset
+	 * sentinel must not sort ahead of cars that actually posted a split.
+	 * Keep formation and final classification on their existing keys.
+	 */
+	if (s->session.green_fired && !s->session.results_written &&
+	    s->session.phase >= PHASE_SESSION &&
+	    s->session.phase <= PHASE_OVERTIME) {
+		int sa = ra->last_split_id <= 2 ? ra->last_split_id : 0;
+		int sb = rb->last_split_id <= 2 ? rb->last_split_id : 0;
+
+		/* Cooldown splits cannot move a car ahead of a finisher on
+		 * equal laps. Finished cars keep their finish-line ordering. */
+		if (ra->finished != rb->finished)
+			return ra->finished ? -1 : 1;
+		if (!ra->finished) {
+			int32_t ta = ra->last_split_ms > 0
+			    ? ra->last_split_ms : INT32_MAX;
+			int32_t tb = rb->last_split_ms > 0
+			    ? rb->last_split_ms : INT32_MAX;
+
+			if (sa != sb)
+				return sa > sb ? -1 : 1;
+			/* Unknown crossing times sort last within a sector,
+			 * keeping this key transitive across three or more cars. */
+			if (sa > 0 && ta != tb)
+				return ta < tb ? -1 : 1;
+		}
+	}
+	/*
 	 * Mirrors FUN_140120970 KEY[5]: session-clock at last S/F crossing.
 	 * The exe race sort folds unserved TP into this tiebreak; accd
 	 * deliberately does not - penalties carry no live sort weight and are
-	 * converted to TP at race end (a documented simplification, along with
-	 * the exe's mid-lap split-progress key that accd omits before this
-	 * race-time tiebreak).  The qualy comparator is FUN_140120c90.
+	 * converted to TP at race end. The qualy comparator is FUN_140120c90.
 	 */
 	if (ra->race_time_ms != rb->race_time_ms)
 		return ra->race_time_ms < rb->race_time_ms ? -1 : 1;

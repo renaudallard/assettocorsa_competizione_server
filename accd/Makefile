@@ -199,6 +199,7 @@ UNITTESTS =	tests/test_bop \
 		tests/test_first_lap \
 		tests/test_grid \
 		tests/test_race_finish \
+		tests/test_race_progress \
 		tests/test_quali_overtime \
 		tests/test_results_dump \
 		tests/test_standings
@@ -226,6 +227,9 @@ tests/test_grid: tests/test_grid.c ${TESTOBJS}
 	@${UNITTEST_LINK}
 
 tests/test_race_finish: tests/test_race_finish.c ${TESTOBJS}
+	@${UNITTEST_LINK}
+
+tests/test_race_progress: tests/test_race_progress.c ${TESTOBJS}
 	@${UNITTEST_LINK}
 
 tests/test_quali_overtime: tests/test_quali_overtime.c ${TESTOBJS}
@@ -257,6 +261,7 @@ test: ${PROG} ${UNITTESTS}
 	tests/test_first_lap
 	tests/test_grid
 	tests/test_race_finish
+	tests/test_race_progress
 	tests/test_quali_overtime
 	tests/test_results_dump
 	tests/test_standings
