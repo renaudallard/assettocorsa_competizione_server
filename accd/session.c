@@ -1022,6 +1022,9 @@ cmp_cars(const struct Server *s, const struct CarEntry *a,
 	 * Only 1 and 2 describe in-lap progress; 0 is S/F and the unset
 	 * sentinel must not sort ahead of cars that actually posted a split.
 	 * Keep formation and final classification on their existing keys.
+	 * This is FUN_140120970 KEY[3], the split count of the open lap from
+	 * FUN_140127850, then the KEY[5] time, which FUN_140126450 sets to
+	 * the latest split crossing while a lap is open.
 	 */
 	if (s->session.green_fired && !s->session.results_written &&
 	    s->session.phase >= PHASE_SESSION &&

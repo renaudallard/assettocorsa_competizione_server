@@ -598,9 +598,9 @@ broadcast_leaderboard(struct Server *s)
  * Called from state mutations kunos emits 0x36 for.  The tick loop
  * now calls broadcast_leaderboard_if_changed on every tick (matching
  * the exe's per-tick memcmp), so this is a no-op retained for
- * call-site documentation.  Sector-split (0x20) still does NOT call
- * this to match the exe's intent; the memcmp gate suppresses redundant
- * emits regardless.
+ * call-site documentation. Sector splits (0x20) do not call it either.
+ * The split time and id ride in every 0x36 record and a split can
+ * reorder a race, so the per-tick memcmp emits after a split anyway.
  */
 void
 leaderboard_request_emit(struct Server *s)
@@ -1407,8 +1407,9 @@ tick_run(struct Server *s)
 	 * emits 0x36 whenever any byte differs; broadcast_leaderboard_if_changed
 	 * mirrors that with its internal memcmp cache.  The per-car lap count
 	 * rides at +0x1f4 so the timing tower updates each lap without a
-	 * separate lap-complete trigger; sector splits (0x20) do not change
-	 * +0x1f4 so they do not emit a new 0x36.  The 75 s async-mode heartbeat
+	 * separate lap-complete trigger. A sector split (0x20) changes the
+	 * record's split time and id, and can reorder a race, so it emits a
+	 * new 0x36 the same way.  The 75 s async-mode heartbeat
 	 * is a defense-in-depth probe, opt-in via use_async_leaderboard.
 	 */
 	if (broadcast_leaderboard_if_changed(s)) {

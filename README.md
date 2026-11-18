@@ -164,7 +164,10 @@
   order, so the final starting order is visible in the server output
   without needing the client HUD.
 - **Ranked leaderboard / results** — real-time standings on lap
-  completion, `0x36` broadcast in ranked order, `0x3f` grid at the
+  completion and, in a running race, on every sector split (cars on
+  the same lap rank by the last sector reached, then by when they
+  crossed it, as the stock server does), `0x36` broadcast in ranked
+  order, `0x3f` grid at the
   qualifying to race boundary, `0x3e` session results at session end.
 - **Results file writer** — `results/YYYYMMDD_HHMMSS_<type>.json`
   matching the stock server schema, written when a session completes
